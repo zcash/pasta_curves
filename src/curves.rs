@@ -730,13 +730,13 @@ macro_rules! new_curve_impl {
                 Self::identity()
             }
             fn group_add(&mut self, rhs: &Self) {
-                *self = *self + *rhs;
+                *self += *rhs;
             }
             fn group_sub(&mut self, rhs: &Self) {
-                *self = *self - *rhs;
+                *self -= *rhs;
             }
             fn group_scale(&mut self, by: &Self::Scalar) {
-                *self = *self * (*by);
+                *self *= *by;
             }
         }
     };
