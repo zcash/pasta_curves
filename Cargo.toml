@@ -5,7 +5,10 @@ version = "0.0.0"
 authors = [
     "Jack Grigg <jack@electriccoin.co>"
 ]
-license = "MIT"
+license = "TGPPL"
 edition = "2018"
+
+# We can't publish to crates.io under TGPPL yet.
+publish = false
 
 [dependencies]
