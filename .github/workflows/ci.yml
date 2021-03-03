@@ -188,3 +188,26 @@ jobs:
         with:
           command: fmt
           args: -- --check
+
+  no-std:
+    name: Check no-std target ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - thumbv6m-none-eabi
+          - wasm32-unknown-unknown
+          - wasm32-wasi
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - run: rustup target add ${{ matrix.target }}
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --verbose --target ${{ matrix.target }} --no-default-features
