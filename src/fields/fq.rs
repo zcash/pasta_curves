@@ -307,6 +307,7 @@ impl Fq {
         Fq::montgomery_reduce(r0, r1, r2, r3, r4, r5, r6, r7)
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[inline(always)]
     const fn montgomery_reduce(
         r0: u64,
