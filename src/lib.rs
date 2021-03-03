@@ -1,4 +1,4 @@
-//! # halo2
+//! Implementation of the Pallas / Vesta curve cycle.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(unknown_lints)]
@@ -18,11 +18,4 @@
 #![deny(unsafe_code)]
 
 pub mod arithmetic;
-pub mod circuit;
 pub mod pasta;
-pub mod plonk;
-pub mod poly;
-pub mod transcript;
-
-pub mod dev;
-pub mod model;

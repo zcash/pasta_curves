@@ -51,7 +51,7 @@ pub trait CurveExt:
     /// # Example
     ///
     /// ```
-    /// use halo2::arithmetic::CurveExt;
+    /// use pasta_curves::arithmetic::CurveExt;
     /// fn pedersen_commitment<C: CurveExt>(
     ///     x: C::ScalarExt,
     ///     r: C::ScalarExt,
