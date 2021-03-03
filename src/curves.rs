@@ -427,6 +427,7 @@ macro_rules! new_curve_impl {
             }
         }
 
+        #[allow(clippy::suspicious_arithmetic_impl)]
         impl<'a, 'b> Mul<&'b $scalar> for &'a $name {
             type Output = $name;
 
@@ -537,6 +538,7 @@ macro_rules! new_curve_impl {
             }
         }
 
+        #[allow(clippy::suspicious_arithmetic_impl)]
         impl<'a, 'b> Mul<&'b $scalar> for &'a $name_affine {
             type Output = $name;
 
