@@ -1,7 +1,26 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
+//! This module contains implementations for the Pallas and Vesta elliptic curve
+//! groups.
+
+#[macro_use]
+mod macros;
+mod curves;
+mod fields;
+
+pub mod arithmetic;
+mod hashtocurve;
+pub mod pallas;
+pub mod vesta;
+
+pub use curves::*;
+pub use fields::*;
+
+#[test]
+fn test_endo_consistency() {
+    use crate::arithmetic::{CurveExt, FieldExt};
+    use group::Group;
+
+    let a = pallas::Point::generator();
+    assert_eq!(a * pallas::Scalar::ZETA, a.endo());
+    let a = vesta::Point::generator();
+    assert_eq!(a * vesta::Scalar::ZETA, a.endo());
 }
