@@ -22,7 +22,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --verbose --release --all --all-features
+          args: --verbose --release --all-features
 
   build:
     name: Build target ${{ matrix.target }}
@@ -62,7 +62,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --all --benches --all-features
+          args: --benches --all-features
 
   book:
     name: Book tests
@@ -171,7 +171,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: doc
-          args: --all --document-private-items
+          args: --document-private-items
 
   fmt:
     name: Rustfmt
@@ -187,4 +187,4 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: fmt
-          args: --all -- --check
+          args: -- --check
