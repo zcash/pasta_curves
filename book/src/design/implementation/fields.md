@@ -1,7 +1,7 @@
 # Fields
 
 The [Pasta curves](https://electriccoin.co/blog/the-pasta-curves-for-halo-2-and-beyond/)
-that we use in `halo2` are designed to be highly 2-adic, meaning that a large $2^S$
+are designed to be highly 2-adic, meaning that a large $2^S$
 [multiplicative subgroup](../../background/fields.md#multiplicative-subgroups) exists in
 each field. That is, we can write $p - 1 \equiv 2^S \cdot T$ with $T$ odd. For both Pallas
 and Vesta, $S = 32$; this helps to simplify the field implementations.
@@ -9,8 +9,8 @@ and Vesta, $S = 32$; this helps to simplify the field implementations.
 ## Sarkar square-root algorithm (table-based variant)
 
 We use a technique from [Sarkar2020](https://eprint.iacr.org/2020/1407.pdf) to compute
-[square roots](../../background/fields.md#square-roots) in `halo2`. The intuition behind
-the algorithm is that we can split the task into computing square roots in each
+[square roots](../../background/fields.md#square-roots) in `pasta_curves`. The intuition
+behind the algorithm is that we can split the task into computing square roots in each
 multiplicative subgroup.
 
 Suppose we want to find the square root of $u$ modulo one of the Pasta primes $p$, where

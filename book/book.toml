@@ -8,6 +8,6 @@ authors = [
 language = "en"
 multilingual = false
 src = "src"
-title = "The halo2 Book"
+title = "The Pasta Book"
 
 [preprocessor.katex]

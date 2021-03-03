@@ -81,7 +81,7 @@ jobs:
         uses: peaceiris/actions-mdbook@v1
         with:
           mdbook-version: '0.4.5'
-      - name: Test halo2 book
+      - name: Test Pasta book
         run: mdbook test -L target/debug/deps book/
 
   clippy:
