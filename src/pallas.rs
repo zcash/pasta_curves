@@ -15,6 +15,7 @@ pub type Point = Ep;
 pub type Affine = EpAffine;
 
 #[test]
+#[allow(clippy::many_single_char_names)]
 fn test_iso_map() {
     use crate::arithmetic::CurveExt;
     use group::Group;
