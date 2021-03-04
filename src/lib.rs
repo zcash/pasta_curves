@@ -1,4 +1,4 @@
-//! # halo2
+//! Implementation of the Pallas / Vesta curve cycle.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(unknown_lints)]
@@ -17,12 +17,26 @@
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 
-pub mod arithmetic;
-pub mod circuit;
-pub mod pasta;
-pub mod plonk;
-pub mod poly;
-pub mod transcript;
+#[macro_use]
+mod macros;
+mod curves;
+mod fields;
 
-pub mod dev;
-pub mod model;
+pub mod arithmetic;
+mod hashtocurve;
+pub mod pallas;
+pub mod vesta;
+
+pub use curves::*;
+pub use fields::*;
+
+#[test]
+fn test_endo_consistency() {
+    use crate::arithmetic::{CurveExt, FieldExt};
+    use group::Group;
+
+    let a = pallas::Point::generator();
+    assert_eq!(a * pallas::Scalar::ZETA, a.endo());
+    let a = vesta::Point::generator();
+    assert_eq!(a * vesta::Scalar::ZETA, a.endo());
+}

@@ -1,8 +1,8 @@
-# halo2 [![Crates.io](https://img.shields.io/crates/v/halo2.svg)](https://crates.io/crates/halo2) #
+# `pasta_curves`
 
 **IMPORTANT**: This library is being actively developed and should not be used in production software.
 
-## [Documentation](https://docs.rs/halo2)
+## [Documentation](https://docs.rs/pasta_curves)
 
 This crate currently has a Minimum Supported Rust Version of 1.49.0. When const generics
 are stabilized [in Rust 1.51.0](https://github.com/rust-lang/rust/pull/79135), we plan

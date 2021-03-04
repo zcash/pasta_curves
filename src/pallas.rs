@@ -100,8 +100,8 @@ fn test_iso_map_identity() {
 #[test]
 fn test_map_to_curve_simple_swu() {
     use crate::arithmetic::CurveExt;
-    use crate::pasta::curves::IsoEp;
-    use crate::pasta::hashtocurve::map_to_curve_simple_swu;
+    use crate::curves::IsoEp;
+    use crate::hashtocurve::map_to_curve_simple_swu;
 
     // The zero input is a special case.
     let p: IsoEp = map_to_curve_simple_swu::<Fp, Ep, IsoEp>(&Fp::zero(), Ep::THETA, Ep::Z);

@@ -17,8 +17,8 @@ pub type Affine = EqAffine;
 #[test]
 fn test_map_to_curve_simple_swu() {
     use crate::arithmetic::CurveExt;
-    use crate::pasta::curves::IsoEq;
-    use crate::pasta::hashtocurve::map_to_curve_simple_swu;
+    use crate::curves::IsoEq;
+    use crate::hashtocurve::map_to_curve_simple_swu;
 
     // The zero input is a special case.
     let p: IsoEq = map_to_curve_simple_swu::<Fq, Eq, IsoEq>(&Fq::zero(), Eq::THETA, Eq::Z);

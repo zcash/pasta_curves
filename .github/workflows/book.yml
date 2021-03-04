@@ -1,4 +1,4 @@
-name: halo2 book
+name: Pasta book
 
 on:
   push:
@@ -22,7 +22,7 @@ jobs:
           command: install
           args: mdbook-katex
 
-      - name: Build halo2 book
+      - name: Build Pasta book
         run: mdbook build book/
 
       - name: Deploy to GitHub Pages
