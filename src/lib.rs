@@ -4,10 +4,6 @@
 #![allow(unknown_lints)]
 #![allow(
     clippy::op_ref,
-    clippy::assign_op_pattern,
-    clippy::too_many_arguments,
-    clippy::suspicious_arithmetic_impl,
-    clippy::many_single_char_names,
     clippy::same_item_push,
     clippy::upper_case_acronyms,
     clippy::unknown_clippy_lints
