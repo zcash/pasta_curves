@@ -23,9 +23,18 @@ rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
 
 [dev-dependencies]
 criterion = "0.3"
+rand_xorshift = "0.3"
 
 [[bench]]
 name = "hashtocurve"
+harness = false
+
+[[bench]]
+name = "fp"
+harness = false
+
+[[bench]]
+name = "fq"
 harness = false
 
 [dependencies]
