@@ -140,17 +140,17 @@ fn test_hash_to_curve() {
     // This test vector is chosen so that the first map_to_curve_simple_swu takes the gx1 square
     // "branch" and the second takes the gx1 non-square "branch" (opposite to the Vesta test vector).
     let hash = Point::hash_to_curve("z.cash:test");
-    let p: Point = hash(b"world");
+    let p: Point = hash(b"Trans rights now!");
     let (x, y, z) = p.jacobian_coordinates();
 
     assert!(
-        format!("{:?}", x) == "0x2ae2d9bde5a5b4bc1f1e7154f18a407ac826c9d7cd23c3b33efa0f237e99cd35"
+        format!("{:?}", x) == "0x36a6e3a9c50b7b6540cb002c977c82f37f8a875fb51eb35327ee1452e6ce7947"
     );
     assert!(
-        format!("{:?}", y) == "0x3ca16b5bf2e6c41cdf781ead8ba61400becbc16430d026b65b707560b98f8b31"
+        format!("{:?}", y) == "0x01da3b4403d73252f2d7e9c19bc23dc6a080f2d02f8262fca4f7e3d756ac6a7c"
     );
     assert!(
-        format!("{:?}", z) == "0x2502d25cc3b1129d933af3ac34822111bfd070609fdebdfb778dd25cf40f9b82"
+        format!("{:?}", z) == "0x1d48103df8fcbb70d1809c1806c95651dd884a559fec0549658537ce9d94bed9"
     );
     assert!(bool::from(p.is_on_curve()));
 

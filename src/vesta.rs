@@ -59,12 +59,12 @@ fn test_hash_to_curve() {
     let (x, y, z) = p.jacobian_coordinates();
 
     assert!(
-        format!("{:?}", x) == "0x24c3431db13111fcba2f214a0662ae48e675801988c5705877525750b65f7ad8"
+        format!("{:?}", x) == "0x12763505036e0e1a6684b7a7d8d5afb7378cc2b191a95e34f44824a06fcbd08e"
     );
     assert!(
-        format!("{:?}", y) == "0x0df21621bf38070d79193ec5959fc2bb09468e71c0190d0217b0984fc92282f3"
+        format!("{:?}", y) == "0x0256eafc0188b79bfa7c4b2b393893ddc298e90da500fa4a9aee17c2ea4240e6"
     );
     assert!(
-        format!("{:?}", z) == "0x3e95ef9cbe5a9978c0d82635b242cf773ecfbc764ae9b936aba64c43f67091c6"
+        format!("{:?}", z) == "0x1b58d4aa4d68c3f4d9916b77c79ff9911597a27f2ee46244e98eb9615172d2ad"
     );
 }
