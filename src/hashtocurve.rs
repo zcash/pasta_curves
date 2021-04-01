@@ -1,6 +1,7 @@
 //! This module implements "simplified SWU" hashing to short Weierstrass curves
 //! with a = 0.
 
+use static_assertions::const_assert;
 use subtle::ConstantTimeEq;
 
 use crate::arithmetic::{CurveExt, FieldExt};
@@ -18,6 +19,10 @@ pub fn hash_to_field<F: FieldExt>(
     // Assume that the field size is 32 bytes and k is 256, where k is defined in
     // <https://www.ietf.org/archive/id/draft-irtf-cfrg-hash-to-curve-10.html#name-security-considerations-3>.
     const CHUNKLEN: usize = 64;
+    const_assert!(CHUNKLEN * 2 < 256);
+
+    // Input block size of BLAKE2b.
+    const R_IN_BYTES: usize = 128;
 
     let personal = [0u8; 16];
     let empty_hasher = blake2b_simd::Params::new()
@@ -27,9 +32,9 @@ pub fn hash_to_field<F: FieldExt>(
 
     let b_0 = empty_hasher
         .clone()
-        .update(&[0; CHUNKLEN])
+        .update(&[0; R_IN_BYTES])
         .update(message)
-        .update(&[0, 128, 0])
+        .update(&[0, (CHUNKLEN * 2) as u8, 0])
         .update(domain_prefix.as_bytes())
         .update(b"-")
         .update(curve_id.as_bytes())
