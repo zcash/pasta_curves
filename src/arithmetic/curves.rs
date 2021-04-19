@@ -99,8 +99,10 @@ pub trait CurveAffine:
     /// The projective form of the curve
     type CurveExt: CurveExt<AffineExt = Self, ScalarExt = <Self as CurveAffine>::ScalarExt>;
 
-    /// Gets the $(x, y)$ coordinates of this point.
-    fn get_xy(&self) -> CtOption<(Self::Base, Self::Base)>;
+    /// Gets the coordinates of this point.
+    ///
+    /// Returns None if this is the identity.
+    fn coordinates(&self) -> CtOption<Coordinates<Self>>;
 
     /// Obtains a point given $(x, y)$, failing if it is not on the
     /// curve.
@@ -130,4 +132,50 @@ pub trait CurveAffine:
 
     /// Returns the curve constant $b$.
     fn b() -> Self::Base;
+}
+
+/// The affine coordinates of a point on an elliptic curve.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Coordinates<C: CurveAffine> {
+    pub(crate) x: C::Base,
+    pub(crate) y: C::Base,
+}
+
+impl<C: CurveAffine> Coordinates<C> {
+    /// Returns the x-coordinate.
+    ///
+    /// Equivalent to `Coordinates::u`.
+    pub fn x(&self) -> &C::Base {
+        &self.x
+    }
+
+    /// Returns the y-coordinate.
+    ///
+    /// Equivalent to `Coordinates::v`.
+    pub fn y(&self) -> &C::Base {
+        &self.y
+    }
+
+    /// Returns the u-coordinate.
+    ///
+    /// Equivalent to `Coordinates::x`.
+    pub fn u(&self) -> &C::Base {
+        &self.x
+    }
+
+    /// Returns the v-coordinate.
+    ///
+    /// Equivalent to `Coordinates::y`.
+    pub fn v(&self) -> &C::Base {
+        &self.y
+    }
+}
+
+impl<C: CurveAffine> ConditionallySelectable for Coordinates<C> {
+    fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
+        Coordinates {
+            x: C::Base::conditional_select(&a.x, &b.x, choice),
+            y: C::Base::conditional_select(&a.y, &b.y, choice),
+        }
+    }
 }

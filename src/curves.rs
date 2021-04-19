@@ -15,7 +15,7 @@ use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use super::{Fp, Fq};
-use crate::arithmetic::{CurveAffine, CurveExt, FieldExt, Group};
+use crate::arithmetic::{Coordinates, CurveAffine, CurveExt, FieldExt, Group};
 
 macro_rules! new_curve_impl {
     (($($privacy:tt)*), $name:ident, $name_affine:ident, $iso:ident, $base:ident, $scalar:ident,
@@ -653,8 +653,8 @@ macro_rules! new_curve_impl {
                     | self.infinity
             }
 
-            fn get_xy(&self) -> CtOption<(Self::Base, Self::Base)> {
-                CtOption::new((self.x, self.y), !self.is_identity())
+            fn coordinates(&self) -> CtOption<Coordinates<Self>> {
+                CtOption::new(Coordinates { x: self.x, y: self.y }, !self.is_identity())
             }
 
             fn from_xy(x: Self::Base, y: Self::Base) -> CtOption<Self> {
