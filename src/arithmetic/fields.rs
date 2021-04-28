@@ -199,37 +199,42 @@ impl<F: FieldExt> SqrtTables<F> {
             marker: PhantomData,
         };
 
-        let gtab: Vec<Vec<F>> = (0..4)
-            .scan(F::ROOT_OF_UNITY, |gi, _| {
-                // gi == ROOT_OF_UNITY^(256^i)
-                let gtab_i: Vec<F> = (0..256)
-                    .scan(F::one(), |acc, _| {
-                        let res = *acc;
-                        *acc *= *gi;
-                        Some(res)
-                    })
-                    .collect();
-                *gi = gtab_i[255] * *gi;
-                Some(gtab_i)
-            })
-            .collect();
+        let mut gtab = (0..4).scan(F::ROOT_OF_UNITY, |gi, _| {
+            // gi == ROOT_OF_UNITY^(256^i)
+            let gtab_i: Vec<F> = (0..256)
+                .scan(F::one(), |acc, _| {
+                    let res = *acc;
+                    *acc *= *gi;
+                    Some(res)
+                })
+                .collect();
+            *gi = gtab_i[255] * *gi;
+            Some(gtab_i)
+        });
+        let gtab_0 = gtab.next().unwrap();
+        let gtab_1 = gtab.next().unwrap();
+        let gtab_2 = gtab.next().unwrap();
+        let mut gtab_3 = gtab.next().unwrap();
+        assert_eq!(gtab.next(), None);
 
         // Now invert gtab[3].
         let mut inv: Vec<u8> = vec![1; hash_mod];
         for j in 0..256 {
-            let hash = hasher.hash(&gtab[3][j]);
+            let hash = hasher.hash(&gtab_3[j]);
             // 1 is the last value to be assigned, so this ensures there are no collisions.
             assert!(inv[hash] == 1);
             inv[hash] = ((256 - j) & 0xFF) as u8;
         }
 
+        gtab_3.truncate(129);
+
         SqrtTables::<F> {
             hasher,
             inv,
-            g0: Box::new(gtab[0][..].try_into().unwrap()),
-            g1: Box::new(gtab[1][..].try_into().unwrap()),
-            g2: Box::new(gtab[2][..].try_into().unwrap()),
-            g3: Box::new(gtab[3][0..129].try_into().unwrap()),
+            g0: gtab_0.into_boxed_slice().try_into().unwrap(),
+            g1: gtab_1.into_boxed_slice().try_into().unwrap(),
+            g2: gtab_2.into_boxed_slice().try_into().unwrap(),
+            g3: gtab_3.into_boxed_slice().try_into().unwrap(),
         }
     }
 
