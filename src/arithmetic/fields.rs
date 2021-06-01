@@ -219,8 +219,8 @@ impl<F: FieldExt> SqrtTables<F> {
 
         // Now invert gtab[3].
         let mut inv: Vec<u8> = vec![1; hash_mod];
-        for j in 0..256 {
-            let hash = hasher.hash(&gtab_3[j]);
+        for (j, gtab_3_j) in gtab_3.iter().enumerate() {
+            let hash = hasher.hash(gtab_3_j);
             // 1 is the last value to be assigned, so this ensures there are no collisions.
             assert!(inv[hash] == 1);
             inv[hash] = ((256 - j) & 0xFF) as u8;
