@@ -13,6 +13,7 @@ license-file = "LICENSE-BOSL"
 repository = "https://github.com/zcash/pasta_curves"
 documentation = "https://docs.rs/pasta_curves"
 readme = "README.md"
+exclude = ["Contributor_Agreement"]
 
 # We are not publishing this yet.
 publish = false
