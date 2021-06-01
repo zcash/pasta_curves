@@ -2,12 +2,7 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(unknown_lints)]
-#![allow(
-    clippy::op_ref,
-    clippy::same_item_push,
-    clippy::upper_case_acronyms,
-    clippy::unknown_clippy_lints
-)]
+#![allow(clippy::op_ref, clippy::same_item_push, clippy::upper_case_acronyms)]
 #![deny(broken_intra_doc_links)]
 #![deny(missing_debug_implementations)]
 #![deny(missing_docs)]

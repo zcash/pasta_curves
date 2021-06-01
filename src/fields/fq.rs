@@ -1,10 +1,12 @@
 use core::convert::TryInto;
 use core::fmt;
 use core::ops::{Add, Mul, Neg, Sub};
-use ff::FieldBits;
 use lazy_static::lazy_static;
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
+
+#[cfg(feature = "bits")]
+use ff::{FieldBits, PrimeFieldBits};
 
 use crate::arithmetic::{adc, mac, sbb, FieldExt, Group, SqrtTables};
 
@@ -529,15 +531,8 @@ impl ff::Field for Fq {
     }
 }
 
-#[cfg(not(target_pointer_width = "64"))]
-type ReprBits = [u32; 8];
-
-#[cfg(target_pointer_width = "64")]
-type ReprBits = [u64; 4];
-
 impl ff::PrimeField for Fq {
     type Repr = [u8; 32];
-    type ReprBits = ReprBits;
 
     const NUM_BITS: u32 = 255;
     const CAPACITY: u32 = 254;
@@ -550,6 +545,29 @@ impl ff::PrimeField for Fq {
     fn to_repr(&self) -> Self::Repr {
         self.to_bytes()
     }
+
+    fn is_odd(&self) -> bool {
+        self.to_bytes()[0] & 1 == 1
+    }
+
+    fn multiplicative_generator() -> Self {
+        GENERATOR
+    }
+
+    fn root_of_unity() -> Self {
+        Self::ROOT_OF_UNITY
+    }
+}
+
+#[cfg(all(feature = "bits", not(target_pointer_width = "64")))]
+type ReprBits = [u32; 8];
+
+#[cfg(all(feature = "bits", target_pointer_width = "64"))]
+type ReprBits = [u64; 4];
+
+#[cfg(feature = "bits")]
+impl PrimeFieldBits for Fq {
+    type ReprBits = ReprBits;
 
     fn to_le_bits(&self) -> FieldBits<Self::ReprBits> {
         let bytes = self.to_bytes();
@@ -577,10 +595,6 @@ impl ff::PrimeField for Fq {
         FieldBits::new(limbs)
     }
 
-    fn is_odd(&self) -> bool {
-        self.to_bytes()[0] & 1 == 1
-    }
-
     fn char_le_bits() -> FieldBits<Self::ReprBits> {
         #[cfg(not(target_pointer_width = "64"))]
         {
@@ -589,14 +603,6 @@ impl ff::PrimeField for Fq {
 
         #[cfg(target_pointer_width = "64")]
         FieldBits::new(MODULUS.0)
-    }
-
-    fn multiplicative_generator() -> Self {
-        GENERATOR
-    }
-
-    fn root_of_unity() -> Self {
-        Self::ROOT_OF_UNITY
     }
 }
 

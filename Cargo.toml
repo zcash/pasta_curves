@@ -1,7 +1,7 @@
 [package]
 name = "pasta_curves"
 description = "Implementation of the Pallas and Vesta (Pasta) curve cycle"
-version = "0.0.0"
+version = "0.1.0"
 authors = [
     "Sean Bowe <sean@electriccoin.co>",
     "Ying Tong Lai <yingtong@electriccoin.co>",
@@ -13,9 +13,7 @@ license-file = "LICENSE-BOSL"
 repository = "https://github.com/zcash/pasta_curves"
 documentation = "https://docs.rs/pasta_curves"
 readme = "README.md"
-
-# We are not publishing this yet.
-publish = false
+exclude = ["Contributor_Agreement"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -39,12 +37,13 @@ harness = false
 
 [dependencies]
 subtle = "2.3"
-ff = "0.9"
-group = "0.9"
+ff = "0.10"
+group = "0.10"
 rand = "0.8"
 blake2b_simd = "0.5"
 lazy_static = "1.4.0"
 static_assertions = "1.1.0"
 
-# Temporary workaround for https://github.com/myrrlyn/funty/issues/3
-funty = "=1.1.0"
+[features]
+default = ["bits"]
+bits = ["ff/bits"]
