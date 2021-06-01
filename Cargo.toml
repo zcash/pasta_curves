@@ -39,12 +39,13 @@ harness = false
 
 [dependencies]
 subtle = "2.3"
-ff = "0.9"
-group = "0.9"
+ff = "0.10"
+group = "0.10"
 rand = "0.8"
 blake2b_simd = "0.5"
 lazy_static = "1.4.0"
 static_assertions = "1.1.0"
 
-# Temporary workaround for https://github.com/myrrlyn/funty/issues/3
-funty = "=1.1.0"
+[features]
+default = ["bits"]
+bits = ["ff/bits"]
