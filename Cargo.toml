@@ -1,7 +1,7 @@
 [package]
 name = "pasta_curves"
 description = "Implementation of the Pallas and Vesta (Pasta) curve cycle"
-version = "0.0.0"
+version = "0.1.0"
 authors = [
     "Sean Bowe <sean@electriccoin.co>",
     "Ying Tong Lai <yingtong@electriccoin.co>",
@@ -14,9 +14,6 @@ repository = "https://github.com/zcash/pasta_curves"
 documentation = "https://docs.rs/pasta_curves"
 readme = "README.md"
 exclude = ["Contributor_Agreement"]
-
-# We are not publishing this yet.
-publish = false
 
 [package.metadata.docs.rs]
 all-features = true
