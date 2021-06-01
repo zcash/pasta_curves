@@ -1,12 +1,35 @@
 # `pasta_curves`
 
-**IMPORTANT**: This library is being actively developed and should not be used in production software.
+This crate provides an implementation of the Pasta elliptic curve constructions,
+Pallas and Vesta. More details about the Pasta curves can be found
+[in this blog post](https://electriccoin.co/blog/the-pasta-curves-for-halo-2-and-beyond/).
 
 ## [Documentation](https://docs.rs/pasta_curves)
 
-This crate currently has a Minimum Supported Rust Version of 1.49.0. When const generics
-are stabilized [in Rust 1.51.0](https://github.com/rust-lang/rust/pull/79135), we plan
-to require that version.
+## Minimum Supported Rust Version
+
+Requires Rust **1.49** or higher.
+
+Minimum supported Rust version can be changed in the future, but it will be done with a
+minor version bump.
+
+## Curve Descriptions
+
+- Pallas: y<sup>2</sup> = x<sup>3</sup> + 5 over
+  `GF(0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001)`.
+
+- Vesta:  y<sup>2</sup> = x<sup>3</sup> + 5 over
+  `GF(0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)`.
+
+The Pasta curves form a cycle with one another: the order of each curve is exactly the
+base field of the other. This property is critical to the efficiency of recursive proof
+systems. They are designed to be highly 2-adic, meaning that a large power-of-two
+multiplicative subgroup exists in each field. This is important for the performance of
+polynomial arithmetic over their scalar fields and is essential for protocols similar
+to PLONK.
+
+These curves can be reproducibly obtained
+[using a curve search utility we’ve published](https://github.com/zcash/pasta).
 
 ## License
 
