@@ -7,7 +7,7 @@ use core::iter::Sum;
 use core::ops::{Add, Mul, Neg, Sub};
 use ff::Field;
 use group::{
-    cofactor::CofactorGroup,
+    cofactor::{CofactorCurve, CofactorGroup},
     prime::{PrimeCurve, PrimeCurveAffine, PrimeGroup},
     Curve as _, Group as _, GroupEncoding,
 };
@@ -215,6 +215,10 @@ macro_rules! new_curve_impl {
         }
 
         impl PrimeCurve for $name {
+            type Affine = $name_affine;
+        }
+
+        impl CofactorCurve for $name {
             type Affine = $name_affine;
         }
 
@@ -591,6 +595,27 @@ macro_rules! new_curve_impl {
                     y: self.y,
                     z: $base::conditional_select(&$base::one(), &$base::zero(), self.infinity),
                 }
+            }
+        }
+
+        impl group::cofactor::CofactorCurveAffine for $name_affine {
+            type Curve = $name;
+            type Scalar = $scalar;
+
+            fn identity() -> Self {
+                <Self as PrimeCurveAffine>::identity()
+            }
+
+            fn generator() -> Self {
+                <Self as PrimeCurveAffine>::generator()
+            }
+
+            fn is_identity(&self) -> Choice {
+                <Self as PrimeCurveAffine>::is_identity(self)
+            }
+
+            fn to_curve(&self) -> Self::Curve {
+                <Self as PrimeCurveAffine>::to_curve(self)
             }
         }
 

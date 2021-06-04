@@ -7,5 +7,11 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.1.1] - 2021-06-04
+## Added
+- Implementations of `group::cofactor::{CofactorCurve, CofactorCurveAffine}` for
+  Pallas and Vesta, enabling them to be used in cofactor-aware protocols that
+  also want to leverage the affine point representation.
+
 ## [0.1.0] - 2021-06-01
 Initial release!
