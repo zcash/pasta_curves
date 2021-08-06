@@ -96,6 +96,25 @@ macro_rules! new_curve_impl {
             }
         }
 
+        impl group::WnafGroup for $name {
+            fn recommended_wnaf_for_num_scalars(num_scalars: usize) -> usize {
+                // Copied from bls12_381::g1, should be updated.
+                const RECOMMENDATIONS: [usize; 12] =
+                    [1, 3, 7, 20, 43, 120, 273, 563, 1630, 3128, 7933, 62569];
+
+                let mut ret = 4;
+                for r in &RECOMMENDATIONS {
+                    if num_scalars > *r {
+                        ret += 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                ret
+            }
+        }
+
         impl CurveExt for $name {
             type ScalarExt = $scalar;
             type Base = $base;
