@@ -7,6 +7,11 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.1.2] - 2021-08-06
+## Added
+- Implementation of `group::WnafGroup` for Pallas and Vesta, enabling them to be
+  used with `group::Wnaf` for targeted performance improvements.
+
 ## [0.1.1] - 2021-06-04
 ## Added
 - Implementations of `group::cofactor::{CofactorCurve, CofactorCurveAffine}` for
