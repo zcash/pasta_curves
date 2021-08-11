@@ -35,6 +35,10 @@ harness = false
 name = "fq"
 harness = false
 
+[[bench]]
+name = "point"
+harness = false
+
 [dependencies]
 subtle = "2.3"
 ff = "0.10"
