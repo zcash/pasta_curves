@@ -480,10 +480,6 @@ impl ff::Field for Fp {
         Self::one()
     }
 
-    fn is_zero(&self) -> bool {
-        self.ct_is_zero().into()
-    }
-
     fn double(&self) -> Self {
         self.double()
     }
@@ -538,16 +534,16 @@ impl ff::PrimeField for Fp {
     const CAPACITY: u32 = 254;
     const S: u32 = S;
 
-    fn from_repr(repr: Self::Repr) -> Option<Self> {
-        Self::from_bytes(&repr).into()
+    fn from_repr(repr: Self::Repr) -> CtOption<Self> {
+        Self::from_bytes(&repr)
     }
 
     fn to_repr(&self) -> Self::Repr {
         self.to_bytes()
     }
 
-    fn is_odd(&self) -> bool {
-        self.to_bytes()[0] & 1 == 1
+    fn is_odd(&self) -> Choice {
+        Choice::from(self.to_bytes()[0] & 1)
     }
 
     fn multiplicative_generator() -> Self {
@@ -654,10 +650,6 @@ impl FieldExt for Fp {
 
     fn sqrt_alt(&self) -> (Choice, Self) {
         FP_TABLES.sqrt_alt(self)
-    }
-
-    fn ct_is_zero(&self) -> Choice {
-        self.ct_eq(&Self::zero())
     }
 
     fn from_u64(v: u64) -> Self {

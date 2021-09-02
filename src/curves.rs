@@ -92,7 +92,7 @@ macro_rules! new_curve_impl {
             }
 
             fn is_identity(&self) -> Choice {
-                self.z.ct_is_zero()
+                self.z.is_zero()
             }
         }
 
@@ -150,7 +150,7 @@ macro_rules! new_curve_impl {
                 let z6 = z4 * z2;
                 (self.y.square() - (self.x.square() + $name::curve_constant_a() * z4) * self.x)
                     .ct_eq(&(z6 * $name::curve_constant_b()))
-                    | self.z.ct_is_zero()
+                    | self.z.is_zero()
             }
         }
 
@@ -208,7 +208,7 @@ macro_rules! new_curve_impl {
                     infinity: Choice::from(0u8),
                 };
 
-                $name_affine::conditional_select(&tmp, &$name_affine::identity(), zinv.ct_is_zero())
+                $name_affine::conditional_select(&tmp, &$name_affine::identity(), zinv.is_zero())
             }
         }
 
@@ -647,7 +647,7 @@ macro_rules! new_curve_impl {
                 tmp[31] &= 0b0111_1111;
 
                 $base::from_bytes(&tmp).and_then(|x| {
-                    CtOption::new(Self::identity(), x.ct_is_zero() & (!ysign)).or_else(|| {
+                    CtOption::new(Self::identity(), x.is_zero() & (!ysign)).or_else(|| {
                         let x3 = x.square() * x;
                         (x3 + $name::curve_constant_b()).sqrt().and_then(|y| {
                             let sign = Choice::from(y.to_bytes()[0] & 1);
