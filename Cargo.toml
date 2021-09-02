@@ -1,7 +1,7 @@
 [package]
 name = "pasta_curves"
 description = "Implementation of the Pallas and Vesta (Pasta) curve cycle"
-version = "0.1.2"
+version = "0.2.0"
 authors = [
     "Sean Bowe <sean@electriccoin.co>",
     "Ying Tong Lai <yingtong@electriccoin.co>",
@@ -41,8 +41,8 @@ harness = false
 
 [dependencies]
 subtle = "2.3"
-ff = "0.10"
-group = "0.10"
+ff = "0.11"
+group = "0.11"
 rand = "0.8"
 blake2b_simd = "0.5"
 lazy_static = "1.4.0"

@@ -6,7 +6,7 @@ use static_assertions::const_assert;
 use std::assert;
 use std::convert::TryInto;
 use std::marker::PhantomData;
-use subtle::{Choice, ConstantTimeEq, CtOption};
+use subtle::{Choice, CtOption};
 
 use super::Group;
 
@@ -16,9 +16,7 @@ const_assert!(size_of::<usize>() >= 4);
 
 /// This trait is a common interface for dealing with elements of a finite
 /// field.
-pub trait FieldExt:
-    ff::PrimeField + From<bool> + Ord + ConstantTimeEq + Group<Scalar = Self>
-{
+pub trait FieldExt: ff::PrimeField + From<bool> + Ord + Group<Scalar = Self> {
     /// Modulus of the field written as a string for display purposes
     const MODULUS: &'static str;
 
@@ -68,9 +66,6 @@ pub trait FieldExt:
     fn rand() -> Self {
         Self::random(rand::rngs::OsRng)
     }
-
-    /// Returns whether or not this element is zero.
-    fn ct_is_zero(&self) -> Choice;
 
     /// Obtains a field element congruent to the integer `v`.
     fn from_u64(v: u64) -> Self;
@@ -132,31 +127,6 @@ pub trait FieldExt:
     /// Field implementations may override this to use an efficient addition chain.
     fn pow_by_t_minus1_over2(&self) -> Self {
         ff::Field::pow_vartime(&self, &Self::T_MINUS1_OVER2)
-    }
-
-    /// Performs a batch inversion using Montgomery's trick, returns the product
-    /// of every inverse. Zero inputs are ignored.
-    fn batch_invert(v: &mut [Self]) -> Self {
-        let mut tmp = Vec::with_capacity(v.len());
-
-        let mut acc = Self::one();
-        for p in v.iter() {
-            tmp.push(acc);
-            acc = Self::conditional_select(&(acc * p), &acc, p.ct_is_zero());
-        }
-
-        acc = acc.invert().unwrap();
-        let allinv = acc;
-
-        for (p, tmp) in v.iter_mut().rev().zip(tmp.into_iter().rev()) {
-            let skip = p.ct_is_zero();
-
-            let tmp = tmp * acc;
-            acc = Self::conditional_select(&(acc * *p), &acc, skip);
-            *p = Self::conditional_select(&tmp, p, skip);
-        }
-
-        allinv
     }
 }
 
@@ -296,10 +266,10 @@ impl<F: FieldExt> SqrtTables<F> {
         let res = self.sqrt_common(&uv, &v);
 
         let sqdiv = res.square() * div;
-        let is_square = (sqdiv - num).ct_is_zero();
-        let is_nonsquare = (sqdiv - F::ROOT_OF_UNITY * num).ct_is_zero();
+        let is_square = (sqdiv - num).is_zero();
+        let is_nonsquare = (sqdiv - F::ROOT_OF_UNITY * num).is_zero();
         assert!(bool::from(
-            num.ct_is_zero() | div.ct_is_zero() | (is_square ^ is_nonsquare)
+            num.is_zero() | div.is_zero() | (is_square ^ is_nonsquare)
         ));
 
         (is_square, res)
@@ -313,9 +283,9 @@ impl<F: FieldExt> SqrtTables<F> {
         let res = self.sqrt_common(&uv, &v);
 
         let sq = res.square();
-        let is_square = (sq - u).ct_is_zero();
-        let is_nonsquare = (sq - F::ROOT_OF_UNITY * u).ct_is_zero();
-        assert!(bool::from(u.ct_is_zero() | (is_square ^ is_nonsquare)));
+        let is_square = (sq - u).is_zero();
+        let is_nonsquare = (sq - F::ROOT_OF_UNITY * u).is_zero();
+        assert!(bool::from(u.is_zero() | (is_square ^ is_nonsquare)));
 
         (is_square, res)
     }
