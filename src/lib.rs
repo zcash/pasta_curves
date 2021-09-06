@@ -21,6 +21,8 @@ pub mod vesta;
 pub use curves::*;
 pub use fields::*;
 
+pub extern crate group;
+
 #[test]
 fn test_endo_consistency() {
     use crate::arithmetic::{CurveExt, FieldExt};
