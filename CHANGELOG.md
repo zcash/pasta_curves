@@ -7,6 +7,10 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.2.1] - 2021-09-17
+### Changed
+- The crate is now licensed as `MIT OR Apache-2.0`.
+
 ## [0.2.0] - 2021-09-02
 ### Changed
 - Migrated to `ff 0.11`, `group 0.11`.
