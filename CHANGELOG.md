@@ -6,6 +6,8 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- The crate is now licensed as `MIT OR Apache-2.0`.
 
 ## [0.2.0] - 2021-09-02
 ### Changed
