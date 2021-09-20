@@ -21,18 +21,52 @@ use std::{
 
 const_assert!(size_of::<usize>() >= 4);
 
+/// A trait that exposes additional operations related to calculating square roots of
+/// prime-order finite fields.
+#[cfg(feature = "std")]
+pub trait SqrtRatio: ff::PrimeField {
+    /// The value $(T-1)/2$ such that $2^S \cdot T = p - 1$ with $T$ odd.
+    const T_MINUS1_OVER2: [u64; 4];
+
+    /// Raise this field element to the power [`Self::T_MINUS1_OVER2`].
+    ///
+    /// Field implementations may override this to use an efficient addition chain.
+    fn pow_by_t_minus1_over2(&self) -> Self {
+        ff::Field::pow_vartime(&self, &Self::T_MINUS1_OVER2)
+    }
+
+    /// Computes:
+    ///
+    /// - $(\textsf{true}, \sqrt{\textsf{num}/\textsf{div}})$, if $\textsf{num}$ and
+    ///   $\textsf{div}$ are nonzero and $\textsf{num}/\textsf{div}$ is a square in the
+    ///   field;
+    /// - $(\textsf{true}, 0)$, if $\textsf{num}$ is zero;
+    /// - $(\textsf{false}, 0)$, if $\textsf{num}$ is nonzero and $\textsf{div}$ is zero;
+    /// - $(\textsf{false}, \sqrt{G_S \cdot \textsf{num}/\textsf{div}})$, if
+    ///   $\textsf{num}$ and $\textsf{div}$ are nonzero and $\textsf{num}/\textsf{div}$ is
+    ///   a nonsquare in the field;
+    ///
+    /// where $G_S$ ([`ff::PrimeField::root_of_unity`]) is a generator of the order $2^S$
+    /// subgroup (and therefore a nonsquare).
+    ///
+    /// The choice of root from sqrt is unspecified.
+    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self);
+
+    /// Equivalent to `Self::sqrt_ratio(self, one())`.
+    fn sqrt_alt(&self) -> (Choice, Self) {
+        Self::sqrt_ratio(self, &Self::one())
+    }
+}
+
 /// This trait is a common interface for dealing with elements of a finite
 /// field.
 #[cfg(feature = "std")]
-pub trait FieldExt: ff::PrimeField + From<bool> + Ord + Group<Scalar = Self> {
+pub trait FieldExt: SqrtRatio + From<bool> + Ord + Group<Scalar = Self> {
     /// Modulus of the field written as a string for display purposes
     const MODULUS: &'static str;
 
     /// Inverse of `PrimeField::root_of_unity()`
     const ROOT_OF_UNITY_INV: Self;
-
-    /// The value $(T-1)/2$ such that $2^S \cdot T = p - 1$ with $T$ odd.
-    const T_MINUS1_OVER2: [u64; 4];
 
     /// Generator of the $t-order$ multiplicative subgroup
     const DELTA: Self;
@@ -49,23 +83,6 @@ pub trait FieldExt: ff::PrimeField + From<bool> + Ord + Group<Scalar = Self> {
 
     /// Element of multiplicative order $3$.
     const ZETA: Self;
-
-    /// Computes:
-    ///
-    /// * (true,  sqrt(num/div)),                 if num and div are nonzero and num/div is a square in the field;
-    /// * (true,  0),                             if num is zero;
-    /// * (false, 0),                             if num is nonzero and div is zero;
-    /// * (false, sqrt(ROOT_OF_UNITY * num/div)), if num and div are nonzero and num/div is a nonsquare in the field;
-    ///
-    /// where ROOT_OF_UNITY is a generator of the order 2^n subgroup (and therefore a nonsquare).
-    ///
-    /// The choice of root from sqrt is unspecified.
-    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self);
-
-    /// Equivalent to sqrt_ratio(self, one()).
-    fn sqrt_alt(&self) -> (Choice, Self) {
-        Self::sqrt_ratio(self, &Self::one())
-    }
 
     /// This computes a random element of the field using system randomness.
     fn rand() -> Self {
@@ -127,12 +144,6 @@ pub trait FieldExt: ff::PrimeField + From<bool> + Ord + Group<Scalar = Self> {
     /// Gets the lower 32 bits of this field element when expressed
     /// canonically.
     fn get_lower_32(&self) -> u32;
-
-    /// Raise this field element to the power T_MINUS1_OVER2.
-    /// Field implementations may override this to use an efficient addition chain.
-    fn pow_by_t_minus1_over2(&self) -> Self {
-        ff::Field::pow_vartime(&self, &Self::T_MINUS1_OVER2)
-    }
 }
 
 /// Tonelli–Shanks' square-root algorithm for `p mod 16 = 1`.

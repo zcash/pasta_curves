@@ -15,7 +15,7 @@ use ff::{FieldBits, PrimeFieldBits};
 use crate::arithmetic::{adc, mac, sbb};
 
 #[cfg(feature = "std")]
-use crate::arithmetic::{FieldExt, Group, SqrtTables};
+use crate::arithmetic::{FieldExt, Group, SqrtRatio, SqrtTables};
 
 /// This represents an element of $\mathbb{F}_q$ where
 ///
@@ -231,6 +231,14 @@ const DELTA: Fq = Fq::from_raw([
     0x06f0a88e7f7949f8,
     0x2237d54423724166,
 ]);
+
+/// `(t - 1) // 2` where t * 2^s + 1 = p with t odd.
+const T_MINUS1_OVER2: [u64; 4] = [
+    0x04ca_546e_c623_7590,
+    0x0000_0000_1123_4c7e,
+    0x0000_0000_0000_0000,
+    0x0000_0000_2000_0000,
+];
 
 impl Default for Fq {
     #[inline]
@@ -513,15 +521,7 @@ impl ff::Field for Fq {
         }
 
         #[cfg(not(feature = "std"))]
-        crate::arithmetic::sqrt_tonelli_shanks(
-            self,
-            &[
-                0x04ca_546e_c623_7590,
-                0x0000_0000_1123_4c7e,
-                0x0000_0000_0000_0000,
-                0x0000_0000_2000_0000,
-            ],
-        )
+        crate::arithmetic::sqrt_tonelli_shanks(self, &T_MINUS1_OVER2)
     }
 
     /// Computes the multiplicative inverse of this element,
@@ -670,6 +670,50 @@ lazy_static! {
 }
 
 #[cfg(feature = "std")]
+impl SqrtRatio for Fq {
+    const T_MINUS1_OVER2: [u64; 4] = T_MINUS1_OVER2;
+
+    fn pow_by_t_minus1_over2(&self) -> Self {
+        let sqr = |x: Fq, i: u32| (0..i).fold(x, |x, _| x.square());
+
+        let s10 = self.square();
+        let s11 = s10 * self;
+        let s111 = s11.square() * self;
+        let s1001 = s111 * s10;
+        let s1011 = s1001 * s10;
+        let s1101 = s1011 * s10;
+        let sa = sqr(*self, 129) * self;
+        let sb = sqr(sa, 7) * s1001;
+        let sc = sqr(sb, 7) * s1101;
+        let sd = sqr(sc, 4) * s11;
+        let se = sqr(sd, 6) * s111;
+        let sf = sqr(se, 3) * s111;
+        let sg = sqr(sf, 10) * s1001;
+        let sh = sqr(sg, 4) * s1001;
+        let si = sqr(sh, 5) * s1001;
+        let sj = sqr(si, 5) * s1001;
+        let sk = sqr(sj, 3) * s1001;
+        let sl = sqr(sk, 4) * s1011;
+        let sm = sqr(sl, 4) * s1011;
+        let sn = sqr(sm, 5) * s11;
+        let so = sqr(sn, 4) * self;
+        let sp = sqr(so, 5) * s11;
+        let sq = sqr(sp, 4) * s111;
+        let sr = sqr(sq, 5) * s1011;
+        let ss = sqr(sr, 3) * self;
+        sqr(ss, 4) // st
+    }
+
+    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
+        FQ_TABLES.sqrt_ratio(num, div)
+    }
+
+    fn sqrt_alt(&self) -> (Choice, Self) {
+        FQ_TABLES.sqrt_alt(self)
+    }
+}
+
+#[cfg(feature = "std")]
 impl FieldExt for Fq {
     const MODULUS: &'static str =
         "0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001";
@@ -679,12 +723,6 @@ impl FieldExt for Fq {
         0xf4c8f353124086c1,
         0x2235e1a7415bf936,
     ]);
-    const T_MINUS1_OVER2: [u64; 4] = [
-        0x04ca546ec6237590,
-        0x0000000011234c7e,
-        0x0000000000000000,
-        0x20000000,
-    ];
     const DELTA: Self = DELTA;
     const TWO_INV: Self = Fq::from_raw([
         0xc623759080000001,
@@ -705,14 +743,6 @@ impl FieldExt for Fq {
         0x511db4d81cf70f5a,
         0x06819a58283e528e,
     ]);
-
-    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
-        FQ_TABLES.sqrt_ratio(num, div)
-    }
-
-    fn sqrt_alt(&self) -> (Choice, Self) {
-        FQ_TABLES.sqrt_alt(self)
-    }
 
     fn from_u64(v: u64) -> Self {
         Fq::from_raw([v as u64, 0, 0, 0])
@@ -756,37 +786,6 @@ impl FieldExt for Fq {
         let tmp = Fq::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
 
         tmp.0[0] as u32
-    }
-
-    fn pow_by_t_minus1_over2(&self) -> Self {
-        let sqr = |x: Fq, i: u32| (0..i).fold(x, |x, _| x.square());
-
-        let s10 = self.square();
-        let s11 = s10 * self;
-        let s111 = s11.square() * self;
-        let s1001 = s111 * s10;
-        let s1011 = s1001 * s10;
-        let s1101 = s1011 * s10;
-        let sa = sqr(*self, 129) * self;
-        let sb = sqr(sa, 7) * s1001;
-        let sc = sqr(sb, 7) * s1101;
-        let sd = sqr(sc, 4) * s11;
-        let se = sqr(sd, 6) * s111;
-        let sf = sqr(se, 3) * s111;
-        let sg = sqr(sf, 10) * s1001;
-        let sh = sqr(sg, 4) * s1001;
-        let si = sqr(sh, 5) * s1001;
-        let sj = sqr(si, 5) * s1001;
-        let sk = sqr(sj, 3) * s1001;
-        let sl = sqr(sk, 4) * s1011;
-        let sm = sqr(sl, 4) * s1011;
-        let sn = sqr(sm, 5) * s11;
-        let so = sqr(sn, 4) * self;
-        let sp = sqr(so, 5) * s11;
-        let sq = sqr(sp, 4) * s111;
-        let sr = sqr(sq, 5) * s1011;
-        let ss = sqr(sr, 3) * self;
-        sqr(ss, 4) // st
     }
 }
 
@@ -833,7 +832,7 @@ fn test_sqrt() {
 fn test_pow_by_t_minus1_over2() {
     // NB: TWO_INV is standing in as a "random" field element
     let v = (Fq::TWO_INV).pow_by_t_minus1_over2();
-    assert!(v == ff::Field::pow_vartime(&Fq::TWO_INV, &Fq::T_MINUS1_OVER2));
+    assert!(v == ff::Field::pow_vartime(&Fq::TWO_INV, &T_MINUS1_OVER2));
 }
 
 #[cfg(feature = "std")]
