@@ -138,13 +138,13 @@ pub trait FieldExt: ff::PrimeField + From<bool> + Ord + Group<Scalar = Self> {
     }
 }
 
-/// Tonelli-Shank's square-root algorithm for `p mod 16 = 1`.
+/// Tonelli–Shanks' square-root algorithm for `p mod 16 = 1`.
 ///
 /// https://eprint.iacr.org/2012/685.pdf (page 12, algorithm 5)
 ///
 /// `tm1d2` should be set to `(t - 1) // 2`, where `t = (modulus - 1) >> F::S`.
 #[cfg(not(feature = "std"))]
-pub(crate) fn sqrt_tonelli_shank<F: ff::PrimeField, S: AsRef<[u64]>>(
+pub(crate) fn sqrt_tonelli_shanks<F: ff::PrimeField, S: AsRef<[u64]>>(
     f: &F,
     tm1d2: S,
 ) -> CtOption<F> {

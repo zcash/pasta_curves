@@ -513,7 +513,7 @@ impl ff::Field for Fp {
         }
 
         #[cfg(not(feature = "std"))]
-        crate::arithmetic::sqrt_tonelli_shank(
+        crate::arithmetic::sqrt_tonelli_shanks(
             self,
             &[
                 0x04a6_7c8d_cc96_9876,
