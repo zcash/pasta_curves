@@ -2,6 +2,8 @@ use core::convert::TryInto;
 use core::fmt;
 use core::ops::{Add, Mul, Neg, Sub};
 use lazy_static::lazy_static;
+
+use ff::PrimeField;
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
@@ -23,7 +25,7 @@ pub struct Fq(pub(crate) [u64; 4]);
 
 impl fmt::Debug for Fq {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let tmp = self.to_bytes();
+        let tmp = self.to_repr();
         write!(f, "0x")?;
         for &b in tmp.iter().rev() {
             write!(f, "{:02x}", b)?;
@@ -66,8 +68,8 @@ impl PartialEq for Fq {
 
 impl std::cmp::Ord for Fq {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let left = self.to_bytes();
-        let right = other.to_bytes();
+        let left = self.to_repr();
+        let right = other.to_repr();
         left.iter()
             .zip(right.iter())
             .rev()
@@ -437,13 +439,13 @@ impl Fq {
 
 impl From<Fq> for [u8; 32] {
     fn from(value: Fq) -> [u8; 32] {
-        value.to_bytes()
+        value.to_repr()
     }
 }
 
 impl<'a> From<&'a Fq> for [u8; 32] {
     fn from(value: &'a Fq) -> [u8; 32] {
-        value.to_bytes()
+        value.to_repr()
     }
 }
 
@@ -767,7 +769,7 @@ impl FieldExt for Fq {
 }
 
 #[cfg(test)]
-use ff::{Field, PrimeField};
+use ff::Field;
 
 #[test]
 fn test_inv() {

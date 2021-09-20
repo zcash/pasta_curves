@@ -5,7 +5,8 @@ use core::cmp;
 use core::fmt::Debug;
 use core::iter::Sum;
 use core::ops::{Add, Mul, Neg, Sub};
-use ff::Field;
+
+use ff::{Field, PrimeField};
 use group::{
     cofactor::{CofactorCurve, CofactorGroup},
     prime::{PrimeCurve, PrimeCurveAffine, PrimeGroup},
@@ -68,7 +69,7 @@ macro_rules! new_curve_impl {
                     let x3 = x.square() * x;
                     let y = (x3 + $name::curve_constant_b()).sqrt();
                     if let Some(y) = Option::<$base>::from(y) {
-                        let sign = y.to_bytes()[0] & 1;
+                        let sign = y.is_odd().unwrap_u8();
                         let y = if ysign ^ sign == 0 { y } else { -y };
 
                         let p = $name_affine {
@@ -465,7 +466,7 @@ macro_rules! new_curve_impl {
                 //
                 // NOTE: We skip the leading bit because it's always unset.
                 for bit in other
-                    .to_bytes()
+                    .to_repr()
                     .iter()
                     .rev()
                     .flat_map(|byte| (0..8).rev().map(move |i| Choice::from((byte >> i) & 1u8)))
@@ -576,7 +577,7 @@ macro_rules! new_curve_impl {
                 //
                 // NOTE: We skip the leading bit because it's always unset.
                 for bit in other
-                    .to_bytes()
+                    .to_repr()
                     .iter()
                     .rev()
                     .flat_map(|byte| (0..8).rev().map(move |i| Choice::from((byte >> i) & 1u8)))
@@ -646,11 +647,11 @@ macro_rules! new_curve_impl {
                 let ysign = Choice::from(tmp[31] >> 7);
                 tmp[31] &= 0b0111_1111;
 
-                $base::from_bytes(&tmp).and_then(|x| {
+                $base::from_repr(tmp).and_then(|x| {
                     CtOption::new(Self::identity(), x.is_zero() & (!ysign)).or_else(|| {
                         let x3 = x.square() * x;
                         (x3 + $name::curve_constant_b()).sqrt().and_then(|y| {
-                            let sign = Choice::from(y.to_bytes()[0] & 1);
+                            let sign = y.is_odd();
 
                             let y = $base::conditional_select(&y, &-y, ysign ^ sign);
 
@@ -678,8 +679,8 @@ macro_rules! new_curve_impl {
                     [0; 32]
                 } else {
                     let (x, y) = (self.x, self.y);
-                    let sign = (y.to_bytes()[0] & 1) << 7;
-                    let mut xbytes = x.to_bytes();
+                    let sign = y.is_odd().unwrap_u8() << 7;
+                    let mut xbytes = x.to_repr();
                     xbytes[31] |= sign;
                     xbytes
                 }
