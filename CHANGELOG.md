@@ -18,6 +18,7 @@ and this project adheres to Rust's notion of
   - `FieldExt::{T_MINUS1_OVER2, pow_by_t_minus1_over2, sqrt_alt, sqrt_ratio}`
     (moved to `SqrtRatio` trait).
   - `FieldExt::{RESCUE_ALPHA, RESCUE_INVALPHA}`
+  - `FieldExt::from_u64` (use `From<u64> for ff::PrimeField` instead).
 
 ## [0.2.1] - 2021-09-17
 ### Changed

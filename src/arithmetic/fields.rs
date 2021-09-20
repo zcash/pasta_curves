@@ -83,9 +83,6 @@ pub trait FieldExt: SqrtRatio + From<bool> + Ord + Group<Scalar = Self> {
     }
 
     /// Obtains a field element congruent to the integer `v`.
-    fn from_u64(v: u64) -> Self;
-
-    /// Obtains a field element congruent to the integer `v`.
     fn from_u128(v: u128) -> Self;
 
     /// Converts this field element to its normalized, little endian byte

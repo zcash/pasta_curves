@@ -737,10 +737,6 @@ impl FieldExt for Fp {
         0x12ccca834acdba71,
     ]);
 
-    fn from_u64(v: u64) -> Self {
-        Fp::from_raw([v as u64, 0, 0, 0])
-    }
-
     fn from_u128(v: u128) -> Self {
         Fp::from_raw([v as u64, (v >> 64) as u64, 0, 0])
     }
@@ -821,9 +817,9 @@ fn test_pow_by_t_minus1_over2() {
 fn test_sqrt_ratio_and_alt() {
     // (true, sqrt(num/div)), if num and div are nonzero and num/div is a square in the field
     let num = (Fp::TWO_INV).square();
-    let div = Fp::from_u64(25);
+    let div = Fp::from(25);
     let div_inverse = div.invert().unwrap();
-    let expected = Fp::TWO_INV * Fp::from_u64(5).invert().unwrap();
+    let expected = Fp::TWO_INV * Fp::from(5).invert().unwrap();
     let (is_square, v) = Fp::sqrt_ratio(&num, &div);
     assert!(bool::from(is_square));
     assert!(v == expected || (-v) == expected);
@@ -834,7 +830,7 @@ fn test_sqrt_ratio_and_alt() {
 
     // (false, sqrt(ROOT_OF_UNITY * num/div)), if num and div are nonzero and num/div is a nonsquare in the field
     let num = num * Fp::root_of_unity();
-    let expected = Fp::TWO_INV * Fp::root_of_unity() * Fp::from_u64(5).invert().unwrap();
+    let expected = Fp::TWO_INV * Fp::root_of_unity() * Fp::from(5).invert().unwrap();
     let (is_square, v) = Fp::sqrt_ratio(&num, &div);
     assert!(!bool::from(is_square));
     assert!(v == expected || (-v) == expected);
