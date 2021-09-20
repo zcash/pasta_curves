@@ -2,9 +2,12 @@
 //! groups.
 
 use core::cmp;
-use core::fmt::Debug;
+use core::fmt;
 use core::iter::Sum;
 use core::ops::{Add, Mul, Neg, Sub};
+
+#[cfg(feature = "std")]
+use std::boxed::Box;
 
 use ff::{Field, PrimeField};
 use group::{
@@ -16,6 +19,8 @@ use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use super::{Fp, Fq};
+
+#[cfg(feature = "std")]
 use crate::arithmetic::{Coordinates, CurveAffine, CurveExt, FieldExt, Group};
 
 macro_rules! new_curve_impl {
@@ -48,8 +53,8 @@ macro_rules! new_curve_impl {
             infinity: Choice,
         }
 
-        impl std::fmt::Debug for $name_affine {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        impl fmt::Debug for $name_affine {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
                 if self.infinity.into() {
                     write!(f, "Infinity")
                 } else {
@@ -97,6 +102,7 @@ macro_rules! new_curve_impl {
             }
         }
 
+        #[cfg(feature = "std")]
         impl group::WnafGroup for $name {
             fn recommended_wnaf_for_num_scalars(num_scalars: usize) -> usize {
                 // Copied from bls12_381::g1, should be updated.
@@ -116,6 +122,7 @@ macro_rules! new_curve_impl {
             }
         }
 
+        #[cfg(feature = "std")]
         impl CurveExt for $name {
             type ScalarExt = $scalar;
             type Base = $base;
@@ -687,6 +694,7 @@ macro_rules! new_curve_impl {
             }
         }
 
+        #[cfg(feature = "std")]
         impl CurveAffine for $name_affine {
             type ScalarExt = $scalar;
             type Base = $base;
@@ -770,6 +778,7 @@ macro_rules! new_curve_impl {
         impl_binops_multiplicative!($name, $scalar);
         impl_binops_multiplicative_mixed!($name_affine, $scalar, $name);
 
+        #[cfg(feature = "std")]
         impl Group for $name {
             type Scalar = $scalar;
 
@@ -870,6 +879,7 @@ macro_rules! impl_projective_curve_specific {
     };
 }
 
+#[cfg(feature = "std")]
 macro_rules! impl_projective_curve_ext {
     ($name:ident, $iso:ident, $base:ident, special_a0_b5) => {
         fn hash_to_curve<'a>(domain_prefix: &'a str) -> Box<dyn Fn(&[u8]) -> Self + 'a> {

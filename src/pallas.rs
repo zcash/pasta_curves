@@ -14,6 +14,7 @@ pub type Point = Ep;
 /// A Pallas point in the affine coordinate space (or the point at infinity).
 pub type Affine = EpAffine;
 
+#[cfg(feature = "std")]
 #[test]
 #[allow(clippy::many_single_char_names)]
 fn test_iso_map() {
@@ -64,6 +65,7 @@ fn test_iso_map() {
     assert!(p2 == p.double());
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn test_iso_map_identity() {
     use crate::arithmetic::CurveExt;
@@ -98,6 +100,7 @@ fn test_iso_map_identity() {
     assert!(bool::from(p.is_identity()));
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn test_map_to_curve_simple_swu() {
     use crate::arithmetic::CurveExt;
@@ -132,6 +135,7 @@ fn test_map_to_curve_simple_swu() {
     );
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn test_hash_to_curve() {
     use crate::arithmetic::CurveExt;

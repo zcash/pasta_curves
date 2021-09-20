@@ -1,5 +1,6 @@
 //! Implementation of the Pallas / Vesta curve cycle.
 
+#![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(unknown_lints)]
 #![allow(clippy::op_ref, clippy::same_item_push, clippy::upper_case_acronyms)]
@@ -8,21 +9,28 @@
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 
+#[cfg(any(feature = "std", test))]
+#[macro_use]
+extern crate std;
+
 #[macro_use]
 mod macros;
 mod curves;
 mod fields;
 
 pub mod arithmetic;
-mod hashtocurve;
 pub mod pallas;
 pub mod vesta;
+
+#[cfg(feature = "std")]
+mod hashtocurve;
 
 pub use curves::*;
 pub use fields::*;
 
 pub extern crate group;
 
+#[cfg(feature = "std")]
 #[test]
 fn test_endo_consistency() {
     use crate::arithmetic::{CurveExt, FieldExt};

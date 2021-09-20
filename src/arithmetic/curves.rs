@@ -1,18 +1,29 @@
 //! This module contains the `Curve`/`CurveAffine` abstractions that allow us to
 //! write code that generalizes over a pair of groups.
 
-use core::cmp;
-use core::ops::{Add, Mul, Sub};
+#[cfg(feature = "std")]
 use group::prime::{PrimeCurve, PrimeCurveAffine};
+#[cfg(feature = "std")]
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
+#[cfg(feature = "std")]
 use super::{FieldExt, Group};
 
-use std::io::{self, Read, Write};
+#[cfg(feature = "std")]
+use std::{
+    boxed::Box,
+    cmp,
+    io::{self, Read, Write},
+    ops::{Add, Mul, Sub},
+};
 
 /// This trait is a common interface for dealing with elements of an elliptic
 /// curve group in a "projective" form, where that arithmetic is usually more
 /// efficient.
+///
+/// Currently requires the `std` feature flag because of `hash_to_curve`, and
+/// `CurveAffine::{read, write}`.
+#[cfg(feature = "std")]
 pub trait CurveExt:
     PrimeCurve<Affine = <Self as CurveExt>::AffineExt>
     + group::Group<Scalar = <Self as CurveExt>::ScalarExt>
@@ -81,6 +92,7 @@ pub trait CurveExt:
 
 /// This trait is the affine counterpart to `Curve` and is used for
 /// serialization, storage in memory, and inspection of $x$ and $y$ coordinates.
+#[cfg(feature = "std")]
 pub trait CurveAffine:
     PrimeCurveAffine<
         Scalar = <Self as CurveAffine>::ScalarExt,
@@ -135,12 +147,14 @@ pub trait CurveAffine:
 }
 
 /// The affine coordinates of a point on an elliptic curve.
+#[cfg(feature = "std")]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Coordinates<C: CurveAffine> {
     pub(crate) x: C::Base,
     pub(crate) y: C::Base,
 }
 
+#[cfg(feature = "std")]
 impl<C: CurveAffine> Coordinates<C> {
     /// Returns the x-coordinate.
     ///
@@ -171,6 +185,7 @@ impl<C: CurveAffine> Coordinates<C> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<C: CurveAffine> ConditionallySelectable for Coordinates<C> {
     fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
         Coordinates {
