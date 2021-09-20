@@ -12,7 +12,6 @@ use super::{FieldExt, Group};
 #[cfg(feature = "std")]
 use std::{
     boxed::Box,
-    cmp,
     io::{self, Read, Write},
     ops::{Add, Mul, Sub},
 };
@@ -28,8 +27,6 @@ pub trait CurveExt:
     PrimeCurve<Affine = <Self as CurveExt>::AffineExt>
     + group::Group<Scalar = <Self as CurveExt>::ScalarExt>
     + Default
-    + PartialEq
-    + cmp::Eq
     + ConditionallySelectable
     + ConstantTimeEq
     + From<<Self as PrimeCurve>::Affine>
