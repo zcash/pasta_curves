@@ -8,6 +8,7 @@ and this project adheres to Rust's notion of
 ## [Unreleased]
 ### Removed
 - `pasta_curves::arithmetic`:
+  - `Field` re-export (`pasta_curves::group::ff::Field` is equivalent).
   - `FieldExt::ROOT_OF_UNITY` (use `ff::PrimeField::root_of_unity` instead).
 
 ## [0.2.1] - 2021-09-17
