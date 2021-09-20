@@ -4,20 +4,16 @@
 use core::mem::size_of;
 
 use static_assertions::const_assert;
-use subtle::{Choice, CtOption};
+use subtle::Choice;
+
+#[cfg(not(feature = "std"))]
+use subtle::CtOption;
 
 #[cfg(feature = "std")]
 use super::Group;
 
 #[cfg(feature = "std")]
-use std::{
-    assert,
-    boxed::Box,
-    convert::TryInto,
-    io::{self, Read, Write},
-    marker::PhantomData,
-    vec::Vec,
-};
+use std::{assert, boxed::Box, convert::TryInto, marker::PhantomData, vec::Vec};
 
 const_assert!(size_of::<usize>() >= 4);
 
@@ -84,29 +80,6 @@ pub trait FieldExt: SqrtRatio + From<bool> + Ord + Group<Scalar = Self> {
 
     /// Obtains a field element congruent to the integer `v`.
     fn from_u128(v: u128) -> Self;
-
-    /// Converts this field element to its normalized, little endian byte
-    /// representation.
-    fn to_bytes(&self) -> [u8; 32];
-
-    /// Writes this element in its normalized, little endian form into a buffer.
-    fn write<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        let compressed = self.to_bytes();
-        writer.write_all(&compressed[..])
-    }
-
-    /// Attempts to obtain a field element from its normalized, little endian
-    /// byte representation.
-    fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self>;
-
-    /// Reads a normalized, little endian represented field element from a
-    /// buffer.
-    fn read<R: Read>(reader: &mut R) -> io::Result<Self> {
-        let mut compressed = [0u8; 32];
-        reader.read_exact(&mut compressed[..])?;
-        Option::from(Self::from_bytes(&compressed))
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "invalid point encoding in proof"))
-    }
 
     /// Obtains a field element that is congruent to the provided little endian
     /// byte representation of an integer.

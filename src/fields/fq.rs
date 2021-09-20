@@ -627,7 +627,7 @@ impl PrimeFieldBits for Fq {
     type ReprBits = ReprBits;
 
     fn to_le_bits(&self) -> FieldBits<Self::ReprBits> {
-        let bytes = self.to_bytes();
+        let bytes = self.to_repr();
 
         #[cfg(not(target_pointer_width = "64"))]
         let limbs = [
@@ -739,14 +739,6 @@ impl FieldExt for Fq {
 
     fn from_u128(v: u128) -> Self {
         Fq::from_raw([v as u64, (v >> 64) as u64, 0, 0])
-    }
-
-    fn from_bytes(bytes: &[u8; 32]) -> CtOption<Fq> {
-        <Self as ff::PrimeField>::from_repr(*bytes)
-    }
-
-    fn to_bytes(&self) -> [u8; 32] {
-        <Self as ff::PrimeField>::to_repr(self)
     }
 
     /// Converts a 512-bit little endian integer into

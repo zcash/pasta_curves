@@ -19,6 +19,8 @@ and this project adheres to Rust's notion of
     (moved to `SqrtRatio` trait).
   - `FieldExt::{RESCUE_ALPHA, RESCUE_INVALPHA}`
   - `FieldExt::from_u64` (use `From<u64> for ff::PrimeField` instead).
+  - `FieldExt::{from_bytes, read, to_bytes, write}`
+    (use `ff::PrimeField::{from_repr, to_repr}` instead).
 
 ## [0.2.1] - 2021-09-17
 ### Changed
