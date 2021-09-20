@@ -673,7 +673,6 @@ lazy_static! {
 impl FieldExt for Fp {
     const MODULUS: &'static str =
         "0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001";
-    const ROOT_OF_UNITY: Self = ROOT_OF_UNITY;
     const ROOT_OF_UNITY_INV: Self = Fp::from_raw([
         0xf0b87c7db2ce91f6,
         0x84a0a1d8859f066f,
@@ -854,8 +853,8 @@ fn test_sqrt_ratio_and_alt() {
     assert!(v_alt == v);
 
     // (false, sqrt(ROOT_OF_UNITY * num/div)), if num and div are nonzero and num/div is a nonsquare in the field
-    let num = num * Fp::ROOT_OF_UNITY;
-    let expected = Fp::TWO_INV * Fp::ROOT_OF_UNITY * Fp::from_u64(5).invert().unwrap();
+    let num = num * Fp::root_of_unity();
+    let expected = Fp::TWO_INV * Fp::root_of_unity() * Fp::from_u64(5).invert().unwrap();
     let (is_square, v) = Fp::sqrt_ratio(&num, &div);
     assert!(!bool::from(is_square));
     assert!(v == expected || (-v) == expected);
@@ -904,7 +903,7 @@ fn test_zeta() {
 #[test]
 fn test_root_of_unity() {
     assert_eq!(
-        Fp::ROOT_OF_UNITY.pow_vartime(&[1 << Fp::S, 0, 0, 0]),
+        Fp::root_of_unity().pow_vartime(&[1 << Fp::S, 0, 0, 0]),
         Fp::one()
     );
 }
@@ -912,7 +911,7 @@ fn test_root_of_unity() {
 #[cfg(feature = "std")]
 #[test]
 fn test_inv_root_of_unity() {
-    assert_eq!(Fp::ROOT_OF_UNITY_INV, Fp::ROOT_OF_UNITY.invert().unwrap());
+    assert_eq!(Fp::ROOT_OF_UNITY_INV, Fp::root_of_unity().invert().unwrap());
 }
 
 #[cfg(feature = "std")]

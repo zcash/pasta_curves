@@ -28,10 +28,7 @@ pub trait FieldExt: ff::PrimeField + From<bool> + Ord + Group<Scalar = Self> {
     /// Modulus of the field written as a string for display purposes
     const MODULUS: &'static str;
 
-    /// Generator of the $2^S$ multiplicative subgroup
-    const ROOT_OF_UNITY: Self;
-
-    /// Inverse of `ROOT_OF_UNITY`
+    /// Inverse of `PrimeField::root_of_unity()`
     const ROOT_OF_UNITY_INV: Self;
 
     /// The value $(T-1)/2$ such that $2^S \cdot T = p - 1$ with $T$ odd.
@@ -233,7 +230,7 @@ impl<F: FieldExt> SqrtTables<F> {
             marker: PhantomData,
         };
 
-        let mut gtab = (0..4).scan(F::ROOT_OF_UNITY, |gi, _| {
+        let mut gtab = (0..4).scan(F::root_of_unity(), |gi, _| {
             // gi == ROOT_OF_UNITY^(256^i)
             let gtab_i: Vec<F> = (0..256)
                 .scan(F::one(), |acc, _| {
@@ -331,7 +328,7 @@ impl<F: FieldExt> SqrtTables<F> {
 
         let sqdiv = res.square() * div;
         let is_square = (sqdiv - num).is_zero();
-        let is_nonsquare = (sqdiv - F::ROOT_OF_UNITY * num).is_zero();
+        let is_nonsquare = (sqdiv - F::root_of_unity() * num).is_zero();
         assert!(bool::from(
             num.is_zero() | div.is_zero() | (is_square ^ is_nonsquare)
         ));
@@ -348,7 +345,7 @@ impl<F: FieldExt> SqrtTables<F> {
 
         let sq = res.square();
         let is_square = (sq - u).is_zero();
-        let is_nonsquare = (sq - F::ROOT_OF_UNITY * u).is_zero();
+        let is_nonsquare = (sq - F::root_of_unity() * u).is_zero();
         assert!(bool::from(u.is_zero() | (is_square ^ is_nonsquare)));
 
         (is_square, res)

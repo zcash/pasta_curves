@@ -1100,7 +1100,7 @@ impl Ep {
         0x4000000000000000,
     ]);
 
-    /// `(F::ROOT_OF_UNITY.invert().unwrap() * z).sqrt().unwrap()`
+    /// `(F::root_of_unity().invert().unwrap() * z).sqrt().unwrap()`
     pub const THETA: Fp = Fp::from_raw([
         0xca330bcc09ac318e,
         0x51f64fc4dc888857,
@@ -1200,7 +1200,7 @@ impl Eq {
         0x4000000000000000,
     ]);
 
-    /// `(F::ROOT_OF_UNITY.invert().unwrap() * z).sqrt().unwrap()`
+    /// `(F::root_of_unity().invert().unwrap() * z).sqrt().unwrap()`
     pub const THETA: Fq = Fq::from_raw([
         0x632cae9872df1b5d,
         0x38578ccadf03ac27,

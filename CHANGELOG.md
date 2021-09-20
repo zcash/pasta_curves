@@ -6,6 +6,9 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Removed
+- `pasta_curves::arithmetic`:
+  - `FieldExt::ROOT_OF_UNITY` (use `ff::PrimeField::root_of_unity` instead).
 
 ## [0.2.1] - 2021-09-17
 ### Changed
