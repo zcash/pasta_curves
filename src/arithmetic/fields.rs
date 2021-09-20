@@ -74,13 +74,6 @@ pub trait FieldExt: SqrtRatio + From<bool> + Ord + Group<Scalar = Self> {
     /// Inverse of $2$ in the field.
     const TWO_INV: Self;
 
-    /// Ideally the smallest prime $\alpha$ such that gcd($p - 1$, $\alpha$) = $1$
-    const RESCUE_ALPHA: u64;
-
-    /// $RESCUE_INVALPHA \cdot RESCUE_ALPHA = 1 \mod p - 1$ such that
-    /// `(a^RESCUE_ALPHA)^RESCUE_INVALPHA = a`.
-    const RESCUE_INVALPHA: [u64; 4];
-
     /// Element of multiplicative order $3$.
     const ZETA: Self;
 

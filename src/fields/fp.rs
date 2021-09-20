@@ -730,13 +730,6 @@ impl FieldExt for Fp {
         0x0000000000000000,
         0x2000000000000000,
     ]);
-    const RESCUE_ALPHA: u64 = 5;
-    const RESCUE_INVALPHA: [u64; 4] = [
-        0xe0f0f3f0cccccccd,
-        0x4e9ee0c9a10a60e2,
-        0x3333333333333333,
-        0x3333333333333333,
-    ];
     const ZETA: Self = Fp::from_raw([
         0x1dad5ebdfdfe4ab9,
         0x1d1f8bd237ad3149,
@@ -805,18 +798,6 @@ fn test_inv() {
     inv = inv.wrapping_neg();
 
     assert_eq!(inv, INV);
-}
-
-#[cfg(feature = "std")]
-#[test]
-fn test_rescue() {
-    // NB: TWO_INV is standing in as a "random" field element
-    assert_eq!(
-        Fp::TWO_INV
-            .pow_vartime(&[Fp::RESCUE_ALPHA, 0, 0, 0])
-            .pow_vartime(&Fp::RESCUE_INVALPHA),
-        Fp::TWO_INV
-    );
 }
 
 #[cfg(feature = "std")]

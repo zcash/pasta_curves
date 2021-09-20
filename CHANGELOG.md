@@ -17,6 +17,7 @@ and this project adheres to Rust's notion of
   - `FieldExt::ROOT_OF_UNITY` (use `ff::PrimeField::root_of_unity` instead).
   - `FieldExt::{T_MINUS1_OVER2, pow_by_t_minus1_over2, sqrt_alt, sqrt_ratio}`
     (moved to `SqrtRatio` trait).
+  - `FieldExt::{RESCUE_ALPHA, RESCUE_INVALPHA}`
 
 ## [0.2.1] - 2021-09-17
 ### Changed
