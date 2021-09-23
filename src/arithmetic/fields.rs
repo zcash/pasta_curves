@@ -2,20 +2,28 @@
 //! code that generalizes over a pair of fields.
 
 use core::mem::size_of;
+
 use static_assertions::const_assert;
-use std::assert;
-use std::convert::TryInto;
-use std::marker::PhantomData;
 use subtle::{Choice, CtOption};
 
+#[cfg(feature = "std")]
 use super::Group;
 
-use std::io::{self, Read, Write};
+#[cfg(feature = "std")]
+use std::{
+    assert,
+    boxed::Box,
+    convert::TryInto,
+    io::{self, Read, Write},
+    marker::PhantomData,
+    vec::Vec,
+};
 
 const_assert!(size_of::<usize>() >= 4);
 
 /// This trait is a common interface for dealing with elements of a finite
 /// field.
+#[cfg(feature = "std")]
 pub trait FieldExt: ff::PrimeField + From<bool> + Ord + Group<Scalar = Self> {
     /// Modulus of the field written as a string for display purposes
     const MODULUS: &'static str;
@@ -130,7 +138,58 @@ pub trait FieldExt: ff::PrimeField + From<bool> + Ord + Group<Scalar = Self> {
     }
 }
 
+/// Tonelli–Shanks' square-root algorithm for `p mod 16 = 1`.
+///
+/// https://eprint.iacr.org/2012/685.pdf (page 12, algorithm 5)
+///
+/// `tm1d2` should be set to `(t - 1) // 2`, where `t = (modulus - 1) >> F::S`.
+#[cfg(not(feature = "std"))]
+pub(crate) fn sqrt_tonelli_shanks<F: ff::PrimeField, S: AsRef<[u64]>>(
+    f: &F,
+    tm1d2: S,
+) -> CtOption<F> {
+    use subtle::{ConditionallySelectable, ConstantTimeEq};
+
+    // w = self^((t - 1) // 2)
+    let w = f.pow_vartime(tm1d2);
+
+    let mut v = F::S;
+    let mut x = w * f;
+    let mut b = x * w;
+
+    // Initialize z as the 2^S root of unity.
+    let mut z = F::root_of_unity();
+
+    for max_v in (1..=F::S).rev() {
+        let mut k = 1;
+        let mut tmp = b.square();
+        let mut j_less_than_v: Choice = 1.into();
+
+        for j in 2..max_v {
+            let tmp_is_one = tmp.ct_eq(&F::one());
+            let squared = F::conditional_select(&tmp, &z, tmp_is_one).square();
+            tmp = F::conditional_select(&squared, &tmp, tmp_is_one);
+            let new_z = F::conditional_select(&z, &squared, tmp_is_one);
+            j_less_than_v &= !j.ct_eq(&v);
+            k = u32::conditional_select(&j, &k, tmp_is_one);
+            z = F::conditional_select(&z, &new_z, j_less_than_v);
+        }
+
+        let result = x * z;
+        x = F::conditional_select(&result, &x, b.ct_eq(&F::one()));
+        z = z.square();
+        b *= z;
+        v = k;
+    }
+
+    CtOption::new(
+        x,
+        (x * x).ct_eq(f), // Only return Some if it's the square root.
+    )
+}
+
 /// Parameters for a perfect hash function used in square root computation.
+#[cfg(feature = "std")]
 #[derive(Debug)]
 struct SqrtHasher<F: FieldExt> {
     hash_xor: u32,
@@ -138,6 +197,7 @@ struct SqrtHasher<F: FieldExt> {
     marker: PhantomData<F>,
 }
 
+#[cfg(feature = "std")]
 impl<F: FieldExt> SqrtHasher<F> {
     /// Returns a perfect hash of x for use with SqrtTables::inv.
     fn hash(&self, x: &F) -> usize {
@@ -150,6 +210,7 @@ impl<F: FieldExt> SqrtHasher<F> {
 }
 
 /// Tables used for square root computation.
+#[cfg(feature = "std")]
 #[derive(Debug)]
 pub struct SqrtTables<F: FieldExt> {
     hasher: SqrtHasher<F>,
@@ -160,9 +221,12 @@ pub struct SqrtTables<F: FieldExt> {
     g3: Box<[F; 129]>,
 }
 
+#[cfg(feature = "std")]
 impl<F: FieldExt> SqrtTables<F> {
     /// Build tables given parameters for the perfect hash.
     pub fn new(hash_xor: u32, hash_mod: usize) -> Self {
+        use std::vec;
+
         let hasher = SqrtHasher {
             hash_xor,
             hash_mod,

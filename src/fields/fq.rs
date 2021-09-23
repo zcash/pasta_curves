@@ -1,14 +1,21 @@
 use core::convert::TryInto;
 use core::fmt;
 use core::ops::{Add, Mul, Neg, Sub};
-use lazy_static::lazy_static;
+
+use ff::PrimeField;
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
+
+#[cfg(feature = "std")]
+use lazy_static::lazy_static;
 
 #[cfg(feature = "bits")]
 use ff::{FieldBits, PrimeFieldBits};
 
-use crate::arithmetic::{adc, mac, sbb, FieldExt, Group, SqrtTables};
+use crate::arithmetic::{adc, mac, sbb};
+
+#[cfg(feature = "std")]
+use crate::arithmetic::{FieldExt, Group, SqrtTables};
 
 /// This represents an element of $\mathbb{F}_q$ where
 ///
@@ -23,7 +30,7 @@ pub struct Fq(pub(crate) [u64; 4]);
 
 impl fmt::Debug for Fq {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let tmp = self.to_bytes();
+        let tmp = self.to_repr();
         write!(f, "0x")?;
         for &b in tmp.iter().rev() {
             write!(f, "{:02x}", b)?;
@@ -64,23 +71,23 @@ impl PartialEq for Fq {
     }
 }
 
-impl std::cmp::Ord for Fq {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let left = self.to_bytes();
-        let right = other.to_bytes();
+impl core::cmp::Ord for Fq {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        let left = self.to_repr();
+        let right = other.to_repr();
         left.iter()
             .zip(right.iter())
             .rev()
             .find_map(|(left_byte, right_byte)| match left_byte.cmp(right_byte) {
-                std::cmp::Ordering::Equal => None,
+                core::cmp::Ordering::Equal => None,
                 res => Some(res),
             })
-            .unwrap_or(std::cmp::Ordering::Equal)
+            .unwrap_or(core::cmp::Ordering::Equal)
     }
 }
 
-impl std::cmp::PartialOrd for Fq {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+impl core::cmp::PartialOrd for Fq {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
@@ -217,6 +224,7 @@ const ROOT_OF_UNITY: Fq = Fq::from_raw([
 /// GENERATOR^{2^s} where t * 2^s + 1 = q
 /// with t odd. In other words, this
 /// is a t root of unity.
+#[cfg(feature = "std")]
 const DELTA: Fq = Fq::from_raw([
     0x8494392472d1683c,
     0xe3ac3376541d1140,
@@ -437,16 +445,17 @@ impl Fq {
 
 impl From<Fq> for [u8; 32] {
     fn from(value: Fq) -> [u8; 32] {
-        value.to_bytes()
+        value.to_repr()
     }
 }
 
 impl<'a> From<&'a Fq> for [u8; 32] {
     fn from(value: &'a Fq) -> [u8; 32] {
-        value.to_bytes()
+        value.to_repr()
     }
 }
 
+#[cfg(feature = "std")]
 impl Group for Fq {
     type Scalar = Fq;
 
@@ -466,10 +475,16 @@ impl Group for Fq {
 
 impl ff::Field for Fq {
     fn random(mut rng: impl RngCore) -> Self {
-        let mut random_bytes = [0; 64];
-        rng.fill_bytes(&mut random_bytes[..]);
-
-        Self::from_bytes_wide(&random_bytes)
+        Self::from_u512([
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+        ])
     }
 
     fn zero() -> Self {
@@ -491,8 +506,22 @@ impl ff::Field for Fq {
 
     /// Computes the square root of this element, if it exists.
     fn sqrt(&self) -> CtOption<Self> {
-        let (is_square, res) = self.sqrt_alt();
-        CtOption::new(res, is_square)
+        #[cfg(feature = "std")]
+        {
+            let (is_square, res) = FQ_TABLES.sqrt_alt(self);
+            CtOption::new(res, is_square)
+        }
+
+        #[cfg(not(feature = "std"))]
+        crate::arithmetic::sqrt_tonelli_shanks(
+            self,
+            &[
+                0x04ca_546e_c623_7590,
+                0x0000_0000_1123_4c7e,
+                0x0000_0000_0000_0000,
+                0x0000_0000_2000_0000,
+            ],
+        )
     }
 
     /// Computes the multiplicative inverse of this element,
@@ -535,15 +564,47 @@ impl ff::PrimeField for Fq {
     const S: u32 = S;
 
     fn from_repr(repr: Self::Repr) -> CtOption<Self> {
-        Self::from_bytes(&repr)
+        let mut tmp = Fq([0, 0, 0, 0]);
+
+        tmp.0[0] = u64::from_le_bytes(repr[0..8].try_into().unwrap());
+        tmp.0[1] = u64::from_le_bytes(repr[8..16].try_into().unwrap());
+        tmp.0[2] = u64::from_le_bytes(repr[16..24].try_into().unwrap());
+        tmp.0[3] = u64::from_le_bytes(repr[24..32].try_into().unwrap());
+
+        // Try to subtract the modulus
+        let (_, borrow) = sbb(tmp.0[0], MODULUS.0[0], 0);
+        let (_, borrow) = sbb(tmp.0[1], MODULUS.0[1], borrow);
+        let (_, borrow) = sbb(tmp.0[2], MODULUS.0[2], borrow);
+        let (_, borrow) = sbb(tmp.0[3], MODULUS.0[3], borrow);
+
+        // If the element is smaller than MODULUS then the
+        // subtraction will underflow, producing a borrow value
+        // of 0xffff...ffff. Otherwise, it'll be zero.
+        let is_some = (borrow as u8) & 1;
+
+        // Convert to Montgomery form by computing
+        // (a.R^0 * R^2) / R = a.R
+        tmp *= &R2;
+
+        CtOption::new(tmp, Choice::from(is_some))
     }
 
     fn to_repr(&self) -> Self::Repr {
-        self.to_bytes()
+        // Turn into canonical form by computing
+        // (a.R) / R = a
+        let tmp = Fq::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+
+        let mut res = [0; 32];
+        res[0..8].copy_from_slice(&tmp.0[0].to_le_bytes());
+        res[8..16].copy_from_slice(&tmp.0[1].to_le_bytes());
+        res[16..24].copy_from_slice(&tmp.0[2].to_le_bytes());
+        res[24..32].copy_from_slice(&tmp.0[3].to_le_bytes());
+
+        res
     }
 
     fn is_odd(&self) -> Choice {
-        Choice::from(self.to_bytes()[0] & 1)
+        Choice::from(self.to_repr()[0] & 1)
     }
 
     fn multiplicative_generator() -> Self {
@@ -551,7 +612,7 @@ impl ff::PrimeField for Fq {
     }
 
     fn root_of_unity() -> Self {
-        Self::ROOT_OF_UNITY
+        ROOT_OF_UNITY
     }
 }
 
@@ -602,11 +663,13 @@ impl PrimeFieldBits for Fq {
     }
 }
 
+#[cfg(feature = "std")]
 lazy_static! {
     // The perfect hash parameters are found by `squareroottab.sage` in zcash/pasta.
     static ref FQ_TABLES: SqrtTables<Fq> = SqrtTables::new(0x116A9E, 1206);
 }
 
+#[cfg(feature = "std")]
 impl FieldExt for Fq {
     const MODULUS: &'static str =
         "0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001";
@@ -660,48 +723,12 @@ impl FieldExt for Fq {
         Fq::from_raw([v as u64, (v >> 64) as u64, 0, 0])
     }
 
-    /// Attempts to convert a little-endian byte representation of
-    /// a scalar into a `Fq`, failing if the input is not canonical.
     fn from_bytes(bytes: &[u8; 32]) -> CtOption<Fq> {
-        let mut tmp = Fq([0, 0, 0, 0]);
-
-        tmp.0[0] = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
-        tmp.0[1] = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
-        tmp.0[2] = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
-        tmp.0[3] = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
-
-        // Try to subtract the modulus
-        let (_, borrow) = sbb(tmp.0[0], MODULUS.0[0], 0);
-        let (_, borrow) = sbb(tmp.0[1], MODULUS.0[1], borrow);
-        let (_, borrow) = sbb(tmp.0[2], MODULUS.0[2], borrow);
-        let (_, borrow) = sbb(tmp.0[3], MODULUS.0[3], borrow);
-
-        // If the element is smaller than MODULUS then the
-        // subtraction will underflow, producing a borrow value
-        // of 0xffff...ffff. Otherwise, it'll be zero.
-        let is_some = (borrow as u8) & 1;
-
-        // Convert to Montgomery form by computing
-        // (a.R^0 * R^2) / R = a.R
-        tmp *= &R2;
-
-        CtOption::new(tmp, Choice::from(is_some))
+        <Self as ff::PrimeField>::from_repr(*bytes)
     }
 
-    /// Converts an element of `Fq` into a byte representation in
-    /// little-endian byte order.
     fn to_bytes(&self) -> [u8; 32] {
-        // Turn into canonical form by computing
-        // (a.R) / R = a
-        let tmp = Fq::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
-
-        let mut res = [0; 32];
-        res[0..8].copy_from_slice(&tmp.0[0].to_le_bytes());
-        res[8..16].copy_from_slice(&tmp.0[1].to_le_bytes());
-        res[16..24].copy_from_slice(&tmp.0[2].to_le_bytes());
-        res[24..32].copy_from_slice(&tmp.0[3].to_le_bytes());
-
-        res
+        <Self as ff::PrimeField>::to_repr(self)
     }
 
     /// Converts a 512-bit little endian integer into
@@ -764,8 +791,8 @@ impl FieldExt for Fq {
     }
 }
 
-#[cfg(test)]
-use ff::{Field, PrimeField};
+#[cfg(all(test, feature = "std"))]
+use ff::Field;
 
 #[test]
 fn test_inv() {
@@ -782,6 +809,7 @@ fn test_inv() {
     assert_eq!(inv, INV);
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn test_rescue() {
     // NB: TWO_INV is standing in as a "random" field element
@@ -793,6 +821,7 @@ fn test_rescue() {
     );
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn test_sqrt() {
     // NB: TWO_INV is standing in as a "random" field element
@@ -800,6 +829,7 @@ fn test_sqrt() {
     assert!(v == Fq::TWO_INV || (-v) == Fq::TWO_INV);
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn test_pow_by_t_minus1_over2() {
     // NB: TWO_INV is standing in as a "random" field element
@@ -807,6 +837,7 @@ fn test_pow_by_t_minus1_over2() {
     assert!(v == ff::Field::pow_vartime(&Fq::TWO_INV, &Fq::T_MINUS1_OVER2));
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn test_sqrt_ratio_and_alt() {
     // (true, sqrt(num/div)), if num and div are nonzero and num/div is a square in the field
@@ -853,6 +884,7 @@ fn test_sqrt_ratio_and_alt() {
     assert!(v == expected);
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn test_zeta() {
     assert_eq!(
@@ -867,6 +899,7 @@ fn test_zeta() {
     assert!(c == Fq::one());
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn test_root_of_unity() {
     assert_eq!(
@@ -875,16 +908,19 @@ fn test_root_of_unity() {
     );
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn test_inv_root_of_unity() {
     assert_eq!(Fq::ROOT_OF_UNITY_INV, Fq::ROOT_OF_UNITY.invert().unwrap());
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn test_inv_2() {
     assert_eq!(Fq::TWO_INV, Fq::from(2).invert().unwrap());
 }
 
+#[cfg(feature = "std")]
 #[test]
 fn test_delta() {
     assert_eq!(Fq::DELTA, GENERATOR.pow(&[1u64 << Fq::S, 0, 0, 0]));
