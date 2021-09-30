@@ -704,6 +704,13 @@ impl SqrtRatio for Fq {
         sqr(ss, 4) // st
     }
 
+    fn get_lower_32(&self) -> u32 {
+        // TODO: don't reduce, just hash the Montgomery form. (Requires rebuilding perfect hash table.)
+        let tmp = Fq::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+
+        tmp.0[0] as u32
+    }
+
     fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
         FQ_TABLES.sqrt_ratio(num, div)
     }
@@ -760,13 +767,6 @@ impl FieldExt for Fq {
         let tmp = Fq::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
 
         u128::from(tmp.0[0]) | (u128::from(tmp.0[1]) << 64)
-    }
-
-    fn get_lower_32(&self) -> u32 {
-        // TODO: don't reduce, just hash the Montgomery form. (Requires rebuilding perfect hash table.)
-        let tmp = Fq::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
-
-        tmp.0[0] as u32
     }
 }
 

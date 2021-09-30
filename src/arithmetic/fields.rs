@@ -31,6 +31,10 @@ pub trait SqrtRatio: ff::PrimeField {
         ff::Field::pow_vartime(&self, &Self::T_MINUS1_OVER2)
     }
 
+    /// Gets the lower 32 bits of this field element when expressed
+    /// canonically.
+    fn get_lower_32(&self) -> u32;
+
     /// Computes:
     ///
     /// - $(\textsf{true}, \sqrt{\textsf{num}/\textsf{div}})$, if $\textsf{num}$ and
@@ -103,10 +107,6 @@ pub trait FieldExt: SqrtRatio + From<bool> + Ord + Group<Scalar = Self> {
     /// Gets the lower 128 bits of this field element when expressed
     /// canonically.
     fn get_lower_128(&self) -> u128;
-
-    /// Gets the lower 32 bits of this field element when expressed
-    /// canonically.
-    fn get_lower_32(&self) -> u32;
 }
 
 /// Tonelli–Shanks' square-root algorithm for `p mod 16 = 1`.
