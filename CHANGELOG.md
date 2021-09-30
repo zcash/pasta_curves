@@ -6,6 +6,21 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `pasta_curves::arithmetic::SqrtRatio` trait, extending `ff::PrimeField` with
+  square roots of ratios. This trait is likely to be moved into the `ff` crate
+  in a future release (once we're satisfied with it).
+
+### Removed
+- `pasta_curves::arithmetic`:
+  - `Field` re-export (`pasta_curves::group::ff::Field` is equivalent).
+  - `FieldExt::ROOT_OF_UNITY` (use `ff::PrimeField::root_of_unity` instead).
+  - `FieldExt::{T_MINUS1_OVER2, pow_by_t_minus1_over2, get_lower_32, sqrt_alt,`
+    `sqrt_ratio}` (moved to `SqrtRatio` trait).
+  - `FieldExt::{RESCUE_ALPHA, RESCUE_INVALPHA}`
+  - `FieldExt::from_u64` (use `From<u64> for ff::PrimeField` instead).
+  - `FieldExt::{from_bytes, read, to_bytes, write}`
+    (use `ff::PrimeField::{from_repr, to_repr}` instead).
 
 ## [0.2.1] - 2021-09-17
 ### Changed

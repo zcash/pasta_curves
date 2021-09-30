@@ -171,11 +171,7 @@ pub fn map_to_curve_simple_swu<F: FieldExt, C: CurveExt<Base = F>, I: CurveExt<B
     let y = F::conditional_select(&y2, &y1, gx1_square);
 
     // 9. If sgn0(u) != sgn0(y), set y = -y
-    let y = F::conditional_select(
-        &(-y),
-        &y,
-        (u.get_lower_32() % 2).ct_eq(&(y.get_lower_32() % 2)),
-    );
+    let y = F::conditional_select(&(-y), &y, u.is_odd().ct_eq(&y.is_odd()));
 
     I::new_jacobian(num_x * div, y * div3, div).unwrap()
 }

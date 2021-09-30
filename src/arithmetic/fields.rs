@@ -4,38 +4,73 @@
 use core::mem::size_of;
 
 use static_assertions::const_assert;
-use subtle::{Choice, CtOption};
+use subtle::Choice;
+
+#[cfg(not(feature = "std"))]
+use subtle::CtOption;
 
 #[cfg(feature = "std")]
 use super::Group;
 
 #[cfg(feature = "std")]
-use std::{
-    assert,
-    boxed::Box,
-    convert::TryInto,
-    io::{self, Read, Write},
-    marker::PhantomData,
-    vec::Vec,
-};
+use std::{assert, boxed::Box, convert::TryInto, marker::PhantomData, vec::Vec};
 
 const_assert!(size_of::<usize>() >= 4);
+
+/// A trait that exposes additional operations related to calculating square roots of
+/// prime-order finite fields.
+#[cfg(feature = "std")]
+pub trait SqrtRatio: ff::PrimeField {
+    /// The value $(T-1)/2$ such that $2^S \cdot T = p - 1$ with $T$ odd.
+    const T_MINUS1_OVER2: [u64; 4];
+
+    /// Raise this field element to the power [`Self::T_MINUS1_OVER2`].
+    ///
+    /// Field implementations may override this to use an efficient addition chain.
+    fn pow_by_t_minus1_over2(&self) -> Self {
+        ff::Field::pow_vartime(&self, &Self::T_MINUS1_OVER2)
+    }
+
+    /// Gets the lower 32 bits of this field element when expressed
+    /// canonically.
+    fn get_lower_32(&self) -> u32;
+
+    /// Computes:
+    ///
+    /// - $(\textsf{true}, \sqrt{\textsf{num}/\textsf{div}})$, if $\textsf{num}$ and
+    ///   $\textsf{div}$ are nonzero and $\textsf{num}/\textsf{div}$ is a square in the
+    ///   field;
+    /// - $(\textsf{true}, 0)$, if $\textsf{num}$ is zero;
+    /// - $(\textsf{false}, 0)$, if $\textsf{num}$ is nonzero and $\textsf{div}$ is zero;
+    /// - $(\textsf{false}, \sqrt{G_S \cdot \textsf{num}/\textsf{div}})$, if
+    ///   $\textsf{num}$ and $\textsf{div}$ are nonzero and $\textsf{num}/\textsf{div}$ is
+    ///   a nonsquare in the field;
+    ///
+    /// where $G_S$ is a non-square.
+    ///
+    /// For `pasta_curves`, $G_S$ is currently [`ff::PrimeField::root_of_unity`], a
+    /// generator of the order $2^S$ subgroup. Users of this crate should not rely on this
+    /// generator being fixed; it may be changed in future crate versions to simplify the
+    /// implementation of the SSWU hash-to-curve algorithm.
+    ///
+    /// The choice of root from sqrt is unspecified.
+    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self);
+
+    /// Equivalent to `Self::sqrt_ratio(self, one())`.
+    fn sqrt_alt(&self) -> (Choice, Self) {
+        Self::sqrt_ratio(self, &Self::one())
+    }
+}
 
 /// This trait is a common interface for dealing with elements of a finite
 /// field.
 #[cfg(feature = "std")]
-pub trait FieldExt: ff::PrimeField + From<bool> + Ord + Group<Scalar = Self> {
+pub trait FieldExt: SqrtRatio + From<bool> + Ord + Group<Scalar = Self> {
     /// Modulus of the field written as a string for display purposes
     const MODULUS: &'static str;
 
-    /// Generator of the $2^S$ multiplicative subgroup
-    const ROOT_OF_UNITY: Self;
-
-    /// Inverse of `ROOT_OF_UNITY`
+    /// Inverse of `PrimeField::root_of_unity()`
     const ROOT_OF_UNITY_INV: Self;
-
-    /// The value $(T-1)/2$ such that $2^S \cdot T = p - 1$ with $T$ odd.
-    const T_MINUS1_OVER2: [u64; 4];
 
     /// Generator of the $t-order$ multiplicative subgroup
     const DELTA: Self;
@@ -43,32 +78,8 @@ pub trait FieldExt: ff::PrimeField + From<bool> + Ord + Group<Scalar = Self> {
     /// Inverse of $2$ in the field.
     const TWO_INV: Self;
 
-    /// Ideally the smallest prime $\alpha$ such that gcd($p - 1$, $\alpha$) = $1$
-    const RESCUE_ALPHA: u64;
-
-    /// $RESCUE_INVALPHA \cdot RESCUE_ALPHA = 1 \mod p - 1$ such that
-    /// `(a^RESCUE_ALPHA)^RESCUE_INVALPHA = a`.
-    const RESCUE_INVALPHA: [u64; 4];
-
     /// Element of multiplicative order $3$.
     const ZETA: Self;
-
-    /// Computes:
-    ///
-    /// * (true,  sqrt(num/div)),                 if num and div are nonzero and num/div is a square in the field;
-    /// * (true,  0),                             if num is zero;
-    /// * (false, 0),                             if num is nonzero and div is zero;
-    /// * (false, sqrt(ROOT_OF_UNITY * num/div)), if num and div are nonzero and num/div is a nonsquare in the field;
-    ///
-    /// where ROOT_OF_UNITY is a generator of the order 2^n subgroup (and therefore a nonsquare).
-    ///
-    /// The choice of root from sqrt is unspecified.
-    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self);
-
-    /// Equivalent to sqrt_ratio(self, one()).
-    fn sqrt_alt(&self) -> (Choice, Self) {
-        Self::sqrt_ratio(self, &Self::one())
-    }
 
     /// This computes a random element of the field using system randomness.
     fn rand() -> Self {
@@ -76,33 +87,7 @@ pub trait FieldExt: ff::PrimeField + From<bool> + Ord + Group<Scalar = Self> {
     }
 
     /// Obtains a field element congruent to the integer `v`.
-    fn from_u64(v: u64) -> Self;
-
-    /// Obtains a field element congruent to the integer `v`.
     fn from_u128(v: u128) -> Self;
-
-    /// Converts this field element to its normalized, little endian byte
-    /// representation.
-    fn to_bytes(&self) -> [u8; 32];
-
-    /// Writes this element in its normalized, little endian form into a buffer.
-    fn write<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        let compressed = self.to_bytes();
-        writer.write_all(&compressed[..])
-    }
-
-    /// Attempts to obtain a field element from its normalized, little endian
-    /// byte representation.
-    fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self>;
-
-    /// Reads a normalized, little endian represented field element from a
-    /// buffer.
-    fn read<R: Read>(reader: &mut R) -> io::Result<Self> {
-        let mut compressed = [0u8; 32];
-        reader.read_exact(&mut compressed[..])?;
-        Option::from(Self::from_bytes(&compressed))
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "invalid point encoding in proof"))
-    }
 
     /// Obtains a field element that is congruent to the provided little endian
     /// byte representation of an integer.
@@ -126,16 +111,6 @@ pub trait FieldExt: ff::PrimeField + From<bool> + Ord + Group<Scalar = Self> {
     /// Gets the lower 128 bits of this field element when expressed
     /// canonically.
     fn get_lower_128(&self) -> u128;
-
-    /// Gets the lower 32 bits of this field element when expressed
-    /// canonically.
-    fn get_lower_32(&self) -> u32;
-
-    /// Raise this field element to the power T_MINUS1_OVER2.
-    /// Field implementations may override this to use an efficient addition chain.
-    fn pow_by_t_minus1_over2(&self) -> Self {
-        ff::Field::pow_vartime(&self, &Self::T_MINUS1_OVER2)
-    }
 }
 
 /// Tonelli–Shanks' square-root algorithm for `p mod 16 = 1`.
@@ -233,7 +208,7 @@ impl<F: FieldExt> SqrtTables<F> {
             marker: PhantomData,
         };
 
-        let mut gtab = (0..4).scan(F::ROOT_OF_UNITY, |gi, _| {
+        let mut gtab = (0..4).scan(F::root_of_unity(), |gi, _| {
             // gi == ROOT_OF_UNITY^(256^i)
             let gtab_i: Vec<F> = (0..256)
                 .scan(F::one(), |acc, _| {
@@ -331,7 +306,7 @@ impl<F: FieldExt> SqrtTables<F> {
 
         let sqdiv = res.square() * div;
         let is_square = (sqdiv - num).is_zero();
-        let is_nonsquare = (sqdiv - F::ROOT_OF_UNITY * num).is_zero();
+        let is_nonsquare = (sqdiv - F::root_of_unity() * num).is_zero();
         assert!(bool::from(
             num.is_zero() | div.is_zero() | (is_square ^ is_nonsquare)
         ));
@@ -348,7 +323,7 @@ impl<F: FieldExt> SqrtTables<F> {
 
         let sq = res.square();
         let is_square = (sq - u).is_zero();
-        let is_nonsquare = (sq - F::ROOT_OF_UNITY * u).is_zero();
+        let is_nonsquare = (sq - F::root_of_unity() * u).is_zero();
         assert!(bool::from(u.is_zero() | (is_square ^ is_nonsquare)));
 
         (is_square, res)

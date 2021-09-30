@@ -15,7 +15,7 @@ use ff::{FieldBits, PrimeFieldBits};
 use crate::arithmetic::{adc, mac, sbb};
 
 #[cfg(feature = "std")]
-use crate::arithmetic::{FieldExt, Group, SqrtTables};
+use crate::arithmetic::{FieldExt, Group, SqrtRatio, SqrtTables};
 
 /// This represents an element of $\mathbb{F}_p$ where
 ///
@@ -231,6 +231,14 @@ const DELTA: Fp = Fp::from_raw([
     0xbd455b7112a5049d,
     0x0a757d0f0006ab6c,
 ]);
+
+/// `(t - 1) // 2` where t * 2^s + 1 = p with t odd.
+const T_MINUS1_OVER2: [u64; 4] = [
+    0x04a6_7c8d_cc96_9876,
+    0x0000_0000_1123_4c7e,
+    0x0000_0000_0000_0000,
+    0x0000_0000_2000_0000,
+];
 
 impl Default for Fp {
     #[inline]
@@ -513,15 +521,7 @@ impl ff::Field for Fp {
         }
 
         #[cfg(not(feature = "std"))]
-        crate::arithmetic::sqrt_tonelli_shanks(
-            self,
-            &[
-                0x04a6_7c8d_cc96_9876,
-                0x0000_0000_1123_4c7e,
-                0x0000_0000_0000_0000,
-                0x0000_0000_2000_0000,
-            ],
-        )
+        crate::arithmetic::sqrt_tonelli_shanks(self, &T_MINUS1_OVER2)
     }
 
     /// Computes the multiplicative inverse of this element,
@@ -627,7 +627,7 @@ impl PrimeFieldBits for Fp {
     type ReprBits = ReprBits;
 
     fn to_le_bits(&self) -> FieldBits<Self::ReprBits> {
-        let bytes = self.to_bytes();
+        let bytes = self.to_repr();
 
         #[cfg(not(target_pointer_width = "64"))]
         let limbs = [
@@ -670,94 +670,8 @@ lazy_static! {
 }
 
 #[cfg(feature = "std")]
-impl FieldExt for Fp {
-    const MODULUS: &'static str =
-        "0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001";
-    const ROOT_OF_UNITY: Self = ROOT_OF_UNITY;
-    const ROOT_OF_UNITY_INV: Self = Fp::from_raw([
-        0xf0b87c7db2ce91f6,
-        0x84a0a1d8859f066f,
-        0xb4ed8e647196dad1,
-        0x2cd5282c53116b5c,
-    ]);
-    const T_MINUS1_OVER2: [u64; 4] = [
-        0x04a67c8dcc969876,
-        0x0000000011234c7e,
-        0x0000000000000000,
-        0x20000000,
-    ];
-    const DELTA: Self = DELTA;
-    const TWO_INV: Self = Fp::from_raw([
-        0xcc96987680000001,
-        0x11234c7e04a67c8d,
-        0x0000000000000000,
-        0x2000000000000000,
-    ]);
-    const RESCUE_ALPHA: u64 = 5;
-    const RESCUE_INVALPHA: [u64; 4] = [
-        0xe0f0f3f0cccccccd,
-        0x4e9ee0c9a10a60e2,
-        0x3333333333333333,
-        0x3333333333333333,
-    ];
-    const ZETA: Self = Fp::from_raw([
-        0x1dad5ebdfdfe4ab9,
-        0x1d1f8bd237ad3149,
-        0x2caad5dc57aab1b0,
-        0x12ccca834acdba71,
-    ]);
-
-    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
-        FP_TABLES.sqrt_ratio(num, div)
-    }
-
-    fn sqrt_alt(&self) -> (Choice, Self) {
-        FP_TABLES.sqrt_alt(self)
-    }
-
-    fn from_u64(v: u64) -> Self {
-        Fp::from_raw([v as u64, 0, 0, 0])
-    }
-
-    fn from_u128(v: u128) -> Self {
-        Fp::from_raw([v as u64, (v >> 64) as u64, 0, 0])
-    }
-
-    fn from_bytes(bytes: &[u8; 32]) -> CtOption<Fp> {
-        <Self as ff::PrimeField>::from_repr(*bytes)
-    }
-
-    fn to_bytes(&self) -> [u8; 32] {
-        <Self as ff::PrimeField>::to_repr(self)
-    }
-
-    /// Converts a 512-bit little endian integer into
-    /// a `Fp` by reducing by the modulus.
-    fn from_bytes_wide(bytes: &[u8; 64]) -> Fp {
-        Fp::from_u512([
-            u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
-            u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
-            u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
-            u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-            u64::from_le_bytes(bytes[32..40].try_into().unwrap()),
-            u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
-            u64::from_le_bytes(bytes[48..56].try_into().unwrap()),
-            u64::from_le_bytes(bytes[56..64].try_into().unwrap()),
-        ])
-    }
-
-    fn get_lower_128(&self) -> u128 {
-        let tmp = Fp::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
-
-        u128::from(tmp.0[0]) | (u128::from(tmp.0[1]) << 64)
-    }
-
-    fn get_lower_32(&self) -> u32 {
-        // TODO: don't reduce, just hash the Montgomery form. (Requires rebuilding perfect hash table.)
-        let tmp = Fp::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
-
-        tmp.0[0] as u32
-    }
+impl SqrtRatio for Fp {
+    const T_MINUS1_OVER2: [u64; 4] = T_MINUS1_OVER2;
 
     fn pow_by_t_minus1_over2(&self) -> Self {
         let sqr = |x: Fp, i: u32| (0..i).fold(x, |x, _| x.square());
@@ -789,6 +703,71 @@ impl FieldExt for Fp {
         let rs = sqr(rr, 3) * r11;
         rs.square() // rt
     }
+
+    fn get_lower_32(&self) -> u32 {
+        // TODO: don't reduce, just hash the Montgomery form. (Requires rebuilding perfect hash table.)
+        let tmp = Fp::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+
+        tmp.0[0] as u32
+    }
+
+    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
+        FP_TABLES.sqrt_ratio(num, div)
+    }
+
+    fn sqrt_alt(&self) -> (Choice, Self) {
+        FP_TABLES.sqrt_alt(self)
+    }
+}
+
+#[cfg(feature = "std")]
+impl FieldExt for Fp {
+    const MODULUS: &'static str =
+        "0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001";
+    const ROOT_OF_UNITY_INV: Self = Fp::from_raw([
+        0xf0b87c7db2ce91f6,
+        0x84a0a1d8859f066f,
+        0xb4ed8e647196dad1,
+        0x2cd5282c53116b5c,
+    ]);
+    const DELTA: Self = DELTA;
+    const TWO_INV: Self = Fp::from_raw([
+        0xcc96987680000001,
+        0x11234c7e04a67c8d,
+        0x0000000000000000,
+        0x2000000000000000,
+    ]);
+    const ZETA: Self = Fp::from_raw([
+        0x1dad5ebdfdfe4ab9,
+        0x1d1f8bd237ad3149,
+        0x2caad5dc57aab1b0,
+        0x12ccca834acdba71,
+    ]);
+
+    fn from_u128(v: u128) -> Self {
+        Fp::from_raw([v as u64, (v >> 64) as u64, 0, 0])
+    }
+
+    /// Converts a 512-bit little endian integer into
+    /// a `Fp` by reducing by the modulus.
+    fn from_bytes_wide(bytes: &[u8; 64]) -> Fp {
+        Fp::from_u512([
+            u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
+            u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
+            u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
+            u64::from_le_bytes(bytes[32..40].try_into().unwrap()),
+            u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
+            u64::from_le_bytes(bytes[48..56].try_into().unwrap()),
+            u64::from_le_bytes(bytes[56..64].try_into().unwrap()),
+        ])
+    }
+
+    fn get_lower_128(&self) -> u128 {
+        let tmp = Fp::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+
+        u128::from(tmp.0[0]) | (u128::from(tmp.0[1]) << 64)
+    }
 }
 
 #[cfg(all(test, feature = "std"))]
@@ -811,18 +790,6 @@ fn test_inv() {
 
 #[cfg(feature = "std")]
 #[test]
-fn test_rescue() {
-    // NB: TWO_INV is standing in as a "random" field element
-    assert_eq!(
-        Fp::TWO_INV
-            .pow_vartime(&[Fp::RESCUE_ALPHA, 0, 0, 0])
-            .pow_vartime(&Fp::RESCUE_INVALPHA),
-        Fp::TWO_INV
-    );
-}
-
-#[cfg(feature = "std")]
-#[test]
 fn test_sqrt() {
     // NB: TWO_INV is standing in as a "random" field element
     let v = (Fp::TWO_INV).square().sqrt().unwrap();
@@ -834,7 +801,7 @@ fn test_sqrt() {
 fn test_pow_by_t_minus1_over2() {
     // NB: TWO_INV is standing in as a "random" field element
     let v = (Fp::TWO_INV).pow_by_t_minus1_over2();
-    assert!(v == ff::Field::pow_vartime(&Fp::TWO_INV, &Fp::T_MINUS1_OVER2));
+    assert!(v == ff::Field::pow_vartime(&Fp::TWO_INV, &T_MINUS1_OVER2));
 }
 
 #[cfg(feature = "std")]
@@ -842,9 +809,9 @@ fn test_pow_by_t_minus1_over2() {
 fn test_sqrt_ratio_and_alt() {
     // (true, sqrt(num/div)), if num and div are nonzero and num/div is a square in the field
     let num = (Fp::TWO_INV).square();
-    let div = Fp::from_u64(25);
+    let div = Fp::from(25);
     let div_inverse = div.invert().unwrap();
-    let expected = Fp::TWO_INV * Fp::from_u64(5).invert().unwrap();
+    let expected = Fp::TWO_INV * Fp::from(5).invert().unwrap();
     let (is_square, v) = Fp::sqrt_ratio(&num, &div);
     assert!(bool::from(is_square));
     assert!(v == expected || (-v) == expected);
@@ -854,8 +821,8 @@ fn test_sqrt_ratio_and_alt() {
     assert!(v_alt == v);
 
     // (false, sqrt(ROOT_OF_UNITY * num/div)), if num and div are nonzero and num/div is a nonsquare in the field
-    let num = num * Fp::ROOT_OF_UNITY;
-    let expected = Fp::TWO_INV * Fp::ROOT_OF_UNITY * Fp::from_u64(5).invert().unwrap();
+    let num = num * Fp::root_of_unity();
+    let expected = Fp::TWO_INV * Fp::root_of_unity() * Fp::from(5).invert().unwrap();
     let (is_square, v) = Fp::sqrt_ratio(&num, &div);
     assert!(!bool::from(is_square));
     assert!(v == expected || (-v) == expected);
@@ -904,7 +871,7 @@ fn test_zeta() {
 #[test]
 fn test_root_of_unity() {
     assert_eq!(
-        Fp::ROOT_OF_UNITY.pow_vartime(&[1 << Fp::S, 0, 0, 0]),
+        Fp::root_of_unity().pow_vartime(&[1 << Fp::S, 0, 0, 0]),
         Fp::one()
     );
 }
@@ -912,7 +879,7 @@ fn test_root_of_unity() {
 #[cfg(feature = "std")]
 #[test]
 fn test_inv_root_of_unity() {
-    assert_eq!(Fp::ROOT_OF_UNITY_INV, Fp::ROOT_OF_UNITY.invert().unwrap());
+    assert_eq!(Fp::ROOT_OF_UNITY_INV, Fp::root_of_unity().invert().unwrap());
 }
 
 #[cfg(feature = "std")]
