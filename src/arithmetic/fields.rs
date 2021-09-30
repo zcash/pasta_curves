@@ -46,8 +46,12 @@ pub trait SqrtRatio: ff::PrimeField {
     ///   $\textsf{num}$ and $\textsf{div}$ are nonzero and $\textsf{num}/\textsf{div}$ is
     ///   a nonsquare in the field;
     ///
-    /// where $G_S$ ([`ff::PrimeField::root_of_unity`]) is a generator of the order $2^S$
-    /// subgroup (and therefore a nonsquare).
+    /// where $G_S$ is a non-square.
+    ///
+    /// For `pasta_curves`, $G_S$ is currently [`ff::PrimeField::root_of_unity`], a
+    /// generator of the order $2^S$ subgroup. Users of this crate should not rely on this
+    /// generator being fixed; it may be changed in future crate versions to simplify the
+    /// implementation of the SSWU hash-to-curve algorithm.
     ///
     /// The choice of root from sqrt is unspecified.
     fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self);
