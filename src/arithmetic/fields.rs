@@ -9,7 +9,6 @@ use subtle::Choice;
 #[cfg(not(feature = "std"))]
 use subtle::CtOption;
 
-#[cfg(feature = "std")]
 use super::Group;
 
 #[cfg(feature = "std")]
@@ -19,7 +18,6 @@ const_assert!(size_of::<usize>() >= 4);
 
 /// A trait that exposes additional operations related to calculating square roots of
 /// prime-order finite fields.
-#[cfg(feature = "std")]
 pub trait SqrtRatio: ff::PrimeField {
     /// The value $(T-1)/2$ such that $2^S \cdot T = p - 1$ with $T$ odd.
     const T_MINUS1_OVER2: [u64; 4];
@@ -64,7 +62,6 @@ pub trait SqrtRatio: ff::PrimeField {
 
 /// This trait is a common interface for dealing with elements of a finite
 /// field.
-#[cfg(feature = "std")]
 pub trait FieldExt: SqrtRatio + From<bool> + Ord + Group<Scalar = Self> {
     /// Modulus of the field written as a string for display purposes
     const MODULUS: &'static str;
