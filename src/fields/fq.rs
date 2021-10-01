@@ -728,6 +728,9 @@ impl SqrtRatio for Fq {
 
         tmp.0[0] as u32
     }
+
+    // TODO: use squareness test from Tonelli-Shanks algorithm
+    // for more effective implementation of sqrt_ratio
 }
 
 impl FieldExt for Fq {

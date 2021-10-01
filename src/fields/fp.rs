@@ -730,6 +730,9 @@ impl SqrtRatio for Fp {
 
         tmp.0[0] as u32
     }
+
+    // TODO: use squareness test from Tonelli-Shanks algorithm
+    // for more effective implementation of sqrt_ratio
 }
 
 impl FieldExt for Fp {
@@ -827,7 +830,7 @@ fn test_sqrt_ratio_and_alt() {
     let (is_square_alt, v_alt) = Fp::sqrt_alt(&(num * div_inverse));
     assert!(bool::from(is_square_alt));
     assert!(v_alt == v);
-    /*
+
     // (false, sqrt(ROOT_OF_UNITY * num/div)), if num and div are nonzero and num/div is a nonsquare in the field
     let num = num * Fp::root_of_unity();
     let expected = Fp::TWO_INV * Fp::root_of_unity() * Fp::from(5).invert().unwrap();
@@ -837,7 +840,7 @@ fn test_sqrt_ratio_and_alt() {
 
     let (is_square_alt, v_alt) = Fp::sqrt_alt(&(num * div_inverse));
     assert!(!bool::from(is_square_alt));
-    assert!(v_alt == v);*/
+    assert!(v_alt == v);
 
     // (true, 0), if num is zero
     let num = Fp::zero();
