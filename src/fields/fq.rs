@@ -15,8 +15,8 @@ use ff::{FieldBits, PrimeFieldBits};
 use crate::arithmetic::{adc, mac, sbb};
 
 #[cfg(feature = "std")]
-use crate::arithmetic::{FieldExt, Group, SqrtRatio, SqrtTables};
-
+use crate::arithmetic::SqrtTables;
+use crate::arithmetic::{FieldExt, Group, SqrtRatio};
 /// This represents an element of $\mathbb{F}_q$ where
 ///
 /// `q = 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001`
@@ -224,7 +224,6 @@ const ROOT_OF_UNITY: Fq = Fq::from_raw([
 /// GENERATOR^{2^s} where t * 2^s + 1 = q
 /// with t odd. In other words, this
 /// is a t root of unity.
-#[cfg(feature = "std")]
 const DELTA: Fq = Fq::from_raw([
     0x8494392472d1683c,
     0xe3ac3376541d1140,
@@ -463,7 +462,6 @@ impl<'a> From<&'a Fq> for [u8; 32] {
     }
 }
 
-#[cfg(feature = "std")]
 impl Group for Fq {
     type Scalar = Fq;
 
@@ -720,7 +718,18 @@ impl SqrtRatio for Fq {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(not(feature = "std"))]
+impl SqrtRatio for Fq {
+    const T_MINUS1_OVER2: [u64; 4] = T_MINUS1_OVER2;
+
+    fn get_lower_32(&self) -> u32 {
+        // TODO: don't reduce, just hash the Montgomery form. (Requires rebuilding perfect hash table.)
+        let tmp = Fq::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+
+        tmp.0[0] as u32
+    }
+}
+
 impl FieldExt for Fq {
     const MODULUS: &'static str =
         "0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001";
@@ -770,7 +779,7 @@ impl FieldExt for Fq {
     }
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 use ff::Field;
 
 #[test]
@@ -788,7 +797,6 @@ fn test_inv() {
     assert_eq!(inv, INV);
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn test_sqrt() {
     // NB: TWO_INV is standing in as a "random" field element
@@ -796,7 +804,6 @@ fn test_sqrt() {
     assert!(v == Fq::TWO_INV || (-v) == Fq::TWO_INV);
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn test_pow_by_t_minus1_over2() {
     // NB: TWO_INV is standing in as a "random" field element
@@ -804,7 +811,6 @@ fn test_pow_by_t_minus1_over2() {
     assert!(v == ff::Field::pow_vartime(&Fq::TWO_INV, &T_MINUS1_OVER2));
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn test_sqrt_ratio_and_alt() {
     // (true, sqrt(num/div)), if num and div are nonzero and num/div is a square in the field
@@ -851,7 +857,6 @@ fn test_sqrt_ratio_and_alt() {
     assert!(v == expected);
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn test_zeta() {
     assert_eq!(
@@ -866,7 +871,6 @@ fn test_zeta() {
     assert!(c == Fq::one());
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn test_root_of_unity() {
     assert_eq!(
@@ -875,19 +879,16 @@ fn test_root_of_unity() {
     );
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn test_inv_root_of_unity() {
     assert_eq!(Fq::ROOT_OF_UNITY_INV, Fq::root_of_unity().invert().unwrap());
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn test_inv_2() {
     assert_eq!(Fq::TWO_INV, Fq::from(2).invert().unwrap());
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn test_delta() {
     assert_eq!(Fq::DELTA, GENERATOR.pow(&[1u64 << Fq::S, 0, 0, 0]));
