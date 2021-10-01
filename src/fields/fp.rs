@@ -730,31 +730,27 @@ impl SqrtRatio for Fp {
 
         tmp.0[0] as u32
     }
-    /// - $(\textsf{true}, \sqrt{\textsf{num}/\textsf{div}})$, if $\textsf{num}$ and
-    ///   $\textsf{div}$ are nonzero and $\textsf{num}/\textsf{div}$ is a square in the
-    ///   field;
-    /// - $(\textsf{true}, 0)$, if $\textsf{num}$ is zero;
-    /// - $(\textsf{false}, 0)$, if $\textsf{num}$ is nonzero and $\textsf{div}$ is zero;
-    /// - $(\textsf{false}, \sqrt{G_S \cdot \textsf{num}/\textsf{div}})$, if
-    ///   $\textsf{num}$ and $\textsf{div}$ are nonzero and $\textsf{num}/\textsf{div}$ is
-    ///   a nonsquare in the field;
+
     fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
         use ff::Field;
-        if (num.is_zero() | div.is_zero()).into() {
-            return (!div.is_zero(), Self::zero());
-        }
 
-        let div_inv = (*div).invert().unwrap();
-        let x = (*num) * div_inv;
-        let y = x * Self::root_of_unity();
+        //invert div
+        let div_inv = (*div).invert().unwrap_or(Self::zero());
 
+        let x = (*num) * div_inv; // x = num/div
+        let y = x * Self::root_of_unity(); // y = lambda*num/div
+
+        // Either x is square or y is square
         let x_sqrt = x.sqrt();
         let y_sqrt = y.sqrt();
-
         let x_is_sqrt = x_sqrt.is_some();
         let sqrt = CtOption::conditional_select(&y_sqrt, &x_sqrt, x_is_sqrt);
 
-        (x_is_sqrt, sqrt.unwrap())
+        if (num.is_zero() | div.is_zero()).into() {
+            (!div.is_zero(), Self::zero()) // special cases
+        } else {
+            (x_is_sqrt, sqrt.unwrap())
+        }
     }
 }
 
