@@ -80,7 +80,13 @@ pub trait FieldExt: SqrtRatio + From<bool> + Ord + Group<Scalar = Self> {
 
     /// This computes a random element of the field using system randomness.
     fn rand() -> Self {
-        Self::random(rand::rngs::OsRng)
+        #[cfg(feature = "std")]
+        {
+            Self::random(rand::rngs::OsRng)
+        }
+
+        #[cfg(not(feature = "std"))]
+        unimplemented!()
     }
 
     /// Obtains a field element congruent to the integer `v`.
