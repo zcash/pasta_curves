@@ -22,7 +22,6 @@ pub mod arithmetic;
 pub mod pallas;
 pub mod vesta;
 
-#[cfg(feature = "std")]
 mod hashtocurve;
 
 pub use curves::*;
@@ -30,7 +29,6 @@ pub use fields::*;
 
 pub extern crate group;
 
-#[cfg(feature = "std")]
 #[test]
 fn test_endo_consistency() {
     use crate::arithmetic::{CurveExt, FieldExt};

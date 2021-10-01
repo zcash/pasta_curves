@@ -1,20 +1,17 @@
 //! This module contains the `Curve`/`CurveAffine` abstractions that allow us to
 //! write code that generalizes over a pair of groups.
 
-#[cfg(feature = "std")]
 use group::prime::{PrimeCurve, PrimeCurveAffine};
-#[cfg(feature = "std")]
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
-#[cfg(feature = "std")]
 use super::{FieldExt, Group};
 
+use core::ops::{Add, Mul, Sub};
+
 #[cfg(feature = "std")]
-use std::{
-    boxed::Box,
-    io::{self, Read, Write},
-    ops::{Add, Mul, Sub},
-};
+use std::boxed::Box;
+//#[cfg(feature = "std")]
+//use std::io::{self, Read, Write};
 
 /// This trait is a common interface for dealing with elements of an elliptic
 /// curve group in a "projective" form, where that arithmetic is usually more
@@ -22,7 +19,6 @@ use std::{
 ///
 /// Currently requires the `std` feature flag because of `hash_to_curve`, and
 /// `CurveAffine::{read, write}`.
-#[cfg(feature = "std")]
 pub trait CurveExt:
     PrimeCurve<Affine = <Self as CurveExt>::AffineExt>
     + group::Group<Scalar = <Self as CurveExt>::ScalarExt>
@@ -70,7 +66,26 @@ pub trait CurveExt:
     ///     (g * x + &(h * r)).to_affine()
     /// }
     /// ```
+    #[cfg(features = "std")]
     fn hash_to_curve<'a>(domain_prefix: &'a str) -> Box<dyn Fn(&[u8]) -> Self + 'a>;
+
+    /// Unboxed version of hash_to_curve.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use pasta_curves::arithmetic::CurveExt;
+    /// fn pedersen_commitment<C: CurveExt>(
+    ///     x: C::ScalarExt,
+    ///     r: C::ScalarExt,
+    /// ) -> C::Affine {
+    ///     let dst = "z.cash:example_pedersen_commitment";
+    ///     let g = C::unboxed_hash_to_curve(dst, b"g");
+    ///     let h = C::unboxed_hash_to_curve(dst, b"h");
+    ///     (g * x + &(h * r)).to_affine()
+    /// }
+    /// ```
+    fn unboxed_hash_to_curve(domain_prefix: &str, message: &[u8]) -> Self;
 
     /// Returns whether or not this element is on the curve; should
     /// always be true unless an "unchecked" API was used.
@@ -89,7 +104,6 @@ pub trait CurveExt:
 
 /// This trait is the affine counterpart to `Curve` and is used for
 /// serialization, storage in memory, and inspection of $x$ and $y$ coordinates.
-#[cfg(feature = "std")]
 pub trait CurveAffine:
     PrimeCurveAffine<
         Scalar = <Self as CurveAffine>::ScalarExt,
@@ -121,20 +135,21 @@ pub trait CurveAffine:
     /// always be true unless an "unchecked" API was used.
     fn is_on_curve(&self) -> Choice;
 
+    // TODO: move to TryFrom trait
     /// Reads a compressed element from the buffer and attempts to parse it
     /// using `from_bytes`.
-    fn read<R: Read>(reader: &mut R) -> io::Result<Self> {
+    /*fn read<R: Read>(reader: &mut R) -> io::Result<Self> {
         let mut compressed = Self::Repr::default();
         reader.read_exact(compressed.as_mut())?;
         Option::from(Self::from_bytes(&compressed))
             .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "invalid point encoding in proof"))
-    }
-
+    }*/
+    // TODO: move to another trait
     /// Writes an element in compressed form to the buffer.
-    fn write<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+    /*fn write<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         let compressed = self.to_bytes();
         writer.write_all(compressed.as_ref())
-    }
+    }*/
 
     /// Returns the curve constant $a$.
     fn a() -> Self::Base;
@@ -144,14 +159,12 @@ pub trait CurveAffine:
 }
 
 /// The affine coordinates of a point on an elliptic curve.
-#[cfg(feature = "std")]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Coordinates<C: CurveAffine> {
     pub(crate) x: C::Base,
     pub(crate) y: C::Base,
 }
 
-#[cfg(feature = "std")]
 impl<C: CurveAffine> Coordinates<C> {
     /// Returns the x-coordinate.
     ///
@@ -182,7 +195,6 @@ impl<C: CurveAffine> Coordinates<C> {
     }
 }
 
-#[cfg(feature = "std")]
 impl<C: CurveAffine> ConditionallySelectable for Coordinates<C> {
     fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
         Coordinates {

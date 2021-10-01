@@ -14,7 +14,6 @@ pub type Point = Ep;
 /// A Pallas point in the affine coordinate space (or the point at infinity).
 pub type Affine = EpAffine;
 
-#[cfg(feature = "std")]
 #[test]
 #[allow(clippy::many_single_char_names)]
 fn test_iso_map() {
@@ -65,7 +64,6 @@ fn test_iso_map() {
     assert!(p2 == p.double());
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn test_iso_map_identity() {
     use crate::arithmetic::CurveExt;
@@ -100,7 +98,6 @@ fn test_iso_map_identity() {
     assert!(bool::from(p.is_identity()));
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn test_map_to_curve_simple_swu() {
     use crate::arithmetic::CurveExt;
@@ -145,6 +142,32 @@ fn test_hash_to_curve() {
     // "branch" and the second takes the gx1 non-square "branch" (opposite to the Vesta test vector).
     let hash = Point::hash_to_curve("z.cash:test");
     let p: Point = hash(b"Trans rights now!");
+    let (x, y, z) = p.jacobian_coordinates();
+
+    assert!(
+        format!("{:?}", x) == "0x36a6e3a9c50b7b6540cb002c977c82f37f8a875fb51eb35327ee1452e6ce7947"
+    );
+    assert!(
+        format!("{:?}", y) == "0x01da3b4403d73252f2d7e9c19bc23dc6a080f2d02f8262fca4f7e3d756ac6a7c"
+    );
+    assert!(
+        format!("{:?}", z) == "0x1d48103df8fcbb70d1809c1806c95651dd884a559fec0549658537ce9d94bed9"
+    );
+    assert!(bool::from(p.is_on_curve()));
+
+    let p = (p * -Fq::one()) + p;
+    assert!(bool::from(p.is_on_curve()));
+    assert!(bool::from(p.is_identity()));
+}
+
+#[test]
+fn test_unboxed_hash_to_curve() {
+    use crate::arithmetic::CurveExt;
+    use group::Group;
+
+    // This test vector is chosen so that the first map_to_curve_simple_swu takes the gx1 square
+    // "branch" and the second takes the gx1 non-square "branch" (opposite to the Vesta test vector).
+    let p = Point::unboxed_hash_to_curve("z.cash:test", b"Trans rights now!");
     let (x, y, z) = p.jacobian_coordinates();
 
     assert!(

@@ -20,7 +20,6 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use super::{Fp, Fq};
 
-#[cfg(feature = "std")]
 use crate::arithmetic::{Coordinates, CurveAffine, CurveExt, FieldExt, Group};
 
 macro_rules! new_curve_impl {
@@ -102,8 +101,8 @@ macro_rules! new_curve_impl {
             }
         }
 
-        #[cfg(feature = "std")]
-        impl group::WnafGroup for $name {
+        // TODO: cannot find trait `WnafGroup` in crate `group` ???
+        /*impl group::WnafGroup for $name {
             fn recommended_wnaf_for_num_scalars(num_scalars: usize) -> usize {
                 // Copied from bls12_381::g1, should be updated.
                 const RECOMMENDATIONS: [usize; 12] =
@@ -120,9 +119,8 @@ macro_rules! new_curve_impl {
 
                 ret
             }
-        }
+        }*/
 
-        #[cfg(feature = "std")]
         impl CurveExt for $name {
             type ScalarExt = $scalar;
             type Base = $base;
@@ -694,7 +692,6 @@ macro_rules! new_curve_impl {
             }
         }
 
-        #[cfg(feature = "std")]
         impl CurveAffine for $name_affine {
             type ScalarExt = $scalar;
             type Base = $base;
@@ -778,7 +775,6 @@ macro_rules! new_curve_impl {
         impl_binops_multiplicative!($name, $scalar);
         impl_binops_multiplicative_mixed!($name_affine, $scalar, $name);
 
-        #[cfg(feature = "std")]
         impl Group for $name {
             type Scalar = $scalar;
 
@@ -879,29 +875,31 @@ macro_rules! impl_projective_curve_specific {
     };
 }
 
-#[cfg(feature = "std")]
 macro_rules! impl_projective_curve_ext {
     ($name:ident, $iso:ident, $base:ident, special_a0_b5) => {
-        fn hash_to_curve<'a>(domain_prefix: &'a str) -> Box<dyn Fn(&[u8]) -> Self + 'a> {
+        fn unboxed_hash_to_curve(domain_prefix: &str, message: &[u8]) -> Self {
             use super::hashtocurve;
 
-            Box::new(move |message| {
-                let mut us = [Field::zero(); 2];
-                hashtocurve::hash_to_field($name::CURVE_ID, domain_prefix, message, &mut us);
-                let q0 = hashtocurve::map_to_curve_simple_swu::<$base, $name, $iso>(
-                    &us[0],
-                    $name::THETA,
-                    $name::Z,
-                );
-                let q1 = hashtocurve::map_to_curve_simple_swu::<$base, $name, $iso>(
-                    &us[1],
-                    $name::THETA,
-                    $name::Z,
-                );
-                let r = q0 + &q1;
-                debug_assert!(bool::from(r.is_on_curve()));
-                hashtocurve::iso_map::<$base, $name, $iso>(&r, &$name::ISOGENY_CONSTANTS)
-            })
+            let mut us = [Field::zero(); 2];
+            hashtocurve::hash_to_field($name::CURVE_ID, domain_prefix, message, &mut us);
+            let q0 = hashtocurve::map_to_curve_simple_swu::<$base, $name, $iso>(
+                &us[0],
+                $name::THETA,
+                $name::Z,
+            );
+            let q1 = hashtocurve::map_to_curve_simple_swu::<$base, $name, $iso>(
+                &us[1],
+                $name::THETA,
+                $name::Z,
+            );
+            let r = q0 + &q1;
+            debug_assert!(bool::from(r.is_on_curve()));
+            hashtocurve::iso_map::<$base, $name, $iso>(&r, &$name::ISOGENY_CONSTANTS)
+        }
+
+        #[cfg(features = "std")]
+        fn hash_to_curve<'a>(domain_prefix: &'a str) -> Box<dyn Fn(&[u8]) -> Self + 'a> {
+            Box::new(move |message| Self::unboxed_hash_to_curve(domain_prefix, message))
         }
 
         /// Apply the curve endomorphism by multiplying the x-coordinate
@@ -916,7 +914,11 @@ macro_rules! impl_projective_curve_ext {
     };
     ($name:ident, $iso:ident, $base:ident, general) => {
         /// Unimplemented: hashing to this curve is not supported
+        #[cfg(features = "std")]
         fn hash_to_curve<'a>(_domain_prefix: &'a str) -> Box<dyn Fn(&[u8]) -> Self + 'a> {
+            unimplemented!()
+        }
+        fn unboxed_hash_to_curve(domain_prefix: &str, message: &[u8]) -> Self {
             unimplemented!()
         }
 
