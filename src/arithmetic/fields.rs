@@ -4,10 +4,7 @@
 use core::mem::size_of;
 
 use static_assertions::const_assert;
-use subtle::Choice;
-
-#[cfg(not(feature = "std"))]
-use subtle::CtOption;
+use subtle::{Choice, ConditionallySelectable, CtOption};
 
 use super::Group;
 
@@ -52,7 +49,27 @@ pub trait SqrtRatio: ff::PrimeField {
     /// implementation of the SSWU hash-to-curve algorithm.
     ///
     /// The choice of root from sqrt is unspecified.
-    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self);
+    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
+        //generic implementation:
+
+        //invert div
+        let div_inv = (*div).invert().unwrap_or(Self::zero());
+
+        let x = (*num) * div_inv; // x = num/div
+        let y = x * Self::root_of_unity(); // y = lambda*num/div
+
+        // Either x is square or y is square
+        let x_sqrt = x.sqrt();
+        let y_sqrt = y.sqrt();
+        let x_is_sqrt = x_sqrt.is_some();
+        let sqrt = CtOption::conditional_select(&y_sqrt, &x_sqrt, x_is_sqrt);
+
+        if (num.is_zero() | div.is_zero()).into() {
+            (!div.is_zero(), Self::zero()) // special cases
+        } else {
+            (x_is_sqrt, sqrt.unwrap())
+        }
+    }
 
     /// Equivalent to `Self::sqrt_ratio(self, one())`.
     fn sqrt_alt(&self) -> (Choice, Self) {
@@ -126,7 +143,7 @@ pub(crate) fn sqrt_tonelli_shanks<F: ff::PrimeField, S: AsRef<[u64]>>(
     f: &F,
     tm1d2: S,
 ) -> CtOption<F> {
-    use subtle::{ConditionallySelectable, ConstantTimeEq};
+    use subtle::ConstantTimeEq;
 
     // w = self^((t - 1) // 2)
     let w = f.pow_vartime(tm1d2);

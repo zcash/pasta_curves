@@ -730,28 +730,6 @@ impl SqrtRatio for Fp {
 
         tmp.0[0] as u32
     }
-
-    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
-        use ff::Field;
-
-        //invert div
-        let div_inv = (*div).invert().unwrap_or(Self::zero());
-
-        let x = (*num) * div_inv; // x = num/div
-        let y = x * Self::root_of_unity(); // y = lambda*num/div
-
-        // Either x is square or y is square
-        let x_sqrt = x.sqrt();
-        let y_sqrt = y.sqrt();
-        let x_is_sqrt = x_sqrt.is_some();
-        let sqrt = CtOption::conditional_select(&y_sqrt, &x_sqrt, x_is_sqrt);
-
-        if (num.is_zero() | div.is_zero()).into() {
-            (!div.is_zero(), Self::zero()) // special cases
-        } else {
-            (x_is_sqrt, sqrt.unwrap())
-        }
-    }
 }
 
 impl FieldExt for Fp {
