@@ -918,7 +918,7 @@ macro_rules! impl_projective_curve_ext {
         fn hash_to_curve<'a>(_domain_prefix: &'a str) -> Box<dyn Fn(&[u8]) -> Self + 'a> {
             unimplemented!()
         }
-        fn unboxed_hash_to_curve(domain_prefix: &str, message: &[u8]) -> Self {
+        fn unboxed_hash_to_curve(_domain_prefix: &str, _message: &[u8]) -> Self {
             unimplemented!()
         }
 
