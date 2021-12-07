@@ -20,6 +20,7 @@ const_assert!(size_of::<usize>() >= 4);
 /// A trait that exposes additional operations related to calculating square roots of
 /// prime-order finite fields.
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub trait SqrtRatio: ff::PrimeField {
     /// The value $(T-1)/2$ such that $2^S \cdot T = p - 1$ with $T$ odd.
     const T_MINUS1_OVER2: [u64; 4];
@@ -65,6 +66,7 @@ pub trait SqrtRatio: ff::PrimeField {
 /// This trait is a common interface for dealing with elements of a finite
 /// field.
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub trait FieldExt: SqrtRatio + From<bool> + Ord + Group<Scalar = Self> {
     /// Modulus of the field written as a string for display purposes
     const MODULUS: &'static str;
@@ -119,6 +121,7 @@ pub trait FieldExt: SqrtRatio + From<bool> + Ord + Group<Scalar = Self> {
 ///
 /// `tm1d2` should be set to `(t - 1) // 2`, where `t = (modulus - 1) >> F::S`.
 #[cfg(not(feature = "std"))]
+#[cfg_attr(docsrs, doc(cfg(not(feature = "std"))))]
 pub(crate) fn sqrt_tonelli_shanks<F: ff::PrimeField, S: AsRef<[u64]>>(
     f: &F,
     tm1d2: S,
@@ -165,6 +168,7 @@ pub(crate) fn sqrt_tonelli_shanks<F: ff::PrimeField, S: AsRef<[u64]>>(
 
 /// Parameters for a perfect hash function used in square root computation.
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 #[derive(Debug)]
 struct SqrtHasher<F: FieldExt> {
     hash_xor: u32,
@@ -186,6 +190,7 @@ impl<F: FieldExt> SqrtHasher<F> {
 
 /// Tables used for square root computation.
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 #[derive(Debug)]
 pub struct SqrtTables<F: FieldExt> {
     hasher: SqrtHasher<F>,

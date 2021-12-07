@@ -225,6 +225,7 @@ const ROOT_OF_UNITY: Fq = Fq::from_raw([
 /// with t odd. In other words, this
 /// is a t root of unity.
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 const DELTA: Fq = Fq::from_raw([
     0x8494392472d1683c,
     0xe3ac3376541d1140,
@@ -464,6 +465,7 @@ impl<'a> From<&'a Fq> for [u8; 32] {
 }
 
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 impl Group for Fq {
     type Scalar = Fq;
 
@@ -666,10 +668,12 @@ impl PrimeFieldBits for Fq {
 #[cfg(feature = "std")]
 lazy_static! {
     // The perfect hash parameters are found by `squareroottab.sage` in zcash/pasta.
+    #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
     static ref FQ_TABLES: SqrtTables<Fq> = SqrtTables::new(0x116A9E, 1206);
 }
 
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 impl SqrtRatio for Fq {
     const T_MINUS1_OVER2: [u64; 4] = T_MINUS1_OVER2;
 
@@ -721,6 +725,7 @@ impl SqrtRatio for Fq {
 }
 
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 impl FieldExt for Fq {
     const MODULUS: &'static str =
         "0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001";

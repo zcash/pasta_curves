@@ -225,6 +225,7 @@ const ROOT_OF_UNITY: Fp = Fp::from_raw([
 /// with t odd. In other words, this
 /// is a t root of unity.
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 const DELTA: Fp = Fp::from_raw([
     0x6a6ccd20dd7b9ba2,
     0xf5e4f3f13eee5636,
@@ -464,6 +465,7 @@ impl<'a> From<&'a Fp> for [u8; 32] {
 }
 
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 impl Group for Fp {
     type Scalar = Fp;
 
@@ -623,6 +625,7 @@ type ReprBits = [u32; 8];
 type ReprBits = [u64; 4];
 
 #[cfg(feature = "bits")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bits")))]
 impl PrimeFieldBits for Fp {
     type ReprBits = ReprBits;
 
@@ -666,10 +669,12 @@ impl PrimeFieldBits for Fp {
 #[cfg(feature = "std")]
 lazy_static! {
     // The perfect hash parameters are found by `squareroottab.sage` in zcash/pasta.
+    #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
     static ref FP_TABLES: SqrtTables<Fp> = SqrtTables::new(0x11BE, 1098);
 }
 
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 impl SqrtRatio for Fp {
     const T_MINUS1_OVER2: [u64; 4] = T_MINUS1_OVER2;
 
@@ -721,6 +726,7 @@ impl SqrtRatio for Fp {
 }
 
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 impl FieldExt for Fp {
     const MODULUS: &'static str =
         "0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001";

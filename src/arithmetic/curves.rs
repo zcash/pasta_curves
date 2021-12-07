@@ -23,6 +23,7 @@ use std::{
 /// Currently requires the `std` feature flag because of `hash_to_curve`, and
 /// `CurveAffine::{read, write}`.
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub trait CurveExt:
     PrimeCurve<Affine = <Self as CurveExt>::AffineExt>
     + group::Group<Scalar = <Self as CurveExt>::ScalarExt>
@@ -90,6 +91,7 @@ pub trait CurveExt:
 /// This trait is the affine counterpart to `Curve` and is used for
 /// serialization, storage in memory, and inspection of $x$ and $y$ coordinates.
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub trait CurveAffine:
     PrimeCurveAffine<
         Scalar = <Self as CurveAffine>::ScalarExt,
@@ -145,6 +147,7 @@ pub trait CurveAffine:
 
 /// The affine coordinates of a point on an elliptic curve.
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Coordinates<C: CurveAffine> {
     pub(crate) x: C::Base,

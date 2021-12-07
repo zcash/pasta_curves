@@ -17,6 +17,7 @@ pub use fields::*;
 /// performed. This allows an FFT implementation (for example) to operate
 /// generically over either a field or elliptic curve group.
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub trait Group: Copy + Clone + Send + Sync + 'static {
     /// The group is assumed to be of prime order $p$. `Scalar` is the
     /// associated scalar field of size $p$.

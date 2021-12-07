@@ -103,6 +103,7 @@ macro_rules! new_curve_impl {
         }
 
         #[cfg(feature = "std")]
+        #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
         impl group::WnafGroup for $name {
             fn recommended_wnaf_for_num_scalars(num_scalars: usize) -> usize {
                 // Copied from bls12_381::g1, should be updated.
