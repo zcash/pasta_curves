@@ -112,11 +112,6 @@ pub trait FieldExt: SqrtRatio + From<bool> + Ord + Group<Scalar = Self> {
     /// Element of multiplicative order $3$.
     const ZETA: Self;
 
-    /// This computes a random element of the field using system randomness.
-    fn rand() -> Self {
-        Self::random(rand::rngs::OsRng)
-    }
-
     /// Obtains a field element congruent to the integer `v`.
     fn from_u128(v: u128) -> Self;
 
