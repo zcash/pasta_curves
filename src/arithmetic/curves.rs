@@ -12,7 +12,6 @@ use super::{FieldExt, Group};
 #[cfg(feature = "std")]
 use std::{
     boxed::Box,
-    io::{self, Read, Write},
     ops::{Add, Mul, Sub},
 };
 
@@ -122,21 +121,6 @@ pub trait CurveAffine:
     /// Returns whether or not this element is on the curve; should
     /// always be true unless an "unchecked" API was used.
     fn is_on_curve(&self) -> Choice;
-
-    /// Reads a compressed element from the buffer and attempts to parse it
-    /// using `from_bytes`.
-    fn read<R: Read>(reader: &mut R) -> io::Result<Self> {
-        let mut compressed = Self::Repr::default();
-        reader.read_exact(compressed.as_mut())?;
-        Option::from(Self::from_bytes(&compressed))
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "invalid point encoding in proof"))
-    }
-
-    /// Writes an element in compressed form to the buffer.
-    fn write<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        let compressed = self.to_bytes();
-        writer.write_all(compressed.as_ref())
-    }
 
     /// Returns the curve constant $a$.
     fn a() -> Self::Base;
