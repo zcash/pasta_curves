@@ -12,7 +12,7 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-#[cfg(any(feature = "std", test))]
+#[cfg(test)]
 #[macro_use]
 extern crate std;
 
@@ -25,7 +25,7 @@ pub mod arithmetic;
 pub mod pallas;
 pub mod vesta;
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod hashtocurve;
 
 pub use curves::*;
@@ -33,7 +33,7 @@ pub use fields::*;
 
 pub extern crate group;
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 #[test]
 fn test_endo_consistency() {
     use crate::arithmetic::{CurveExt, FieldExt};
