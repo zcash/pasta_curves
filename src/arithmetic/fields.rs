@@ -4,16 +4,16 @@
 use core::mem::size_of;
 
 use static_assertions::const_assert;
-use subtle::Choice;
-
-#[cfg(not(feature = "std"))]
-use subtle::CtOption;
+use subtle::{Choice, ConditionallySelectable, CtOption};
 
 #[cfg(feature = "std")]
 use super::Group;
 
 #[cfg(feature = "std")]
-use std::{assert, boxed::Box, convert::TryInto, marker::PhantomData, vec::Vec};
+use std::assert;
+
+#[cfg(feature = "sqrt-table")]
+use std::{boxed::Box, convert::TryInto, marker::PhantomData, vec::Vec};
 
 const_assert!(size_of::<usize>() >= 4);
 
@@ -55,7 +55,40 @@ pub trait SqrtRatio: ff::PrimeField {
     /// implementation of the SSWU hash-to-curve algorithm.
     ///
     /// The choice of root from sqrt is unspecified.
-    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self);
+    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
+        // General implementation:
+        //
+        // a = num * inv0(div)
+        //   = {    0    if div is zero
+        //     { num/div otherwise
+        //
+        // b = G_S * a
+        //   = {      0      if div is zero
+        //     { G_S*num/div otherwise
+        //
+        // Since G_S is non-square, a and b are either both zero (and both square), or
+        // only one them is square. We can therefore choose the square root to return
+        // based on whether a is square, but for the boolean output we need to handle the
+        // num != 0 && div == 0 case specifically.
+
+        let a = div.invert().unwrap_or_else(Self::zero) * num;
+        let b = a * Self::root_of_unity();
+        let sqrt_a = a.sqrt();
+        let sqrt_b = b.sqrt();
+
+        let num_is_zero = num.is_zero();
+        let div_is_zero = div.is_zero();
+        let is_square = sqrt_a.is_some();
+        let is_nonsquare = sqrt_b.is_some();
+        assert!(bool::from(
+            num_is_zero | div_is_zero | (is_square ^ is_nonsquare)
+        ));
+
+        (
+            is_square & !(!num_is_zero & div_is_zero),
+            CtOption::conditional_select(&sqrt_b, &sqrt_a, is_square).unwrap(),
+        )
+    }
 
     /// Equivalent to `Self::sqrt_ratio(self, one())`.
     fn sqrt_alt(&self) -> (Choice, Self) {
@@ -120,13 +153,13 @@ pub trait FieldExt: SqrtRatio + From<bool> + Ord + Group<Scalar = Self> {
 /// https://eprint.iacr.org/2012/685.pdf (page 12, algorithm 5)
 ///
 /// `tm1d2` should be set to `(t - 1) // 2`, where `t = (modulus - 1) >> F::S`.
-#[cfg(not(feature = "std"))]
-#[cfg_attr(docsrs, doc(cfg(not(feature = "std"))))]
+#[cfg(not(feature = "sqrt-table"))]
+#[cfg_attr(docsrs, doc(cfg(not(feature = "sqrt-table"))))]
 pub(crate) fn sqrt_tonelli_shanks<F: ff::PrimeField, S: AsRef<[u64]>>(
     f: &F,
     tm1d2: S,
 ) -> CtOption<F> {
-    use subtle::{ConditionallySelectable, ConstantTimeEq};
+    use subtle::ConstantTimeEq;
 
     // w = self^((t - 1) // 2)
     let w = f.pow_vartime(tm1d2);
@@ -167,8 +200,8 @@ pub(crate) fn sqrt_tonelli_shanks<F: ff::PrimeField, S: AsRef<[u64]>>(
 }
 
 /// Parameters for a perfect hash function used in square root computation.
-#[cfg(feature = "std")]
-#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+#[cfg(feature = "sqrt-table")]
+#[cfg_attr(docsrs, doc(cfg(feature = "sqrt-table")))]
 #[derive(Debug)]
 struct SqrtHasher<F: FieldExt> {
     hash_xor: u32,
@@ -176,7 +209,7 @@ struct SqrtHasher<F: FieldExt> {
     marker: PhantomData<F>,
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "sqrt-table")]
 impl<F: FieldExt> SqrtHasher<F> {
     /// Returns a perfect hash of x for use with SqrtTables::inv.
     fn hash(&self, x: &F) -> usize {
@@ -189,8 +222,8 @@ impl<F: FieldExt> SqrtHasher<F> {
 }
 
 /// Tables used for square root computation.
-#[cfg(feature = "std")]
-#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+#[cfg(feature = "sqrt-table")]
+#[cfg_attr(docsrs, doc(cfg(feature = "sqrt-table")))]
 #[derive(Debug)]
 pub struct SqrtTables<F: FieldExt> {
     hasher: SqrtHasher<F>,
@@ -201,7 +234,7 @@ pub struct SqrtTables<F: FieldExt> {
     g3: Box<[F; 129]>,
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "sqrt-table")]
 impl<F: FieldExt> SqrtTables<F> {
     /// Build tables given parameters for the perfect hash.
     pub fn new(hash_xor: u32, hash_mod: usize) -> Self {

@@ -6,7 +6,7 @@ use ff::PrimeField;
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
-#[cfg(feature = "std")]
+#[cfg(feature = "sqrt-table")]
 use lazy_static::lazy_static;
 
 #[cfg(feature = "bits")]
@@ -15,7 +15,10 @@ use ff::{FieldBits, PrimeFieldBits};
 use crate::arithmetic::{adc, mac, sbb};
 
 #[cfg(feature = "std")]
-use crate::arithmetic::{FieldExt, Group, SqrtRatio, SqrtTables};
+use crate::arithmetic::{FieldExt, Group, SqrtRatio};
+
+#[cfg(feature = "sqrt-table")]
+use crate::arithmetic::SqrtTables;
 
 /// This represents an element of $\mathbb{F}_q$ where
 ///
@@ -516,13 +519,13 @@ impl ff::Field for Fq {
 
     /// Computes the square root of this element, if it exists.
     fn sqrt(&self) -> CtOption<Self> {
-        #[cfg(feature = "std")]
+        #[cfg(feature = "sqrt-table")]
         {
             let (is_square, res) = FQ_TABLES.sqrt_alt(self);
             CtOption::new(res, is_square)
         }
 
-        #[cfg(not(feature = "std"))]
+        #[cfg(not(feature = "sqrt-table"))]
         crate::arithmetic::sqrt_tonelli_shanks(self, &T_MINUS1_OVER2)
     }
 
@@ -665,10 +668,10 @@ impl PrimeFieldBits for Fq {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "sqrt-table")]
 lazy_static! {
     // The perfect hash parameters are found by `squareroottab.sage` in zcash/pasta.
-    #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "sqrt-table")))]
     static ref FQ_TABLES: SqrtTables<Fq> = SqrtTables::new(0x116A9E, 1206);
 }
 
@@ -715,10 +718,12 @@ impl SqrtRatio for Fq {
         tmp.0[0] as u32
     }
 
+    #[cfg(feature = "sqrt-table")]
     fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
         FQ_TABLES.sqrt_ratio(num, div)
     }
 
+    #[cfg(feature = "sqrt-table")]
     fn sqrt_alt(&self) -> (Choice, Self) {
         FQ_TABLES.sqrt_alt(self)
     }
