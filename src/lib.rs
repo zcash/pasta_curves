@@ -9,6 +9,9 @@
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
 #[cfg(any(feature = "std", test))]
 #[macro_use]
 extern crate std;

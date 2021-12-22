@@ -6,21 +6,19 @@ use core::mem::size_of;
 use static_assertions::const_assert;
 use subtle::{Choice, ConditionallySelectable, CtOption};
 
-#[cfg(feature = "std")]
 use super::Group;
 
-#[cfg(feature = "std")]
-use std::assert;
+use core::assert;
 
 #[cfg(feature = "sqrt-table")]
-use std::{boxed::Box, convert::TryInto, marker::PhantomData, vec::Vec};
+use alloc::{boxed::Box, vec::Vec};
+#[cfg(feature = "sqrt-table")]
+use core::{convert::TryInto, marker::PhantomData};
 
 const_assert!(size_of::<usize>() >= 4);
 
 /// A trait that exposes additional operations related to calculating square roots of
 /// prime-order finite fields.
-#[cfg(feature = "std")]
-#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub trait SqrtRatio: ff::PrimeField {
     /// The value $(T-1)/2$ such that $2^S \cdot T = p - 1$ with $T$ odd.
     const T_MINUS1_OVER2: [u64; 4];
@@ -98,8 +96,6 @@ pub trait SqrtRatio: ff::PrimeField {
 
 /// This trait is a common interface for dealing with elements of a finite
 /// field.
-#[cfg(feature = "std")]
-#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub trait FieldExt: SqrtRatio + From<bool> + Ord + Group<Scalar = Self> {
     /// Modulus of the field written as a string for display purposes
     const MODULUS: &'static str;
@@ -238,7 +234,7 @@ pub struct SqrtTables<F: FieldExt> {
 impl<F: FieldExt> SqrtTables<F> {
     /// Build tables given parameters for the perfect hash.
     pub fn new(hash_xor: u32, hash_mod: usize) -> Self {
-        use std::vec;
+        use alloc::vec;
 
         let hasher = SqrtHasher {
             hash_xor,
