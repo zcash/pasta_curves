@@ -65,7 +65,7 @@ pub trait SqrtRatio: ff::PrimeField {
         //     { G_S*num/div otherwise
         //
         // Since G_S is non-square, a and b are either both zero (and both square), or
-        // only one them is square. We can therefore choose the square root to return
+        // only one of them is square. We can therefore choose the square root to return
         // based on whether a is square, but for the boolean output we need to handle the
         // num != 0 && div == 0 case specifically.
 
