@@ -1,29 +1,26 @@
 //! This module contains the `Curve`/`CurveAffine` abstractions that allow us to
 //! write code that generalizes over a pair of groups.
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 use group::prime::{PrimeCurve, PrimeCurveAffine};
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 use super::{FieldExt, Group};
 
-#[cfg(feature = "std")]
-use std::{
-    boxed::Box,
-    io::{self, Read, Write},
-    ops::{Add, Mul, Sub},
-};
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
+#[cfg(feature = "alloc")]
+use core::ops::{Add, Mul, Sub};
 
 /// This trait is a common interface for dealing with elements of an elliptic
 /// curve group in a "projective" form, where that arithmetic is usually more
 /// efficient.
 ///
-/// Currently requires the `std` feature flag because of `hash_to_curve`, and
-/// `CurveAffine::{read, write}`.
-#[cfg(feature = "std")]
-#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+/// Requires the `alloc` feature flag because of `hash_to_curve`.
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub trait CurveExt:
     PrimeCurve<Affine = <Self as CurveExt>::AffineExt>
     + group::Group<Scalar = <Self as CurveExt>::ScalarExt>
@@ -90,8 +87,10 @@ pub trait CurveExt:
 
 /// This trait is the affine counterpart to `Curve` and is used for
 /// serialization, storage in memory, and inspection of $x$ and $y$ coordinates.
-#[cfg(feature = "std")]
-#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+///
+/// Requires the `alloc` feature flag because of `hash_to_curve` on [`CurveExt`].
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub trait CurveAffine:
     PrimeCurveAffine<
         Scalar = <Self as CurveAffine>::ScalarExt,
@@ -123,21 +122,6 @@ pub trait CurveAffine:
     /// always be true unless an "unchecked" API was used.
     fn is_on_curve(&self) -> Choice;
 
-    /// Reads a compressed element from the buffer and attempts to parse it
-    /// using `from_bytes`.
-    fn read<R: Read>(reader: &mut R) -> io::Result<Self> {
-        let mut compressed = Self::Repr::default();
-        reader.read_exact(compressed.as_mut())?;
-        Option::from(Self::from_bytes(&compressed))
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "invalid point encoding in proof"))
-    }
-
-    /// Writes an element in compressed form to the buffer.
-    fn write<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        let compressed = self.to_bytes();
-        writer.write_all(compressed.as_ref())
-    }
-
     /// Returns the curve constant $a$.
     fn a() -> Self::Base;
 
@@ -146,15 +130,15 @@ pub trait CurveAffine:
 }
 
 /// The affine coordinates of a point on an elliptic curve.
-#[cfg(feature = "std")]
-#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Coordinates<C: CurveAffine> {
     pub(crate) x: C::Base,
     pub(crate) y: C::Base,
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl<C: CurveAffine> Coordinates<C> {
     /// Returns the x-coordinate.
     ///
@@ -185,7 +169,7 @@ impl<C: CurveAffine> Coordinates<C> {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl<C: CurveAffine> ConditionallySelectable for Coordinates<C> {
     fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
         Coordinates {
