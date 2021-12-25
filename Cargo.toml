@@ -52,6 +52,8 @@ subtle = { version = "2.3", default-features = false }
 lazy_static = { version = "1.4.0", optional = true }
 
 [features]
-default = ["bits", "std"]
+default = ["bits", "sqrt-table", "std"]
+alloc = ["group/alloc"]
 bits = ["ff/bits"]
-std = ["group/alloc", "lazy_static", "rand/getrandom"]
+sqrt-table = ["alloc", "lazy_static"]
+std = ["alloc"]

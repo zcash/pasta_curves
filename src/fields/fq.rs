@@ -6,16 +6,16 @@ use ff::PrimeField;
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
-#[cfg(feature = "std")]
+#[cfg(feature = "sqrt-table")]
 use lazy_static::lazy_static;
 
 #[cfg(feature = "bits")]
 use ff::{FieldBits, PrimeFieldBits};
 
-use crate::arithmetic::{adc, mac, sbb};
+use crate::arithmetic::{adc, mac, sbb, FieldExt, Group, SqrtRatio};
 
-#[cfg(feature = "std")]
-use crate::arithmetic::{FieldExt, Group, SqrtRatio, SqrtTables};
+#[cfg(feature = "sqrt-table")]
+use crate::arithmetic::SqrtTables;
 
 /// This represents an element of $\mathbb{F}_q$ where
 ///
@@ -224,7 +224,6 @@ const ROOT_OF_UNITY: Fq = Fq::from_raw([
 /// GENERATOR^{2^s} where t * 2^s + 1 = q
 /// with t odd. In other words, this
 /// is a t root of unity.
-#[cfg(feature = "std")]
 const DELTA: Fq = Fq::from_raw([
     0x8494392472d1683c,
     0xe3ac3376541d1140,
@@ -463,7 +462,6 @@ impl<'a> From<&'a Fq> for [u8; 32] {
     }
 }
 
-#[cfg(feature = "std")]
 impl Group for Fq {
     type Scalar = Fq;
 
@@ -514,13 +512,13 @@ impl ff::Field for Fq {
 
     /// Computes the square root of this element, if it exists.
     fn sqrt(&self) -> CtOption<Self> {
-        #[cfg(feature = "std")]
+        #[cfg(feature = "sqrt-table")]
         {
             let (is_square, res) = FQ_TABLES.sqrt_alt(self);
             CtOption::new(res, is_square)
         }
 
-        #[cfg(not(feature = "std"))]
+        #[cfg(not(feature = "sqrt-table"))]
         crate::arithmetic::sqrt_tonelli_shanks(self, &T_MINUS1_OVER2)
     }
 
@@ -663,13 +661,13 @@ impl PrimeFieldBits for Fq {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "sqrt-table")]
 lazy_static! {
     // The perfect hash parameters are found by `squareroottab.sage` in zcash/pasta.
+    #[cfg_attr(docsrs, doc(cfg(feature = "sqrt-table")))]
     static ref FQ_TABLES: SqrtTables<Fq> = SqrtTables::new(0x116A9E, 1206);
 }
 
-#[cfg(feature = "std")]
 impl SqrtRatio for Fq {
     const T_MINUS1_OVER2: [u64; 4] = T_MINUS1_OVER2;
 
@@ -711,16 +709,17 @@ impl SqrtRatio for Fq {
         tmp.0[0] as u32
     }
 
+    #[cfg(feature = "sqrt-table")]
     fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
         FQ_TABLES.sqrt_ratio(num, div)
     }
 
+    #[cfg(feature = "sqrt-table")]
     fn sqrt_alt(&self) -> (Choice, Self) {
         FQ_TABLES.sqrt_alt(self)
     }
 }
 
-#[cfg(feature = "std")]
 impl FieldExt for Fq {
     const MODULUS: &'static str =
         "0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001";
@@ -770,7 +769,7 @@ impl FieldExt for Fq {
     }
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 use ff::Field;
 
 #[test]
@@ -788,7 +787,6 @@ fn test_inv() {
     assert_eq!(inv, INV);
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn test_sqrt() {
     // NB: TWO_INV is standing in as a "random" field element
@@ -796,7 +794,6 @@ fn test_sqrt() {
     assert!(v == Fq::TWO_INV || (-v) == Fq::TWO_INV);
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn test_pow_by_t_minus1_over2() {
     // NB: TWO_INV is standing in as a "random" field element
@@ -804,7 +801,6 @@ fn test_pow_by_t_minus1_over2() {
     assert!(v == ff::Field::pow_vartime(&Fq::TWO_INV, &T_MINUS1_OVER2));
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn test_sqrt_ratio_and_alt() {
     // (true, sqrt(num/div)), if num and div are nonzero and num/div is a square in the field
@@ -851,7 +847,6 @@ fn test_sqrt_ratio_and_alt() {
     assert!(v == expected);
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn test_zeta() {
     assert_eq!(
@@ -866,7 +861,6 @@ fn test_zeta() {
     assert!(c == Fq::one());
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn test_root_of_unity() {
     assert_eq!(
@@ -875,19 +869,16 @@ fn test_root_of_unity() {
     );
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn test_inv_root_of_unity() {
     assert_eq!(Fq::ROOT_OF_UNITY_INV, Fq::root_of_unity().invert().unwrap());
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn test_inv_2() {
     assert_eq!(Fq::TWO_INV, Fq::from(2).invert().unwrap());
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn test_delta() {
     assert_eq!(Fq::DELTA, GENERATOR.pow(&[1u64 << Fq::S, 0, 0, 0]));
