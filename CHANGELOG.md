@@ -6,6 +6,8 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.3.0] - 2022-01-03
 ### Added
 - Support for `no-std` builds, via two new (default-enabled) feature flags:
   - `alloc` enables the `pasta_curves::arithmetic::{CurveAffine, CurveExt}`
