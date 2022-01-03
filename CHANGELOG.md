@@ -7,6 +7,11 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 ### Added
+- Support for `no-std` builds, via two new (default-enabled) feature flags:
+  - `alloc` enables the `pasta_curves::arithmetic::{CurveAffine, CurveExt}`
+    traits, as well as implementations of traits like `group::WnafGroup`.
+  - `sqrt-table` depends on `alloc`, and enables the large precomputed tables
+    (stored on the heap) that speed up square root computation.
 - `pasta_curves::arithmetic::SqrtRatio` trait, extending `ff::PrimeField` with
   square roots of ratios. This trait is likely to be moved into the `ff` crate
   in a future release (once we're satisfied with it).
