@@ -1,7 +1,7 @@
 [package]
 name = "pasta_curves"
 description = "Implementation of the Pallas and Vesta (Pasta) curve cycle"
-version = "0.2.1"
+version = "0.3.0"
 authors = [
     "Sean Bowe <sean@electriccoin.co>",
     "Ying Tong Lai <yingtong@electriccoin.co>",
@@ -41,18 +41,20 @@ harness = false
 required-features = ["alloc"]
 
 [dependencies]
-blake2b_simd = { version = "0.5", default-features = false }
 ff = { version = "0.11", default-features = false }
 group = { version = "0.11", default-features = false }
 rand = { version = "0.8", default-features = false }
 static_assertions = "1.1.0"
 subtle = { version = "2.3", default-features = false }
 
-# std dependencies
+# alloc dependencies
+blake2b_simd = { version = "1", optional = true, default-features = false }
+
+# sqrt-table dependencies
 lazy_static = { version = "1.4.0", optional = true }
 
 [features]
 default = ["bits", "sqrt-table"]
-alloc = ["group/alloc"]
+alloc = ["group/alloc", "blake2b_simd"]
 bits = ["ff/bits"]
 sqrt-table = ["alloc", "lazy_static"]

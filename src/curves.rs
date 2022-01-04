@@ -474,7 +474,12 @@ macro_rules! new_curve_impl {
                 // multiplication, moving from most significant to least
                 // significant bit of the scalar.
                 //
-                // NOTE: We skip the leading bit because it's always unset.
+                // We don't use `PrimeFieldBits::.to_le_bits` here, because that would
+                // force users of this crate to depend on `bitvec` where they otherwise
+                // might not need to.
+                //
+                // NOTE: We skip the leading bit because it's always unset (we are turning
+                // the 32-byte repr into 256 bits, and $scalar::NUM_BITS = 255).
                 for bit in other
                     .to_repr()
                     .iter()
@@ -585,7 +590,12 @@ macro_rules! new_curve_impl {
                 // multiplication, moving from most significant to least
                 // significant bit of the scalar.
                 //
-                // NOTE: We skip the leading bit because it's always unset.
+                // We don't use `PrimeFieldBits::.to_le_bits` here, because that would
+                // force users of this crate to depend on `bitvec` where they otherwise
+                // might not need to.
+                //
+                // NOTE: We skip the leading bit because it's always unset (we are turning
+                // the 32-byte repr into 256 bits, and $scalar::NUM_BITS = 255).
                 for bit in other
                     .to_repr()
                     .iter()
