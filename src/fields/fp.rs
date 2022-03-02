@@ -770,6 +770,21 @@ impl FieldExt for Fp {
     }
 }
 
+#[cfg(feature = "gpu")]
+impl ec_gpu::GpuField for Fp {
+    fn one() -> alloc::vec::Vec<u32> {
+        crate::fields::u64_to_u32(&R.0[..])
+    }
+
+    fn r2() -> alloc::vec::Vec<u32> {
+        crate::fields::u64_to_u32(&R2.0[..])
+    }
+
+    fn modulus() -> alloc::vec::Vec<u32> {
+        crate::fields::u64_to_u32(&MODULUS.0[..])
+    }
+}
+
 #[cfg(test)]
 use ff::Field;
 
