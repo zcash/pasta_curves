@@ -29,6 +29,8 @@ macro_rules! new_curve_impl {
      $curve_id:literal, $a_raw:expr, $b_raw:expr, $curve_type:ident) => {
         /// Represents a point in the projective coordinate space.
         #[derive(Copy, Clone, Debug)]
+        #[cfg(feature = "borsh")]
+        #[derive(borsh::BorshSerialize, borsh::BorshDeserialize)]
         $($privacy)* struct $name {
             x: $base,
             y: $base,

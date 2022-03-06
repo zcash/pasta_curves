@@ -26,6 +26,8 @@ use crate::arithmetic::SqrtTables;
 // integers in little-endian order. `Fp` values are always in
 // Montgomery form; i.e., Fp(a) = aR mod p, with R = 2^256.
 #[derive(Clone, Copy, Eq)]
+#[cfg(feature = "borsh")]
+#[derive(borsh::BorshSerialize, borsh::BorshDeserialize)]
 pub struct Fp(pub(crate) [u64; 4]);
 
 impl fmt::Debug for Fp {
