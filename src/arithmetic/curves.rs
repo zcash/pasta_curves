@@ -134,8 +134,10 @@ pub trait CurveAffine:
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Coordinates<C: CurveAffine> {
-    pub(crate) x: C::Base,
-    pub(crate) y: C::Base,
+    /// x-coordinate of the EC point.
+    pub x: C::Base,
+    /// y-coordinate of the EC point.
+    pub y: C::Base,
 }
 
 #[cfg(feature = "alloc")]
