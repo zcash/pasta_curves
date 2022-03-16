@@ -5,6 +5,12 @@ use ff::PrimeField;
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
+#[cfg(feature = "borsh")]
+use borsh::{BorshDeserialize, BorshSerialize};
+
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 #[cfg(feature = "sqrt-table")]
 use lazy_static::lazy_static;
 
@@ -26,6 +32,8 @@ use crate::arithmetic::SqrtTables;
 // Montgomery form; i.e., Fq(a) = aR mod q, with R = 2^256.
 #[derive(Clone, Copy, Eq)]
 #[repr(transparent)]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Fq(pub(crate) [u64; 4]);
 
 impl fmt::Debug for Fq {

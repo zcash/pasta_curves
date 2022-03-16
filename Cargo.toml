@@ -57,6 +57,10 @@ lazy_static = { version = "1.4.0", optional = true }
 # gpu dependencies
 ec-gpu = { version = "0.1.0", optional = true }
 
+# serialization dependencies
+borsh = { version = "0.9.3", optional = true }
+serde = { version = "1.0.136", features = ["derive"], optional = true }
+
 [features]
 default = ["bits", "sqrt-table"]
 alloc = ["group/alloc", "blake2b_simd"]
