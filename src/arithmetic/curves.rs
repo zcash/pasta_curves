@@ -140,6 +140,11 @@ pub struct Coordinates<C: CurveAffine> {
 
 #[cfg(feature = "alloc")]
 impl<C: CurveAffine> Coordinates<C> {
+    /// Obtains a `Coordinates` value given $(x, y)$, failing if it is not on the curve.
+    pub fn from_xy(x: C::Base, y: C::Base) -> CtOption<Self> {
+        // We use CurveAffine::from_xy to validate the coordinates.
+        C::from_xy(x, y).map(|_| Coordinates { x, y })
+    }
     /// Returns the x-coordinate.
     ///
     /// Equivalent to `Coordinates::u`.
