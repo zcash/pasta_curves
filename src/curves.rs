@@ -53,8 +53,6 @@ macro_rules! new_curve_impl {
         $($privacy)* struct $name_affine {
             x: $base,
             y: $base,
-            #[cfg(not(feature = "repr-c"))]
-            infinity: Choice,
         }
 
         impl fmt::Debug for $name_affine {
@@ -84,8 +82,6 @@ macro_rules! new_curve_impl {
                         let p = $name_affine {
                             x,
                             y,
-                            #[cfg(not(feature = "repr-c"))]
-                            infinity: Choice::from(0u8),
                         };
                         break p.to_curve();
                     }
@@ -204,8 +200,6 @@ macro_rules! new_curve_impl {
 
                     q.x = p.x * tmp2;
                     q.y = p.y * tmp3;
-                    #[cfg(not(feature = "repr-c"))]
-                    {   q.infinity = Choice::from(0u8);   }
 
                     *q = $name_affine::conditional_select(&q, &$name_affine::identity(), skip);
                 }
@@ -221,8 +215,6 @@ macro_rules! new_curve_impl {
                 let tmp = $name_affine {
                     x,
                     y,
-                    #[cfg(not(feature = "repr-c"))]
-                    infinity: Choice::from(0u8),
                 };
 
                 $name_affine::conditional_select(&tmp, &$name_affine::identity(), zinv.is_zero())
@@ -508,8 +500,6 @@ macro_rules! new_curve_impl {
                 $name_affine {
                     x: self.x,
                     y: -self.y,
-                    #[cfg(not(feature = "repr-c"))]
-                    infinity: self.infinity,
                 }
             }
         }
@@ -628,16 +618,9 @@ macro_rules! new_curve_impl {
                 Self {
                     x: $base::zero(),
                     y: $base::zero(),
-                    #[cfg(not(feature = "repr-c"))]
-                    infinity: Choice::from(1u8),
                 }
             }
 
-            #[cfg(not(feature = "repr-c"))]
-            fn is_identity(&self) -> Choice {
-                self.infinity
-            }
-            #[cfg(feature = "repr-c")]
             fn is_identity(&self) -> Choice {
                 self.x.is_zero() & self.y.is_zero()
             }
@@ -692,8 +675,6 @@ macro_rules! new_curve_impl {
                                 $name_affine {
                                     x,
                                     y,
-                                    #[cfg(not(feature = "repr-c"))]
-                                    infinity: Choice::from(0u8),
                                 },
                                 Choice::from(1u8),
                             )
@@ -741,8 +722,6 @@ macro_rules! new_curve_impl {
             fn from_xy(x: Self::Base, y: Self::Base) -> CtOption<Self> {
                 let p = $name_affine {
                     x, y,
-                    #[cfg(not(feature = "repr-c"))]
-                    infinity: 0u8.into()
                 };
                 CtOption::new(p, p.is_on_curve())
             }
@@ -796,8 +775,6 @@ macro_rules! new_curve_impl {
                 $name_affine {
                     x: $base::conditional_select(&a.x, &b.x, choice),
                     y: $base::conditional_select(&a.y, &b.y, choice),
-                    #[cfg(not(feature = "repr-c"))]
-                    infinity: Choice::conditional_select(&a.infinity, &b.infinity, choice),
                 }
             }
         }
@@ -968,8 +945,6 @@ macro_rules! impl_affine_curve_specific {
             Self {
                 x: NEGATIVE_ONE,
                 y: TWO,
-                #[cfg(not(feature = "repr-c"))]
-                infinity: Choice::from(0u8),
             }
         }
     };
