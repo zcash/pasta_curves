@@ -755,10 +755,7 @@ macro_rules! new_curve_impl {
 
         impl ConstantTimeEq for $name_affine {
             fn ct_eq(&self, other: &Self) -> Choice {
-                let z1 = self.is_identity();
-                let z2 = other.is_identity();
-
-                (z1 & z2) | ((!z1) & (!z2) & (self.x.ct_eq(&other.x)) & (self.y.ct_eq(&other.y)))
+                self.x.ct_eq(&other.x) & self.y.ct_eq(&other.y)
             }
         }
 
