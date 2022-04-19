@@ -29,6 +29,7 @@ macro_rules! new_curve_impl {
      $curve_id:literal, $a_raw:expr, $b_raw:expr, $curve_type:ident) => {
         /// Represents a point in the projective coordinate space.
         #[derive(Copy, Clone, Debug)]
+        #[cfg_attr(feature = "repr-c", repr(C))]
         $($privacy)* struct $name {
             x: $base,
             y: $base,
@@ -48,15 +49,15 @@ macro_rules! new_curve_impl {
         /// Represents a point in the affine coordinate space (or the point at
         /// infinity).
         #[derive(Copy, Clone)]
+        #[cfg_attr(feature = "repr-c", repr(C))]
         $($privacy)* struct $name_affine {
             x: $base,
             y: $base,
-            infinity: Choice,
         }
 
         impl fmt::Debug for $name_affine {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-                if self.infinity.into() {
+                if self.is_identity().into() {
                     write!(f, "Infinity")
                 } else {
                     write!(f, "({:?}, {:?})", self.x, self.y)
@@ -81,7 +82,6 @@ macro_rules! new_curve_impl {
                         let p = $name_affine {
                             x,
                             y,
-                            infinity: Choice::from(0u8),
                         };
                         break p.to_curve();
                     }
@@ -200,7 +200,6 @@ macro_rules! new_curve_impl {
 
                     q.x = p.x * tmp2;
                     q.y = p.y * tmp3;
-                    q.infinity = Choice::from(0u8);
 
                     *q = $name_affine::conditional_select(&q, &$name_affine::identity(), skip);
                 }
@@ -216,7 +215,6 @@ macro_rules! new_curve_impl {
                 let tmp = $name_affine {
                     x,
                     y,
-                    infinity: Choice::from(0u8),
                 };
 
                 $name_affine::conditional_select(&tmp, &$name_affine::identity(), zinv.is_zero())
@@ -502,7 +500,6 @@ macro_rules! new_curve_impl {
                 $name_affine {
                     x: self.x,
                     y: -self.y,
-                    infinity: self.infinity,
                 }
             }
         }
@@ -621,19 +618,18 @@ macro_rules! new_curve_impl {
                 Self {
                     x: $base::zero(),
                     y: $base::zero(),
-                    infinity: Choice::from(1u8),
                 }
             }
 
             fn is_identity(&self) -> Choice {
-                self.infinity
+                self.x.is_zero() & self.y.is_zero()
             }
 
             fn to_curve(&self) -> Self::Curve {
                 $name {
                     x: self.x,
                     y: self.y,
-                    z: $base::conditional_select(&$base::one(), &$base::zero(), self.infinity),
+                    z: $base::conditional_select(&$base::one(), &$base::zero(), self.is_identity()),
                 }
             }
         }
@@ -679,7 +675,6 @@ macro_rules! new_curve_impl {
                                 $name_affine {
                                     x,
                                     y,
-                                    infinity: Choice::from(0u8),
                                 },
                                 Choice::from(1u8),
                             )
@@ -717,7 +712,7 @@ macro_rules! new_curve_impl {
             fn is_on_curve(&self) -> Choice {
                 // y^2 - x^3 - ax ?= b
                 (self.y.square() - (self.x.square() + &$name::curve_constant_a()) * self.x).ct_eq(&$name::curve_constant_b())
-                    | self.infinity
+                    | self.is_identity()
             }
 
             fn coordinates(&self) -> CtOption<Coordinates<Self>> {
@@ -726,7 +721,7 @@ macro_rules! new_curve_impl {
 
             fn from_xy(x: Self::Base, y: Self::Base) -> CtOption<Self> {
                 let p = $name_affine {
-                    x, y, infinity: 0u8.into()
+                    x, y,
                 };
                 CtOption::new(p, p.is_on_curve())
             }
@@ -760,10 +755,7 @@ macro_rules! new_curve_impl {
 
         impl ConstantTimeEq for $name_affine {
             fn ct_eq(&self, other: &Self) -> Choice {
-                let z1 = self.infinity;
-                let z2 = other.infinity;
-
-                (z1 & z2) | ((!z1) & (!z2) & (self.x.ct_eq(&other.x)) & (self.y.ct_eq(&other.y)))
+                self.x.ct_eq(&other.x) & self.y.ct_eq(&other.y)
             }
         }
 
@@ -780,7 +772,6 @@ macro_rules! new_curve_impl {
                 $name_affine {
                     x: $base::conditional_select(&a.x, &b.x, choice),
                     y: $base::conditional_select(&a.y, &b.y, choice),
-                    infinity: Choice::conditional_select(&a.infinity, &b.infinity, choice),
                 }
             }
         }
@@ -951,7 +942,6 @@ macro_rules! impl_affine_curve_specific {
             Self {
                 x: NEGATIVE_ONE,
                 y: TWO,
-                infinity: Choice::from(0u8),
             }
         }
     };

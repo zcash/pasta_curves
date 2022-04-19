@@ -6,6 +6,14 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Add `repr-c` cargo feature to facilitate FFI by conditionally adding
+  `repr(C)` attribute to point structures.
+
+### Changed
+- Add `repr(transparent)` attribute to Fp/Fq structures.
+- Omit 'infinity' field from affine coordinates structures and use (0, 0)
+  to denote the identity points.
 
 ## [0.3.0] - 2022-01-03
 ### Added
