@@ -12,6 +12,8 @@ and this project adheres to Rust's notion of
 
 ### Changed
 - Add `repr(transparent)` attribute to Fp/Fq structures.
+- Omit 'infinity' field from affine coordinates structures and use (0, 0)
+  to denote the identity points.
 
 ## [0.3.0] - 2022-01-03
 ### Added
