@@ -6,14 +6,19 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.3.1] - 2022-04-20
 ### Added
-- Add `repr-c` cargo feature to facilitate FFI by conditionally adding
-  `repr(C)` attribute to point structures.
+- `gpu` feature flag, which exposes implementations of the `GpuField` trait from
+  the `ec-gpu` crate for `pasta_curves::{Fp, Fq}`. This flag will eventually
+  control all GPU functionality.
+- `repr-c` feature flag, which helps to facilitate usage of this crate's types
+  across FFI by conditionally adding `repr(C)` attribute to point structures.
+- `pasta_curves::arithmetic::Coordinates::from_xy`
 
 ### Changed
-- Add `repr(transparent)` attribute to Fp/Fq structures.
-- Omit 'infinity' field from affine coordinates structures and use (0, 0)
-  to denote the identity points.
+- `pasta_curves::{Fp, Fq}` are now declared as `repr(transparent)`, to enable
+  their use across FFI. They remain opaque structs in Rust code.
 
 ## [0.3.0] - 2022-01-03
 ### Added
