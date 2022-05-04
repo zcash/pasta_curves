@@ -13,7 +13,7 @@ use core::assert;
 #[cfg(feature = "sqrt-table")]
 use alloc::{boxed::Box, vec::Vec};
 #[cfg(feature = "sqrt-table")]
-use core::{convert::TryInto, marker::PhantomData};
+use core::marker::PhantomData;
 
 const_assert!(size_of::<usize>() >= 4);
 
