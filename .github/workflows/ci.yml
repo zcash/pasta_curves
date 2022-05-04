@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.51.0
+          toolchain: 1.56.0
           override: true
       - name: Run tests
         uses: actions-rs/cargo@v1
@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.51.0
+          toolchain: 1.56.0
           override: true
       - name: Add target
         run: rustup target add ${{ matrix.target }}
@@ -55,7 +55,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.51.0
+          toolchain: 1.56.0
           override: true
       # Build benchmarks to prevent bitrot
       - name: Build benchmarks
@@ -71,7 +71,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.51.0
+          toolchain: 1.56.0
           override: true
       - name: cargo build
         uses: actions-rs/cargo@v1
@@ -85,7 +85,7 @@ jobs:
         run: mdbook test -L target/debug/deps book/
 
   clippy:
-    name: Clippy (1.51.0)
+    name: Clippy (1.56.0)
     timeout-minutes: 30
     runs-on: ubuntu-latest
 
@@ -93,13 +93,13 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.51.0
+          toolchain: 1.56.0
           components: clippy
           override: true
       - name: Run clippy
         uses: actions-rs/clippy-check@v1
         with:
-          name: Clippy (1.51.0)
+          name: Clippy (1.56.0)
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --all-features --all-targets -- -D warnings
 
@@ -158,7 +158,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.51.0
+          toolchain: 1.56.0
           override: true
       - name: cargo fetch
         uses: actions-rs/cargo@v1
@@ -181,7 +181,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.51.0
+          toolchain: 1.56.0
           override: true
       - run: rustup component add rustfmt
       - uses: actions-rs/cargo@v1

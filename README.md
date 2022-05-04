@@ -8,7 +8,7 @@ Pallas and Vesta. More details about the Pasta curves can be found
 
 ## Minimum Supported Rust Version
 
-Requires Rust **1.51** or higher.
+Requires Rust **1.56** or higher.
 
 Minimum supported Rust version can be changed in the future, but it will be done with a
 minor version bump.

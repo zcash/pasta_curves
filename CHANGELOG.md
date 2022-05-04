@@ -7,6 +7,11 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.4.0] - 2022-05-05
+### Changed
+- MSRV is now 1.56.0.
+- Migrated to `ff 0.12`, `group 0.12`.
+
 ## [0.3.1] - 2022-04-20
 ### Added
 - `gpu` feature flag, which exposes implementations of the `GpuField` trait from

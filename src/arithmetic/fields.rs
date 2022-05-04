@@ -13,7 +13,7 @@ use core::assert;
 #[cfg(feature = "sqrt-table")]
 use alloc::{boxed::Box, vec::Vec};
 #[cfg(feature = "sqrt-table")]
-use core::{convert::TryInto, marker::PhantomData};
+use core::marker::PhantomData;
 
 const_assert!(size_of::<usize>() >= 4);
 
@@ -27,7 +27,7 @@ pub trait SqrtRatio: ff::PrimeField {
     ///
     /// Field implementations may override this to use an efficient addition chain.
     fn pow_by_t_minus1_over2(&self) -> Self {
-        ff::Field::pow_vartime(&self, &Self::T_MINUS1_OVER2)
+        ff::Field::pow_vartime(self, &Self::T_MINUS1_OVER2)
     }
 
     /// Gets the lower 32 bits of this field element when expressed
