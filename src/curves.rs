@@ -9,6 +9,9 @@ use core::ops::{Add, Mul, Neg, Sub};
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
 
+#[cfg(feature = "serde")]
+use serde::{de, ser, Deserialize, Deserializer, Serialize, Serializer};
+
 use ff::{Field, PrimeField};
 use group::{
     cofactor::{CofactorCurve, CofactorGroup},
@@ -62,6 +65,61 @@ macro_rules! new_curve_impl {
                 } else {
                     write!(f, "({:?}, {:?})", self.x, self.y)
                 }
+            }
+        }
+
+        #[cfg(feature = "serde")]
+        impl Serialize for $name_affine {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                let bytes = self.to_bytes();
+                if Self::from_bytes(&bytes).is_some().unwrap_u8() == 1u8 {
+                    return serializer.serialize_bytes(&bytes);
+                }
+                else {
+                    return Err(ser::Error::custom("Affine point encoding failed."));
+                }
+            }
+        }
+
+        #[cfg(feature = "serde")]
+        impl<'de> Deserialize<'de> for $name_affine {
+            fn deserialize<D>(deserializer: D) -> Result<$name_affine, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                struct BytesVisitor;
+
+                impl<'de> de::Visitor<'de> for BytesVisitor {
+                    type Value = $name_affine;
+
+                    fn expecting(&self, formatter: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                        formatter.write_str("a valid 32-byte array")
+                    }
+
+                    fn visit_bytes<E>(self, v: &[u8]) -> Result<$name_affine, E>
+                    where
+                        E: de::Error,
+                    {
+                        if v.len() == 32 {
+                            let mut bytes = [0u8;32];
+                            bytes.copy_from_slice(v);
+                            let point = $name_affine::from_bytes(&bytes);
+                            if point.is_some().unwrap_u8() == 1u8 {
+                                return Ok(point.unwrap());
+                            }
+                            else {
+                                return Err(de::Error::custom("Affine point decoding failed."));
+                            }
+                        } else {
+                            Err(de::Error::invalid_length(v.len(), &self))
+                        }
+                    }
+                }
+
+                deserializer.deserialize_bytes(BytesVisitor)
             }
         }
 

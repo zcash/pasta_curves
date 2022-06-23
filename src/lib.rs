@@ -44,3 +44,24 @@ fn test_endo_consistency() {
     let a = vesta::Point::generator();
     assert_eq!(a * vesta::Scalar::ZETA, a.endo());
 }
+
+#[cfg(feature = "serde")]
+#[test]
+fn test_serde_affine() {
+    use bincode::Options;
+    use group::Curve;
+    use group::Group;
+
+    let bincode_options = bincode::DefaultOptions::new().with_limit(64);
+
+    let p = pallas::Point::generator();
+    let a = p.to_affine();
+    let e = bincode_options.serialize(&a).unwrap();
+    let b = bincode_options.deserialize(&e).unwrap();
+    assert_eq!(a, b);
+    let p = vesta::Point::generator();
+    let a = p.to_affine();
+    let e = bincode_options.serialize(&a).unwrap();
+    let b = bincode_options.deserialize(&e).unwrap();
+    assert_eq!(a, b);
+}
