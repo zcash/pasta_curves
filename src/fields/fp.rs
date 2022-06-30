@@ -262,8 +262,21 @@ impl Fp {
     /// Doubles this field element.
     #[inline]
     pub const fn double(&self) -> Fp {
-        // TODO: This can be achieved more efficiently with a bitshift.
-        self.add(self)
+        let r1 = self.0[0] << 1;
+
+        let c = self.0[0] >> 63;
+        let tmp = self.0[1] << 1;
+        let r2 = tmp | c;
+
+        let c = self.0[1] >> 63;
+        let tmp = self.0[2] << 1;
+        let r3 = tmp | c;
+
+        let c = self.0[2] >> 63;
+        let tmp = self.0[3] << 1;
+        let r4 = tmp | c;
+
+        (&Fp([r1, r2, r3, r4])).sub(&MODULUS)
     }
 
     fn from_u512(limbs: [u64; 8]) -> Fp {
@@ -787,6 +800,23 @@ impl ec_gpu::GpuField for Fp {
 
 #[cfg(test)]
 use ff::Field;
+
+#[cfg(test)]
+use rand_xorshift::XorShiftRng;
+
+#[cfg(test)]
+use rand::SeedableRng;
+
+#[test]
+fn test_add_and_double() {
+    let mut rng = XorShiftRng::from_seed([
+        0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc,
+        0xe5,
+    ]);
+    let a = Fp::random(&mut rng);
+    let b = a.clone();
+    assert_eq!(a.double(), a.add(b))
+}
 
 #[test]
 fn test_inv() {
