@@ -293,7 +293,7 @@ impl Fq {
     }
 
     /// Squares this element.
-    #[inline]
+    #[cfg_attr(not(feature = "uninline-portable"), inline)]
     pub const fn square(&self) -> Fq {
         let (r1, carry) = mac(0, self.0[0], self.0[1], 0);
         let (r2, carry) = mac(0, self.0[0], self.0[2], carry);
@@ -325,7 +325,7 @@ impl Fq {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[inline(always)]
+    #[cfg_attr(not(feature = "uninline-portable"), inline(always))]
     const fn montgomery_reduce(
         r0: u64,
         r1: u64,
@@ -373,7 +373,7 @@ impl Fq {
     }
 
     /// Multiplies `rhs` by `self`, returning the result.
-    #[inline]
+    #[cfg_attr(not(feature = "uninline-portable"), inline)]
     pub const fn mul(&self, rhs: &Self) -> Self {
         // Schoolbook multiplication
 
@@ -401,7 +401,7 @@ impl Fq {
     }
 
     /// Subtracts `rhs` from `self`, returning the result.
-    #[inline]
+    #[cfg_attr(not(feature = "uninline-portable"), inline)]
     pub const fn sub(&self, rhs: &Self) -> Self {
         let (d0, borrow) = sbb(self.0[0], rhs.0[0], 0);
         let (d1, borrow) = sbb(self.0[1], rhs.0[1], borrow);
@@ -419,7 +419,7 @@ impl Fq {
     }
 
     /// Adds `rhs` to `self`, returning the result.
-    #[inline]
+    #[cfg_attr(not(feature = "uninline-portable"), inline)]
     pub const fn add(&self, rhs: &Self) -> Self {
         let (d0, carry) = adc(self.0[0], rhs.0[0], 0);
         let (d1, carry) = adc(self.0[1], rhs.0[1], carry);
@@ -432,7 +432,7 @@ impl Fq {
     }
 
     /// Negates `self`.
-    #[inline]
+    #[cfg_attr(not(feature = "uninline-portable"), inline)]
     pub const fn neg(&self) -> Self {
         // Subtract `self` from `MODULUS` to negate. Ignore the final
         // borrow because it cannot underflow; self is guaranteed to

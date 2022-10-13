@@ -6,6 +6,10 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `uninline-portable` feature flag, which disables inlining of some functions.
+  This is useful for tiny microchips (such as ARM Cortex-M0), where inlining
+  can hurt performance and blow up binary size.
 
 ## [0.4.0] - 2022-05-05
 ### Changed
