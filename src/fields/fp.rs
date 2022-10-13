@@ -325,7 +325,7 @@ impl Fp {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[inline(always)]
+    #[cfg_attr(not(feature = "uninline-portable"), inline(always))]
     const fn montgomery_reduce(
         r0: u64,
         r1: u64,
