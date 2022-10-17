@@ -9,8 +9,6 @@ use crate::{
     fields::{Fp, Fq},
 };
 
-const ERR_CODE: &str = "deserialized bytes don't encode a field element";
-
 /// Serializes bytes to human readable or compact representation.
 ///
 /// Depending on whether the serializer is a human readable one or not, the bytes are either
@@ -46,7 +44,9 @@ impl<'de> Deserialize<'de> for Fp {
         let bytes = deserialize_bytes(d)?;
         match Fp::from_repr(bytes).into() {
             Some(fq) => Ok(fq),
-            None => Err(D::Error::custom(ERR_CODE)),
+            None => Err(D::Error::custom(
+                "deserialized bytes don't encode a Pallas field element",
+            )),
         }
     }
 }
@@ -62,7 +62,9 @@ impl<'de> Deserialize<'de> for Fq {
         let bytes = deserialize_bytes(d)?;
         match Fq::from_repr(bytes).into() {
             Some(fq) => Ok(fq),
-            None => Err(D::Error::custom(ERR_CODE)),
+            None => Err(D::Error::custom(
+                "deserialized bytes don't encode a Vesta field element",
+            )),
         }
     }
 }
@@ -76,9 +78,11 @@ impl Serialize for EpAffine {
 impl<'de> Deserialize<'de> for EpAffine {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let bytes = deserialize_bytes(d)?;
-        match EpAffine::from_bytes_unchecked(&bytes).into() {
+        match EpAffine::from_bytes(&bytes).into() {
             Some(ep_affine) => Ok(ep_affine),
-            None => Err(D::Error::custom(ERR_CODE)),
+            None => Err(D::Error::custom(
+                "deserialized bytes don't encode a Pallas curve point",
+            )),
         }
     }
 }
@@ -92,9 +96,11 @@ impl Serialize for EqAffine {
 impl<'de> Deserialize<'de> for EqAffine {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let bytes = deserialize_bytes(d)?;
-        match EqAffine::from_bytes_unchecked(&bytes).into() {
+        match EqAffine::from_bytes(&bytes).into() {
             Some(eq_affine) => Ok(eq_affine),
-            None => Err(D::Error::custom(ERR_CODE)),
+            None => Err(D::Error::custom(
+                "deserialized bytes don't encode a Vesta curve point",
+            )),
         }
     }
 }
