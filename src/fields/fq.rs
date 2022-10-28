@@ -11,7 +11,7 @@ use lazy_static::lazy_static;
 #[cfg(feature = "bits")]
 use ff::{FieldBits, PrimeFieldBits};
 
-use crate::arithmetic::{adc, mac, sbb, FieldExt, Group, SqrtRatio};
+use crate::arithmetic::{adc, mac, sbb, FieldExt, Group, SqrtTableHelpers};
 
 #[cfg(feature = "sqrt-table")]
 use crate::arithmetic::SqrtTables;
@@ -232,6 +232,7 @@ const DELTA: Fq = Fq::from_raw([
 ]);
 
 /// `(t - 1) // 2` where t * 2^s + 1 = p with t odd.
+#[cfg(any(test, not(feature = "sqrt-table")))]
 const T_MINUS1_OVER2: [u64; 4] = [
     0x04ca_546e_c623_7590,
     0x0000_0000_1123_4c7e,
@@ -510,6 +511,21 @@ impl ff::Field for Fq {
         self.square()
     }
 
+    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
+        #[cfg(feature = "sqrt-table")]
+        {
+            FQ_TABLES.sqrt_ratio(num, div)
+        }
+
+        #[cfg(not(feature = "sqrt-table"))]
+        ff::helpers::sqrt_ratio_generic(num, div)
+    }
+
+    #[cfg(feature = "sqrt-table")]
+    fn sqrt_alt(&self) -> (Choice, Self) {
+        FQ_TABLES.sqrt_alt(self)
+    }
+
     /// Computes the square root of this element, if it exists.
     fn sqrt(&self) -> CtOption<Self> {
         #[cfg(feature = "sqrt-table")]
@@ -519,7 +535,7 @@ impl ff::Field for Fq {
         }
 
         #[cfg(not(feature = "sqrt-table"))]
-        crate::arithmetic::sqrt_tonelli_shanks(self, &T_MINUS1_OVER2)
+        ff::helpers::sqrt_tonelli_shanks(self, &T_MINUS1_OVER2)
     }
 
     /// Computes the multiplicative inverse of this element,
@@ -668,9 +684,7 @@ lazy_static! {
     static ref FQ_TABLES: SqrtTables<Fq> = SqrtTables::new(0x116A9E, 1206);
 }
 
-impl SqrtRatio for Fq {
-    const T_MINUS1_OVER2: [u64; 4] = T_MINUS1_OVER2;
-
+impl SqrtTableHelpers for Fq {
     fn pow_by_t_minus1_over2(&self) -> Self {
         let sqr = |x: Fq, i: u32| (0..i).fold(x, |x, _| x.square());
 
@@ -707,16 +721,6 @@ impl SqrtRatio for Fq {
         let tmp = Fq::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
 
         tmp.0[0] as u32
-    }
-
-    #[cfg(feature = "sqrt-table")]
-    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
-        FQ_TABLES.sqrt_ratio(num, div)
-    }
-
-    #[cfg(feature = "sqrt-table")]
-    fn sqrt_alt(&self) -> (Choice, Self) {
-        FQ_TABLES.sqrt_alt(self)
     }
 }
 

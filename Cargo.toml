@@ -72,3 +72,6 @@ sqrt-table = ["alloc", "lazy_static"]
 repr-c = []
 uninline-portable = []
 serde = ["hex", "serde_crate"]
+
+[patch.crates-io]
+ff = { git = "https://github.com/zkcrypto/ff.git", rev = "9a844a72d30ea9f859cd46dcc2237a1ae3277ddc" }

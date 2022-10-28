@@ -6,6 +6,14 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Migrated to `ff 0.13`, `group 0.13`.
+
+### Removed
+- `pasta_curves::arithmetic::SqrtRatio` (use `ff::Field::{sqrt_ratio, sqrt_alt}`
+  instead).
+- `pasta_curves::arithmetic::SqrtTables` (from public API, as it isn't suitable
+  for generic usage).
 
 ## [0.4.1] - 2022-10-13
 ### Added
