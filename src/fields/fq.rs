@@ -1,7 +1,7 @@
 use core::fmt;
 use core::ops::{Add, Mul, Neg, Sub};
 
-use ff::PrimeField;
+use ff::{Field, PrimeField};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
@@ -172,6 +172,18 @@ impl<'a, 'b> Mul<&'b Fq> for &'a Fq {
 
 impl_binops_additive!(Fq, Fq);
 impl_binops_multiplicative!(Fq, Fq);
+
+impl<T: ::core::borrow::Borrow<Fq>> ::core::iter::Sum<T> for Fq {
+    fn sum<I: Iterator<Item = T>>(iter: I) -> Self {
+        iter.fold(Self::ZERO, |acc, item| acc + item.borrow())
+    }
+}
+
+impl<T: ::core::borrow::Borrow<Fq>> ::core::iter::Product<T> for Fq {
+    fn product<I: Iterator<Item = T>>(iter: I) -> Self {
+        iter.fold(Self::ONE, |acc, item| acc * item.borrow())
+    }
+}
 
 /// INV = -(q^{-1} mod 2^64) mod 2^64
 const INV: u64 = 0x8c46eb20ffffffff;
@@ -481,6 +493,9 @@ impl Group for Fq {
 }
 
 impl ff::Field for Fq {
+    const ZERO: Self = Self::zero();
+    const ONE: Self = Self::one();
+
     fn random(mut rng: impl RngCore) -> Self {
         Self::from_u512([
             rng.next_u64(),
@@ -492,14 +507,6 @@ impl ff::Field for Fq {
             rng.next_u64(),
             rng.next_u64(),
         ])
-    }
-
-    fn zero() -> Self {
-        Self::zero()
-    }
-
-    fn one() -> Self {
-        Self::one()
     }
 
     fn double(&self) -> Self {
@@ -575,7 +582,9 @@ impl ff::PrimeField for Fq {
 
     const NUM_BITS: u32 = 255;
     const CAPACITY: u32 = 254;
+    const MULTIPLICATIVE_GENERATOR: Self = GENERATOR;
     const S: u32 = S;
+    const ROOT_OF_UNITY: Self = ROOT_OF_UNITY;
 
     fn from_repr(repr: Self::Repr) -> CtOption<Self> {
         let mut tmp = Fq([0, 0, 0, 0]);
@@ -619,14 +628,6 @@ impl ff::PrimeField for Fq {
 
     fn is_odd(&self) -> Choice {
         Choice::from(self.to_repr()[0] & 1)
-    }
-
-    fn multiplicative_generator() -> Self {
-        GENERATOR
-    }
-
-    fn root_of_unity() -> Self {
-        ROOT_OF_UNITY
     }
 }
 
@@ -795,9 +796,6 @@ impl ec_gpu::GpuField for Fq {
     }
 }
 
-#[cfg(test)]
-use ff::Field;
-
 #[test]
 fn test_inv() {
     // Compute -(r^{-1} mod 2^64) mod 2^64 by exponentiating
@@ -843,8 +841,8 @@ fn test_sqrt_ratio_and_alt() {
     assert!(v_alt == v);
 
     // (false, sqrt(ROOT_OF_UNITY * num/div)), if num and div are nonzero and num/div is a nonsquare in the field
-    let num = num * Fq::root_of_unity();
-    let expected = Fq::TWO_INV * Fq::root_of_unity() * Fq::from(5).invert().unwrap();
+    let num = num * Fq::ROOT_OF_UNITY;
+    let expected = Fq::TWO_INV * Fq::ROOT_OF_UNITY * Fq::from(5).invert().unwrap();
     let (is_square, v) = Fq::sqrt_ratio(&num, &div);
     assert!(!bool::from(is_square));
     assert!(v == expected || (-v) == expected);
@@ -890,14 +888,14 @@ fn test_zeta() {
 #[test]
 fn test_root_of_unity() {
     assert_eq!(
-        Fq::root_of_unity().pow_vartime(&[1 << Fq::S, 0, 0, 0]),
+        Fq::ROOT_OF_UNITY.pow_vartime(&[1 << Fq::S, 0, 0, 0]),
         Fq::one()
     );
 }
 
 #[test]
 fn test_inv_root_of_unity() {
-    assert_eq!(Fq::ROOT_OF_UNITY_INV, Fq::root_of_unity().invert().unwrap());
+    assert_eq!(Fq::ROOT_OF_UNITY_INV, Fq::ROOT_OF_UNITY.invert().unwrap());
 }
 
 #[test]
@@ -910,7 +908,7 @@ fn test_delta() {
     assert_eq!(Fq::DELTA, GENERATOR.pow(&[1u64 << Fq::S, 0, 0, 0]));
     assert_eq!(
         Fq::DELTA,
-        Fq::multiplicative_generator().pow(&[1u64 << Fq::S, 0, 0, 0])
+        Fq::MULTIPLICATIVE_GENERATOR.pow(&[1u64 << Fq::S, 0, 0, 0])
     );
 }
 

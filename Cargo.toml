@@ -74,4 +74,4 @@ uninline-portable = []
 serde = ["hex", "serde_crate"]
 
 [patch.crates-io]
-ff = { git = "https://github.com/zkcrypto/ff.git", rev = "9a844a72d30ea9f859cd46dcc2237a1ae3277ddc" }
+ff = { git = "https://github.com/zkcrypto/ff.git", rev = "c070ffbaea8cb17e57f817a91ed0e364ff679b7c" }

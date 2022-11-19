@@ -36,7 +36,7 @@ pub trait FieldExt: ff::PrimeField + From<bool> + Ord + Group<Scalar = Self> {
     /// Modulus of the field written as a string for display purposes
     const MODULUS: &'static str;
 
-    /// Inverse of `PrimeField::root_of_unity()`
+    /// Inverse of `PrimeField::ROOT_OF_UNITY`
     const ROOT_OF_UNITY_INV: Self;
 
     /// Generator of the $t-order$ multiplicative subgroup
@@ -107,10 +107,10 @@ impl<F: FieldExt + SqrtTableHelpers> SqrtTables<F> {
             marker: PhantomData,
         };
 
-        let mut gtab = (0..4).scan(F::root_of_unity(), |gi, _| {
+        let mut gtab = (0..4).scan(F::ROOT_OF_UNITY, |gi, _| {
             // gi == ROOT_OF_UNITY^(256^i)
             let gtab_i: Vec<F> = (0..256)
-                .scan(F::one(), |acc, _| {
+                .scan(F::ONE, |acc, _| {
                     let res = *acc;
                     *acc *= *gi;
                     Some(res)
@@ -205,7 +205,7 @@ impl<F: FieldExt + SqrtTableHelpers> SqrtTables<F> {
 
         let sqdiv = res.square() * div;
         let is_square = (sqdiv - num).is_zero();
-        let is_nonsquare = (sqdiv - F::root_of_unity() * num).is_zero();
+        let is_nonsquare = (sqdiv - F::ROOT_OF_UNITY * num).is_zero();
         assert!(bool::from(
             num.is_zero() | div.is_zero() | (is_square ^ is_nonsquare)
         ));
@@ -222,7 +222,7 @@ impl<F: FieldExt + SqrtTableHelpers> SqrtTables<F> {
 
         let sq = res.square();
         let is_square = (sq - u).is_zero();
-        let is_nonsquare = (sq - F::root_of_unity() * u).is_zero();
+        let is_nonsquare = (sq - F::ROOT_OF_UNITY * u).is_zero();
         assert!(bool::from(u.is_zero() | (is_square ^ is_nonsquare)));
 
         (is_square, res)
