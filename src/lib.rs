@@ -28,6 +28,9 @@ pub mod vesta;
 #[cfg(feature = "alloc")]
 mod hashtocurve;
 
+#[cfg(feature = "serde")]
+mod serde_impl;
+
 pub use curves::*;
 pub use fields::*;
 
