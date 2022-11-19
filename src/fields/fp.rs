@@ -771,6 +771,13 @@ impl FieldExt for Fp {
 }
 
 #[cfg(feature = "gpu")]
+impl ec_gpu::GpuName for Fp {
+    fn name() -> alloc::string::String {
+        ec_gpu::name!()
+    }
+}
+
+#[cfg(feature = "gpu")]
 impl ec_gpu::GpuField for Fp {
     fn one() -> alloc::vec::Vec<u32> {
         crate::fields::u64_to_u32(&R.0[..])

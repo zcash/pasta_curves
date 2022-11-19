@@ -799,6 +799,13 @@ macro_rules! new_curve_impl {
                 *self *= *by;
             }
         }
+
+        #[cfg(feature = "gpu")]
+        impl ec_gpu::GpuName for $name_affine {
+            fn name() -> alloc::string::String {
+                ec_gpu::name!()
+            }
+        }
     };
 }
 
