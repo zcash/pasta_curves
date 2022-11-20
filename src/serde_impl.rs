@@ -5,8 +5,9 @@ use serde_crate::{
 };
 
 use crate::{
-    curves::{EpAffine, EqAffine},
+    curves::{Ep, EpAffine, Eq, EqAffine},
     fields::{Fp, Fq},
+    group::Curve,
 };
 
 /// Serializes bytes to human readable or compact representation.
@@ -102,6 +103,30 @@ impl<'de> Deserialize<'de> for EqAffine {
                 "deserialized bytes don't encode a Vesta curve point",
             )),
         }
+    }
+}
+
+impl Serialize for Ep {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        EpAffine::serialize(&self.to_affine(), s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Ep {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(Self::from(EpAffine::deserialize(d)?))
+    }
+}
+
+impl Serialize for Eq {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        EqAffine::serialize(&self.to_affine(), s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Eq {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(Self::from(EqAffine::deserialize(d)?))
     }
 }
 
@@ -314,6 +339,104 @@ mod tests {
         );
         assert_eq!(
             bincode::deserialize::<EqAffine>(&[
+                0, 0, 0, 0, 33, 235, 70, 140, 221, 168, 148, 9, 252, 152, 70, 34, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 64
+            ])
+            .unwrap(),
+            f
+        );
+    }
+
+    #[test]
+    fn serde_ep() {
+        let mut rng = XorShiftRng::from_seed([
+            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
+            0xbc, 0xe5,
+        ]);
+
+        for _ in 0..100 {
+            let f = Ep::random(&mut rng);
+            test_roundtrip(&f);
+        }
+
+        let f = Ep::identity();
+        test_roundtrip(&f);
+        assert_eq!(
+            serde_json::from_slice::<Ep>(
+                br#""0000000000000000000000000000000000000000000000000000000000000000""#
+            )
+            .unwrap(),
+            f
+        );
+        assert_eq!(
+            bincode::deserialize::<Ep>(&[
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0
+            ])
+            .unwrap(),
+            f
+        );
+
+        let f = Ep::generator();
+        test_roundtrip(&f);
+        assert_eq!(
+            serde_json::from_slice::<Ep>(
+                br#""00000000ed302d991bf94c09fc98462200000000000000000000000000000040""#
+            )
+            .unwrap(),
+            f
+        );
+        assert_eq!(
+            bincode::deserialize::<Ep>(&[
+                0, 0, 0, 0, 237, 48, 45, 153, 27, 249, 76, 9, 252, 152, 70, 34, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 64
+            ])
+            .unwrap(),
+            f
+        );
+    }
+
+    #[test]
+    fn serde_eq() {
+        let mut rng = XorShiftRng::from_seed([
+            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
+            0xbc, 0xe5,
+        ]);
+
+        for _ in 0..100 {
+            let f = Eq::random(&mut rng);
+            test_roundtrip(&f);
+        }
+
+        let f = Eq::identity();
+        test_roundtrip(&f);
+        assert_eq!(
+            serde_json::from_slice::<Eq>(
+                br#""0000000000000000000000000000000000000000000000000000000000000000""#
+            )
+            .unwrap(),
+            f
+        );
+        assert_eq!(
+            bincode::deserialize::<Eq>(&[
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0
+            ])
+            .unwrap(),
+            f
+        );
+
+        let f = Eq::generator();
+        test_roundtrip(&f);
+        assert_eq!(
+            serde_json::from_slice::<Eq>(
+                br#""0000000021eb468cdda89409fc98462200000000000000000000000000000040""#
+            )
+            .unwrap(),
+            f
+        );
+        assert_eq!(
+            bincode::deserialize::<Eq>(&[
                 0, 0, 0, 0, 33, 235, 70, 140, 221, 168, 148, 9, 252, 152, 70, 34, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 64
             ])
