@@ -897,7 +897,7 @@ macro_rules! impl_projective_curve_ext {
             use super::hashtocurve;
 
             Box::new(move |message| {
-                let mut us = [Field::zero(); 2];
+                let mut us = [Field::ZERO; 2];
                 hashtocurve::hash_to_field($name::CURVE_ID, domain_prefix, message, &mut us);
                 let q0 = hashtocurve::map_to_curve_simple_swu::<$base, $name, $iso>(
                     &us[0],
@@ -1110,7 +1110,7 @@ impl Ep {
         0x4000000000000000,
     ]);
 
-    /// `(F::root_of_unity().invert().unwrap() * z).sqrt().unwrap()`
+    /// `(F::ROOT_OF_UNITY.invert().unwrap() * z).sqrt().unwrap()`
     pub const THETA: Fp = Fp::from_raw([
         0xca330bcc09ac318e,
         0x51f64fc4dc888857,
@@ -1210,7 +1210,7 @@ impl Eq {
         0x4000000000000000,
     ]);
 
-    /// `(F::root_of_unity().invert().unwrap() * z).sqrt().unwrap()`
+    /// `(F::ROOT_OF_UNITY.invert().unwrap() * z).sqrt().unwrap()`
     pub const THETA: Fq = Fq::from_raw([
         0x632cae9872df1b5d,
         0x38578ccadf03ac27,

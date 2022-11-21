@@ -1,7 +1,7 @@
 use core::fmt;
 use core::ops::{Add, Mul, Neg, Sub};
 
-use ff::PrimeField;
+use ff::{Field, PrimeField};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
@@ -11,7 +11,7 @@ use lazy_static::lazy_static;
 #[cfg(feature = "bits")]
 use ff::{FieldBits, PrimeFieldBits};
 
-use crate::arithmetic::{adc, mac, sbb, FieldExt, Group, SqrtRatio};
+use crate::arithmetic::{adc, mac, sbb, FieldExt, Group, SqrtTableHelpers};
 
 #[cfg(feature = "sqrt-table")]
 use crate::arithmetic::SqrtTables;
@@ -173,6 +173,18 @@ impl<'a, 'b> Mul<&'b Fp> for &'a Fp {
 impl_binops_additive!(Fp, Fp);
 impl_binops_multiplicative!(Fp, Fp);
 
+impl<T: ::core::borrow::Borrow<Fp>> ::core::iter::Sum<T> for Fp {
+    fn sum<I: Iterator<Item = T>>(iter: I) -> Self {
+        iter.fold(Self::ZERO, |acc, item| acc + item.borrow())
+    }
+}
+
+impl<T: ::core::borrow::Borrow<Fp>> ::core::iter::Product<T> for Fp {
+    fn product<I: Iterator<Item = T>>(iter: I) -> Self {
+        iter.fold(Self::ONE, |acc, item| acc * item.borrow())
+    }
+}
+
 /// INV = -(p^{-1} mod 2^64) mod 2^64
 const INV: u64 = 0x992d30ecffffffff;
 
@@ -232,6 +244,7 @@ const DELTA: Fp = Fp::from_raw([
 ]);
 
 /// `(t - 1) // 2` where t * 2^s + 1 = p with t odd.
+#[cfg(any(test, not(feature = "sqrt-table")))]
 const T_MINUS1_OVER2: [u64; 4] = [
     0x04a6_7c8d_cc96_9876,
     0x0000_0000_1123_4c7e,
@@ -480,6 +493,9 @@ impl Group for Fp {
 }
 
 impl ff::Field for Fp {
+    const ZERO: Self = Self::zero();
+    const ONE: Self = Self::one();
+
     fn random(mut rng: impl RngCore) -> Self {
         Self::from_u512([
             rng.next_u64(),
@@ -493,14 +509,6 @@ impl ff::Field for Fp {
         ])
     }
 
-    fn zero() -> Self {
-        Self::zero()
-    }
-
-    fn one() -> Self {
-        Self::one()
-    }
-
     fn double(&self) -> Self {
         self.double()
     }
@@ -508,6 +516,21 @@ impl ff::Field for Fp {
     #[inline(always)]
     fn square(&self) -> Self {
         self.square()
+    }
+
+    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
+        #[cfg(feature = "sqrt-table")]
+        {
+            FP_TABLES.sqrt_ratio(num, div)
+        }
+
+        #[cfg(not(feature = "sqrt-table"))]
+        ff::helpers::sqrt_ratio_generic(num, div)
+    }
+
+    #[cfg(feature = "sqrt-table")]
+    fn sqrt_alt(&self) -> (Choice, Self) {
+        FP_TABLES.sqrt_alt(self)
     }
 
     /// Computes the square root of this element, if it exists.
@@ -519,7 +542,7 @@ impl ff::Field for Fp {
         }
 
         #[cfg(not(feature = "sqrt-table"))]
-        crate::arithmetic::sqrt_tonelli_shanks(self, &T_MINUS1_OVER2)
+        ff::helpers::sqrt_tonelli_shanks(self, &T_MINUS1_OVER2)
     }
 
     /// Computes the multiplicative inverse of this element,
@@ -559,7 +582,9 @@ impl ff::PrimeField for Fp {
 
     const NUM_BITS: u32 = 255;
     const CAPACITY: u32 = 254;
+    const MULTIPLICATIVE_GENERATOR: Self = GENERATOR;
     const S: u32 = S;
+    const ROOT_OF_UNITY: Self = ROOT_OF_UNITY;
 
     fn from_repr(repr: Self::Repr) -> CtOption<Self> {
         let mut tmp = Fp([0, 0, 0, 0]);
@@ -603,14 +628,6 @@ impl ff::PrimeField for Fp {
 
     fn is_odd(&self) -> Choice {
         Choice::from(self.to_repr()[0] & 1)
-    }
-
-    fn multiplicative_generator() -> Self {
-        GENERATOR
-    }
-
-    fn root_of_unity() -> Self {
-        ROOT_OF_UNITY
     }
 }
 
@@ -669,9 +686,7 @@ lazy_static! {
     static ref FP_TABLES: SqrtTables<Fp> = SqrtTables::new(0x11BE, 1098);
 }
 
-impl SqrtRatio for Fp {
-    const T_MINUS1_OVER2: [u64; 4] = T_MINUS1_OVER2;
-
+impl SqrtTableHelpers for Fp {
     fn pow_by_t_minus1_over2(&self) -> Self {
         let sqr = |x: Fp, i: u32| (0..i).fold(x, |x, _| x.square());
 
@@ -708,16 +723,6 @@ impl SqrtRatio for Fp {
         let tmp = Fp::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
 
         tmp.0[0] as u32
-    }
-
-    #[cfg(feature = "sqrt-table")]
-    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
-        FP_TABLES.sqrt_ratio(num, div)
-    }
-
-    #[cfg(feature = "sqrt-table")]
-    fn sqrt_alt(&self) -> (Choice, Self) {
-        FP_TABLES.sqrt_alt(self)
     }
 }
 
@@ -792,9 +797,6 @@ impl ec_gpu::GpuField for Fp {
     }
 }
 
-#[cfg(test)]
-use ff::Field;
-
 #[test]
 fn test_inv() {
     // Compute -(r^{-1} mod 2^64) mod 2^64 by exponentiating
@@ -840,8 +842,8 @@ fn test_sqrt_ratio_and_alt() {
     assert!(v_alt == v);
 
     // (false, sqrt(ROOT_OF_UNITY * num/div)), if num and div are nonzero and num/div is a nonsquare in the field
-    let num = num * Fp::root_of_unity();
-    let expected = Fp::TWO_INV * Fp::root_of_unity() * Fp::from(5).invert().unwrap();
+    let num = num * Fp::ROOT_OF_UNITY;
+    let expected = Fp::TWO_INV * Fp::ROOT_OF_UNITY * Fp::from(5).invert().unwrap();
     let (is_square, v) = Fp::sqrt_ratio(&num, &div);
     assert!(!bool::from(is_square));
     assert!(v == expected || (-v) == expected);
@@ -888,14 +890,14 @@ fn test_zeta() {
 #[test]
 fn test_root_of_unity() {
     assert_eq!(
-        Fp::root_of_unity().pow_vartime(&[1 << Fp::S, 0, 0, 0]),
+        Fp::ROOT_OF_UNITY.pow_vartime(&[1 << Fp::S, 0, 0, 0]),
         Fp::one()
     );
 }
 
 #[test]
 fn test_inv_root_of_unity() {
-    assert_eq!(Fp::ROOT_OF_UNITY_INV, Fp::root_of_unity().invert().unwrap());
+    assert_eq!(Fp::ROOT_OF_UNITY_INV, Fp::ROOT_OF_UNITY.invert().unwrap());
 }
 
 #[test]
@@ -908,7 +910,7 @@ fn test_delta() {
     assert_eq!(Fp::DELTA, GENERATOR.pow(&[1u64 << Fp::S, 0, 0, 0]));
     assert_eq!(
         Fp::DELTA,
-        Fp::multiplicative_generator().pow(&[1u64 << Fp::S, 0, 0, 0])
+        Fp::MULTIPLICATIVE_GENERATOR.pow(&[1u64 << Fp::S, 0, 0, 0])
     );
 }
 
