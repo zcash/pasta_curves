@@ -478,15 +478,6 @@ impl<'a> From<&'a Fq> for [u8; 32] {
 impl Group for Fq {
     type Scalar = Fq;
 
-    fn group_zero() -> Self {
-        Self::zero()
-    }
-    fn group_add(&mut self, rhs: &Self) {
-        *self += *rhs;
-    }
-    fn group_sub(&mut self, rhs: &Self) {
-        *self -= *rhs;
-    }
     fn group_scale(&mut self, by: &Self::Scalar) {
         *self *= *by;
     }
