@@ -11,7 +11,7 @@ use lazy_static::lazy_static;
 #[cfg(feature = "bits")]
 use ff::{FieldBits, PrimeFieldBits};
 
-use crate::arithmetic::{adc, mac, sbb, FieldExt, SqrtTableHelpers};
+use crate::arithmetic::{adc, mac, sbb, SqrtTableHelpers};
 
 #[cfg(feature = "sqrt-table")]
 use crate::arithmetic::SqrtTables;
@@ -727,8 +727,6 @@ impl SqrtTableHelpers for Fp {
         tmp.0[0] as u32
     }
 }
-
-impl FieldExt for Fp {}
 
 impl WithSmallOrderMulGroup<3> for Fp {
     const ZETA: Self = Fp::from_raw([

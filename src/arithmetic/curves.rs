@@ -7,9 +7,6 @@ use group::prime::{PrimeCurve, PrimeCurveAffine};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 #[cfg(feature = "alloc")]
-use super::FieldExt;
-
-#[cfg(feature = "alloc")]
 use alloc::boxed::Box;
 #[cfg(feature = "alloc")]
 use core::ops::{Add, Mul, Sub};
@@ -30,9 +27,9 @@ pub trait CurveExt:
     + From<<Self as PrimeCurve>::Affine>
 {
     /// The scalar field of this elliptic curve.
-    type ScalarExt: FieldExt;
+    type ScalarExt: ff::WithSmallOrderMulGroup<3>;
     /// The base field over which this elliptic curve is constructed.
-    type Base: FieldExt;
+    type Base: ff::WithSmallOrderMulGroup<3>;
     /// The affine version of the curve
     type AffineExt: CurveAffine<CurveExt = Self, ScalarExt = <Self as CurveExt>::ScalarExt>
         + Mul<Self::ScalarExt, Output = Self>
@@ -102,9 +99,9 @@ pub trait CurveAffine:
     + From<<Self as PrimeCurveAffine>::Curve>
 {
     /// The scalar field of this elliptic curve.
-    type ScalarExt: FieldExt + Ord;
+    type ScalarExt: ff::WithSmallOrderMulGroup<3> + Ord;
     /// The base field over which this elliptic curve is constructed.
-    type Base: FieldExt + Ord;
+    type Base: ff::WithSmallOrderMulGroup<3> + Ord;
     /// The projective form of the curve
     type CurveExt: CurveExt<AffineExt = Self, ScalarExt = <Self as CurveAffine>::ScalarExt>;
 

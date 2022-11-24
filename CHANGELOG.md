@@ -11,6 +11,7 @@ and this project adheres to Rust's notion of
 
 ### Removed
 - `pasta_curves::arithmetic`:
+  - `FieldExt` (use `ff::PrimeField` or `ff::WithSmallOrderMulGroup` instead).
   - `Group`
   - `SqrtRatio` (use `ff::Field::{sqrt_ratio, sqrt_alt}` instead).
   - `SqrtTables` (from public API, as it isn't suitable for generic usage).

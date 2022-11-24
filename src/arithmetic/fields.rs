@@ -28,10 +28,6 @@ pub(crate) trait SqrtTableHelpers: ff::PrimeField {
     fn get_lower_32(&self) -> u32;
 }
 
-/// This trait is a common interface for dealing with elements of a finite
-/// field.
-pub trait FieldExt: ff::WithSmallOrderMulGroup<3> {}
-
 /// Parameters for a perfect hash function used in square root computation.
 #[cfg(feature = "sqrt-table")]
 #[cfg_attr(docsrs, doc(cfg(feature = "sqrt-table")))]
