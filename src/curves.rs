@@ -19,7 +19,6 @@ use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use super::{Fp, Fq};
-use crate::arithmetic::Group;
 
 #[cfg(feature = "alloc")]
 use crate::arithmetic::{Coordinates, CurveAffine, CurveExt, FieldExt};
@@ -782,23 +781,6 @@ macro_rules! new_curve_impl {
         impl_binops_additive_specify_output!($name_affine, $name, $name);
         impl_binops_multiplicative!($name, $scalar);
         impl_binops_multiplicative_mixed!($name_affine, $scalar, $name);
-
-        impl Group for $name {
-            type Scalar = $scalar;
-
-            fn group_zero() -> Self {
-                Self::identity()
-            }
-            fn group_add(&mut self, rhs: &Self) {
-                *self += *rhs;
-            }
-            fn group_sub(&mut self, rhs: &Self) {
-                *self -= *rhs;
-            }
-            fn group_scale(&mut self, by: &Self::Scalar) {
-                *self *= *by;
-            }
-        }
 
         #[cfg(feature = "gpu")]
         impl ec_gpu::GpuName for $name_affine {

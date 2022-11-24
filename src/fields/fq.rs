@@ -11,7 +11,7 @@ use lazy_static::lazy_static;
 #[cfg(feature = "bits")]
 use ff::{FieldBits, PrimeFieldBits};
 
-use crate::arithmetic::{adc, mac, sbb, FieldExt, Group, SqrtTableHelpers};
+use crate::arithmetic::{adc, mac, sbb, FieldExt, SqrtTableHelpers};
 
 #[cfg(feature = "sqrt-table")]
 use crate::arithmetic::SqrtTables;
@@ -472,23 +472,6 @@ impl From<Fq> for [u8; 32] {
 impl<'a> From<&'a Fq> for [u8; 32] {
     fn from(value: &'a Fq) -> [u8; 32] {
         value.to_repr()
-    }
-}
-
-impl Group for Fq {
-    type Scalar = Fq;
-
-    fn group_zero() -> Self {
-        Self::zero()
-    }
-    fn group_add(&mut self, rhs: &Self) {
-        *self += *rhs;
-    }
-    fn group_sub(&mut self, rhs: &Self) {
-        *self -= *rhs;
-    }
-    fn group_scale(&mut self, by: &Self::Scalar) {
-        *self *= *by;
     }
 }
 

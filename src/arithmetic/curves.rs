@@ -7,7 +7,7 @@ use group::prime::{PrimeCurve, PrimeCurveAffine};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 #[cfg(feature = "alloc")]
-use super::{FieldExt, Group};
+use super::FieldExt;
 
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
@@ -28,7 +28,6 @@ pub trait CurveExt:
     + ConditionallySelectable
     + ConstantTimeEq
     + From<<Self as PrimeCurve>::Affine>
-    + Group<Scalar = <Self as group::Group>::Scalar>
 {
     /// The scalar field of this elliptic curve.
     type ScalarExt: FieldExt;

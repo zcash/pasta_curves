@@ -5,8 +5,6 @@ use core::mem::size_of;
 
 use static_assertions::const_assert;
 
-use super::Group;
-
 #[cfg(feature = "sqrt-table")]
 use alloc::{boxed::Box, vec::Vec};
 #[cfg(feature = "sqrt-table")]
@@ -32,7 +30,7 @@ pub(crate) trait SqrtTableHelpers: ff::PrimeField {
 
 /// This trait is a common interface for dealing with elements of a finite
 /// field.
-pub trait FieldExt: ff::PrimeField + Ord + Group<Scalar = Self> {
+pub trait FieldExt: ff::PrimeField + Ord {
     /// Modulus of the field written as a string for display purposes
     const MODULUS: &'static str;
 
