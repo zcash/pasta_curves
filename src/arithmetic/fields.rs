@@ -32,7 +32,7 @@ pub(crate) trait SqrtTableHelpers: ff::PrimeField {
 
 /// This trait is a common interface for dealing with elements of a finite
 /// field.
-pub trait FieldExt: ff::PrimeField + From<bool> + Ord + Group<Scalar = Self> {
+pub trait FieldExt: ff::PrimeField + Ord + Group<Scalar = Self> {
     /// Modulus of the field written as a string for display purposes
     const MODULUS: &'static str;
 
@@ -54,10 +54,6 @@ pub trait FieldExt: ff::PrimeField + From<bool> + Ord + Group<Scalar = Self> {
     /// Obtains a field element that is congruent to the provided little endian
     /// byte representation of an integer.
     fn from_bytes_wide(bytes: &[u8; 64]) -> Self;
-
-    /// Gets the lower 128 bits of this field element when expressed
-    /// canonically.
-    fn get_lower_128(&self) -> u128;
 }
 
 /// Parameters for a perfect hash function used in square root computation.

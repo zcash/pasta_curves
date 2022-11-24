@@ -766,12 +766,6 @@ impl FieldExt for Fq {
             u64::from_le_bytes(bytes[56..64].try_into().unwrap()),
         ])
     }
-
-    fn get_lower_128(&self) -> u128 {
-        let tmp = Fq::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
-
-        u128::from(tmp.0[0]) | (u128::from(tmp.0[1]) << 64)
-    }
 }
 
 #[cfg(feature = "gpu")]
