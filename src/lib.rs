@@ -39,8 +39,8 @@ pub extern crate group;
 #[cfg(feature = "alloc")]
 #[test]
 fn test_endo_consistency() {
-    use crate::arithmetic::{CurveExt, FieldExt};
-    use group::Group;
+    use crate::arithmetic::CurveExt;
+    use group::{ff::WithSmallOrderMulGroup, Group};
 
     let a = pallas::Point::generator();
     assert_eq!(a * pallas::Scalar::ZETA, a.endo());

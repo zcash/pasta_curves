@@ -1,14 +1,14 @@
 //! This module implements "simplified SWU" hashing to short Weierstrass curves
 //! with a = 0.
 
-use ff::{Field, PrimeField};
+use ff::{Field, FromUniformBytes, PrimeField};
 use static_assertions::const_assert;
 use subtle::ConstantTimeEq;
 
-use crate::arithmetic::{CurveExt, FieldExt};
+use crate::arithmetic::CurveExt;
 
 /// Hashes over a message and writes the output to all of `buf`.
-pub fn hash_to_field<F: FieldExt>(
+pub fn hash_to_field<F: FromUniformBytes<64>>(
     curve_id: &str,
     domain_prefix: &str,
     message: &[u8],
@@ -73,7 +73,7 @@ pub fn hash_to_field<F: FieldExt>(
         let mut little = [0u8; CHUNKLEN];
         little.copy_from_slice(big.as_array());
         little.reverse();
-        *buf = F::from_bytes_wide(&little);
+        *buf = F::from_uniform_bytes(&little);
     }
 }
 

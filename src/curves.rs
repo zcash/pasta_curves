@@ -18,10 +18,13 @@ use group::{
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
+#[cfg(feature = "alloc")]
+use ff::WithSmallOrderMulGroup;
+
 use super::{Fp, Fq};
 
 #[cfg(feature = "alloc")]
-use crate::arithmetic::{Coordinates, CurveAffine, CurveExt, FieldExt};
+use crate::arithmetic::{Coordinates, CurveAffine, CurveExt};
 
 macro_rules! new_curve_impl {
     (($($privacy:tt)*), $name:ident, $name_affine:ident, $iso:ident, $base:ident, $scalar:ident,

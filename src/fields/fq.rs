@@ -1,7 +1,7 @@
 use core::fmt;
 use core::ops::{Add, Mul, Neg, Sub};
 
-use ff::{Field, PrimeField};
+use ff::{Field, FromUniformBytes, PrimeField, WithSmallOrderMulGroup};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
@@ -563,11 +563,30 @@ impl ff::Field for Fq {
 impl ff::PrimeField for Fq {
     type Repr = [u8; 32];
 
+    const MODULUS: &'static str =
+        "0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001";
     const NUM_BITS: u32 = 255;
     const CAPACITY: u32 = 254;
+    const TWO_INV: Self = Fq::from_raw([
+        0xc623759080000001,
+        0x11234c7e04ca546e,
+        0x0000000000000000,
+        0x2000000000000000,
+    ]);
     const MULTIPLICATIVE_GENERATOR: Self = GENERATOR;
     const S: u32 = S;
     const ROOT_OF_UNITY: Self = ROOT_OF_UNITY;
+    const ROOT_OF_UNITY_INV: Self = Fq::from_raw([
+        0x57eecda0a84b6836,
+        0x4ad38b9084b8a80c,
+        0xf4c8f353124086c1,
+        0x2235e1a7415bf936,
+    ]);
+    const DELTA: Self = DELTA;
+
+    fn from_u128(v: u128) -> Self {
+        Fq::from_raw([v as u64, (v >> 64) as u64, 0, 0])
+    }
 
     fn from_repr(repr: Self::Repr) -> CtOption<Self> {
         let mut tmp = Fq([0, 0, 0, 0]);
@@ -708,36 +727,21 @@ impl SqrtTableHelpers for Fq {
     }
 }
 
-impl FieldExt for Fq {
-    const MODULUS: &'static str =
-        "0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001";
-    const ROOT_OF_UNITY_INV: Self = Fq::from_raw([
-        0x57eecda0a84b6836,
-        0x4ad38b9084b8a80c,
-        0xf4c8f353124086c1,
-        0x2235e1a7415bf936,
-    ]);
-    const DELTA: Self = DELTA;
-    const TWO_INV: Self = Fq::from_raw([
-        0xc623759080000001,
-        0x11234c7e04ca546e,
-        0x0000000000000000,
-        0x2000000000000000,
-    ]);
+impl FieldExt for Fq {}
+
+impl WithSmallOrderMulGroup<3> for Fq {
     const ZETA: Self = Fq::from_raw([
         0x2aa9d2e050aa0e4f,
         0x0fed467d47c033af,
         0x511db4d81cf70f5a,
         0x06819a58283e528e,
     ]);
+}
 
-    fn from_u128(v: u128) -> Self {
-        Fq::from_raw([v as u64, (v >> 64) as u64, 0, 0])
-    }
-
+impl FromUniformBytes<64> for Fq {
     /// Converts a 512-bit little endian integer into
     /// a `Fq` by reducing by the modulus.
-    fn from_bytes_wide(bytes: &[u8; 64]) -> Fq {
+    fn from_uniform_bytes(bytes: &[u8; 64]) -> Fq {
         Fq::from_u512([
             u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
             u64::from_le_bytes(bytes[8..16].try_into().unwrap()),

@@ -30,29 +30,7 @@ pub(crate) trait SqrtTableHelpers: ff::PrimeField {
 
 /// This trait is a common interface for dealing with elements of a finite
 /// field.
-pub trait FieldExt: ff::PrimeField + Ord {
-    /// Modulus of the field written as a string for display purposes
-    const MODULUS: &'static str;
-
-    /// Inverse of `PrimeField::ROOT_OF_UNITY`
-    const ROOT_OF_UNITY_INV: Self;
-
-    /// Generator of the $t-order$ multiplicative subgroup
-    const DELTA: Self;
-
-    /// Inverse of $2$ in the field.
-    const TWO_INV: Self;
-
-    /// Element of multiplicative order $3$.
-    const ZETA: Self;
-
-    /// Obtains a field element congruent to the integer `v`.
-    fn from_u128(v: u128) -> Self;
-
-    /// Obtains a field element that is congruent to the provided little endian
-    /// byte representation of an integer.
-    fn from_bytes_wide(bytes: &[u8; 64]) -> Self;
-}
+pub trait FieldExt: ff::WithSmallOrderMulGroup<3> + Ord {}
 
 /// Parameters for a perfect hash function used in square root computation.
 #[cfg(feature = "sqrt-table")]

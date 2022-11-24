@@ -1,7 +1,7 @@
 use core::fmt;
 use core::ops::{Add, Mul, Neg, Sub};
 
-use ff::{Field, PrimeField};
+use ff::{Field, FromUniformBytes, PrimeField, WithSmallOrderMulGroup};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
@@ -563,11 +563,30 @@ impl ff::Field for Fp {
 impl ff::PrimeField for Fp {
     type Repr = [u8; 32];
 
+    const MODULUS: &'static str =
+        "0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001";
+    const TWO_INV: Self = Fp::from_raw([
+        0xcc96987680000001,
+        0x11234c7e04a67c8d,
+        0x0000000000000000,
+        0x2000000000000000,
+    ]);
     const NUM_BITS: u32 = 255;
     const CAPACITY: u32 = 254;
     const MULTIPLICATIVE_GENERATOR: Self = GENERATOR;
     const S: u32 = S;
     const ROOT_OF_UNITY: Self = ROOT_OF_UNITY;
+    const ROOT_OF_UNITY_INV: Self = Fp::from_raw([
+        0xf0b87c7db2ce91f6,
+        0x84a0a1d8859f066f,
+        0xb4ed8e647196dad1,
+        0x2cd5282c53116b5c,
+    ]);
+    const DELTA: Self = DELTA;
+
+    fn from_u128(v: u128) -> Self {
+        Fp::from_raw([v as u64, (v >> 64) as u64, 0, 0])
+    }
 
     fn from_repr(repr: Self::Repr) -> CtOption<Self> {
         let mut tmp = Fp([0, 0, 0, 0]);
@@ -709,36 +728,21 @@ impl SqrtTableHelpers for Fp {
     }
 }
 
-impl FieldExt for Fp {
-    const MODULUS: &'static str =
-        "0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001";
-    const ROOT_OF_UNITY_INV: Self = Fp::from_raw([
-        0xf0b87c7db2ce91f6,
-        0x84a0a1d8859f066f,
-        0xb4ed8e647196dad1,
-        0x2cd5282c53116b5c,
-    ]);
-    const DELTA: Self = DELTA;
-    const TWO_INV: Self = Fp::from_raw([
-        0xcc96987680000001,
-        0x11234c7e04a67c8d,
-        0x0000000000000000,
-        0x2000000000000000,
-    ]);
+impl FieldExt for Fp {}
+
+impl WithSmallOrderMulGroup<3> for Fp {
     const ZETA: Self = Fp::from_raw([
         0x1dad5ebdfdfe4ab9,
         0x1d1f8bd237ad3149,
         0x2caad5dc57aab1b0,
         0x12ccca834acdba71,
     ]);
+}
 
-    fn from_u128(v: u128) -> Self {
-        Fp::from_raw([v as u64, (v >> 64) as u64, 0, 0])
-    }
-
+impl FromUniformBytes<64> for Fp {
     /// Converts a 512-bit little endian integer into
     /// a `Fp` by reducing by the modulus.
-    fn from_bytes_wide(bytes: &[u8; 64]) -> Fp {
+    fn from_uniform_bytes(bytes: &[u8; 64]) -> Fp {
         Fp::from_u512([
             u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
             u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
