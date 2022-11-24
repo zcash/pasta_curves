@@ -102,9 +102,9 @@ pub trait CurveAffine:
     + From<<Self as PrimeCurveAffine>::Curve>
 {
     /// The scalar field of this elliptic curve.
-    type ScalarExt: FieldExt;
+    type ScalarExt: FieldExt + Ord;
     /// The base field over which this elliptic curve is constructed.
-    type Base: FieldExt;
+    type Base: FieldExt + Ord;
     /// The projective form of the curve
     type CurveExt: CurveExt<AffineExt = Self, ScalarExt = <Self as CurveAffine>::ScalarExt>;
 

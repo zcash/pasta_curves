@@ -30,7 +30,7 @@ pub(crate) trait SqrtTableHelpers: ff::PrimeField {
 
 /// This trait is a common interface for dealing with elements of a finite
 /// field.
-pub trait FieldExt: ff::WithSmallOrderMulGroup<3> + Ord {}
+pub trait FieldExt: ff::WithSmallOrderMulGroup<3> {}
 
 /// Parameters for a perfect hash function used in square root computation.
 #[cfg(feature = "sqrt-table")]
