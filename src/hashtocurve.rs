@@ -1,6 +1,7 @@
 //! This module implements "simplified SWU" hashing to short Weierstrass curves
 //! with a = 0.
 
+use ff::{Field, PrimeField};
 use static_assertions::const_assert;
 use subtle::ConstantTimeEq;
 
@@ -77,7 +78,7 @@ pub fn hash_to_field<F: FieldExt>(
 }
 
 /// Implements a degree 3 isogeny map.
-pub fn iso_map<F: FieldExt, C: CurveExt<Base = F>, I: CurveExt<Base = F>>(
+pub fn iso_map<F: Field, C: CurveExt<Base = F>, I: CurveExt<Base = F>>(
     p: &I,
     iso: &[C::Base; 13],
 ) -> C {
@@ -105,7 +106,7 @@ pub fn iso_map<F: FieldExt, C: CurveExt<Base = F>, I: CurveExt<Base = F>>(
 }
 
 #[allow(clippy::many_single_char_names)]
-pub fn map_to_curve_simple_swu<F: FieldExt, C: CurveExt<Base = F>, I: CurveExt<Base = F>>(
+pub fn map_to_curve_simple_swu<F: PrimeField, C: CurveExt<Base = F>, I: CurveExt<Base = F>>(
     u: &F,
     theta: F,
     z: F,
