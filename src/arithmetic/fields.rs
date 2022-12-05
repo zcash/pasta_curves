@@ -5,8 +5,6 @@ use core::mem::size_of;
 
 use static_assertions::const_assert;
 
-use super::Group;
-
 #[cfg(feature = "sqrt-table")]
 use alloc::{boxed::Box, vec::Vec};
 #[cfg(feature = "sqrt-table")]
@@ -30,48 +28,18 @@ pub(crate) trait SqrtTableHelpers: ff::PrimeField {
     fn get_lower_32(&self) -> u32;
 }
 
-/// This trait is a common interface for dealing with elements of a finite
-/// field.
-pub trait FieldExt: ff::PrimeField + From<bool> + Ord + Group<Scalar = Self> {
-    /// Modulus of the field written as a string for display purposes
-    const MODULUS: &'static str;
-
-    /// Inverse of `PrimeField::ROOT_OF_UNITY`
-    const ROOT_OF_UNITY_INV: Self;
-
-    /// Generator of the $t-order$ multiplicative subgroup
-    const DELTA: Self;
-
-    /// Inverse of $2$ in the field.
-    const TWO_INV: Self;
-
-    /// Element of multiplicative order $3$.
-    const ZETA: Self;
-
-    /// Obtains a field element congruent to the integer `v`.
-    fn from_u128(v: u128) -> Self;
-
-    /// Obtains a field element that is congruent to the provided little endian
-    /// byte representation of an integer.
-    fn from_bytes_wide(bytes: &[u8; 64]) -> Self;
-
-    /// Gets the lower 128 bits of this field element when expressed
-    /// canonically.
-    fn get_lower_128(&self) -> u128;
-}
-
 /// Parameters for a perfect hash function used in square root computation.
 #[cfg(feature = "sqrt-table")]
 #[cfg_attr(docsrs, doc(cfg(feature = "sqrt-table")))]
 #[derive(Debug)]
-struct SqrtHasher<F: FieldExt> {
+struct SqrtHasher<F: SqrtTableHelpers> {
     hash_xor: u32,
     hash_mod: usize,
     marker: PhantomData<F>,
 }
 
 #[cfg(feature = "sqrt-table")]
-impl<F: FieldExt + SqrtTableHelpers> SqrtHasher<F> {
+impl<F: SqrtTableHelpers> SqrtHasher<F> {
     /// Returns a perfect hash of x for use with SqrtTables::inv.
     fn hash(&self, x: &F) -> usize {
         // This is just the simplest constant-time perfect hash construction that could
@@ -86,7 +54,7 @@ impl<F: FieldExt + SqrtTableHelpers> SqrtHasher<F> {
 #[cfg(feature = "sqrt-table")]
 #[cfg_attr(docsrs, doc(cfg(feature = "sqrt-table")))]
 #[derive(Debug)]
-pub(crate) struct SqrtTables<F: FieldExt> {
+pub(crate) struct SqrtTables<F: SqrtTableHelpers> {
     hasher: SqrtHasher<F>,
     inv: Vec<u8>,
     g0: Box<[F; 256]>,
@@ -96,7 +64,7 @@ pub(crate) struct SqrtTables<F: FieldExt> {
 }
 
 #[cfg(feature = "sqrt-table")]
-impl<F: FieldExt + SqrtTableHelpers> SqrtTables<F> {
+impl<F: SqrtTableHelpers> SqrtTables<F> {
     /// Build tables given parameters for the perfect hash.
     pub fn new(hash_xor: u32, hash_mod: usize) -> Self {
         use alloc::vec;

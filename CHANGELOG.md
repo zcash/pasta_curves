@@ -10,10 +10,11 @@ and this project adheres to Rust's notion of
 - Migrated to `ff 0.13`, `group 0.13`.
 
 ### Removed
-- `pasta_curves::arithmetic::SqrtRatio` (use `ff::Field::{sqrt_ratio, sqrt_alt}`
-  instead).
-- `pasta_curves::arithmetic::SqrtTables` (from public API, as it isn't suitable
-  for generic usage).
+- `pasta_curves::arithmetic`:
+  - `FieldExt` (use `ff::PrimeField` or `ff::WithSmallOrderMulGroup` instead).
+  - `Group`
+  - `SqrtRatio` (use `ff::Field::{sqrt_ratio, sqrt_alt}` instead).
+  - `SqrtTables` (from public API, as it isn't suitable for generic usage).
 
 ## [0.4.1] - 2022-10-13
 ### Added
