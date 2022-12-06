@@ -6,8 +6,22 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.5.0] - 2022-12-06
+### Added
+- `serde` feature flag, which enables Serde compatibility to the crate types.
+  Field elements and points are serialized to their canonical byte encoding
+  (encoded as hexadecimal if the data format is human readable).
+
 ### Changed
-- Migrated to `ff 0.13`, `group 0.13`.
+- Migrated to `ff 0.13`, `group 0.13`, `ec-gpu 0.2`.
+- `pasta_curves::arithmetic`:
+  - `FieldExt` bounds on associated types of `CurveExt` and `CurveAffine` have
+    been replaced by bounds on `ff::WithSmallOrderMulGroup<3>` (and `Ord` in the
+    case of `CurveExt`).
+- `pasta_curves::hashtocurve`:
+  - `FieldExt` bounds on the module functions have been replaced by equivalent
+    `ff` trait bounds.
 
 ### Removed
 - `pasta_curves::arithmetic`:
