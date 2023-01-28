@@ -321,13 +321,12 @@ impl Fq {
 
         let (r5, r6) = mac(r5, self.0[2], self.0[3], 0);
 
-        let r7 = r6 >> 63;
-        let r6 = (r6 << 1) | (r5 >> 63);
-        let r5 = (r5 << 1) | (r4 >> 63);
-        let r4 = (r4 << 1) | (r3 >> 63);
-        let r3 = (r3 << 1) | (r2 >> 63);
-        let r2 = (r2 << 1) | (r1 >> 63);
-        let r1 = r1 << 1;
+        let (r1, carry) = shl1(r1, 0);
+        let (r2, carry) = shl1(r2, carry);
+        let (r3, carry) = shl1(r3, carry);
+        let (r4, carry) = shl1(r4, carry);
+        let (r5, carry) = shl1(r5, carry);
+        let (r6, r7) = shl1(r6, carry);
 
         let (r0, carry) = mac(0, self.0[0], self.0[0], 0);
         let (r1, carry) = adc(0, r1, carry);
