@@ -11,7 +11,7 @@ use lazy_static::lazy_static;
 #[cfg(feature = "bits")]
 use ff::{FieldBits, PrimeFieldBits};
 
-use crate::arithmetic::{adc, mac, sbb, SqrtTableHelpers};
+use crate::arithmetic::{adc, mac, sbb, shl1, SqrtTableHelpers};
 
 #[cfg(feature = "sqrt-table")]
 use crate::arithmetic::SqrtTables;
@@ -275,8 +275,12 @@ impl Fp {
     /// Doubles this field element.
     #[inline]
     pub const fn double(&self) -> Fp {
-        // TODO: This can be achieved more efficiently with a bitshift.
-        self.add(self)
+        let (d0, c) = shl1(self.0[0], 0);
+        let (d1, c) = shl1(self.0[1], c);
+        let (d2, c) = shl1(self.0[2], c);
+        let (d3, _) = shl1(self.0[3], c);
+
+        (&Fp([d0, d1, d2, d3])).sub(&MODULUS)
     }
 
     fn from_u512(limbs: [u64; 8]) -> Fp {
