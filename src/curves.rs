@@ -698,7 +698,7 @@ macro_rules! new_curve_impl {
                     let (x, y) = (self.x, self.y);
                     let sign = y.is_odd().unwrap_u8() << 7;
                     let mut xbytes = x.to_repr();
-                    xbytes[31] |= sign;
+                    xbytes[31] ^= sign;
                     xbytes
                 }
             }
