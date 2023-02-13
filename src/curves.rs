@@ -466,32 +466,41 @@ macro_rules! new_curve_impl {
             type Output = $name;
 
             fn mul(self, other: &'b $scalar) -> Self::Output {
-                // TODO: make this faster
-
-                let mut acc = $name::identity();
-
-                // This is a simple double-and-add implementation of point
-                // multiplication, moving from most significant to least
-                // significant bit of the scalar.
-                //
-                // We don't use `PrimeFieldBits::.to_le_bits` here, because that would
-                // force users of this crate to depend on `bitvec` where they otherwise
-                // might not need to.
-                //
-                // NOTE: We skip the leading bit because it's always unset (we are turning
-                // the 32-byte repr into 256 bits, and $scalar::NUM_BITS = 255).
-                for bit in other
-                    .to_repr()
-                    .iter()
-                    .rev()
-                    .flat_map(|byte| (0..8).rev().map(move |i| Choice::from((byte >> i) & 1u8)))
-                    .skip(1)
-                {
-                    acc = acc.double();
-                    acc = $name::conditional_select(&acc, &(acc + self), bit);
+                // Create a table out of the point
+                // TODO: This can be made more efficient with a 5-bit window
+                let mut arr = [$name::identity(); 16];
+                arr[1] = *self;
+                for i in 2 .. 16 {
+                    arr[i] = if (i % 2) == 0 {
+                        arr[i / 2].double()
+                    } else {
+                        arr[i - 1] + arr[1]
+                    };
                 }
 
-                acc
+                let mut res = $name::identity();
+                let mut first = true;
+                // Iterate from significant byte to least significant byte
+                for byte in other.to_repr().iter().rev() {
+                    // Shift the result over 4 bits
+                    if !first {
+                        for _ in 0 .. 4 {
+                            res = res.double();
+                        }
+                    }
+                    first = false;
+
+                    // Add the top-nibble from this byte into the result
+                    res += arr[usize::from(byte >> 4)];
+                    // Shift the result over
+                    for _ in 0 .. 4 {
+                        res = res.double();
+                    }
+                    // Add the bottom-nibble from this byte into the result
+                    res += arr[usize::from(byte & 0b1111)];
+                }
+
+                res
             }
         }
 
@@ -581,32 +590,41 @@ macro_rules! new_curve_impl {
             type Output = $name;
 
             fn mul(self, other: &'b $scalar) -> Self::Output {
-                // TODO: make this faster
-
-                let mut acc = $name::identity();
-
-                // This is a simple double-and-add implementation of point
-                // multiplication, moving from most significant to least
-                // significant bit of the scalar.
-                //
-                // We don't use `PrimeFieldBits::.to_le_bits` here, because that would
-                // force users of this crate to depend on `bitvec` where they otherwise
-                // might not need to.
-                //
-                // NOTE: We skip the leading bit because it's always unset (we are turning
-                // the 32-byte repr into 256 bits, and $scalar::NUM_BITS = 255).
-                for bit in other
-                    .to_repr()
-                    .iter()
-                    .rev()
-                    .flat_map(|byte| (0..8).rev().map(move |i| Choice::from((byte >> i) & 1u8)))
-                    .skip(1)
-                {
-                    acc = acc.double();
-                    acc = $name::conditional_select(&acc, &(acc + self), bit);
+                // Create a table out of the point
+                // TODO: This can be made more efficient with a 5-bit window
+                let mut arr = [$name::identity(); 16];
+                arr[1] = (*self).into();
+                for i in 2 .. 16 {
+                    arr[i] = if (i % 2) == 0 {
+                        arr[i / 2].double()
+                    } else {
+                        arr[i - 1] + arr[1]
+                    };
                 }
 
-                acc
+                let mut res = $name::identity();
+                let mut first = true;
+                // Iterate from significant byte to least significant byte
+                for byte in other.to_repr().iter().rev() {
+                    // Shift the result over 4 bits
+                    if !first {
+                        for _ in 0 .. 4 {
+                            res = res.double();
+                        }
+                    }
+                    first = false;
+
+                    // Add the top-nibble from this byte into the result
+                    res += arr[usize::from(byte >> 4)];
+                    // Shift the result over
+                    for _ in 0 .. 4 {
+                        res = res.double();
+                    }
+                    // Add the bottom-nibble from this byte into the result
+                    res += arr[usize::from(byte & 0b1111)];
+                }
+
+                res
             }
         }
 
