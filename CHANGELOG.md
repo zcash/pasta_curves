@@ -6,6 +6,9 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- Fix a bug on 32-bit platforms that could cause the square root implementation
+  to return an incorrect result.
 
 ## [0.5.0] - 2022-12-06
 ### Added

@@ -798,6 +798,11 @@ fn test_sqrt() {
 }
 
 #[test]
+fn test_sqrt_32bit_overflow() {
+    assert!((Fq::from(5)).sqrt().is_none().unwrap_u8() == 1);
+}
+
+#[test]
 fn test_pow_by_t_minus1_over2() {
     // NB: TWO_INV is standing in as a "random" field element
     let v = (Fq::TWO_INV).pow_by_t_minus1_over2();
