@@ -16,6 +16,25 @@ jobs:
       - name: Run tests
         run: cargo test --verbose --release ${{ matrix.features }}
 
+  test-32-bit:
+    name: Test on i686-unknown-linux-gnu with ${{ matrix.features }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        features: [--all-features, --no-default-features]
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install cross-platform support dependencies
+        run: sudo apt install gcc-multilib
+      - run: rustup target add i686-unknown-linux-gnu
+      - name: Run tests
+        run: >
+          cargo test
+          --verbose
+          --target i686-unknown-linux-gnu
+          ${{ matrix.features }}
+
   no-std:
     name: Check no-std target ${{ matrix.target }}
     runs-on: ubuntu-latest
