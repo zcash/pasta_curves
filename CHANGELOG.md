@@ -6,6 +6,9 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- MSRV is now 1.60.0.
+
 ## [0.5.1] - 2023-03-02
 ### Fixed
 - Fix a bug on 32-bit platforms that could cause the square root implementation
