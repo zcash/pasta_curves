@@ -6,9 +6,11 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [0.5.1] - 2023-03-02
 ### Fixed
 - Fix a bug on 32-bit platforms that could cause the square root implementation
   to return an incorrect result.
+- The `sqrt-table` feature now works without `std` and only requires `alloc`.
 
 ## [0.5.0] - 2022-12-06
 ### Added
