@@ -30,7 +30,7 @@ macro_rules! new_curve_impl {
     (($($privacy:tt)*), $name:ident, $name_affine:ident, $iso:ident, $base:ident, $scalar:ident,
      $curve_id:literal, $a_raw:expr, $b_raw:expr, $curve_type:ident) => {
         /// Represents a point in the projective coordinate space.
-        #[derive(Copy, Clone, Debug)]
+        #[derive(Copy, Clone, Debug, zeroize::Zeroize)]
         #[cfg_attr(feature = "repr-c", repr(C))]
         $($privacy)* struct $name {
             x: $base,

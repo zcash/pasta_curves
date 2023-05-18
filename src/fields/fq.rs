@@ -24,7 +24,7 @@ use crate::arithmetic::SqrtTables;
 // The internal representation of this type is four 64-bit unsigned
 // integers in little-endian order. `Fq` values are always in
 // Montgomery form; i.e., Fq(a) = aR mod q, with R = 2^256.
-#[derive(Clone, Copy, Eq)]
+#[derive(Clone, Copy, Eq, zeroize::Zeroize)]
 #[repr(transparent)]
 pub struct Fq(pub(crate) [u64; 4]);
 
