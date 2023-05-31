@@ -269,6 +269,114 @@ macro_rules! new_curve_impl {
             }
         }
 
+        paste::paste! {
+
+            /// Uncompressed encoding of the affine representation of a point on the elliptic curve $name.
+            #[derive(Copy, Clone)]
+            pub struct [< $name Uncompressed >]([u8; 64]);
+
+            impl fmt::Debug for [< $name Uncompressed >] {
+                fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    self.0[..].fmt(f)
+                }
+            }
+
+            impl Default for [< $name Uncompressed >] {
+                fn default() -> Self {
+                    [< $name Uncompressed >]([0; 64])
+                }
+            }
+
+            impl AsRef<[u8]> for [< $name Uncompressed >] {
+                fn as_ref(&self) -> &[u8] {
+                    &self.0
+                }
+            }
+
+            impl AsMut<[u8]> for [< $name Uncompressed >] {
+                fn as_mut(&mut self) -> &mut [u8] {
+                    &mut self.0
+                }
+            }
+
+            impl ConstantTimeEq for [< $name Uncompressed >] {
+                fn ct_eq(&self, other: &Self) -> Choice {
+                    self.0.ct_eq(&other.0)
+                }
+            }
+
+            impl cmp::Eq for [< $name Uncompressed >] {}
+
+            impl PartialEq for [< $name Uncompressed >] {
+                #[inline]
+                fn eq(&self, other: &Self) -> bool {
+                    bool::from(self.ct_eq(other))
+                }
+            }
+
+            impl group::UncompressedEncoding for $name_affine{
+                type Uncompressed = [< $name Uncompressed >];
+
+                fn from_uncompressed(bytes: &Self::Uncompressed) -> CtOption<Self> {
+                    Self::from_uncompressed_unchecked(bytes).and_then(|p| CtOption::new(p, p.is_on_curve()))
+                }
+
+                fn from_uncompressed_unchecked(bytes: &Self::Uncompressed) -> CtOption<Self> {
+                    let bytes = &bytes.0;
+                    let infinity_flag_set = Choice::from((bytes[64 - 1] >> 6) & 1);
+                    // Attempt to obtain the x-coordinate
+                    let x = {
+                        let mut tmp = [0; 32];
+                        tmp.copy_from_slice(&bytes[0..32]);
+                        $base::from_repr(tmp)
+                    };
+
+                    // Attempt to obtain the y-coordinate
+                    let y = {
+                        let mut tmp = [0; 32];
+                        tmp.copy_from_slice(&bytes[32..2*32]);
+                        $base::from_repr(tmp)
+                    };
+
+                    x.and_then(|x| {
+                        y.and_then(|y| {
+                            // Create a point representing this value
+                            let p = $name_affine::conditional_select(
+                                &$name_affine{
+                                    x,
+                                    y,
+                                },
+                                &$name_affine::identity(),
+                                infinity_flag_set,
+                            );
+
+                            CtOption::new(
+                                p,
+                                // If the infinity flag is set, the x and y coordinates should have been zero.
+                                ((!infinity_flag_set) | (x.is_zero() & y.is_zero()))
+                            )
+                        })
+                    })
+                }
+
+                fn to_uncompressed(&self) -> Self::Uncompressed {
+                    let mut res = [0; 64];
+
+                    res[0..32].copy_from_slice(
+                        &$base::conditional_select(&self.x, &$base::zero(), self.is_identity()).to_repr()[..],
+                    );
+                    res[32.. 2*32].copy_from_slice(
+                        &$base::conditional_select(&self.y, &$base::zero(), self.is_identity()).to_repr()[..],
+                    );
+
+                    res[64 - 1] |= u8::conditional_select(&0u8, &(1u8 << 6), self.is_identity());
+
+                    [< $name Uncompressed >](res)
+                }
+            }
+
+        }
+
         impl<'a> From<&'a $name_affine> for $name {
             fn from(p: &'a $name_affine) -> $name {
                 p.to_curve()
