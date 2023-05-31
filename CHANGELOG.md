@@ -6,6 +6,10 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `pasta_curves::{EpAffine, EqAffine}` now implement
+  `group::UncompressedEncoding`, with the new `EpUncompressed` and
+  `EqUncompressed` byte types.
 
 ## [0.6.1] - 2026-10-09
 ### Added
