@@ -1,13 +1,17 @@
+use core::fmt;
 use ff::PrimeField;
 use group::GroupEncoding;
 use serde_crate::{
-    de::Error as DeserializeError, Deserialize, Deserializer, Serialize, Serializer,
+    de::{Error as DeserializeError, SeqAccess, Visitor},
+    ser::SerializeTuple,
+    Deserialize, Deserializer, Serialize, Serializer,
 };
 
 use crate::{
     curves::{Ep, EpAffine, Eq, EqAffine},
     fields::{Fp, Fq},
     group::Curve,
+    EpUncompressed, EqUncompressed,
 };
 
 /// Serializes bytes to human readable or compact representation.
@@ -130,6 +134,83 @@ impl<'de> Deserialize<'de> for Eq {
     }
 }
 
+struct ByteArrayVisitor {}
+
+impl<'de> Visitor<'de> for ByteArrayVisitor {
+    type Value = [u8; 64];
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str(concat!("an array of length ", 64))
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<[u8; 64], A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut arr = [u8::default(); 64];
+        for i in 0..64 {
+            arr[i] = seq
+                .next_element()?
+                .ok_or_else(|| DeserializeError::invalid_length(i, &self))?;
+        }
+        Ok(arr)
+    }
+}
+
+impl Serialize for EpUncompressed {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        if s.is_human_readable() {
+            hex::serde::serialize(self.0, s)
+        } else {
+            let mut seq = s.serialize_tuple(64)?;
+            for elem in self.0 {
+                seq.serialize_element(&elem)?;
+            }
+            seq.end()
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for EpUncompressed {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let array = if d.is_human_readable() {
+            hex::serde::deserialize(d)?
+        } else {
+            let visitor = ByteArrayVisitor {};
+            d.deserialize_tuple(64, visitor)?
+        };
+
+        Ok(Self(array))
+    }
+}
+
+impl Serialize for EqUncompressed {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        if s.is_human_readable() {
+            hex::serde::serialize(self.0, s)
+        } else {
+            let mut seq = s.serialize_tuple(64)?;
+            for elem in self.0 {
+                seq.serialize_element(&elem)?;
+            }
+            seq.end()
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for EqUncompressed {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let array = if d.is_human_readable() {
+            hex::serde::deserialize(d)?
+        } else {
+            let visitor = ByteArrayVisitor {};
+            d.deserialize_tuple(64, visitor)?
+        };
+
+        Ok(Self(array))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,7 +218,7 @@ mod tests {
     use core::fmt::Debug;
 
     use ff::Field;
-    use group::{prime::PrimeCurveAffine, Curve, Group};
+    use group::{prime::PrimeCurveAffine, Curve, Group, UncompressedEncoding};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
@@ -439,6 +520,57 @@ mod tests {
             bincode::deserialize::<Eq>(&[
                 0, 0, 0, 0, 33, 235, 70, 140, 221, 168, 148, 9, 252, 152, 70, 34, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 64
+            ])
+            .unwrap(),
+            f
+        );
+    }
+
+    #[test]
+    fn serde_ep_uncompressed() {
+        let mut rng = XorShiftRng::from_seed([
+            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
+            0xbc, 0xe5,
+        ]);
+
+        for _ in 0..100 {
+            let f = Ep::random(&mut rng).to_affine().to_uncompressed();
+            test_roundtrip(&f);
+        }
+
+        let f = Ep::identity().to_affine().to_uncompressed();
+        test_roundtrip(&f);
+        assert_eq!(
+            serde_json::from_slice::<EpUncompressed>(
+                br#""00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040""#
+            )
+            .unwrap(),
+            f
+        );
+        assert_eq!(
+            bincode::deserialize::<EpUncompressed>(&[
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 64
+            ])
+            .unwrap(),
+            f
+        );
+
+        let f = Ep::generator().to_affine().to_uncompressed();
+        test_roundtrip(&f);
+        assert_eq!(
+            serde_json::from_slice::<EpUncompressed>(
+                br#""00000000ed302d991bf94c09fc984622000000000000000000000000000000400200000000000000000000000000000000000000000000000000000000000000""#
+            )
+            .unwrap(),
+            f
+        );
+        assert_eq!(
+            bincode::deserialize::<EpUncompressed>(&[
+                0, 0, 0, 0, 237, 48, 45, 153, 27, 249, 76, 9, 252, 152, 70, 34, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
             ])
             .unwrap(),
             f
