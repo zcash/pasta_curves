@@ -372,7 +372,7 @@ macro_rules! new_curve_impl {
 
             /// Uncompressed encoding of an affine representation of a point on the elliptic curve.
             #[derive(Copy, Clone)]
-            pub struct [< $name Uncompressed >]([u8; 64]);
+            $($privacy)* struct [< $name Uncompressed >](pub(crate) [u8; 64]);
 
             impl fmt::Debug for [< $name Uncompressed >] {
                 fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

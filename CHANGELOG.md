@@ -10,6 +10,8 @@ and this project adheres to Rust's notion of
 - `pasta_curves::{EpAffine, EqAffine}` now implement
   `group::UncompressedEncoding`, with the new `EpUncompressed` and
   `EqUncompressed` byte types.
+- The `serde` feature now provides `Serialize` and `Deserialize` for
+  `EpUncompressed` and `EqUncompressed`.
 
 ## [0.6.1] - 2026-10-09
 ### Added
