@@ -576,4 +576,55 @@ mod tests {
             f
         );
     }
+
+    #[test]
+    fn serde_eq_uncompressed() {
+        let mut rng = XorShiftRng::from_seed([
+            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
+            0xbc, 0xe5,
+        ]);
+
+        for _ in 0..100 {
+            let f = Eq::random(&mut rng).to_affine().to_uncompressed();
+            test_roundtrip(&f);
+        }
+
+        let f = Eq::identity().to_affine().to_uncompressed();
+        test_roundtrip(&f);
+        assert_eq!(
+            serde_json::from_slice::<EqUncompressed>(
+                br#""00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040""#
+            )
+            .unwrap(),
+            f
+        );
+        assert_eq!(
+            bincode::deserialize::<EqUncompressed>(&[
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 64
+            ])
+            .unwrap(),
+            f
+        );
+
+        let f = Eq::generator().to_affine().to_uncompressed();
+        test_roundtrip(&f);
+        assert_eq!(
+            serde_json::from_slice::<EqUncompressed>(
+                br#""0000000021eb468cdda89409fc984622000000000000000000000000000000400200000000000000000000000000000000000000000000000000000000000000""#
+            )
+            .unwrap(),
+            f
+        );
+        assert_eq!(
+            bincode::deserialize::<EqUncompressed>(&[
+                0, 0, 0, 0, 33, 235, 70, 140, 221, 168, 148, 9, 252, 152, 70, 34, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            ])
+            .unwrap(),
+            f
+        );
+    }
 }
