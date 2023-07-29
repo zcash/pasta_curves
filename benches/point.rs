@@ -33,7 +33,7 @@ fn point_bench<C: CurveExt>(c: &mut Criterion, name: &str) {
 
     for &n in [100, 1000, 10000].iter() {
         let input = vec![a; n];
-        let mut output = vec![C::AffineRepr::default(); n];
+        let mut output = vec![C::Affine::default(); n];
         group.bench_function(format!("point batch_normalize/{}", n), |bencher| {
             bencher.iter(|| C::batch_normalize(input.as_slice(), output.as_mut_slice()));
         });
