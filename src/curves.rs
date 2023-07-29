@@ -12,8 +12,8 @@ use alloc::boxed::Box;
 use ff::{Field, PrimeField};
 use group::{
     cofactor::{CofactorCurve, CofactorGroup},
-    prime::{PrimeCurve, PrimeCurveAffine, PrimeGroup},
-    Curve as _, Group as _, GroupEncoding,
+    prime::{PrimeCurve, PrimeGroup},
+    Curve as _, CurveAffine as _, Group as _, GroupEncoding,
 };
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
@@ -168,9 +168,9 @@ macro_rules! new_curve_impl {
         }
 
         impl group::Curve for $name {
-            type AffineRepr = $name_affine;
+            type Affine = $name_affine;
 
-            fn batch_normalize(p: &[Self], q: &mut [Self::AffineRepr]) {
+            fn batch_normalize(p: &[Self], q: &mut [Self::Affine]) {
                 assert_eq!(p.len(), q.len());
 
                 let mut acc = $base::one();
@@ -207,7 +207,7 @@ macro_rules! new_curve_impl {
                 }
             }
 
-            fn to_affine(&self) -> Self::AffineRepr {
+            fn to_affine(&self) -> Self::Affine {
                 let zinv = self.z.invert().unwrap_or($base::zero());
                 let zinv2 = zinv.square();
                 let x = self.x * zinv2;
@@ -244,13 +244,9 @@ macro_rules! new_curve_impl {
             }
         }
 
-        impl PrimeCurve for $name {
-            type Affine = $name_affine;
-        }
+        impl PrimeCurve for $name {}
 
-        impl CofactorCurve for $name {
-            type Affine = $name_affine;
-        }
+        impl CofactorCurve for $name {}
 
         impl GroupEncoding for $name {
             type Repr = [u8; 32];
@@ -610,7 +606,7 @@ macro_rules! new_curve_impl {
             }
         }
 
-        impl PrimeCurveAffine for $name_affine {
+        impl group::CurveAffine for $name_affine {
             type Curve = $name;
             type Scalar = $scalar;
 
@@ -633,27 +629,6 @@ macro_rules! new_curve_impl {
                     y: self.y,
                     z: $base::conditional_select(&$base::one(), &$base::zero(), self.is_identity()),
                 }
-            }
-        }
-
-        impl group::cofactor::CofactorCurveAffine for $name_affine {
-            type Curve = $name;
-            type Scalar = $scalar;
-
-            fn identity() -> Self {
-                <Self as PrimeCurveAffine>::identity()
-            }
-
-            fn generator() -> Self {
-                <Self as PrimeCurveAffine>::generator()
-            }
-
-            fn is_identity(&self) -> Choice {
-                <Self as PrimeCurveAffine>::is_identity(self)
-            }
-
-            fn to_curve(&self) -> Self::Curve {
-                <Self as PrimeCurveAffine>::to_curve(self)
             }
         }
 
