@@ -8,6 +8,14 @@ and this project adheres to Rust's notion of
 ## [Unreleased]
 ### Changed
 - MSRV is now 1.60.0.
+- `pasta_curves::arithmetic::CurveAffine` has been refactored to have a bound
+  of `group::coordinates::ShortWeierstrassPoint`:
+  - `CurveAffine::Base` has been renamed to `CurveAffine::BaseExt`.
+  - All trait methods have been removed (use `ShortWeierstrassPoint` instead).
+
+### Removed
+- `pasta_curves::arithmetic::Coordinates` (use
+  `group::coordinates::ShortWeierstrassCoordinates` instead).
 
 ## [0.5.1] - 2023-03-02
 ### Fixed

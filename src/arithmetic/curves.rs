@@ -2,7 +2,10 @@
 //! write code that generalizes over a pair of groups.
 
 #[cfg(feature = "alloc")]
-use group::prime::{PrimeCurve, PrimeCurveAffine};
+use group::{
+    coordinates::ShortWeierstrassPoint,
+    prime::{PrimeCurve, PrimeCurveAffine},
+};
 #[cfg(feature = "alloc")]
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
@@ -89,91 +92,16 @@ pub trait CurveExt:
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub trait CurveAffine:
     PrimeCurveAffine<Curve = Self::CurveExt, Scalar = Self::ScalarExt>
-    + Default
+    + ShortWeierstrassPoint<Base = Self::BaseExt>
     + Add<Output = Self::Curve>
     + Sub<Output = Self::Curve>
-    + ConditionallySelectable
     + ConstantTimeEq
     + From<Self::Curve>
 {
     /// The scalar field of this elliptic curve.
     type ScalarExt: ff::WithSmallOrderMulGroup<3> + Ord;
     /// The base field over which this elliptic curve is constructed.
-    type Base: ff::WithSmallOrderMulGroup<3> + Ord;
+    type BaseExt: ff::WithSmallOrderMulGroup<3> + Ord;
     /// The projective form of the curve
     type CurveExt: CurveExt<AffineExt = Self, ScalarExt = <Self as CurveAffine>::ScalarExt>;
-
-    /// Gets the coordinates of this point.
-    ///
-    /// Returns None if this is the identity.
-    fn coordinates(&self) -> CtOption<Coordinates<Self>>;
-
-    /// Obtains a point given $(x, y)$, failing if it is not on the
-    /// curve.
-    fn from_xy(x: Self::Base, y: Self::Base) -> CtOption<Self>;
-
-    /// Returns whether or not this element is on the curve; should
-    /// always be true unless an "unchecked" API was used.
-    fn is_on_curve(&self) -> Choice;
-
-    /// Returns the curve constant $a$.
-    fn a() -> Self::Base;
-
-    /// Returns the curve constant $b$.
-    fn b() -> Self::Base;
-}
-
-/// The affine coordinates of a point on an elliptic curve.
-#[cfg(feature = "alloc")]
-#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Coordinates<C: CurveAffine> {
-    pub(crate) x: C::Base,
-    pub(crate) y: C::Base,
-}
-
-#[cfg(feature = "alloc")]
-impl<C: CurveAffine> Coordinates<C> {
-    /// Obtains a `Coordinates` value given $(x, y)$, failing if it is not on the curve.
-    pub fn from_xy(x: C::Base, y: C::Base) -> CtOption<Self> {
-        // We use CurveAffine::from_xy to validate the coordinates.
-        C::from_xy(x, y).map(|_| Coordinates { x, y })
-    }
-    /// Returns the x-coordinate.
-    ///
-    /// Equivalent to `Coordinates::u`.
-    pub fn x(&self) -> &C::Base {
-        &self.x
-    }
-
-    /// Returns the y-coordinate.
-    ///
-    /// Equivalent to `Coordinates::v`.
-    pub fn y(&self) -> &C::Base {
-        &self.y
-    }
-
-    /// Returns the u-coordinate.
-    ///
-    /// Equivalent to `Coordinates::x`.
-    pub fn u(&self) -> &C::Base {
-        &self.x
-    }
-
-    /// Returns the v-coordinate.
-    ///
-    /// Equivalent to `Coordinates::y`.
-    pub fn v(&self) -> &C::Base {
-        &self.y
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<C: CurveAffine> ConditionallySelectable for Coordinates<C> {
-    fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
-        Coordinates {
-            x: C::Base::conditional_select(&a.x, &b.x, choice),
-            y: C::Base::conditional_select(&a.y, &b.y, choice),
-        }
-    }
 }
