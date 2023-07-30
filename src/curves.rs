@@ -24,7 +24,7 @@ use ff::WithSmallOrderMulGroup;
 use super::{Fp, Fq};
 
 #[cfg(feature = "alloc")]
-use crate::arithmetic::{Coordinates, CurveAffine, CurveExt};
+use crate::arithmetic::{CurveAffine, CurveExt};
 
 macro_rules! new_curve_impl {
     (($($privacy:tt)*), $name:ident, $name_affine:ident, $iso:ident, $base:ident, $scalar:ident,
@@ -683,32 +683,43 @@ macro_rules! new_curve_impl {
         #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
         impl CurveAffine for $name_affine {
             type ScalarExt = $scalar;
-            type Base = $base;
+            type BaseExt = $base;
             type CurveExt = $name;
+        }
 
+        impl $name_affine {
             fn is_on_curve(&self) -> Choice {
                 // y^2 - x^3 - ax ?= b
                 (self.y.square() - (self.x.square() + &$name::curve_constant_a()) * self.x).ct_eq(&$name::curve_constant_b())
                     | self.is_identity()
             }
+        }
 
-            fn coordinates(&self) -> CtOption<Coordinates<Self>> {
-                CtOption::new(Coordinates { x: self.x, y: self.y }, !self.is_identity())
-            }
+        #[cfg(feature = "alloc")]
+        #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+        impl group::coordinates::ShortWeierstrassPoint for $name_affine {
+            type Base = $base;
 
-            fn from_xy(x: Self::Base, y: Self::Base) -> CtOption<Self> {
+            const A: Self::Base = $name::curve_constant_a();
+            const B: Self::Base = $name::curve_constant_b();
+
+            fn from_bare_coordinates(x: Self::Base, y: Self::Base) -> CtOption<Self> {
                 let p = $name_affine {
                     x, y,
                 };
                 CtOption::new(p, p.is_on_curve())
             }
 
-            fn a() -> Self::Base {
-                $name::curve_constant_a()
+            fn from_coordinates(coords: group::coordinates::ShortWeierstrassCoordinates<Self>) -> Self {
+                $name_affine {
+                    x: coords.x(),
+                    y: coords.y(),
+                }
             }
 
-            fn b() -> Self::Base {
-                $name::curve_constant_b()
+            fn coordinates(&self) -> CtOption<group::coordinates::ShortWeierstrassCoordinates<Self>> {
+                // TODO: Avoid a second on-curve check by storing this directly.
+                group::coordinates::ShortWeierstrassCoordinates::from_coordinates(self.x, self.y)
             }
         }
 

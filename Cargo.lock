@@ -299,8 +299,7 @@ dependencies = [
 [[package]]
 name = "group"
 version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fd1a1c7a5206c5b7a3f5a0d7ccd3ff85d0c8f5133d62a02680255b0004af5f4"
+source = "git+https://github.com/zkcrypto/group.git?rev=72b1519b836fc277e290cbb941ed472698895a9f#72b1519b836fc277e290cbb941ed472698895a9f"
 dependencies = [
  "ff",
  "rand_core 0.10.1",

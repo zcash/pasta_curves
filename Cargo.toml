@@ -82,3 +82,6 @@ repr-c = []
 uninline-portable = []
 deferred = []
 serde = ["hex", "serde_crate"]
+
+[patch.crates-io]
+group = { git = "https://github.com/zkcrypto/group.git", rev = "72b1519b836fc277e290cbb941ed472698895a9f" }

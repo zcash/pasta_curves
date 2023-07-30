@@ -18,6 +18,14 @@ and this project adheres to Rust's notion of
   - `Group::random` and `Field::random` are replaced by the fallible
     `try_random`, following `rand`'s move to a failing RNG interface.
 - MSRV is now 1.88.0.
+- `pasta_curves::arithmetic::CurveAffine` has been refactored to have a bound
+  of `group::coordinates::ShortWeierstrassPoint`:
+  - `CurveAffine::Base` has been renamed to `CurveAffine::BaseExt`.
+  - All trait methods have been removed (use `ShortWeierstrassPoint` instead).
+
+### Removed
+- `pasta_curves::arithmetic::Coordinates` (use
+  `group::coordinates::ShortWeierstrassCoordinates` instead).
 
 ## [0.5.2] - 2026-07-23
 ### Added
