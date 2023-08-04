@@ -5,6 +5,8 @@ use ff::{Field, FromUniformBytes, PrimeField, WithSmallOrderMulGroup};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
+use rustler::{Decoder, Encoder, Env, NifResult, Term};
+
 #[cfg(feature = "sqrt-table")]
 use lazy_static::lazy_static;
 
@@ -100,6 +102,19 @@ impl ConditionallySelectable for Fq {
             u64::conditional_select(&a.0[2], &b.0[2], choice),
             u64::conditional_select(&a.0[3], &b.0[3], choice),
         ])
+    }
+}
+
+impl Encoder for Fq {
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
+        (self.0[0], self.0[1], self.0[2], self.0[3]).encode(env)
+    }
+}
+
+impl<'a> Decoder<'a> for Fq {
+    fn decode(term: Term<'a>) -> NifResult<Self> {
+        let tuple: NifResult<(u64, u64, u64, u64)> = Decoder::decode(term);
+        tuple.map(|res| Fq([res.0, res.1, res.2, res.3]))
     }
 }
 

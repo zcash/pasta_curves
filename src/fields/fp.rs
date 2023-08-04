@@ -5,6 +5,8 @@ use ff::{Field, FromUniformBytes, PrimeField, WithSmallOrderMulGroup};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
+use rustler::{Decoder, Encoder, Env, NifResult, Term};
+
 #[cfg(feature = "sqrt-table")]
 use lazy_static::lazy_static;
 
@@ -182,6 +184,19 @@ impl<T: ::core::borrow::Borrow<Fp>> ::core::iter::Sum<T> for Fp {
 impl<T: ::core::borrow::Borrow<Fp>> ::core::iter::Product<T> for Fp {
     fn product<I: Iterator<Item = T>>(iter: I) -> Self {
         iter.fold(Self::ONE, |acc, item| acc * item.borrow())
+    }
+}
+
+impl Encoder for Fp {
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
+        (self.0[0], self.0[1], self.0[2], self.0[3]).encode(env)
+    }
+}
+
+impl<'a> Decoder<'a> for Fp {
+    fn decode(term: Term<'a>) -> NifResult<Self> {
+        let tuple: NifResult<(u64, u64, u64, u64)> = Decoder::decode(term);
+        tuple.map(|res| Fp([res.0, res.1, res.2, res.3]))
     }
 }
 

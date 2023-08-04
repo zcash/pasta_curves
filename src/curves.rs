@@ -16,6 +16,7 @@ use group::{
     Curve as _, Group as _, GroupEncoding,
 };
 use rand::RngCore;
+use rustler::NifRecord;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 #[cfg(feature = "alloc")]
@@ -26,12 +27,15 @@ use super::{Fp, Fq};
 #[cfg(feature = "alloc")]
 use crate::arithmetic::{Coordinates, CurveAffine, CurveExt};
 
+use alloc::format;
+
 macro_rules! new_curve_impl {
     (($($privacy:tt)*), $name:ident, $name_affine:ident, $iso:ident, $base:ident, $scalar:ident,
-     $curve_id:literal, $a_raw:expr, $b_raw:expr, $curve_type:ident) => {
+     $curve_id:literal, $a_raw:expr, $b_raw:expr, $curve_type:ident, $name_string:literal, $name_affine_string:literal) => {
         /// Represents a point in the projective coordinate space.
-        #[derive(Copy, Clone, Debug)]
+        #[derive(Copy, Clone, Debug, NifRecord)]
         #[cfg_attr(feature = "repr-c", repr(C))]
+        #[tag = $name_string]
         $($privacy)* struct $name {
             x: $base,
             y: $base,
@@ -50,8 +54,9 @@ macro_rules! new_curve_impl {
 
         /// Represents a point in the affine coordinate space (or the point at
         /// infinity).
-        #[derive(Copy, Clone)]
+        #[derive(Copy, Clone, NifRecord)]
         #[cfg_attr(feature = "repr-c", repr(C))]
+        #[tag = $name_affine_string]
         $($privacy)* struct $name_affine {
             x: $base,
             y: $base,
@@ -955,7 +960,9 @@ new_curve_impl!(
     "pallas",
     [0, 0, 0, 0],
     [5, 0, 0, 0],
-    special_a0_b5
+    special_a0_b5,
+    "Ep",
+    "EpAffine"
 );
 new_curve_impl!(
     (pub),
@@ -967,7 +974,9 @@ new_curve_impl!(
     "vesta",
     [0, 0, 0, 0],
     [5, 0, 0, 0],
-    special_a0_b5
+    special_a0_b5,
+    "Eq",
+    "EqAffine"
 );
 new_curve_impl!(
     (pub(crate)),
@@ -984,7 +993,9 @@ new_curve_impl!(
         0x18354a2eb0ea8c9c,
     ],
     [1265, 0, 0, 0],
-    general
+    general,
+    "IsoEp",
+    "IsoEpAffine"
 );
 new_curve_impl!(
     (pub(crate)),
@@ -1001,7 +1012,9 @@ new_curve_impl!(
         0x267f9b2ee592271a,
     ],
     [1265, 0, 0, 0],
-    general
+    general,
+    "IsoEq",
+    "IsoEqAffine"
 );
 
 impl Ep {
