@@ -5,6 +5,7 @@ use ff::{Field, FromUniformBytes, PrimeField, WithSmallOrderMulGroup};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
+#[cfg(feature = "repr-erlang")]
 use rustler::{Decoder, Encoder, Env, NifResult, Term};
 
 #[cfg(feature = "sqrt-table")]
@@ -187,12 +188,14 @@ impl<T: ::core::borrow::Borrow<Fp>> ::core::iter::Product<T> for Fp {
     }
 }
 
+#[cfg(feature = "repr-erlang")]
 impl Encoder for Fp {
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         (self.0[0], self.0[1], self.0[2], self.0[3]).encode(env)
     }
 }
 
+#[cfg(feature = "repr-erlang")]
 impl<'a> Decoder<'a> for Fp {
     fn decode(term: Term<'a>) -> NifResult<Self> {
         let tuple: NifResult<(u64, u64, u64, u64)> = Decoder::decode(term);
