@@ -256,11 +256,3 @@ pub(crate) const fn mac(a: u64, b: u64, c: u64, carry: u64) -> (u64, u64) {
     let ret = (a as u128) + ((b as u128) * (c as u128)) + (carry as u128);
     (ret as u64, (ret >> 64) as u64)
 }
-
-/// Compute (a << 1) | carry, returning the result and the new carry over.
-#[inline(always)]
-pub(crate) const fn shl1(a: u64, b: u64) -> (u64, u64) {
-    let a = a as u128;
-    let t = (a << 1) | b as u128;
-    (t as u64, (t >> 64) as u64)
-}
