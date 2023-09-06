@@ -226,7 +226,7 @@ impl<F: SqrtTableHelpers> SqrtTables<F> {
 
         t_ += inv(alpha) << 24; // = t << 1
                                 // 1 == x3 * ROOT_OF_UNITY^t_
-        t_ = (t_ + 1) >> 1;
+        t_ = (((t_ as u64) + 1) >> 1) as usize;
         assert!(t_ <= 0x80000000);
 
         *uv * self.g0[t_ & 0xFF]
