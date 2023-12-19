@@ -4,6 +4,12 @@ This crate provides an implementation of the Pasta elliptic curve constructions,
 Pallas and Vesta. More details about the Pasta curves can be found
 [in this blog post](https://electriccoin.co/blog/the-pasta-curves-for-halo-2-and-beyond/).
 
+## RFC process
+
+This crate follows the [zkcrypto RFC process](https://zkcrypto.github.io/rfcs/).
+If you want to propose "substantial" changes to this crate, please
+[create an RFC](https://github.com/zkcrypto/rfcs) for wider discussion.
+
 ## [Documentation](https://docs.rs/pasta_curves)
 
 ## Minimum Supported Rust Version
