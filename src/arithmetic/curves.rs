@@ -64,6 +64,7 @@ pub trait CurveExt:
     ///     (g * x + &(h * r)).to_affine()
     /// }
     /// ```
+    #[allow(clippy::type_complexity)]
     fn hash_to_curve<'a>(domain_prefix: &'a str) -> Box<dyn Fn(&[u8]) -> Self + 'a>;
 
     /// Returns whether or not this element is on the curve; should

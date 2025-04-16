@@ -14,7 +14,7 @@ If you want to propose "substantial" changes to this crate, please
 
 ## Minimum Supported Rust Version
 
-Requires Rust **1.60** or higher.
+Requires Rust **1.63** or higher.
 
 Minimum supported Rust version can be changed in the future, but it will be done with a
 minor version bump.
