@@ -2,7 +2,7 @@ use core::fmt;
 use core::ops::{Add, Mul, Neg, Sub};
 
 use ff::{Field, FromUniformBytes, PrimeField, WithSmallOrderMulGroup};
-use rand::RngCore;
+use rand::TryRngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 #[cfg(feature = "sqrt-table")]
@@ -479,17 +479,17 @@ impl ff::Field for Fq {
     const ZERO: Self = Self::zero();
     const ONE: Self = Self::one();
 
-    fn random(mut rng: impl RngCore) -> Self {
-        Self::from_u512([
-            rng.next_u64(),
-            rng.next_u64(),
-            rng.next_u64(),
-            rng.next_u64(),
-            rng.next_u64(),
-            rng.next_u64(),
-            rng.next_u64(),
-            rng.next_u64(),
-        ])
+    fn try_from_rng<R: TryRngCore + ?Sized>(rng: &mut R) -> Result<Self, R::Error> {
+        Ok(Self::from_u512([
+            rng.try_next_u64()?,
+            rng.try_next_u64()?,
+            rng.try_next_u64()?,
+            rng.try_next_u64()?,
+            rng.try_next_u64()?,
+            rng.try_next_u64()?,
+            rng.try_next_u64()?,
+            rng.try_next_u64()?,
+        ]))
     }
 
     fn double(&self) -> Self {
