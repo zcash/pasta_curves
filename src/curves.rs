@@ -15,7 +15,7 @@ use group::{
     prime::{PrimeCurve, PrimeCurveAffine, PrimeGroup},
     Curve as _, Group as _, GroupEncoding,
 };
-use rand::RngCore;
+use rand::TryRngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 #[cfg(feature = "alloc")]
@@ -70,10 +70,10 @@ macro_rules! new_curve_impl {
         impl group::Group for $name {
             type Scalar = $scalar;
 
-            fn random(mut rng: impl RngCore) -> Self {
+            fn try_from_rng<R: TryRngCore + ?Sized>(rng: &mut R) -> Result<Self, R::Error> {
                 loop {
-                    let x = $base::random(&mut rng);
-                    let ysign = (rng.next_u32() % 2) as u8;
+                    let x = $base::try_from_rng(rng)?;
+                    let ysign = (rng.try_next_u32()? % 2) as u8;
 
                     let x3 = x.square() * x;
                     let y = (x3 + $name::curve_constant_b()).sqrt();
@@ -85,7 +85,7 @@ macro_rules! new_curve_impl {
                             x,
                             y,
                         };
-                        break p.to_curve();
+                        break Ok(p.to_curve());
                     }
                 }
             }
