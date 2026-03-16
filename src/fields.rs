@@ -3,9 +3,11 @@
 
 mod fp;
 mod fq;
+mod mont_product;
 
 pub use fp::*;
 pub use fq::*;
+pub use mont_product::*;
 
 /// Converts 64-bit little-endian limbs to 32-bit little endian limbs.
 #[cfg(feature = "gpu")]
