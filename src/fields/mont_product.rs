@@ -1,5 +1,7 @@
 use core::ops::{Add, AddAssign};
 
+use ff::Field;
+
 use crate::arithmetic::adc;
 
 pub(super) mod sealed {
@@ -7,7 +9,7 @@ pub(super) mod sealed {
 }
 
 /// A trait for fields with a Montgomery representation, enabling deferred reduction.
-pub trait MontgomeryRepr: sealed::Sealed + Sized {
+pub trait MontgomeryRepr: sealed::Sealed + Field {
     /// Performs Montgomery reduction on the given 512-bit limbs.
     fn mont_reduce(limbs: [u64; 8]) -> Self;
 
@@ -16,6 +18,30 @@ pub trait MontgomeryRepr: sealed::Sealed + Sized {
 
     /// Squares this element, returning the unreduced 512-bit Montgomery product.
     fn square_unreduced(&self) -> MontProduct<Self>;
+
+    /// Computes the inner product of two slices, using deferred Montgomery
+    /// reduction internally.
+    ///
+    /// Accumulates unreduced products and reduces only when the 512-bit
+    /// accumulator's headroom is exhausted, minimizing the number of
+    /// expensive Montgomery reductions.
+    ///
+    /// If the slices have different lengths, the extra elements of the longer
+    /// slice are ignored.
+    fn inner_product(a: &[Self], b: &[Self]) -> Self {
+        let mut total = Self::ZERO;
+        let mut acc = MontProduct::<Self>::ZERO;
+
+        for (x, y) in a.iter().zip(b.iter()) {
+            acc += x.mul_unreduced(y);
+            if acc.needs_reduction() {
+                total = total + acc.reduce();
+                acc = MontProduct::<Self>::ZERO;
+            }
+        }
+
+        total + acc.reduce()
+    }
 }
 
 /// An unreduced 512-bit Montgomery product over field `F`.
@@ -60,6 +86,15 @@ impl<F: MontgomeryRepr> MontProduct<F> {
     /// Performs Montgomery reduction, returning the field element.
     pub fn reduce(self) -> F {
         F::mont_reduce(self.limbs)
+    }
+
+    /// Returns `true` if the accumulator's headroom is exhausted and a
+    /// [`reduce`](Self::reduce) is needed before further accumulation.
+    ///
+    /// A single product fits in 510 bits, so the top 2 bits of the
+    /// 512-bit representation serve as overflow indicators.
+    fn needs_reduction(&self) -> bool {
+        self.limbs[7] >> 62 != 0
     }
 }
 
@@ -161,47 +196,28 @@ mod tests {
                 }
 
                 #[test]
-                fn inner_product() {
+                fn inner_product_small() {
+                    use super::super::MontgomeryRepr;
                     let mut rng = XorShiftRng::from_seed(SEED);
-                    let n = MontProduct::<$F>::MAX_NUM_ADD;
-                    let a: Vec<$F> = (0..n).map(|_| <$F>::random(&mut rng)).collect();
-                    let b: Vec<$F> = (0..n).map(|_| <$F>::random(&mut rng)).collect();
+                    let a: Vec<$F> = (0..4).map(|_| <$F>::random(&mut rng)).collect();
+                    let b: Vec<$F> = (0..4).map(|_| <$F>::random(&mut rng)).collect();
 
                     let eager: $F = a.iter().zip(b.iter()).map(|(x, y)| *x * *y).sum();
-
-                    let lazy = a
-                        .iter()
-                        .zip(b.iter())
-                        .fold(MontProduct::<$F>::ZERO, |acc, (x, y)| {
-                            acc + x.mul_unreduced(y)
-                        })
-                        .reduce();
+                    let lazy = <$F>::inner_product(&a, &b);
 
                     assert_eq!(eager, lazy);
                 }
 
                 #[test]
-                fn long_inner_product_chunked() {
+                fn inner_product_large() {
+                    use super::super::MontgomeryRepr;
                     let mut rng = XorShiftRng::from_seed(SEED);
-                    let n = MontProduct::<$F>::MAX_NUM_ADD;
-                    let len = 4 * n;
+                    let len = 100;
                     let a: Vec<$F> = (0..len).map(|_| <$F>::random(&mut rng)).collect();
                     let b: Vec<$F> = (0..len).map(|_| <$F>::random(&mut rng)).collect();
 
                     let eager: $F = a.iter().zip(b.iter()).map(|(x, y)| *x * *y).sum();
-
-                    let lazy: $F = a
-                        .chunks(n)
-                        .zip(b.chunks(n))
-                        .map(|(ac, bc)| {
-                            ac.iter()
-                                .zip(bc.iter())
-                                .fold(MontProduct::<$F>::ZERO, |acc, (x, y)| {
-                                    acc + x.mul_unreduced(y)
-                                })
-                                .reduce()
-                        })
-                        .sum();
+                    let lazy = <$F>::inner_product(&a, &b);
 
                     assert_eq!(eager, lazy);
                 }
