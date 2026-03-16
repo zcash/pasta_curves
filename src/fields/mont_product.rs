@@ -10,6 +10,12 @@ pub(super) mod sealed {
 pub trait MontgomeryRepr: sealed::Sealed + Sized {
     /// Performs Montgomery reduction on the given 512-bit limbs.
     fn mont_reduce(limbs: [u64; 8]) -> Self;
+
+    /// Multiplies `rhs` by `self`, returning the unreduced 512-bit Montgomery product.
+    fn mul_unreduced(&self, rhs: &Self) -> MontProduct<Self>;
+
+    /// Squares this element, returning the unreduced 512-bit Montgomery product.
+    fn square_unreduced(&self) -> MontProduct<Self>;
 }
 
 /// An unreduced 512-bit Montgomery product over field `F`.
@@ -32,6 +38,17 @@ pub struct MontProduct<F: MontgomeryRepr> {
 }
 
 impl<F: MontgomeryRepr> MontProduct<F> {
+    /// Maximum number of unreduced products that can be safely accumulated
+    /// via addition without overflow. See the [struct-level documentation](Self)
+    /// for the overflow bound derivation.
+    pub const MAX_NUM_ADD: usize = 4;
+
+    /// The zero (additive identity) unreduced product.
+    pub const ZERO: Self = MontProduct {
+        limbs: [0; 8],
+        _marker: core::marker::PhantomData,
+    };
+
     /// Creates a `MontProduct` from raw 512-bit limbs.
     pub(crate) const fn from_limbs(limbs: [u64; 8]) -> Self {
         MontProduct {
@@ -40,21 +57,10 @@ impl<F: MontgomeryRepr> MontProduct<F> {
         }
     }
 
-    /// The zero (additive identity) unreduced product.
-    pub const ZERO: Self = MontProduct {
-        limbs: [0; 8],
-        _marker: core::marker::PhantomData,
-    };
-
     /// Performs Montgomery reduction, returning the field element.
     pub fn reduce(self) -> F {
         F::mont_reduce(self.limbs)
     }
-
-    /// Maximum number of unreduced products that can be safely accumulated
-    /// via addition without overflow. See the [struct-level documentation](Self)
-    /// for the overflow bound derivation.
-    pub const MAX_NUM_ADD: usize = 4;
 }
 
 impl<'a, 'b, F: MontgomeryRepr> Add<&'b MontProduct<F>> for &'a MontProduct<F> {

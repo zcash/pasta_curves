@@ -433,6 +433,16 @@ impl MontgomeryRepr for Fp {
             limbs[0], limbs[1], limbs[2], limbs[3], limbs[4], limbs[5], limbs[6], limbs[7],
         )
     }
+
+    #[cfg_attr(not(feature = "uninline-portable"), inline)]
+    fn mul_unreduced(&self, rhs: &Self) -> MontProduct<Fp> {
+        Fp::mul_unreduced(self, rhs)
+    }
+
+    #[cfg_attr(not(feature = "uninline-portable"), inline)]
+    fn square_unreduced(&self) -> MontProduct<Fp> {
+        Fp::square_unreduced(self)
+    }
 }
 
 impl Fp {
