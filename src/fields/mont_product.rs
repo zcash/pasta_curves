@@ -35,7 +35,7 @@ pub trait MontgomeryRepr: sealed::Sealed + Field {
         for (x, y) in a.iter().zip(b.iter()) {
             acc += x.mul_unreduced(y);
             if acc.needs_reduction() {
-                total = total + acc.reduce();
+                total += acc.reduce();
                 acc = MontProduct::<Self>::ZERO;
             }
         }
