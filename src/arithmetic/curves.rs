@@ -124,6 +124,26 @@ pub trait CurveAffine:
 
     /// Returns the curve constant $b$.
     fn b() -> Self::Base;
+
+    /// Returns the $x$-coordinate of this point directly.
+    ///
+    /// For the identity point, returns zero.
+    fn x(&self) -> Self::Base;
+
+    /// Returns the $y$-coordinate of this point directly.
+    ///
+    /// For the identity point, returns zero.
+    fn y(&self) -> Self::Base;
+
+    /// Constructs a point from $(x, y)$ without validating that the point
+    /// is on the curve. The caller must ensure the coordinates satisfy
+    /// $y^2 = x^3 + ax + b$.
+    ///
+    /// # Safety
+    ///
+    /// Using coordinates that are not on the curve will produce incorrect
+    /// results in subsequent operations.
+    fn from_xy_unchecked(x: Self::Base, y: Self::Base) -> Self;
 }
 
 /// The affine coordinates of a point on an elliptic curve.

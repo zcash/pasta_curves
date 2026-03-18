@@ -735,6 +735,18 @@ macro_rules! new_curve_impl {
             fn b() -> Self::Base {
                 $name::curve_constant_b()
             }
+
+            fn x(&self) -> Self::Base {
+                self.x
+            }
+
+            fn y(&self) -> Self::Base {
+                self.y
+            }
+
+            fn from_xy_unchecked(x: Self::Base, y: Self::Base) -> Self {
+                $name_affine { x, y }
+            }
         }
 
         impl Default for $name_affine {

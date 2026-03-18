@@ -171,8 +171,16 @@ mod tests {
         0xe5,
     ];
 
+    fn fp_from_limbs(limbs: [u64; 4]) -> Fp {
+        Fp(limbs)
+    }
+
+    fn fq_from_limbs(limbs: [u64; 4]) -> Fq {
+        Fq(limbs)
+    }
+
     macro_rules! mont_product_tests {
-        ($F:ty, $mod:ident) => {
+        ($F:ty, $mod:ident, $from_limbs:ident, $a_limbs:expr, $b_limbs:expr) => {
             mod $mod {
                 use super::*;
 
@@ -226,10 +234,81 @@ mod tests {
                 fn zero() {
                     assert_eq!(MontProduct::<$F>::ZERO.reduce(), <$F>::zero());
                 }
+
+                /// Exercises the `needs_reduction` overflow bug.
+                ///
+                /// `needs_reduction` checks `limbs[7] >> 62 != 0`, triggering
+                /// at 2^510. But `R * p > 2^510` by only ~2^353, so when
+                /// products have top limbs slightly below `>> 62`'s per-product
+                /// threshold, 5 products can accumulate before the check fires.
+                /// At that point the accumulator exceeds `R * p`, and
+                /// `montgomery_reduce` (which does a single conditional
+                /// subtraction) returns a non-canonical result off by `p`.
+                #[test]
+                fn inner_product_needs_reduction_overflow() {
+                    use super::super::MontgomeryRepr;
+
+                    // These elements have raw Montgomery limbs with top limb
+                    // ~0x3F, so each product has limbs[7] ~0x0F. This means
+                    // needs_reduction stays false for the first 4 products and
+                    // only fires after the 5th — by which point the 512-bit
+                    // accumulator has overflowed R * p.
+                    let a = $from_limbs($a_limbs);
+                    let b = $from_limbs($b_limbs);
+
+                    let a_arr = [a; 100];
+                    let b_arr = [b; 100];
+
+                    let eager: $F = a_arr.iter().zip(b_arr.iter()).map(|(x, y)| *x * *y).sum();
+                    let lazy = <$F>::inner_product(&a_arr, &b_arr);
+
+                    // Note: Fp's Debug uses to_repr() which canonicalizes,
+                    // so both sides print identically even when limbs differ.
+                    // Compare the raw Montgomery limbs directly.
+                    assert_eq!(
+                        eager, lazy,
+                        "inner_product returned non-canonical result \
+                         (limbs differ by a multiple of the modulus)"
+                    );
+                }
             }
         };
     }
 
-    mont_product_tests!(Fp, fp);
-    mont_product_tests!(Fq, fq);
+    mont_product_tests!(
+        Fp,
+        fp,
+        fp_from_limbs,
+        // Montgomery limbs with top limb ~0x3F, found by searching for pairs whose
+        // product accumulates 5 times before needs_reduction triggers.
+        [
+            0x0361524c2cc0f859u64,
+            0xae68690a78bc7175,
+            0xe66cd36e68ef8f5f,
+            0x3fa6524a713b7e05
+        ],
+        [
+            0x637e0edc5b6e4ae7u64,
+            0xa859890cd670f668,
+            0x27460f22403d1f83,
+            0x3f6208144fbaecc0
+        ]
+    );
+    mont_product_tests!(
+        Fq,
+        fq,
+        fq_from_limbs,
+        [
+            0x31d0b6640589f877u64,
+            0xf87f43fdf6062541,
+            0xb7d6467b2f5a522a,
+            0x3eb025240950fd13
+        ],
+        [
+            0xba26d85135e8579au64,
+            0x0fa34266ccfdba9b,
+            0xade9b2b4efdd35f8,
+            0x3caaf0e81fb797fa
+        ]
+    );
 }
