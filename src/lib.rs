@@ -22,6 +22,9 @@ mod curves;
 mod fields;
 
 pub mod arithmetic;
+#[cfg(feature = "deferred")]
+#[cfg_attr(docsrs, doc(cfg(feature = "deferred")))]
+pub mod deferred;
 pub mod pallas;
 pub mod vesta;
 

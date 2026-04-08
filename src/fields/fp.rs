@@ -12,6 +12,8 @@ use lazy_static::lazy_static;
 use ff::{FieldBits, PrimeFieldBits};
 
 use crate::arithmetic::{adc, mac, sbb, SqrtTableHelpers};
+#[cfg(feature = "deferred")]
+use crate::deferred::DeferredField;
 
 #[cfg(feature = "sqrt-table")]
 use crate::arithmetic::SqrtTables;
@@ -474,6 +476,26 @@ impl Fp {
         let (r7, _) = adc(0, r7, carry);
 
         [r0, r1, r2, r3, r4, r5, r6, r7]
+    }
+}
+
+#[cfg(feature = "deferred")]
+impl DeferredField for Fp {
+    type Accumulator = Fp;
+
+    #[inline]
+    fn mul_accumulate(acc: &mut Fp, a: &Fp, b: &Fp) {
+        *acc += *a * *b;
+    }
+
+    #[inline]
+    fn square_accumulate(acc: &mut Fp, a: &Fp) {
+        *acc += a.square();
+    }
+
+    #[inline]
+    fn reduce(acc: Fp) -> Fp {
+        acc
     }
 }
 
