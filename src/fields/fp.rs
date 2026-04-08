@@ -13,7 +13,7 @@ use ff::{FieldBits, PrimeFieldBits};
 
 use crate::arithmetic::{adc, mac, sbb, SqrtTableHelpers};
 #[cfg(feature = "deferred")]
-use crate::deferred::DeferredField;
+use crate::deferred::{DeferredField, Product};
 
 #[cfg(feature = "sqrt-table")]
 use crate::arithmetic::SqrtTables;
@@ -481,21 +481,31 @@ impl Fp {
 
 #[cfg(feature = "deferred")]
 impl DeferredField for Fp {
-    type Accumulator = Fp;
+    type Accumulator = Product<Fp>;
 
-    #[inline]
-    fn mul_accumulate(acc: &mut Fp, a: &Fp, b: &Fp) {
-        *acc += *a * *b;
+    #[cfg_attr(not(feature = "uninline-portable"), inline)]
+    fn mul_accumulate(acc: &mut Self::Accumulator, a: &Fp, b: &Fp) {
+        acc.accumulate(a.mul_unreduced(b));
     }
 
-    #[inline]
-    fn square_accumulate(acc: &mut Fp, a: &Fp) {
-        *acc += a.square();
+    #[cfg_attr(not(feature = "uninline-portable"), inline)]
+    fn square_accumulate(acc: &mut Self::Accumulator, a: &Fp) {
+        acc.accumulate(a.square_unreduced());
     }
 
-    #[inline]
-    fn reduce(acc: Fp) -> Fp {
-        acc
+    #[cfg_attr(not(feature = "uninline-portable"), inline)]
+    fn reduce(acc: Self::Accumulator) -> Fp {
+        /// 2^448 mod p (little-endian limbs).
+        const B448: [u64; 4] = [
+            0x9b9858f294cf91ba,
+            0x8635bd2c4252b065,
+            0x496d41af7b9cb714,
+            0x1b4b3c4bfffffffc,
+        ];
+        let limbs = acc.partial_reduce(&B448, &R2.0);
+        Fp::montgomery_reduce(
+            limbs[0], limbs[1], limbs[2], limbs[3], limbs[4], limbs[5], limbs[6], limbs[7],
+        )
     }
 }
 
