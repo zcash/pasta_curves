@@ -29,6 +29,10 @@ pub mod pallas;
 pub mod vesta;
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+pub mod glv;
+
+#[cfg(feature = "alloc")]
 mod hashtocurve;
 
 #[cfg(feature = "serde")]
