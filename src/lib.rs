@@ -2,11 +2,14 @@
 
 #![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-// These two concern the library's public API, so they cannot move to the `[lints]`
-// table in Cargo.toml, which would also apply them to the benches. Every other lint
-// this crate configures lives there.
+// The first two concern the library's public API, so they cannot move to the `[lints]`
+// table in Cargo.toml, which would also apply them to the benches. `unsafe_code` is
+// denied there as well, so that it covers every target; it is repeated here because
+// "this crate contains no unsafe code" is a property a reader should see in the source.
+// The rest of the lint configuration lives in Cargo.toml.
 #![deny(missing_debug_implementations)]
 #![deny(missing_docs)]
+#![deny(unsafe_code)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
