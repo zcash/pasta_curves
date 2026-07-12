@@ -5,28 +5,37 @@ on:
     branches:
       - main
 
+permissions: {}
+
 jobs:
   deploy:
+    # Only deploy from the canonical upstream, so a fork's GitHub Pages is not
+    # overwritten by the Pasta book.
+    if: github.repository == 'zcash/pasta_curves'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to push to the gh-pages branch.
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Setup mdBook
-        uses: peaceiris/actions-mdbook@v1
+        uses: peaceiris/actions-mdbook@ee69d230fe19748b7abf22df32acaa93833fad08 # v2.0.0
         with:
-          mdbook-version: 'latest'
+          mdbook-version: '0.4.35'
 
+      # `actions-rs/cargo` is archived and no longer runs on current runners; install
+      # the preprocessor directly instead. `mdbook build` needs it (unlike `mdbook
+      # test`) because the book renders math through the `html` renderer.
       - name: Install mdbook-katex
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: mdbook-katex
+        run: cargo install mdbook-katex --locked
 
       - name: Build Pasta book
         run: mdbook build book/
 
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e # v4.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./book/book

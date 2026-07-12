@@ -1,35 +1,83 @@
 name: CI checks
 
-on: [push, pull_request]
+on:
+  pull_request:
+  push:
+    branches: main
+  merge_group:
+
+permissions: {}
 
 jobs:
   test:
+    name: Test on Linux with ${{ matrix.features.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - name: all features
+            flags: --all-features
+          - name: no default features
+            flags: --no-default-features
+          - name: default features
+            flags: ""
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: msrv
+          save-if: ${{ matrix.features.flags == '--all-features' }}
+      - name: Run tests
+        run: cargo test --verbose --release ${{ matrix.features.flags }}
+      - name: Verify working directory is clean
+        run: git diff --exit-code
+
+  # The same tests on the other platforms. These are advisory, so that a
+  # platform-specific toolchain hiccup cannot block a merge; Linux is the gate.
+  test-other-os:
     name: Test on ${{ matrix.os }} with ${{ matrix.features }}
     runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macOS-latest]
-        features: [--all-features, --no-default-features]
     continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macOS-latest]
+        features: [--all-features, --no-default-features]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: msrv
+          save-if: "false"
       - name: Run tests
         run: cargo test --verbose --release ${{ matrix.features }}
       - name: Verify working directory is clean
         run: git diff --exit-code
 
+  # This crate has shipped a 32-bit-only bug in the square root implementation before
+  # (fixed in 0.5.1), so 32-bit is a required target rather than an advisory one.
   test-32-bit:
     name: Test on i686-unknown-linux-gnu with ${{ matrix.features }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         features: [--all-features, --no-default-features]
-    continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: Install cross-platform support dependencies
-        run: sudo apt install gcc-multilib
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib
       - run: rustup target add i686-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: i686
       - name: Run tests
         run: >
           cargo test
@@ -39,19 +87,28 @@ jobs:
       - name: Verify working directory is clean
         run: git diff --exit-code
 
-  no-std:
-    name: Check no-std target ${{ matrix.target }}
+  build-nostd:
+    name: Build no_std for target ${{ matrix.target }}
     runs-on: ubuntu-latest
+    # A warning on a no_std target is usually a real portability problem (an item that
+    # is dead once a feature is off, an import that is then unused), so fail on it.
+    env:
+      RUSTFLAGS: -D warnings
     strategy:
+      fail-fast: false
       matrix:
         target:
           - thumbv6m-none-eabi
           - wasm32-unknown-unknown
-          - wasm32-wasi
-
+          - wasm32-wasip1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - run: rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: nostd-${{ matrix.target }}
       - name: Build
         run: >
           cargo build
@@ -59,11 +116,45 @@ jobs:
           --target ${{ matrix.target }}
           --no-default-features
 
+  build-latest:
+    name: Latest build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    # Override the `rust-toolchain.toml` MSRV pin so this job really does exercise the
+    # latest stable toolchain, against the latest dependencies.
+    env:
+      RUSTUP_TOOLCHAIN: stable
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        id: toolchain
+      - run: rustup override set "${TOOLCHAIN}"
+        shell: sh
+        env:
+          TOOLCHAIN: ${{ steps.toolchain.outputs.name }}
+      - name: Remove lockfile to build with latest dependencies
+        run: rm Cargo.lock
+      - name: Build crate
+        run: cargo build --all-features --all-targets --verbose
+      - name: Verify working directory is clean (excluding lockfile)
+        run: git diff --exit-code ':!Cargo.lock'
+
   bitrot:
     name: Bitrot check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: msrv
+          save-if: "false"
       # Build benchmarks to prevent bitrot
       - name: Build benchmarks
         run: cargo build --benches --all-features
@@ -72,12 +163,20 @@ jobs:
     name: Book tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: msrv
+          save-if: "false"
       - run: cargo build
       - name: Setup mdBook
-        uses: peaceiris/actions-mdbook@v1
+        uses: peaceiris/actions-mdbook@ee69d230fe19748b7abf22df32acaa93833fad08 # v2.0.0
         with:
-          mdbook-version: '0.4.5'
+          mdbook-version: '0.4.35'
+      # The KaTeX preprocessor only supports the `html` renderer, so `mdbook test` runs
+      # without it.
       - name: Test Pasta book
         run: mdbook test -L target/debug/deps book/
 
@@ -88,25 +187,138 @@ jobs:
       image: xd009642/tarpaulin:develop-nightly
       options: --security-opt seccomp=unconfined
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: Generate coverage report
-        run: cargo tarpaulin --engine llvm --all-features --timeout 600 --out Xml
+        run: cargo tarpaulin --engine llvm --all-features --timeout 600 --out xml
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3.1.1
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.1
+        with:
+          fail_ci_if_error: false
 
+  # Run with nightly and `RUSTDOCFLAGS` to emulate the docs.rs render as closely as
+  # possible. Requires `rustdoc::broken_intra_doc_links = "deny"` (set in `[lints]`).
   doc-links:
     name: Intra-doc links
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@nightly
+        id: toolchain
+      - run: rustup override set "${TOOLCHAIN}"
+        shell: sh
+        env:
+          TOOLCHAIN: ${{ steps.toolchain.outputs.name }}
       - run: cargo fetch
-      # Requires #![deny(rustdoc::broken_intra_doc_links)] in crates.
       - name: Check intra-doc links
-        run: cargo doc --all-features --document-private-items
+        run: >
+          cargo doc
+          --no-deps
+          --all-features
+          --document-private-items
+        env:
+          RUSTDOCFLAGS: -Z unstable-options --enable-index-page --cfg docsrs
+
+  clippy:
+    name: Clippy (MSRV)
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Run clippy
+        uses: auguwu/clippy-action@9817d076b82df0194935be9db6154c56ac07b317 # 1.5.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          check-args: >
+            --all-features
+            --all-targets
+          args: >
+            -D warnings
+
+  # `--all-features` cannot catch a lint that only fires when a feature is *off* (an
+  # item that becomes dead code, an import that becomes unused). This job covers that.
+  clippy-nodefault:
+    name: Clippy (MSRV, no default features)
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: msrv
+          save-if: "false"
+      - name: Run clippy
+        run: cargo clippy --no-default-features --all-targets -- -D warnings
+
+  # Informative only: beta clippy shows what the next stable will complain about.
+  clippy-beta:
+    name: Clippy (beta)
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@beta
+        id: toolchain
+        with:
+          components: clippy
+      - run: rustup override set "${TOOLCHAIN}"
+        shell: sh
+        env:
+          TOOLCHAIN: ${{ steps.toolchain.outputs.name }}
+      - name: Run Clippy (beta)
+        uses: auguwu/clippy-action@9817d076b82df0194935be9db6154c56ac07b317 # 1.5.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          check-args: >
+            --all-features
+            --all-targets
+          args: >
+            -W clippy::all
 
   fmt:
     name: Rustfmt
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: cargo fmt -- --check
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+  # The single check to mark as required in branch protection. The advisory jobs
+  # (other-OS tests, beta clippy, coverage upload, the book) are deliberately left out,
+  # so a flake in one of them cannot block a merge.
+  required-checks:
+    name: Required status checks have passed
+    needs:
+      - test
+      - test-32-bit
+      - build-nostd
+      - build-latest
+      - bitrot
+      - clippy
+      - clippy-nodefault
+      - doc-links
+      - fmt
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine whether all required-pass steps succeeded
+        run: echo "${NEEDS}" | jq -e '[ .[] | .result == "success" ] | all'
+        env:
+          NEEDS: ${{ toJSON(needs) }}
