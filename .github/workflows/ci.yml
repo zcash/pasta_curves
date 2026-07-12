@@ -131,8 +131,12 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned to a hash, so the toolchain has to be named explicitly rather than
+      # inferred from the ref.
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
         id: toolchain
+        with:
+          toolchain: stable
       - run: rustup override set "${TOOLCHAIN}"
         shell: sh
         env:
@@ -193,7 +197,7 @@ jobs:
       - name: Generate coverage report
         run: cargo tarpaulin --engine llvm --all-features --timeout 600 --out xml
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.1
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
         with:
           fail_ci_if_error: false
 
@@ -206,8 +210,10 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
         id: toolchain
+        with:
+          toolchain: nightly
       - run: rustup override set "${TOOLCHAIN}"
         shell: sh
         env:
@@ -271,9 +277,10 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@beta
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
         id: toolchain
         with:
+          toolchain: beta
           components: clippy
       - run: rustup override set "${TOOLCHAIN}"
         shell: sh

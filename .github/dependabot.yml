@@ -5,6 +5,10 @@ updates:
   schedule:
     interval: daily
     timezone: Etc/UTC
+  # Don't propose a release the day it lands: a compromised release is usually
+  # caught and yanked within a few days.
+  cooldown:
+    default-days: 7
   open-pull-requests-limit: 10
   reviewers:
   - str4d
