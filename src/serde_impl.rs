@@ -1,7 +1,7 @@
 use ff::PrimeField;
 use group::GroupEncoding;
 use serde_crate::{
-    de::Error as DeserializeError, Deserialize, Deserializer, Serialize, Serializer,
+    Deserialize, Deserializer, Serialize, Serializer, de::Error as DeserializeError,
 };
 
 use crate::{
@@ -137,7 +137,7 @@ mod tests {
     use core::fmt::Debug;
 
     use ff::Field;
-    use group::{prime::PrimeCurveAffine, Curve, Group};
+    use group::{Curve, Group, prime::PrimeCurveAffine};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 

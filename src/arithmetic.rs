@@ -7,5 +7,6 @@
 mod curves;
 mod fields;
 
+#[cfg(feature = "alloc")]
 pub use curves::*;
 pub(crate) use fields::*;

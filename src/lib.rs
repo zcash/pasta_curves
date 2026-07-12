@@ -43,7 +43,7 @@ pub extern crate group;
 #[test]
 fn test_endo_consistency() {
     use crate::arithmetic::CurveExt;
-    use group::{ff::WithSmallOrderMulGroup, Group};
+    use group::{Group, ff::WithSmallOrderMulGroup};
 
     let a = pallas::Point::generator();
     assert_eq!(a * pallas::Scalar::ZETA, a.endo());

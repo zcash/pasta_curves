@@ -106,11 +106,7 @@ pub fn iso_map<F: Field, C: CurveExt<Base = F>, I: CurveExt<Base = F>>(
 }
 
 #[allow(clippy::many_single_char_names)]
-pub fn map_to_curve_simple_swu<F: PrimeField, C: CurveExt<Base = F>, I: CurveExt<Base = F>>(
-    u: &F,
-    theta: F,
-    z: F,
-) -> I {
+pub fn map_to_curve_simple_swu<F: PrimeField, I: CurveExt<Base = F>>(u: &F, theta: F, z: F) -> I {
     // 1. tv1 = inv0(Z^2 * u^4 + Z * u^2)
     // 2. x1 = (-B / A) * (1 + tv1)
     // 3. If tv1 == 0, set x1 = B / (Z * A)

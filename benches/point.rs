@@ -1,6 +1,6 @@
 //! Benchmarks for point operations.
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 
 use pasta_curves::arithmetic::CurveExt;
 use pasta_curves::{pallas, vesta};
@@ -26,15 +26,15 @@ fn point_bench<C: CurveExt>(c: &mut Criterion, name: &str) {
 
     let repr = a.to_bytes();
     group.bench_function("point from_bytes", |bencher| {
-        bencher.iter(|| C::from_bytes(&repr))
+        bencher.iter(|| C::from_bytes(&repr));
     });
 
     group.bench_function("point to_affine", |bencher| bencher.iter(|| a.to_affine()));
 
-    for &n in [100, 1000, 10000].iter() {
+    for &n in &[100, 1000, 10000] {
         let input = vec![a; n];
         let mut output = vec![C::AffineRepr::default(); n];
-        group.bench_function(format!("point batch_normalize/{}", n), |bencher| {
+        group.bench_function(format!("point batch_normalize/{n}"), |bencher| {
             bencher.iter(|| C::batch_normalize(input.as_slice(), output.as_mut_slice()));
         });
     }

@@ -1,6 +1,6 @@
 //! Benchmarks for hashing to the Pasta curves.
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 
 use pasta_curves::arithmetic::CurveExt;
 use pasta_curves::{pallas, vesta};

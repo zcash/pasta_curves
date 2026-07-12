@@ -11,9 +11,9 @@ use alloc::boxed::Box;
 
 use ff::{Field, PrimeField};
 use group::{
+    Curve as _, Group as _, GroupEncoding,
     cofactor::{CofactorCurve, CofactorGroup},
     prime::{PrimeCurve, PrimeCurveAffine, PrimeGroup},
-    Curve as _, Group as _, GroupEncoding,
 };
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
@@ -39,6 +39,10 @@ macro_rules! new_curve_impl {
         }
 
         impl $name {
+            // Only the general curve type reads `a` in its doubling formula, and only the
+            // `alloc`-gated `CurveExt`/`CurveAffine` impls expose it. For a special-type
+            // curve (a = 0) built without `alloc`, it is therefore genuinely unused.
+            #[allow(dead_code)]
             const fn curve_constant_a() -> $base {
                 $base::from_raw($a_raw)
             }
@@ -884,12 +888,12 @@ macro_rules! impl_projective_curve_ext {
             Box::new(move |message| {
                 let mut us = [Field::ZERO; 2];
                 hashtocurve::hash_to_field($name::CURVE_ID, domain_prefix, message, &mut us);
-                let q0 = hashtocurve::map_to_curve_simple_swu::<$base, $name, $iso>(
+                let q0 = hashtocurve::map_to_curve_simple_swu::<$base, $iso>(
                     &us[0],
                     $name::THETA,
                     $name::Z,
                 );
-                let q1 = hashtocurve::map_to_curve_simple_swu::<$base, $name, $iso>(
+                let q1 = hashtocurve::map_to_curve_simple_swu::<$base, $iso>(
                     &us[1],
                     $name::THETA,
                     $name::Z,

@@ -8,8 +8,8 @@ authors = [
     "Daira Hopwood <daira@electriccoin.co>",
     "Jack Grigg <jack@electriccoin.co>",
 ]
-edition = "2021"
-rust-version = "1.63"
+edition = "2024"
+rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/zcash/pasta_curves"
 documentation = "https://docs.rs/pasta_curves"
@@ -73,3 +73,4 @@ repr-c = []
 uninline-portable = []
 deferred = []
 serde = ["hex", "serde_crate"]
+

@@ -17,6 +17,7 @@ const_assert!(size_of::<usize>() >= 4);
 
 /// An internal trait that exposes additional operations related to calculating square roots of
 /// prime-order finite fields.
+#[cfg(feature = "sqrt-table")]
 pub(crate) trait SqrtTableHelpers: ff::PrimeField {
     /// Raise this field element to the power $(t-1)/2$.
     ///
@@ -208,24 +209,24 @@ impl<F: SqrtTableHelpers> SqrtTables<F> {
 
         // i = 0, 1
         let mut t_ = inv(x0); // = t >> 16
-                              // 1 == x0 * ROOT_OF_UNITY^(t_ << 24)
+        // 1 == x0 * ROOT_OF_UNITY^(t_ << 24)
         assert!(t_ < 0x100);
         let alpha = x1 * self.g2[t_];
 
         // i = 2
         t_ += inv(alpha) << 8; // = t >> 8
-                               // 1 == x1 * ROOT_OF_UNITY^(t_ << 16)
+        // 1 == x1 * ROOT_OF_UNITY^(t_ << 16)
         assert!(t_ < 0x10000);
         let alpha = x2 * self.g1[t_ & 0xFF] * self.g2[t_ >> 8];
 
         // i = 3
         t_ += inv(alpha) << 16; // = t
-                                // 1 == x2 * ROOT_OF_UNITY^(t_ << 8)
+        // 1 == x2 * ROOT_OF_UNITY^(t_ << 8)
         assert!(t_ < 0x1000000);
         let alpha = x3 * self.g0[t_ & 0xFF] * self.g1[(t_ >> 8) & 0xFF] * self.g2[t_ >> 16];
 
         t_ += inv(alpha) << 24; // = t << 1
-                                // 1 == x3 * ROOT_OF_UNITY^t_
+        // 1 == x3 * ROOT_OF_UNITY^t_
         t_ = (((t_ as u64) + 1) >> 1) as usize;
         assert!(t_ <= 0x80000000);
 

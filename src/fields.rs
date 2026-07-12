@@ -24,7 +24,7 @@ fn test_u64_to_u32() {
 
     let mut rng = XorShiftRng::from_seed([0; 16]);
     let u64_limbs: alloc::vec::Vec<u64> = (0..6).map(|_| rng.next_u64()).collect();
-    let u32_limbs = crate::fields::u64_to_u32(&u64_limbs);
+    let u32_limbs = u64_to_u32(&u64_limbs);
 
     let u64_le_bytes: alloc::vec::Vec<u8> = u64_limbs
         .iter()

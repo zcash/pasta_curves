@@ -11,7 +11,9 @@ use lazy_static::lazy_static;
 #[cfg(feature = "bits")]
 use ff::{FieldBits, PrimeFieldBits};
 
-use crate::arithmetic::{adc, mac, sbb, SqrtTableHelpers};
+#[cfg(feature = "sqrt-table")]
+use crate::arithmetic::SqrtTableHelpers;
+use crate::arithmetic::{adc, mac, sbb};
 #[cfg(feature = "deferred")]
 use crate::deferred::{DeferredField, Product};
 
@@ -35,7 +37,7 @@ impl fmt::Debug for Fq {
         let tmp = self.to_repr();
         write!(f, "0x")?;
         for &b in tmp.iter().rev() {
-            write!(f, "{:02x}", b)?;
+            write!(f, "{b:02x}")?;
         }
         Ok(())
     }
@@ -43,11 +45,7 @@ impl fmt::Debug for Fq {
 
 impl From<bool> for Fq {
     fn from(bit: bool) -> Fq {
-        if bit {
-            Fq::one()
-        } else {
-            Fq::zero()
-        }
+        if bit { Fq::one() } else { Fq::zero() }
     }
 }
 
@@ -73,7 +71,7 @@ impl PartialEq for Fq {
     }
 }
 
-impl core::cmp::Ord for Fq {
+impl Ord for Fq {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         let left = self.to_repr();
         let right = other.to_repr();
@@ -88,7 +86,7 @@ impl core::cmp::Ord for Fq {
     }
 }
 
-impl core::cmp::PartialOrd for Fq {
+impl PartialOrd for Fq {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
@@ -115,7 +113,10 @@ const MODULUS: Fq = Fq([
 ]);
 
 /// The modulus as u32 limbs.
-#[cfg(not(target_pointer_width = "64"))]
+///
+/// Only the `bits` feature reads this (in `PrimeFieldBits::char_le_bits`), and only
+/// on a 32-bit target.
+#[cfg(all(feature = "bits", not(target_pointer_width = "64")))]
 const MODULUS_LIMBS_32: [u32; 8] = [
     0x0000_0001,
     0x8c46_eb21,
@@ -127,7 +128,7 @@ const MODULUS_LIMBS_32: [u32; 8] = [
     0x4000_0000,
 ];
 
-impl<'a> Neg for &'a Fq {
+impl Neg for &Fq {
     type Output = Fq;
 
     #[inline]
@@ -145,29 +146,29 @@ impl Neg for Fq {
     }
 }
 
-impl<'a, 'b> Sub<&'b Fq> for &'a Fq {
+impl Sub<&Fq> for &Fq {
     type Output = Fq;
 
     #[inline]
-    fn sub(self, rhs: &'b Fq) -> Fq {
+    fn sub(self, rhs: &Fq) -> Fq {
         self.sub(rhs)
     }
 }
 
-impl<'a, 'b> Add<&'b Fq> for &'a Fq {
+impl Add<&Fq> for &Fq {
     type Output = Fq;
 
     #[inline]
-    fn add(self, rhs: &'b Fq) -> Fq {
+    fn add(self, rhs: &Fq) -> Fq {
         self.add(rhs)
     }
 }
 
-impl<'a, 'b> Mul<&'b Fq> for &'a Fq {
+impl Mul<&Fq> for &Fq {
     type Output = Fq;
 
     #[inline]
-    fn mul(self, rhs: &'b Fq) -> Fq {
+    fn mul(self, rhs: &Fq) -> Fq {
         self.mul(rhs)
     }
 }
@@ -304,6 +305,9 @@ impl Fq {
     /// Converts from an integer represented in little endian
     /// into its (congruent) `Fq` representation.
     pub const fn from_raw(val: [u64; 4]) -> Self {
+        // The explicit borrow selects the inherent `const fn mul`; without it, method
+        // resolution picks the non-const `Mul` impl and this `const fn` fails to compile.
+        #[allow(clippy::needless_borrow)]
         (&Fq(val)).mul(&R2)
     }
 
@@ -359,6 +363,8 @@ impl Fq {
         let (r7, _) = adc(r7, carry2, carry);
 
         // Result may be within MODULUS of the correct value
+        // The explicit borrow selects the inherent `const fn sub` (see `from_raw`).
+        #[allow(clippy::needless_borrow)]
         (&Fq([r4, r5, r6, r7])).sub(&MODULUS)
     }
 
@@ -397,6 +403,8 @@ impl Fq {
 
         // Attempt to subtract the modulus, to ensure the value
         // is smaller than the modulus.
+        // The explicit borrow selects the inherent `const fn sub` (see `from_raw`).
+        #[allow(clippy::needless_borrow)]
         (&Fq([d0, d1, d2, d3])).sub(&MODULUS)
     }
 
@@ -521,7 +529,7 @@ impl<'a> From<&'a Fq> for [u8; 32] {
     }
 }
 
-impl ff::Field for Fq {
+impl Field for Fq {
     const ZERO: Self = Self::zero();
     const ONE: Self = Self::one();
 
@@ -571,13 +579,13 @@ impl ff::Field for Fq {
         }
 
         #[cfg(not(feature = "sqrt-table"))]
-        ff::helpers::sqrt_tonelli_shanks(self, &T_MINUS1_OVER2)
+        ff::helpers::sqrt_tonelli_shanks(self, T_MINUS1_OVER2)
     }
 
     /// Computes the multiplicative inverse of this element,
     /// failing if the element is zero.
     fn invert(&self) -> CtOption<Self> {
-        let tmp = self.pow_vartime(&[
+        let tmp = self.pow_vartime([
             0x8c46eb20ffffffff,
             0x224698fc0994a8dd,
             0x0,
@@ -606,7 +614,7 @@ impl ff::Field for Fq {
     }
 }
 
-impl ff::PrimeField for Fq {
+impl PrimeField for Fq {
     type Repr = [u8; 32];
 
     const MODULUS: &'static str =
@@ -733,6 +741,7 @@ lazy_static! {
     static ref FQ_TABLES: SqrtTables<Fq> = SqrtTables::new(0x116A9E, 1206);
 }
 
+#[cfg(feature = "sqrt-table")]
 impl SqrtTableHelpers for Fq {
     fn pow_by_t_minus1_over2(&self) -> Self {
         let sqr = |x: Fq, i: u32| (0..i).fold(x, |x, _| x.square());
@@ -848,11 +857,12 @@ fn test_sqrt_32bit_overflow() {
     assert!((Fq::from(5)).sqrt().is_none().unwrap_u8() == 1);
 }
 
+#[cfg(feature = "sqrt-table")]
 #[test]
 fn test_pow_by_t_minus1_over2() {
     // NB: TWO_INV is standing in as a "random" field element
     let v = (Fq::TWO_INV).pow_by_t_minus1_over2();
-    assert!(v == ff::Field::pow_vartime(&Fq::TWO_INV, &T_MINUS1_OVER2));
+    assert!(v == Field::pow_vartime(&Fq::TWO_INV, T_MINUS1_OVER2));
 }
 
 #[test]
@@ -918,7 +928,7 @@ fn test_zeta() {
 #[test]
 fn test_root_of_unity() {
     assert_eq!(
-        Fq::ROOT_OF_UNITY.pow_vartime(&[1 << Fq::S, 0, 0, 0]),
+        Fq::ROOT_OF_UNITY.pow_vartime([1 << Fq::S, 0, 0, 0]),
         Fq::one()
     );
 }
@@ -935,14 +945,14 @@ fn test_inv_2() {
 
 #[test]
 fn test_delta() {
-    assert_eq!(Fq::DELTA, GENERATOR.pow(&[1u64 << Fq::S, 0, 0, 0]));
+    assert_eq!(Fq::DELTA, GENERATOR.pow([1u64 << Fq::S, 0, 0, 0]));
     assert_eq!(
         Fq::DELTA,
-        Fq::MULTIPLICATIVE_GENERATOR.pow(&[1u64 << Fq::S, 0, 0, 0])
+        Fq::MULTIPLICATIVE_GENERATOR.pow([1u64 << Fq::S, 0, 0, 0])
     );
 }
 
-#[cfg(not(target_pointer_width = "64"))]
+#[cfg(all(feature = "bits", not(target_pointer_width = "64")))]
 #[test]
 fn consistent_modulus_limbs() {
     for (a, &b) in MODULUS
