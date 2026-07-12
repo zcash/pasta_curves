@@ -74,3 +74,34 @@ uninline-portable = []
 deferred = []
 serde = ["hex", "serde_crate"]
 
+# Lints that should hold for every target in the package (lib, tests, benches).
+# Lints that only concern the library's public API (`missing_docs`,
+# `missing_debug_implementations`) stay as crate attributes in `src/lib.rs`.
+[lints.rust]
+# `docsrs` is set by docs.rs and by the intra-doc-links CI job; any other cfg
+# reaching the compiler is a typo.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(docsrs)'] }
+unsafe_code = "deny"
+unused_qualifications = "warn"
+
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+
+[lints.clippy]
+# Debugging and placeholder constructs have no place in a published crate.
+dbg_macro = "deny"
+print_stderr = "deny"
+print_stdout = "deny"
+todo = "deny"
+unimplemented = "deny"
+# Readability and correctness lints beyond `clippy::all`, all of which this
+# crate already satisfies; they are enabled to keep it that way.
+cast_lossless = "warn"
+checked_conversions = "warn"
+explicit_iter_loop = "warn"
+manual_assert = "warn"
+needless_pass_by_value = "warn"
+redundant_closure_for_method_calls = "warn"
+semicolon_if_nothing_returned = "warn"
+uninlined_format_args = "warn"
+unnested_or_patterns = "warn"

@@ -2,12 +2,11 @@
 
 #![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![allow(unknown_lints)]
-#![allow(clippy::op_ref, clippy::same_item_push, clippy::upper_case_acronyms)]
-#![deny(rustdoc::broken_intra_doc_links)]
+// These two concern the library's public API, so they cannot move to the `[lints]`
+// table in Cargo.toml, which would also apply them to the benches. Every other lint
+// this crate configures lives there.
 #![deny(missing_debug_implementations)]
 #![deny(missing_docs)]
-#![deny(unsafe_code)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
