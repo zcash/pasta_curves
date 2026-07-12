@@ -7,7 +7,8 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 ### Changed
-- MSRV is now 1.63.0.
+- MSRV is now 1.88.0.
+- The crate now uses Rust edition 2024.
 
 ## [0.5.1] - 2023-03-02
 ### Fixed
