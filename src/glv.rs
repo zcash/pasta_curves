@@ -121,31 +121,11 @@ impl GlvParams for vesta::Point {
     ];
 }
 
-/// `round((g * k) / 2^384)` for a 5-limb `g` and 4-limb `k` — the Babai
-/// coefficient. Fits `u128` (at most ~128 bits by construction).
-fn round_mul_shift(g: &[u64; 5], k: &[u64; 4]) -> u128 {
-    let mut prod = [0u64; 9];
-    for (i, &gi) in g.iter().enumerate() {
-        let mut carry = 0u64;
-        for (j, &kj) in k.iter().enumerate() {
-            let (limb, c) = mac(prod[i + j], gi, kj, carry);
-            prod[i + j] = limb;
-            carry = c;
-        }
-        // First write to prod[i + 4] on each outer iteration.
-        prod[i + 4] = carry;
-    }
-    // Bits >= 384 live in limbs 6..; round on bit 383 (top bit of limb 5).
-    let round = prod[5] >> 63;
-    (u128::from(prod[6]) | (u128::from(prod[7]) << 64)).wrapping_add(u128::from(round))
-}
-
-/// 256-bit product of two `u128`s, as little-endian limbs. Constant-time:
-/// a fixed schoolbook 2x2-limb multiply with explicit carry propagation.
-fn mul_u128(a: u128, b: u128) -> [u64; 4] {
-    let a = [a as u64, (a >> 64) as u64];
-    let b = [b as u64, (b >> 64) as u64];
-    let mut prod = [0u64; 4];
+/// Schoolbook multiply of `a` by `b` into `prod`, which must be zeroed and
+/// hold exactly `a.len() + b.len()` limbs. Constant-time: a fixed loop
+/// structure with explicit carry propagation.
+fn schoolbook_mul(a: &[u64], b: &[u64], prod: &mut [u64]) {
+    debug_assert_eq!(prod.len(), a.len() + b.len());
     for (i, &ai) in a.iter().enumerate() {
         let mut carry = 0u64;
         for (j, &bj) in b.iter().enumerate() {
@@ -153,9 +133,29 @@ fn mul_u128(a: u128, b: u128) -> [u64; 4] {
             prod[i + j] = limb;
             carry = c;
         }
-        // First write to prod[i + 2] on each outer iteration.
-        prod[i + 2] = carry;
+        // First write to prod[i + b.len()] on each outer iteration.
+        prod[i + b.len()] = carry;
     }
+}
+
+/// `round((g * k) / 2^384)` for a 5-limb `g` and 4-limb `k` — the Babai
+/// coefficient. Fits `u128` (at most ~128 bits by construction).
+fn round_mul_shift(g: &[u64; 5], k: &[u64; 4]) -> u128 {
+    let mut prod = [0u64; 9];
+    schoolbook_mul(g, k, &mut prod);
+    // Bits >= 384 live in limbs 6..; round on bit 383 (top bit of limb 5).
+    let round = prod[5] >> 63;
+    (u128::from(prod[6]) | (u128::from(prod[7]) << 64)).wrapping_add(u128::from(round))
+}
+
+/// 256-bit product of two `u128`s, as little-endian limbs.
+fn mul_u128(a: u128, b: u128) -> [u64; 4] {
+    let mut prod = [0u64; 4];
+    schoolbook_mul(
+        &[a as u64, (a >> 64) as u64],
+        &[b as u64, (b >> 64) as u64],
+        &mut prod,
+    );
     prod
 }
 
