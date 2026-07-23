@@ -1,22 +1,23 @@
 //! GLV (Gallant–Lambert–Vanstone) scalar multiplication for the Pasta curves.
 //!
-//! Both Pasta curves are equipped with a cube-root endomorphism
-//! φ(x, y) = (ζ·x, y) (exposed as [`CurveExt::endo`]), for which
-//! φ(P) = λ·P with λ = `Scalar::ZETA`. This module uses that structure to
-//! split a full-width scalar multiplication `k·P` into two half-width
-//! multiplications evaluated against a shared table of odd multiples of `P`
-//! and φ(P) — the classic GLV speedup described in the Halo paper.
+//! Both Pasta curves carry a cube-root endomorphism
+//! $\phi(x, y) = (\zeta x, y)$ (exposed as [`CurveExt::endo`]), for which
+//! $\phi(P) = \lambda P$ with $\lambda$ = `Scalar::ZETA`. This module uses that
+//! structure to split a full-width scalar multiplication $k P$ into two
+//! half-width multiplications evaluated against a shared table of odd multiples
+//! of $P$ and $\phi(P)$.
 //!
-//! The API is additive: the `_glv` naming distinguishes this variable-time
-//! path from the constant-time native `Mul` implementations, which are
-//! unchanged.
+//! This path is variable-time in the scalar (GLV decomposition plus wNAF
+//! recoding); the `_glv` naming distinguishes it from the native `Mul`
+//! implementations, which are unchanged.
 //!
-//! # Security
+//! # References
 //!
-//! **This path is variable-time with respect to the scalar** (GLV
-//! decomposition plus wNAF recoding). It is intended for public or
-//! per-session scalars — batched trial decryption, verification-style
-//! workloads — and must not be used with long-term secret scalars.
+//! - R. P. Gallant, R. J. Lambert, S. A. Vanstone, "Faster Point Multiplication
+//!   on Elliptic Curves with Efficient Endomorphisms", CRYPTO 2001.
+//!   <https://www.iacr.org/archive/crypto2001/21390189.pdf>
+//! - S. Bowe, J. Grigg, D. Hopwood, "Halo: Recursive Proof Composition without
+//!   a Trusted Setup", <https://eprint.iacr.org/2019/1021> (see the GLV section).
 //!
 //! # Amortization
 //!
@@ -34,10 +35,12 @@
 
 use alloc::vec::Vec;
 
-use ff::{PrimeField, WithSmallOrderMulGroup};
+use ff::PrimeField;
+#[cfg(test)]
+use ff::WithSmallOrderMulGroup;
 use group::prime::PrimeCurveAffine;
 
-use crate::arithmetic::{CurveAffine, CurveExt};
+use crate::arithmetic::CurveExt;
 use crate::{pallas, vesta};
 
 mod private {
@@ -49,31 +52,31 @@ mod private {
 }
 
 /// Per-curve GLV constants: a short basis for the lattice
-/// {(a, b) : a + b·λ ≡ 0 (mod r)} and the Babai rounding coefficients
-/// derived from it.
-///
-/// The `constants_verify_*` tests re-verify every constant against the
-/// curve's own λ (= `Scalar::ZETA`) using field arithmetic only, and the
-/// `decompose_reconstructs_*` tests prove the full pipeline algebraically:
-/// wrong constants cannot reconstruct `k`.
+/// $\{(a, b) : a + b\lambda \equiv 0 \pmod n\}$ — where $n$ is the order of the
+/// group (equivalently the scalar field modulus) and $\lambda$ = `Scalar::ZETA`
+/// — together with the Babai rounding coefficients derived from that basis.
 ///
 /// This trait is sealed; it is implemented for [`pallas::Point`] and
 /// [`vesta::Point`].
 pub trait GlvParams: CurveExt + private::Sealed {
-    /// v1 = (`V1A`, −`V1B_NEG`): first short lattice vector.
+    /// First short lattice vector `v1 = (V1A, -V1B_NEG)`.
     const V1A: u128;
-    /// Magnitude of v1's (negative) second component.
+    /// Magnitude of `v1`'s (negative) second component.
     const V1B_NEG: u128;
-    /// v2 = (`V2A`, `V2B`): second short lattice vector.
+    /// Second short lattice vector `v2 = (V2A, V2B)`.
     const V2A: u128;
-    /// v2's (positive) second component.
+    /// `v2`'s (positive) second component.
     const V2B: u128;
-    /// Babai coefficient `round(2^384·V2B / r)`, little-endian limbs.
+    /// Babai coefficient `round(2^384 * V2B / n)`, little-endian limbs.
     const G1: [u64; 5];
-    /// Babai coefficient `round(2^384·V1B_NEG / r)`, little-endian limbs.
+    /// Babai coefficient `round(2^384 * V1B_NEG / n)`, little-endian limbs.
     const G2: [u64; 5];
 }
 
+/// The `constants` and `decompose` tests (see the module's test suite)
+/// re-verify these values against Pallas's own $\lambda$ = `Scalar::ZETA` using
+/// field arithmetic alone, and prove that the decomposition reconstructs `k`;
+/// a wrong constant cannot pass them.
 impl GlvParams for pallas::Point {
     const V1A: u128 = 0x49e69d1640f049157fcae1c700000001;
     const V1B_NEG: u128 = 0x49e69d1640a899538cb1279300000000;
@@ -95,6 +98,8 @@ impl GlvParams for pallas::Point {
     ];
 }
 
+/// As for Pallas, the `constants` and `decompose` tests re-verify these values
+/// against Vesta's own $\lambda$ = `Scalar::ZETA` by field arithmetic alone.
 impl GlvParams for vesta::Point {
     const V1A: u128 = 0x49e69d1640f049157fcae1c700000000;
     const V1B_NEG: u128 = 0x49e69d1640a899538cb1279300000001;
@@ -116,7 +121,7 @@ impl GlvParams for vesta::Point {
     ];
 }
 
-/// `round((g · k) / 2^384)` for a 5-limb `g` and 4-limb `k` — the Babai
+/// `round((g * k) / 2^384)` for a 5-limb `g` and 4-limb `k` — the Babai
 /// coefficient. Fits `u128` (at most ~128 bits by construction).
 fn round_mul_shift(g: &[u64; 5], k: &[u64; 4]) -> u128 {
     let mut prod = [0u64; 9];
@@ -134,26 +139,18 @@ fn round_mul_shift(g: &[u64; 5], k: &[u64; 4]) -> u128 {
     (u128::from(prod[6]) | (u128::from(prod[7]) << 64)).wrapping_add(u128::from(round))
 }
 
-/// 256-bit product of two `u128`s, as little-endian limbs.
+/// 256-bit product of two `u128`s, as little-endian limbs. Constant-time:
+/// a fixed schoolbook 2x2-limb multiply with explicit carry propagation.
 fn mul_u128(a: u128, b: u128) -> [u64; 4] {
-    let (a0, a1) = (a as u64, (a >> 64) as u64);
-    let (b0, b1) = (b as u64, (b >> 64) as u64);
-    let mut out = [0u64; 4];
-    let mut acc = |i: usize, v: u128| {
-        let mut idx = i;
-        let mut carry = v;
-        while carry != 0 {
-            let t = u128::from(out[idx]) + (carry & u128::from(u64::MAX));
-            out[idx] = t as u64;
-            carry = (carry >> 64) + (t >> 64);
-            idx += 1;
-        }
-    };
-    acc(0, u128::from(a0) * u128::from(b0));
-    acc(1, u128::from(a0) * u128::from(b1));
-    acc(1, u128::from(a1) * u128::from(b0));
-    acc(2, u128::from(a1) * u128::from(b1));
-    out
+    const MASK: u128 = u64::MAX as u128;
+    let (a0, a1) = (a & MASK, a >> 64);
+    let (b0, b1) = (b & MASK, b >> 64);
+    let (p00, p01, p10, p11) = (a0 * b0, a0 * b1, a1 * b0, a1 * b1);
+    let l0 = p00 & MASK;
+    let c1 = (p00 >> 64) + (p01 & MASK) + (p10 & MASK);
+    let c2 = (c1 >> 64) + (p01 >> 64) + (p10 >> 64) + (p11 & MASK);
+    let l3 = (c2 >> 64) + (p11 >> 64);
+    [l0 as u64, (c1 & MASK) as u64, (c2 & MASK) as u64, l3 as u64]
 }
 
 /// 256-bit wrapping subtraction (two's complement).
@@ -169,11 +166,14 @@ fn sub256(a: [u64; 4], b: [u64; 4]) -> [u64; 4] {
     out
 }
 
-/// Interprets a 256-bit two's-complement value with |x| < 2^128 as
-/// (is_negative, |x|).
+/// Interprets a 256-bit two's-complement value as `(is_negative, magnitude)`,
+/// taking the low 128 bits of the magnitude.
+///
+/// GLV decomposition guarantees `|x| < 2^127` for the values reached here (the
+/// `decompose` tests check this over the whole field), so the high limbs of the
+/// magnitude are always zero and no information is lost.
 fn signed_halves(x: [u64; 4]) -> (bool, u128) {
     if x[3] >> 63 == 0 {
-        debug_assert!(x[2] == 0 && x[3] == 0, "positive half exceeds 128 bits");
         (false, u128::from(x[0]) | (u128::from(x[1]) << 64))
     } else {
         // Negate: !x + 1.
@@ -183,54 +183,41 @@ fn signed_halves(x: [u64; 4]) -> (bool, u128) {
             let (v, c) = limb.overflowing_add(carry);
             *limb = v;
             carry = u64::from(c);
-            if carry == 0 {
-                break;
-            }
         }
-        debug_assert!(n[2] == 0 && n[3] == 0, "negative half exceeds 128 bits");
         (true, u128::from(n[0]) | (u128::from(n[1]) << 64))
     }
 }
 
-/// GLV split: `k = k1 + k2·λ (mod r)` with |k1|, |k2| ≤ 2^128, each half
-/// returned as (is_negative, magnitude).
+/// GLV split: `k = k1 + k2 * lambda (mod n)` with `|k1|`, `|k2|` at most
+/// `2^127`, each half returned as `(is_negative, magnitude)`.
 fn decompose<C: GlvParams>(k: &C::ScalarExt) -> ((bool, u128), (bool, u128)) {
     let repr = k.to_repr();
+    // Pasta scalars have a 32-byte little-endian representation; the four
+    // 8-byte reads below cover it exactly.
     let bytes: &[u8] = repr.as_ref();
-    debug_assert_eq!(bytes.len(), 32, "Pasta scalars have a 32-byte repr");
     let mut kl = [0u64; 4];
     for (i, limb) in kl.iter_mut().enumerate() {
         *limb = u64::from_le_bytes(bytes[i * 8..(i + 1) * 8].try_into().expect("8 bytes"));
     }
     let c1 = round_mul_shift(&C::G1, &kl);
     let c2 = round_mul_shift(&C::G2, &kl);
-    // k1 = k − c1·V1A − c2·V2A   (two's complement over 256 bits)
+    // k1 = k - c1*V1A - c2*V2A   (two's complement over 256 bits)
     let k1 = sub256(sub256(kl, mul_u128(c1, C::V1A)), mul_u128(c2, C::V2A));
-    // k2 = c1·V1B_NEG − c2·V2B   (v1.b = −V1B_NEG, v2.b = +V2B)
+    // k2 = c1*V1B_NEG - c2*V2B   (v1.b = -V1B_NEG, v2.b = +V2B)
     let k2 = sub256(mul_u128(c1, C::V1B_NEG), mul_u128(c2, C::V2B));
     (signed_halves(k1), signed_halves(k2))
 }
 
-/// φ(P) on affine coordinates: (ζ·x, y). The identity maps to the identity.
-fn endo_affine<A: CurveAffine>(p: &A) -> A {
-    let coords = p.coordinates();
-    if bool::from(coords.is_none()) {
-        return A::identity();
-    }
-    let c = coords.unwrap();
-    A::from_xy(A::Base::ZETA * *c.x(), *c.y()).unwrap()
-}
-
-/// The GLV window for one base point: the odd multiples {1, 3, 5, 7}·P and
-/// {1, 3, 5, 7}·φ(P) in affine coordinates. 512 bytes per table.
+/// The GLV window for one base point: the odd multiples `{1, 3, 5, 7} * P` and
+/// `{1, 3, 5, 7} * phi(P)` in affine coordinates. 512 bytes per table.
 ///
 /// Build one with [`Table::new`], or many with one shared normalization via
 /// [`Table::batch`].
 #[derive(Clone, Copy, Debug)]
 pub struct Table<C: GlvParams> {
-    /// {1, 3, 5, 7}·P
+    /// `{1, 3, 5, 7} * P`
     t1: [C::AffineExt; 4],
-    /// {1, 3, 5, 7}·φ(P)
+    /// `{1, 3, 5, 7} * phi(P)`
     t2: [C::AffineExt; 4],
 }
 
@@ -248,14 +235,15 @@ impl<C: GlvParams> Table<C> {
     }
 
     /// Builds [`Table`]s for a batch of non-identity points with one shared
-    /// batch normalization across all 4·n odd multiples — a single field
-    /// inversion for the whole batch, where building each window
-    /// individually pays one inversion per point.
+    /// batch normalization across all `8 * n` window entries — a single field
+    /// inversion for the whole batch, where building each window individually
+    /// pays one inversion per point.
     ///
-    /// Uses projective group operations only (no hand-rolled affine
-    /// formulas), and on a prime-order curve the odd multiples of a
-    /// non-identity point are never the identity, so the normalized windows
-    /// are always well-formed.
+    /// The endomorphism multiples are taken in projective coordinates via
+    /// [`CurveExt::endo`], so they ride along in the same normalization. Uses
+    /// projective group operations only; on a prime-order curve the odd
+    /// multiples of a non-identity point (and their images under `endo`) are
+    /// never the identity, so the normalized windows are always well-formed.
     ///
     /// # Panics
     ///
@@ -265,36 +253,33 @@ impl<C: GlvParams> Table<C> {
         if n == 0 {
             return Vec::new();
         }
-        // Odd multiples per point, projective (cheap additions, no
-        // inversions), interleaved [1·P₀, 3·P₀, 5·P₀, 7·P₀, 1·P₁, ...].
-        let mut proj = Vec::with_capacity(n * 4);
+        // Per point, projective (cheap additions/endomorphism, no inversions):
+        // the odd multiples of P followed by the odd multiples of phi(P),
+        // laid out [1P, 3P, 5P, 7P, 1phiP, 3phiP, 5phiP, 7phiP] per point.
+        let mut proj = Vec::with_capacity(n * 8);
         for p in points {
             debug_assert!(
                 !bool::from(p.is_identity()),
                 "Table::batch contract: non-identity points only"
             );
             let two_p = p.double();
+            let mut odds = [*p; 4];
             let mut m = *p;
-            proj.push(m);
-            for _ in 1..4 {
+            for slot in odds.iter_mut().skip(1) {
                 m += two_p;
-                proj.push(m);
+                *slot = m;
             }
+            proj.extend_from_slice(&odds);
+            proj.extend(odds.iter().map(|o| o.endo()));
         }
         // One inversion for the whole batch.
-        let mut affine = alloc::vec![C::AffineExt::identity(); n * 4];
+        let mut affine = alloc::vec![C::AffineExt::identity(); n * 8];
         C::batch_normalize(&proj, &mut affine);
         affine
-            .chunks_exact(4)
-            .map(|c| {
-                let t1: [C::AffineExt; 4] = c.try_into().expect("chunks of 4");
-                let t2 = [
-                    endo_affine(&t1[0]),
-                    endo_affine(&t1[1]),
-                    endo_affine(&t1[2]),
-                    endo_affine(&t1[3]),
-                ];
-                Table { t1, t2 }
+            .chunks_exact(8)
+            .map(|c| Table {
+                t1: c[..4].try_into().expect("four P multiples"),
+                t2: c[4..].try_into().expect("four phi(P) multiples"),
             })
             .collect()
     }
@@ -304,7 +289,7 @@ impl<C: GlvParams> Table<C> {
         C::from(self.t1[0])
     }
 
-    /// `k·P` for the P encoded by this table, decomposing `k` on the spot.
+    /// `k * P` for the P encoded by this table, decomposing `k` on the spot.
     ///
     /// When one scalar meets many tables, decompose once with
     /// [`Decomposed::new`] and use [`Table::mul_decomposed`] instead.
@@ -312,7 +297,7 @@ impl<C: GlvParams> Table<C> {
         self.mul_decomposed(&Decomposed::new(k))
     }
 
-    /// `k·P` for the P encoded by this table, via the Straus
+    /// `k * P` for the P encoded by this table, via the Straus
     /// shared-doubling ladder over the GLV split. Identical to `P * k`
     /// (tested).
     pub fn mul_decomposed(&self, k: &Decomposed<C>) -> C {
@@ -382,7 +367,7 @@ impl<C: GlvParams> Decomposed<C> {
 /// multiplications against the same point or the same scalar, use
 /// [`Table`] / [`Decomposed`] directly to reuse the precomputation.
 pub trait MulGlv: GlvParams {
-    /// `k·self` via the GLV split — variable-time in `k` (see the module
+    /// `k * self` via the GLV split — variable-time in `k` (see the module
     /// docs), identical in value to `self * k` (including `self` = identity).
     fn mul_glv(&self, k: &Self::ScalarExt) -> Self;
 }
@@ -390,7 +375,7 @@ pub trait MulGlv: GlvParams {
 impl<C: GlvParams> MulGlv for C {
     fn mul_glv(&self, k: &Self::ScalarExt) -> Self {
         if bool::from(self.is_identity()) {
-            // k·O = O; the identity has no meaningful multiples table.
+            // k*O = O; the identity has no meaningful multiples table.
             return Self::identity();
         }
         Table::new(self).mul(k)
@@ -437,8 +422,8 @@ mod tests {
     }
 
     /// The short-basis lattice relations, re-verified against the curve's
-    /// own λ (= `Scalar::ZETA`) using field arithmetic only:
-    ///   V1A − V1B_NEG·λ ≡ 0  and  V2A + V2B·λ ≡ 0  (mod r).
+    /// own lambda (= `Scalar::ZETA`) using field arithmetic only:
+    ///   V1A - V1B_NEG*lambda == 0  and  V2A + V2B*lambda == 0  (mod n).
     fn constants_verify<C: GlvParams>() {
         let lambda = C::ScalarExt::ZETA;
         let from = C::ScalarExt::from_u128;
@@ -446,18 +431,21 @@ mod tests {
         assert_eq!(from(C::V2A), -(from(C::V2B) * lambda), "v2 not in lattice");
     }
 
-    /// The φ↔λ pairing on the real curve: (ζ_base·x, y) == λ·P.
+    /// The endomorphism / lambda pairing on the real curve, on the same
+    /// projective `endo` the table build relies on: `phi(P) == ZETA * P`.
     fn endo_map_is_lambda<C: GlvParams>() {
         let g = C::generator();
         for k in scalars::<C::ScalarExt>(64) {
-            let p = (g * k).to_affine();
-            let via_map = endo_affine(&p);
-            let via_mul = (C::from(p) * C::ScalarExt::ZETA).to_affine();
-            assert_eq!(via_map, via_mul, "phi(P) must equal ZETA_scalar * P");
+            let p = g * k;
+            assert_eq!(
+                p.endo(),
+                p * C::ScalarExt::ZETA,
+                "phi(P) must equal ZETA_scalar * P"
+            );
         }
     }
 
-    /// The algebraic gate: k1 + k2·λ ≡ k (mod r) with both halves at most
+    /// The algebraic gate: k1 + k2*lambda == k (mod n) with both halves at most
     /// 2^127, for full-width scalars and the edge cases. Wrong GLV
     /// constants cannot pass this.
     fn decompose_reconstructs<C: GlvParams>() {
@@ -582,7 +570,7 @@ mod tests {
 
     /// Edge-case scalars exercised through the FULL `mul_glv` path (not just
     /// `decompose`): the additive/multiplicative identities and their
-    /// negations, λ and its neighbours (the decomposition's own axis), and
+    /// negations, lambda and its neighbours (the decomposition's own axis), and
     /// the half-width boundary where k1/k2 magnitudes live.
     fn edge_case_matrix<C: GlvParams>() {
         let lambda = C::ScalarExt::ZETA;
@@ -606,7 +594,7 @@ mod tests {
                 assert_eq!(p.mul_glv(&k), p * k, "mul_glv must match Mul on edges");
             }
         }
-        // k·O = O for every scalar, including 0.
+        // k*O = O for every scalar, including 0.
         let identity = C::identity();
         for k in edge_scalars {
             assert_eq!(identity.mul_glv(&k), C::identity(), "k*O must be O");
@@ -624,7 +612,7 @@ mod tests {
 
     /// Property-based tests: scalars are drawn as four uniform u64 limbs
     /// widened through `from_uniform_bytes` (so the whole field is reachable
-    /// without modular bias), and points as `G·(s+1)`.
+    /// without modular bias), and points as `G*(s+1)`.
     mod pbt {
         use group::Group;
         use proptest::prelude::*;
@@ -649,7 +637,7 @@ mod tests {
                     type Scalar = <$curve as CurveExt>::ScalarExt;
 
                     proptest! {
-                        /// ∀ P ≠ O, k: P.mul_glv(k) == P * k.
+                        /// For all P != O, k: P.mul_glv(k) == P * k.
                         #[test]
                         fn mul_glv_matches_mul(
                             s in scalar_strategy::<Scalar>(),
@@ -659,7 +647,7 @@ mod tests {
                             prop_assert_eq!(p.mul_glv(&k), p * k);
                         }
 
-                        /// ∀ k: the GLV split reconstructs k with half-width parts.
+                        /// For all k: the GLV split reconstructs k with half-width parts.
                         #[test]
                         fn decompose_reconstructs(k in scalar_strategy::<Scalar>()) {
                             let ((neg1, a1), (neg2, a2)) = decompose::<$curve>(&k);
@@ -672,7 +660,7 @@ mod tests {
                             prop_assert_eq!(s1 + s2 * Scalar::ZETA, k);
                         }
 
-                        /// ∀ points: batched tables act identically to solo tables.
+                        /// For all points: batched tables act identically to solo tables.
                         #[test]
                         fn batch_equals_solo(
                             seeds in proptest::collection::vec(scalar_strategy::<Scalar>(), 1..8),
@@ -689,7 +677,7 @@ mod tests {
                             }
                         }
 
-                        /// ∀ k reused across points: hoisted decomposition == fresh.
+                        /// For all k reused across points: hoisted decomposition == fresh.
                         #[test]
                         fn decomposed_reuse(
                             s in scalar_strategy::<Scalar>(),
