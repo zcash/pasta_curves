@@ -287,25 +287,35 @@ impl<C: GlvParams> Table<C> {
         let len = k.len1.max(k.len2);
         let mut acc = C::identity();
         for i in (0..len).rev() {
-            acc = acc.double();
-            let d = if i < k.len1 { k.digits1[i] } else { 0 };
-            if d != 0 {
-                let mut a = self.t1[(d.unsigned_abs() / 2) as usize];
-                if (d < 0) ^ k.neg1 {
-                    a = -a;
-                }
-                acc += a;
+            // `acc` is still the identity on the first iteration; skip the
+            // wasted doubling.
+            if i + 1 < len {
+                acc = acc.double();
             }
-            let d = if i < k.len2 { k.digits2[i] } else { 0 };
-            if d != 0 {
-                let mut a = self.t2[(d.unsigned_abs() / 2) as usize];
-                if (d < 0) ^ k.neg2 {
-                    a = -a;
-                }
-                acc += a;
-            }
+            Self::add_digit(
+                &mut acc,
+                &self.t1,
+                if i < k.len1 { k.digits1[i] } else { 0 },
+            );
+            Self::add_digit(
+                &mut acc,
+                &self.t2,
+                if i < k.len2 { k.digits2[i] } else { 0 },
+            );
         }
         acc
+    }
+
+    /// Adds `d * B` to `acc`, where `table` holds `{1, 3, 5, 7} * B` and `d`
+    /// is a signed odd wNAF digit (zero adds nothing).
+    fn add_digit(acc: &mut C, table: &[C::AffineExt; 4], d: i8) {
+        if d != 0 {
+            let mut a = table[(d.unsigned_abs() / 2) as usize];
+            if d < 0 {
+                a = -a;
+            }
+            *acc += a;
+        }
     }
 }
 
@@ -317,26 +327,23 @@ impl<C: GlvParams> Table<C> {
 /// tables (e.g. one viewing key against a batch of ephemeral keys).
 #[derive(Clone, Debug)]
 pub struct Decomposed<C: GlvParams> {
-    neg1: bool,
-    digits1: [i8; 132],
+    digits1: [i8; MAX_WNAF_DIGITS],
     len1: usize,
-    neg2: bool,
-    digits2: [i8; 132],
+    digits2: [i8; MAX_WNAF_DIGITS],
     len2: usize,
     _curve: core::marker::PhantomData<C>,
 }
 
 impl<C: GlvParams> Decomposed<C> {
-    /// Decomposes `k` and recodes both halves as width-4 wNAF digits.
+    /// Decomposes `k` and recodes both halves as width-4 wNAF digits, with
+    /// each half's sign folded into its digits.
     pub fn new(k: &C::ScalarExt) -> Self {
         let ((neg1, a1), (neg2, a2)) = decompose::<C>(k);
-        let (digits1, len1) = wnaf_digits(a1);
-        let (digits2, len2) = wnaf_digits(a2);
+        let (digits1, len1) = wnaf_digits(a1, neg1);
+        let (digits2, len2) = wnaf_digits(a2, neg2);
         Decomposed {
-            neg1,
             digits1,
             len1,
-            neg2,
             digits2,
             len2,
             _curve: core::marker::PhantomData,
@@ -365,19 +372,23 @@ impl<C: GlvParams> MulGlv for C {
     }
 }
 
-/// Width-4 wNAF digits of a u128 magnitude, lowest position first. A
-/// magnitude of at most 2^127 yields at most 129 digits; the array is sized
-/// with headroom.
-fn wnaf_digits(a: u128) -> ([i8; 132], usize) {
+/// Upper bound on the number of width-4 wNAF digits of a decomposition half:
+/// an n-bit magnitude yields at most n + 1 digits, and [`decompose`] bounds
+/// the halves below `2^127`.
+const MAX_WNAF_DIGITS: usize = 128;
+
+/// Width-4 wNAF digits of a u128 magnitude, lowest position first, with the
+/// half's overall sign folded into the digits when `negate` is set.
+fn wnaf_digits(a: u128, negate: bool) -> ([i8; MAX_WNAF_DIGITS], usize) {
     debug_assert!(a >> 127 == 0, "magnitude must be at most 127 bits");
-    let mut digits = [0i8; 132];
+    let mut digits = [0i8; MAX_WNAF_DIGITS];
     let mut n = 0;
     let mut k = a;
     while k != 0 {
         if k & 1 == 1 {
             let low = (k & 0xF) as i8;
             let d = if low >= 8 { low - 16 } else { low };
-            digits[n] = d;
+            digits[n] = if negate { -d } else { d };
             if d >= 0 {
                 k -= d as u128;
             } else {
