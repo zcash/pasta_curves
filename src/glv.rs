@@ -40,7 +40,7 @@ use ff::PrimeField;
 use ff::WithSmallOrderMulGroup;
 use group::prime::PrimeCurveAffine;
 
-use crate::arithmetic::CurveExt;
+use crate::arithmetic::{mac, sbb, CurveExt};
 use crate::{pallas, vesta};
 
 mod private {
@@ -126,13 +126,14 @@ impl GlvParams for vesta::Point {
 fn round_mul_shift(g: &[u64; 5], k: &[u64; 4]) -> u128 {
     let mut prod = [0u64; 9];
     for (i, &gi) in g.iter().enumerate() {
-        let mut carry = 0u128;
+        let mut carry = 0u64;
         for (j, &kj) in k.iter().enumerate() {
-            let t = u128::from(gi) * u128::from(kj) + u128::from(prod[i + j]) + carry;
-            prod[i + j] = t as u64;
-            carry = t >> 64;
+            let (limb, c) = mac(prod[i + j], gi, kj, carry);
+            prod[i + j] = limb;
+            carry = c;
         }
-        prod[i + 4] = prod[i + 4].wrapping_add(carry as u64);
+        // First write to prod[i + 4] on each outer iteration.
+        prod[i + 4] = carry;
     }
     // Bits >= 384 live in limbs 6..; round on bit 383 (top bit of limb 5).
     let round = prod[5] >> 63;
@@ -142,28 +143,29 @@ fn round_mul_shift(g: &[u64; 5], k: &[u64; 4]) -> u128 {
 /// 256-bit product of two `u128`s, as little-endian limbs. Constant-time:
 /// a fixed schoolbook 2x2-limb multiply with explicit carry propagation.
 fn mul_u128(a: u128, b: u128) -> [u64; 4] {
-    const MASK: u128 = u64::MAX as u128;
-    let (a0, a1) = (a & MASK, a >> 64);
-    let (b0, b1) = (b & MASK, b >> 64);
-    let (p00, p01, p10, p11) = (a0 * b0, a0 * b1, a1 * b0, a1 * b1);
-    let l0 = p00 & MASK;
-    let c1 = (p00 >> 64) + (p01 & MASK) + (p10 & MASK);
-    let c2 = (c1 >> 64) + (p01 >> 64) + (p10 >> 64) + (p11 & MASK);
-    let l3 = (c2 >> 64) + (p11 >> 64);
-    [l0 as u64, (c1 & MASK) as u64, (c2 & MASK) as u64, l3 as u64]
+    let a = [a as u64, (a >> 64) as u64];
+    let b = [b as u64, (b >> 64) as u64];
+    let mut prod = [0u64; 4];
+    for (i, &ai) in a.iter().enumerate() {
+        let mut carry = 0u64;
+        for (j, &bj) in b.iter().enumerate() {
+            let (limb, c) = mac(prod[i + j], ai, bj, carry);
+            prod[i + j] = limb;
+            carry = c;
+        }
+        // First write to prod[i + 2] on each outer iteration.
+        prod[i + 2] = carry;
+    }
+    prod
 }
 
 /// 256-bit wrapping subtraction (two's complement).
 fn sub256(a: [u64; 4], b: [u64; 4]) -> [u64; 4] {
-    let mut out = [0u64; 4];
-    let mut borrow = 0u64;
-    for i in 0..4 {
-        let (d, b1) = a[i].overflowing_sub(b[i]);
-        let (d, b2) = d.overflowing_sub(borrow);
-        out[i] = d;
-        borrow = u64::from(b1) + u64::from(b2);
-    }
-    out
+    let (d0, borrow) = sbb(a[0], b[0], 0);
+    let (d1, borrow) = sbb(a[1], b[1], borrow);
+    let (d2, borrow) = sbb(a[2], b[2], borrow);
+    let (d3, _) = sbb(a[3], b[3], borrow);
+    [d0, d1, d2, d3]
 }
 
 /// Interprets a 256-bit two's-complement value as `(is_negative, magnitude)`,
@@ -173,18 +175,13 @@ fn sub256(a: [u64; 4], b: [u64; 4]) -> [u64; 4] {
 /// `decompose` tests check this over the whole field), so the high limbs of the
 /// magnitude are always zero and no information is lost.
 fn signed_halves(x: [u64; 4]) -> (bool, u128) {
+    let low = u128::from(x[0]) | (u128::from(x[1]) << 64);
     if x[3] >> 63 == 0 {
-        (false, u128::from(x[0]) | (u128::from(x[1]) << 64))
+        (false, low)
     } else {
-        // Negate: !x + 1.
-        let mut n = [!x[0], !x[1], !x[2], !x[3]];
-        let mut carry = 1u64;
-        for limb in &mut n {
-            let (v, c) = limb.overflowing_add(carry);
-            *limb = v;
-            carry = u64::from(c);
-        }
-        (true, u128::from(n[0]) | (u128::from(n[1]) << 64))
+        // Two's-complement negation commutes with truncation to the low 128
+        // bits, and the magnitude lives entirely there.
+        (true, (!low).wrapping_add(1))
     }
 }
 
