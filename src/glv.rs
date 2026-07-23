@@ -89,6 +89,9 @@ pub trait GlvParams: CurveExt + private::Sealed {
     }
 }
 
+/// These constants are computed by `sage/glv_constants.sage`, which prints
+/// this impl body verbatim.
+///
 /// The `constants` test (see the module's test suite) re-verifies the short
 /// basis against Pallas's own $\lambda$ = `Scalar::ZETA` using field
 /// arithmetic alone, and the Babai coefficients `G1`/`G2` against their
@@ -115,9 +118,10 @@ impl GlvParams for pallas::Point {
     ];
 }
 
-/// As for Pallas, the `constants` and `decompose` tests re-verify these values
-/// against Vesta's own $\lambda$ = `Scalar::ZETA` and the Babai coefficients'
-/// defining rounding.
+/// As for Pallas, these constants are computed by `sage/glv_constants.sage`,
+/// and the `constants` and `decompose` tests re-verify them against Vesta's
+/// own $\lambda$ = `Scalar::ZETA` and the Babai coefficients' defining
+/// rounding.
 impl GlvParams for vesta::Point {
     const V1A: u128 = 0x49e69d1640f049157fcae1c700000000;
     const V1B_NEG: u128 = 0x49e69d1640a899538cb1279300000001;

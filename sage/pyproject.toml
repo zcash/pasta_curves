@@ -1,0 +1,14 @@
+[project]
+name = "pasta-curves-sage"
+version = "0.0.0"
+description = "SageMath scripts deriving the constants used by this crate"
+requires-python = ">=3.11"
+dependencies = [
+    # passagemath is the pip-installable distribution of SageMath; the
+    # exact versions are pinned in uv.lock.
+    "passagemath-standard ~= 10.8.6",
+    "passagemath-repl ~= 10.8.6",
+]
+
+[tool.uv]
+package = false
