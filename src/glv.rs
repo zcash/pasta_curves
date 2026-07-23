@@ -31,7 +31,7 @@
 //! - [`Table::mul_decomposed`]: the remaining per-(point, scalar) work — a
 //!   shared-doubling Straus ladder over the two half-width digit strings.
 //!
-//! One-shot use is [`MulGlv::mul_glv`].
+//! One-shot use is [`GlvParams::mul_glv`].
 
 use alloc::vec::Vec;
 
@@ -71,6 +71,22 @@ pub trait GlvParams: CurveExt + private::Sealed {
     const G1: [u64; 5];
     /// Babai coefficient `round(2^384 * V1B_NEG / n)`, little-endian limbs.
     const G2: [u64; 5];
+
+    /// One-shot `k * self` via the GLV split — variable-time in `k` (see the
+    /// module docs), identical in value to `self * k` (including `self` =
+    /// identity).
+    ///
+    /// For repeated multiplications against the same point or the same
+    /// scalar, use [`Table`] / [`Decomposed`] directly to reuse the
+    /// precomputation.
+    fn mul_glv(&self, k: &Self::ScalarExt) -> Self {
+        if bool::from(self.is_identity()) {
+            // k*O = O. Identity tables work (see [`Table::batch`]), but
+            // building one still costs a field inversion; short-circuit.
+            return Self::identity();
+        }
+        Table::new(self).mul(k)
+    }
 }
 
 /// The `constants` test (see the module's test suite) re-verifies the short
@@ -366,28 +382,6 @@ impl<C: GlvParams> Decomposed<C> {
             len: len1.max(len2),
             _curve: core::marker::PhantomData,
         }
-    }
-}
-
-/// One-shot GLV scalar multiplication.
-///
-/// Implemented for the curves carrying [`GlvParams`]. For repeated
-/// multiplications against the same point or the same scalar, use
-/// [`Table`] / [`Decomposed`] directly to reuse the precomputation.
-pub trait MulGlv: GlvParams {
-    /// `k * self` via the GLV split — variable-time in `k` (see the module
-    /// docs), identical in value to `self * k` (including `self` = identity).
-    fn mul_glv(&self, k: &Self::ScalarExt) -> Self;
-}
-
-impl<C: GlvParams> MulGlv for C {
-    fn mul_glv(&self, k: &Self::ScalarExt) -> Self {
-        if bool::from(self.is_identity()) {
-            // k*O = O. Identity tables work (see [`Table::batch`]), but
-            // building one still costs a field inversion; short-circuit.
-            return Self::identity();
-        }
-        Table::new(self).mul(k)
     }
 }
 

@@ -3,7 +3,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 
 use ff::Field;
-use pasta_curves::glv::{Decomposed, GlvParams, MulGlv, Table};
+use pasta_curves::glv::{Decomposed, GlvParams, Table};
 use pasta_curves::{pallas, vesta};
 
 fn criterion_benchmark(c: &mut Criterion) {
