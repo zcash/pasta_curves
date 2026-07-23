@@ -2,6 +2,10 @@ name: CI checks
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   test:
     name: Test on ${{ matrix.os }} with ${{ matrix.features }}
