@@ -237,11 +237,13 @@ pub struct Table<C: GlvParams> {
 }
 
 impl<C: GlvParams> Table<C> {
-    /// Builds the window for a single point.
+    /// Builds the window for a single point (with no heap allocation, but
+    /// one field inversion; amortize that with [`Table::batch`]).
     pub fn new(p: &C) -> Self {
-        Self::batch(core::slice::from_ref(p))
-            .pop()
-            .expect("one table per input point")
+        let proj = Self::window_proj(p);
+        let mut affine = [C::AffineExt::identity(); 8];
+        C::batch_normalize(&proj, &mut affine);
+        Self::from_window(&affine)
     }
 
     /// Builds [`Table`]s for a batch of points with one shared
@@ -249,40 +251,46 @@ impl<C: GlvParams> Table<C> {
     /// inversion for the whole batch, where building each window individually
     /// pays one inversion per point.
     ///
-    /// The endomorphism multiples are taken in projective coordinates via
-    /// [`CurveExt::endo`], so they ride along in the same normalization. Uses
-    /// projective group operations only. Identity inputs produce identity
-    /// tables and may be mixed with non-identity points in the same batch.
+    /// Identity inputs produce identity tables and may be mixed with
+    /// non-identity points in the same batch.
     pub fn batch(points: &[C]) -> Vec<Table<C>> {
         let n = points.len();
         if n == 0 {
             return Vec::new();
         }
-        // Per point, projective (cheap additions/endomorphism, no inversions):
-        // the odd multiples of P followed by the odd multiples of phi(P),
-        // laid out [1P, 3P, 5P, 7P, 1phiP, 3phiP, 5phiP, 7phiP] per point.
         let mut proj = Vec::with_capacity(n * 8);
         for p in points {
-            let two_p = p.double();
-            let mut odds = [*p; 4];
-            let mut m = *p;
-            for slot in odds.iter_mut().skip(1) {
-                m += two_p;
-                *slot = m;
-            }
-            proj.extend_from_slice(&odds);
-            proj.extend(odds.iter().map(|o| o.endo()));
+            proj.extend_from_slice(&Self::window_proj(p));
         }
         // One inversion for the whole batch.
         let mut affine = alloc::vec![C::AffineExt::identity(); n * 8];
         C::batch_normalize(&proj, &mut affine);
-        affine
-            .chunks_exact(8)
-            .map(|c| Table {
-                t1: c[..4].try_into().expect("four P multiples"),
-                t2: c[4..].try_into().expect("four phi(P) multiples"),
-            })
-            .collect()
+        affine.chunks_exact(8).map(Self::from_window).collect()
+    }
+
+    /// The eight projective window entries for one point:
+    /// `[1P, 3P, 5P, 7P, 1phi(P), 3phi(P), 5phi(P), 7phi(P)]`. Projective
+    /// group operations only (cheap additions and endomorphism, no
+    /// inversions); the endomorphism multiples are taken via
+    /// [`CurveExt::endo`] so they ride along in the caller's normalization.
+    fn window_proj(p: &C) -> [C; 8] {
+        let two_p = p.double();
+        let mut w = [*p; 8];
+        for i in 1..4 {
+            w[i] = w[i - 1] + two_p;
+        }
+        for i in 0..4 {
+            w[i + 4] = w[i].endo();
+        }
+        w
+    }
+
+    /// Assembles a table from one normalized 8-entry window.
+    fn from_window(w: &[C::AffineExt]) -> Self {
+        Table {
+            t1: w[..4].try_into().expect("four P multiples"),
+            t2: w[4..8].try_into().expect("four phi(P) multiples"),
+        }
     }
 
     /// The base point P (= t1\[0\]) back as a projective point.
