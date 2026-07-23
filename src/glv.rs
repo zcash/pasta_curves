@@ -311,24 +311,15 @@ impl<C: GlvParams> Table<C> {
     /// shared-doubling ladder over the GLV split. Identical to `P * k`
     /// (tested).
     pub fn mul_decomposed(&self, k: &Decomposed<C>) -> C {
-        let len = k.len1.max(k.len2);
         let mut acc = C::identity();
-        for i in (0..len).rev() {
+        for i in (0..k.len).rev() {
             // `acc` is still the identity on the first iteration; skip the
             // wasted doubling.
-            if i + 1 < len {
+            if i + 1 < k.len {
                 acc = acc.double();
             }
-            Self::add_digit(
-                &mut acc,
-                &self.t1,
-                if i < k.len1 { k.digits1[i] } else { 0 },
-            );
-            Self::add_digit(
-                &mut acc,
-                &self.t2,
-                if i < k.len2 { k.digits2[i] } else { 0 },
-            );
+            Self::add_digit(&mut acc, &self.t1, k.digits1[i]);
+            Self::add_digit(&mut acc, &self.t2, k.digits2[i]);
         }
         acc
     }
@@ -355,9 +346,10 @@ impl<C: GlvParams> Table<C> {
 #[derive(Clone, Debug)]
 pub struct Decomposed<C: GlvParams> {
     digits1: [i8; MAX_WNAF_DIGITS],
-    len1: usize,
     digits2: [i8; MAX_WNAF_DIGITS],
-    len2: usize,
+    /// Digit positions in use: the longer of the two halves' wNAF lengths.
+    /// Both arrays are zero beyond their own half's length.
+    len: usize,
     _curve: core::marker::PhantomData<C>,
 }
 
@@ -370,9 +362,8 @@ impl<C: GlvParams> Decomposed<C> {
         let (digits2, len2) = wnaf_digits(a2, neg2);
         Decomposed {
             digits1,
-            len1,
             digits2,
-            len2,
+            len: len1.max(len2),
             _curve: core::marker::PhantomData,
         }
     }
