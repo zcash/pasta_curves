@@ -736,6 +736,80 @@ mod tests {
         edge_case_matrix::<vesta::Point>();
     }
 
+    /// A scalar constructed (by lattice reduction over the joint residues
+    /// `G1*k mod 2^384`, `G2*k mod 2^384`) to sit on the Babai rounding
+    /// boundary: flipping bit 127 of `G2` — a corruption that the suite
+    /// predating `babai_coefficient_verify` provably accepted, since it
+    /// leaves the `round_mul_shift` known-answer test unmoved and shifts
+    /// `c2` for only ~2^-16 of random scalars — moves `c2` by one *here*
+    /// and pushes `|k2|` past the half-width bound that `wnaf_digits` and
+    /// `MAX_WNAF_DIGITS` rely on.
+    ///
+    /// With the shipped constants the witness must behave like any other
+    /// scalar; the second half of the test pins its boundary geometry.
+    fn babai_boundary_witness<C: GlvParams>(limbs: [u64; 4]) {
+        let mut bytes = [0u8; 32];
+        for (chunk, limb) in bytes.chunks_exact_mut(8).zip(limbs.iter()) {
+            chunk.copy_from_slice(&limb.to_le_bytes());
+        }
+        let mut repr = <C::ScalarExt as PrimeField>::Repr::default();
+        repr.as_mut().copy_from_slice(&bytes);
+        let k = C::ScalarExt::from_repr(repr).unwrap();
+        assert_eq!(scalar_limbs(&k), limbs, "witness must be a canonical scalar");
+
+        // In bounds, reconstructs, and multiplies correctly as shipped.
+        let ((neg1, a1), (neg2, a2)) = decompose::<C>(&k);
+        assert!(a1 >> 127 == 0 && a2 >> 127 == 0, "witness must be in bounds");
+        let s1 = C::ScalarExt::from_u128(a1);
+        let s2 = C::ScalarExt::from_u128(a2);
+        let (s1, s2) = (if neg1 { -s1 } else { s1 }, if neg2 { -s2 } else { s2 });
+        assert_eq!(s1 + s2 * C::ScalarExt::ZETA, k, "witness must reconstruct");
+        assert_eq!(C::generator().mul_glv(&k), C::generator() * k);
+
+        // The boundary geometry under the bit flip.
+        let mut g2_bad = C::G2;
+        g2_bad[1] ^= 1 << 63;
+        let kl = scalar_limbs(&k);
+        let c1 = round_mul_shift(&C::G1, &kl);
+        let c2 = round_mul_shift(&C::G2, &kl);
+        assert_eq!(
+            round_mul_shift(&g2_bad, &kl),
+            c2 + 1,
+            "witness must straddle the rounding boundary"
+        );
+        let k2_bad = sub256(mul_u128(c1, C::V1B_NEG), mul_u128(c2 + 1, C::V2B));
+        let mag = if k2_bad[3] >> 63 == 1 {
+            sub256([0; 4], k2_bad)
+        } else {
+            k2_bad
+        };
+        assert!(mag[2] == 0 && mag[3] == 0, "witness |k2'| stays below 2^128");
+        let mag = u128::from(mag[0]) | (u128::from(mag[1]) << 64);
+        assert!(
+            mag >> 127 == 1,
+            "flipped G2 must push |k2| past 2^127 at this scalar"
+        );
+    }
+
+    #[test]
+    fn babai_boundary_pallas() {
+        babai_boundary_witness::<pallas::Point>([
+            0x7d17f7904ead2c41,
+            0x599fe6a8fe8a8017,
+            0xeb8d7fd361b49df2,
+            0x3d70a3d70a3d6ffd,
+        ]);
+    }
+    #[test]
+    fn babai_boundary_vesta() {
+        babai_boundary_witness::<vesta::Point>([
+            0x8f50d5ee00e7440c,
+            0x5cdde49e066e19bb,
+            0xb6d10914b3411b6b,
+            0x3d70a3d70a3d6ffe,
+        ]);
+    }
+
     /// Property-based tests: scalars are drawn as four uniform u64 limbs
     /// widened through `from_uniform_bytes` (so the whole field is reachable
     /// without modular bias), and points as `G*(s+1)`.
