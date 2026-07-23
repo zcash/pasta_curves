@@ -28,8 +28,8 @@ pub mod deferred;
 pub mod pallas;
 pub mod vesta;
 
-#[cfg(feature = "alloc")]
-#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+#[cfg(feature = "glv")]
+#[cfg_attr(docsrs, doc(cfg(feature = "glv")))]
 pub mod glv;
 
 #[cfg(feature = "alloc")]
