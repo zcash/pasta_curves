@@ -173,10 +173,20 @@ fn sub256(a: [u64; 4], b: [u64; 4]) -> [u64; 4] {
 /// Interprets a 256-bit two's-complement value as `(is_negative, magnitude)`,
 /// taking the low 128 bits of the magnitude.
 ///
-/// GLV decomposition guarantees `|x| < 2^127` for the values reached here (the
-/// `decompose` tests check this over the whole field), so the high limbs of the
-/// magnitude are always zero and no information is lost.
+/// GLV decomposition guarantees `|x| < 2^127` for the values reached here
+/// (asserted in debug builds, here and in [`wnaf_digits`], and checked by the
+/// `decompose` tests), so the high limbs of the magnitude are always zero and
+/// no information is lost.
 fn signed_halves(x: [u64; 4]) -> (bool, u128) {
+    // Guard the truncation itself: the discarded limbs must be the sign
+    // extension of bit 127. Values of 2^128 or more would otherwise be
+    // silently truncated before `wnaf_digits`' magnitude assertion could
+    // observe them.
+    let ext = if x[1] >> 63 == 0 { 0 } else { u64::MAX };
+    debug_assert!(
+        x[2] == ext && x[3] == ext,
+        "GLV half does not fit in 128 bits"
+    );
     let low = u128::from(x[0]) | (u128::from(x[1]) << 64);
     if x[3] >> 63 == 0 {
         (false, low)
