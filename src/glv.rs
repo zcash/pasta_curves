@@ -222,32 +222,22 @@ pub struct Table<C: GlvParams> {
 }
 
 impl<C: GlvParams> Table<C> {
-    /// Builds the window for a single non-identity point.
-    ///
-    /// # Panics
-    ///
-    /// Panics in debug builds if `p` is the identity (the table of a fixed
-    /// base point has no meaningful identity form).
+    /// Builds the window for a single point.
     pub fn new(p: &C) -> Self {
         Self::batch(core::slice::from_ref(p))
             .pop()
             .expect("one table per input point")
     }
 
-    /// Builds [`Table`]s for a batch of non-identity points with one shared
+    /// Builds [`Table`]s for a batch of points with one shared
     /// batch normalization across all `8 * n` window entries — a single field
     /// inversion for the whole batch, where building each window individually
     /// pays one inversion per point.
     ///
     /// The endomorphism multiples are taken in projective coordinates via
     /// [`CurveExt::endo`], so they ride along in the same normalization. Uses
-    /// projective group operations only; on a prime-order curve the odd
-    /// multiples of a non-identity point (and their images under `endo`) are
-    /// never the identity, so the normalized windows are always well-formed.
-    ///
-    /// # Panics
-    ///
-    /// Panics in debug builds if any input point is the identity.
+    /// projective group operations only. Identity inputs produce identity
+    /// tables and may be mixed with non-identity points in the same batch.
     pub fn batch(points: &[C]) -> Vec<Table<C>> {
         let n = points.len();
         if n == 0 {
@@ -258,10 +248,6 @@ impl<C: GlvParams> Table<C> {
         // laid out [1P, 3P, 5P, 7P, 1phiP, 3phiP, 5phiP, 7phiP] per point.
         let mut proj = Vec::with_capacity(n * 8);
         for p in points {
-            debug_assert!(
-                !bool::from(p.is_identity()),
-                "Table::batch contract: non-identity points only"
-            );
             let two_p = p.double();
             let mut odds = [*p; 4];
             let mut m = *p;
@@ -412,6 +398,44 @@ mod tests {
     use super::*;
     use ff::Field;
 
+    #[test]
+    fn integer_multiplication_carry_boundaries() {
+        assert_eq!(
+            mul_u128(u128::MAX, u128::MAX),
+            [1, 0, u64::MAX - 1, u64::MAX]
+        );
+
+        let pallas_scalar_max = [
+            0x8c46eb2100000000,
+            0x224698fc0994a8dd,
+            0,
+            0x4000000000000000,
+        ];
+        assert_eq!(
+            round_mul_shift(&pallas::Point::G1, &pallas_scalar_max),
+            0x93cd3a2c8198e2690c7c095a00000001
+        );
+        assert_eq!(
+            round_mul_shift(&pallas::Point::G2, &pallas_scalar_max),
+            0x49e69d1640a899538cb1279300000000
+        );
+
+        let vesta_scalar_max = [
+            0x992d30ed00000000,
+            0x224698fc094cf91b,
+            0,
+            0x4000000000000000,
+        ];
+        assert_eq!(
+            round_mul_shift(&vesta::Point::G1, &vesta_scalar_max),
+            0x93cd3a2c8198e2690c7c095a00000001
+        );
+        assert_eq!(
+            round_mul_shift(&vesta::Point::G2, &vesta_scalar_max),
+            0x49e69d1640a899538cb1279300000001
+        );
+    }
+
     /// Deterministic full-width scalars for the known-answer tests.
     fn scalars<F: PrimeField>(n: u64) -> impl Iterator<Item = F> {
         (0..n).map(|i| {
@@ -511,6 +535,24 @@ mod tests {
         }
     }
 
+    /// Identity tables work both alone and alongside non-identity tables.
+    fn identity_tables<C: GlvParams>() {
+        let identity = C::identity();
+        let generator = C::generator();
+        let k = C::ScalarExt::from(0xDEAD_BEEFu64);
+
+        let solo = Table::new(&identity);
+        assert_eq!(solo.point(), identity);
+        assert_eq!(solo.mul(&k), identity);
+
+        let batched = Table::batch(&[identity, generator]);
+        assert_eq!(batched.len(), 2);
+        assert_eq!(batched[0].point(), identity);
+        assert_eq!(batched[0].mul(&k), identity);
+        assert_eq!(batched[1].point(), generator);
+        assert_eq!(batched[1].mul(&k), generator * k);
+    }
+
     /// A reused [`Decomposed`] gives the same products as decomposing
     /// per-multiplication.
     fn decomposed_reuse_matches_fresh<C: GlvParams>() {
@@ -556,6 +598,10 @@ mod tests {
                 #[test]
                 fn batch_build() {
                     batch_tables_equal_solo::<$curve>();
+                }
+                #[test]
+                fn identity_table() {
+                    identity_tables::<$curve>();
                 }
                 #[test]
                 fn decomposed_reuse() {
