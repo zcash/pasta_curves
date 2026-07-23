@@ -73,10 +73,11 @@ pub trait GlvParams: CurveExt + private::Sealed {
     const G2: [u64; 5];
 }
 
-/// The `constants` and `decompose` tests (see the module's test suite)
-/// re-verify these values against Pallas's own $\lambda$ = `Scalar::ZETA` using
-/// field arithmetic alone, and prove that the decomposition reconstructs `k`;
-/// a wrong constant cannot pass them.
+/// The `constants` test (see the module's test suite) re-verifies the short
+/// basis against Pallas's own $\lambda$ = `Scalar::ZETA` using field
+/// arithmetic alone, and the Babai coefficients `G1`/`G2` against their
+/// defining rounding using limb arithmetic alone; the `decompose` tests prove
+/// that the decomposition reconstructs `k`. A wrong constant cannot pass them.
 impl GlvParams for pallas::Point {
     const V1A: u128 = 0x49e69d1640f049157fcae1c700000001;
     const V1B_NEG: u128 = 0x49e69d1640a899538cb1279300000000;
@@ -99,7 +100,8 @@ impl GlvParams for pallas::Point {
 }
 
 /// As for Pallas, the `constants` and `decompose` tests re-verify these values
-/// against Vesta's own $\lambda$ = `Scalar::ZETA` by field arithmetic alone.
+/// against Vesta's own $\lambda$ = `Scalar::ZETA` and the Babai coefficients'
+/// defining rounding.
 impl GlvParams for vesta::Point {
     const V1A: u128 = 0x49e69d1640f049157fcae1c700000000;
     const V1B_NEG: u128 = 0x49e69d1640a899538cb1279300000001;
@@ -185,17 +187,23 @@ fn signed_halves(x: [u64; 4]) -> (bool, u128) {
     }
 }
 
+/// The four little-endian limbs of a Pasta scalar. (Pasta scalars have a
+/// 32-byte little-endian representation; the four 8-byte reads cover it
+/// exactly.)
+fn scalar_limbs<F: PrimeField>(k: &F) -> [u64; 4] {
+    let bytes = k.to_repr();
+    let bytes: &[u8] = bytes.as_ref();
+    let mut limbs = [0u64; 4];
+    for (i, limb) in limbs.iter_mut().enumerate() {
+        *limb = u64::from_le_bytes(bytes[i * 8..(i + 1) * 8].try_into().expect("8 bytes"));
+    }
+    limbs
+}
+
 /// GLV split: `k = k1 + k2 * lambda (mod n)` with `|k1|`, `|k2|` at most
 /// `2^127`, each half returned as `(is_negative, magnitude)`.
 fn decompose<C: GlvParams>(k: &C::ScalarExt) -> ((bool, u128), (bool, u128)) {
-    let repr = k.to_repr();
-    // Pasta scalars have a 32-byte little-endian representation; the four
-    // 8-byte reads below cover it exactly.
-    let bytes: &[u8] = repr.as_ref();
-    let mut kl = [0u64; 4];
-    for (i, limb) in kl.iter_mut().enumerate() {
-        *limb = u64::from_le_bytes(bytes[i * 8..(i + 1) * 8].try_into().expect("8 bytes"));
-    }
+    let kl = scalar_limbs(k);
     let c1 = round_mul_shift(&C::G1, &kl);
     let c2 = round_mul_shift(&C::G2, &kl);
     // k1 = k - c1*V1A - c2*V2A   (two's complement over 256 bits)
@@ -406,6 +414,7 @@ fn wnaf_digits(a: u128, negate: bool) -> ([i8; MAX_WNAF_DIGITS], usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::arithmetic::adc;
     use ff::Field;
 
     #[test]
@@ -455,14 +464,75 @@ mod tests {
         })
     }
 
+    /// Checks `g == round(2^384 * v / n)` for the curve's scalar modulus `n`,
+    /// using limb arithmetic only: `g` is that rounding if and only if
+    /// `|2^384 * v - g * n| < n/2` (an exact tie is impossible: `n` is odd,
+    /// so `n/2` is not an integer).
+    fn babai_coefficient_verify<C: GlvParams>(g: &[u64; 5], v: u128) {
+        // n = (n - 1) + 1, with n - 1 read out of the field type as -1.
+        // n is odd, so n - 1 is even and adding the 1 back cannot carry.
+        let mut n = scalar_limbs(&-C::ScalarExt::ONE);
+        n[0] += 1;
+
+        // 2^384 * v occupies limbs 6..8 of a 9-limb value.
+        let mut target = [0u64; 9];
+        target[6] = v as u64;
+        target[7] = (v >> 64) as u64;
+
+        let mut gn = [0u64; 9];
+        schoolbook_mul(g, &n, &mut gn);
+
+        // residual = 2^384 * v - g*n, two's complement over 9 limbs; negate
+        // to a magnitude if the subtraction borrows.
+        let mut residual = [0u64; 9];
+        let mut borrow = 0;
+        for (r, (&t, &m)) in residual.iter_mut().zip(target.iter().zip(gn.iter())) {
+            let (limb, b) = sbb(t, m, borrow);
+            *r = limb;
+            borrow = b;
+        }
+        if borrow != 0 {
+            let mut carry = 1;
+            for limb in residual.iter_mut() {
+                let (l, c) = adc(!*limb, 0, carry);
+                *limb = l;
+                carry = c;
+            }
+        }
+
+        // |residual| < n/2 requires it to fit four limbs in the first place.
+        assert!(
+            residual[4..].iter().all(|&l| l == 0),
+            "Babai residual far exceeds n"
+        );
+        // |residual| < n/2 <=> 2*|residual| < n, checked by subtraction:
+        // n - 2*|residual| must not borrow (and equality is impossible, as
+        // n is odd and the doubled value even).
+        let mut doubled = [0u64; 5];
+        doubled[0] = residual[0] << 1;
+        for i in 1..5 {
+            doubled[i] = (residual[i] << 1) | (residual[i - 1] >> 63);
+        }
+        let n5 = [n[0], n[1], n[2], n[3], 0];
+        let mut borrow = 0;
+        for (&ni, &di) in n5.iter().zip(doubled.iter()) {
+            let (_, b) = sbb(ni, di, borrow);
+            borrow = b;
+        }
+        assert!(borrow == 0, "g is not round(2^384 * v / n)");
+    }
+
     /// The short-basis lattice relations, re-verified against the curve's
     /// own lambda (= `Scalar::ZETA`) using field arithmetic only:
-    ///   V1A - V1B_NEG*lambda == 0  and  V2A + V2B*lambda == 0  (mod n).
+    ///   V1A - V1B_NEG*lambda == 0  and  V2A + V2B*lambda == 0  (mod n),
+    /// plus the Babai coefficients G1/G2 against their defining rounding.
     fn constants_verify<C: GlvParams>() {
         let lambda = C::ScalarExt::ZETA;
         let from = C::ScalarExt::from_u128;
         assert_eq!(from(C::V1A), from(C::V1B_NEG) * lambda, "v1 not in lattice");
         assert_eq!(from(C::V2A), -(from(C::V2B) * lambda), "v2 not in lattice");
+        babai_coefficient_verify::<C>(&C::G1, C::V2B);
+        babai_coefficient_verify::<C>(&C::G2, C::V1B_NEG);
     }
 
     /// The endomorphism / lambda pairing on the real curve, on the same
