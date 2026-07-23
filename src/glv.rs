@@ -754,23 +754,25 @@ mod tests {
         F::from_repr(repr).unwrap()
     }
 
-    /// The lattice-constructed Babai-boundary scalars; provenance in
-    /// [`babai_boundary_witness`].
+    /// The lattice-constructed Babai-boundary scalars, computed by
+    /// `sage/glv_boundary_scalars.sage` (which prints these constants
+    /// verbatim); provenance in [`babai_boundary_witness`].
     const PALLAS_BOUNDARY_SCALAR: [u64; 4] = [
-        0x7d17f7904ead2c41,
-        0x599fe6a8fe8a8017,
-        0xeb8d7fd361b49df2,
-        0x3d70a3d70a3d6ffd,
+        0xf1616cb5a3632910,
+        0xa487c2df3b0d145f,
+        0xd70a3d98c2549413,
+        0x3d70a3d70a3d70a3,
     ];
     const VESTA_BOUNDARY_SCALAR: [u64; 4] = [
-        0x8f50d5ee00e7440c,
-        0x5cdde49e066e19bb,
-        0xb6d10914b3411b6b,
-        0x3d70a3d70a3d6ffe,
+        0x17b30ff8ae506c98,
+        0xecc8ab77c7c0d84f,
+        0xd70a3d86799d8e38,
+        0x3d70a3d70a3d70a3,
     ];
 
     /// A scalar constructed (by lattice reduction over the joint residues
-    /// `G1*k mod 2^384`, `G2*k mod 2^384`) to sit on the Babai rounding
+    /// `G1*k mod 2^384`, `G2*k mod 2^384` — see
+    /// `sage/glv_boundary_scalars.sage`) to sit on the Babai rounding
     /// boundary: flipping bit 127 of `G2` — a corruption that the suite
     /// predating `babai_coefficient_verify` provably accepted, since it
     /// leaves the `round_mul_shift` known-answer test unmoved and shifts
