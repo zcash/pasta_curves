@@ -736,6 +736,32 @@ mod tests {
         edge_case_matrix::<vesta::Point>();
     }
 
+    /// Loads a Pasta scalar from its four little-endian limbs.
+    fn scalar_from_limbs<F: PrimeField>(limbs: [u64; 4]) -> F {
+        let mut bytes = [0u8; 32];
+        for (chunk, limb) in bytes.chunks_exact_mut(8).zip(limbs.iter()) {
+            chunk.copy_from_slice(&limb.to_le_bytes());
+        }
+        let mut repr = F::Repr::default();
+        repr.as_mut().copy_from_slice(&bytes);
+        F::from_repr(repr).unwrap()
+    }
+
+    /// The lattice-constructed Babai-boundary scalars; provenance in
+    /// [`babai_boundary_witness`].
+    const PALLAS_BOUNDARY_SCALAR: [u64; 4] = [
+        0x7d17f7904ead2c41,
+        0x599fe6a8fe8a8017,
+        0xeb8d7fd361b49df2,
+        0x3d70a3d70a3d6ffd,
+    ];
+    const VESTA_BOUNDARY_SCALAR: [u64; 4] = [
+        0x8f50d5ee00e7440c,
+        0x5cdde49e066e19bb,
+        0xb6d10914b3411b6b,
+        0x3d70a3d70a3d6ffe,
+    ];
+
     /// A scalar constructed (by lattice reduction over the joint residues
     /// `G1*k mod 2^384`, `G2*k mod 2^384`) to sit on the Babai rounding
     /// boundary: flipping bit 127 of `G2` — a corruption that the suite
@@ -748,13 +774,7 @@ mod tests {
     /// With the shipped constants the witness must behave like any other
     /// scalar; the second half of the test pins its boundary geometry.
     fn babai_boundary_witness<C: GlvParams>(limbs: [u64; 4]) {
-        let mut bytes = [0u8; 32];
-        for (chunk, limb) in bytes.chunks_exact_mut(8).zip(limbs.iter()) {
-            chunk.copy_from_slice(&limb.to_le_bytes());
-        }
-        let mut repr = <C::ScalarExt as PrimeField>::Repr::default();
-        repr.as_mut().copy_from_slice(&bytes);
-        let k = C::ScalarExt::from_repr(repr).unwrap();
+        let k = scalar_from_limbs::<C::ScalarExt>(limbs);
         assert_eq!(scalar_limbs(&k), limbs, "witness must be a canonical scalar");
 
         // In bounds, reconstructs, and multiplies correctly as shipped.
@@ -793,21 +813,40 @@ mod tests {
 
     #[test]
     fn babai_boundary_pallas() {
-        babai_boundary_witness::<pallas::Point>([
-            0x7d17f7904ead2c41,
-            0x599fe6a8fe8a8017,
-            0xeb8d7fd361b49df2,
-            0x3d70a3d70a3d6ffd,
-        ]);
+        babai_boundary_witness::<pallas::Point>(PALLAS_BOUNDARY_SCALAR);
     }
     #[test]
     fn babai_boundary_vesta() {
-        babai_boundary_witness::<vesta::Point>([
-            0x8f50d5ee00e7440c,
-            0x5cdde49e066e19bb,
-            0xb6d10914b3411b6b,
-            0x3d70a3d70a3d6ffe,
-        ]);
+        babai_boundary_witness::<vesta::Point>(VESTA_BOUNDARY_SCALAR);
+    }
+
+    /// Native (constant-time) `Mul` against the whole GLV pipeline at the
+    /// boundary scalars — nothing but two multiplications and an equality.
+    /// Native multiplication never reads the GLV constants, so the sides
+    /// only diverge if the GLV path regresses, and at these scalars it
+    /// does so for exactly the suite-invisible corruption identified
+    /// above (`G2[1] ^= 1 << 63`): the decomposition half leaves its
+    /// 2^127 bound and the pipeline panics on a bound assertion in debug
+    /// builds — how tests run. (Any corruption small enough to evade the
+    /// known-answer tests keeps `|k2| < 2^128`, which the wNAF ladder
+    /// still multiplies correctly, so release products stay numerically
+    /// right; the broken invariant is the observable, not a wrong point.)
+    /// On the pre-`babai_coefficient_verify` code, this test alone
+    /// detects the flip; nothing else in that suite did.
+    fn native_vs_glv_boundary<C: GlvParams>(limbs: [u64; 4]) {
+        let k = scalar_from_limbs::<C::ScalarExt>(limbs);
+        let p = C::generator() * (k + C::ScalarExt::ONE);
+        assert_eq!(p.mul_glv(&k), p * k, "GLV must agree with native Mul");
+        assert_eq!(C::generator().mul_glv(&k), C::generator() * k);
+    }
+
+    #[test]
+    fn native_vs_glv_boundary_pallas() {
+        native_vs_glv_boundary::<pallas::Point>(PALLAS_BOUNDARY_SCALAR);
+    }
+    #[test]
+    fn native_vs_glv_boundary_vesta() {
+        native_vs_glv_boundary::<vesta::Point>(VESTA_BOUNDARY_SCALAR);
     }
 
     /// Property-based tests: scalars are drawn as four uniform u64 limbs
