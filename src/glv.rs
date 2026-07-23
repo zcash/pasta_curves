@@ -778,11 +778,18 @@ mod tests {
     /// scalar; the second half of the test pins its boundary geometry.
     fn babai_boundary_witness<C: GlvParams>(limbs: [u64; 4]) {
         let k = scalar_from_limbs::<C::ScalarExt>(limbs);
-        assert_eq!(scalar_limbs(&k), limbs, "witness must be a canonical scalar");
+        assert_eq!(
+            scalar_limbs(&k),
+            limbs,
+            "witness must be a canonical scalar"
+        );
 
         // In bounds, reconstructs, and multiplies correctly as shipped.
         let ((neg1, a1), (neg2, a2)) = decompose::<C>(&k);
-        assert!(a1 >> 127 == 0 && a2 >> 127 == 0, "witness must be in bounds");
+        assert!(
+            a1 >> 127 == 0 && a2 >> 127 == 0,
+            "witness must be in bounds"
+        );
         let s1 = C::ScalarExt::from_u128(a1);
         let s2 = C::ScalarExt::from_u128(a2);
         let (s1, s2) = (if neg1 { -s1 } else { s1 }, if neg2 { -s2 } else { s2 });
@@ -806,7 +813,10 @@ mod tests {
         } else {
             k2_bad
         };
-        assert!(mag[2] == 0 && mag[3] == 0, "witness |k2'| stays below 2^128");
+        assert!(
+            mag[2] == 0 && mag[3] == 0,
+            "witness |k2'| stays below 2^128"
+        );
         let mag = u128::from(mag[0]) | (u128::from(mag[1]) << 64);
         assert!(
             mag >> 127 == 1,
