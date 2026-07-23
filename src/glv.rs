@@ -268,7 +268,8 @@ impl<C: GlvParams> Table<C> {
     }
 
     /// The base point P (= t1\[0\]) back as a projective point.
-    pub fn point(&self) -> C {
+    #[cfg(test)]
+    fn point(&self) -> C {
         C::from(self.t1[0])
     }
 
@@ -365,7 +366,8 @@ pub trait MulGlv: GlvParams {
 impl<C: GlvParams> MulGlv for C {
     fn mul_glv(&self, k: &Self::ScalarExt) -> Self {
         if bool::from(self.is_identity()) {
-            // k*O = O; the identity has no meaningful multiples table.
+            // k*O = O. Identity tables work (see [`Table::batch`]), but
+            // building one still costs a field inversion; short-circuit.
             return Self::identity();
         }
         Table::new(self).mul(k)
