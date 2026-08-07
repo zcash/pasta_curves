@@ -26,9 +26,35 @@ use super::{Fp, Fq};
 #[cfg(feature = "alloc")]
 use crate::arithmetic::{Coordinates, CurveAffine, CurveExt};
 
+#[cfg(feature = "alloc")]
+macro_rules! impl_batch_mul_same_scalar_vartime {
+    (glv, $name:ident) => {
+        #[cfg(feature = "glv")]
+        fn batch_mul_same_scalar_vartime(
+            points: &[Self::AffineExt],
+            scalar: &Self::ScalarExt,
+            output: &mut [Self],
+        ) {
+            assert_eq!(points.len(), output.len());
+            if points.is_empty() {
+                return;
+            }
+            for (point, output) in points.iter().zip(output.iter_mut()) {
+                *output = PrimeCurveAffine::to_curve(point);
+            }
+            let scalar = crate::glv::Decomposed::<$name>::new(scalar);
+            let tables = crate::glv::Table::batch(output);
+            for (output, table) in output.iter_mut().zip(tables) {
+                *output = table.mul_decomposed(&scalar);
+            }
+        }
+    };
+    (native, $name:ident) => {};
+}
+
 macro_rules! new_curve_impl {
     (($($privacy:tt)*), $name:ident, $name_affine:ident, $iso:ident, $base:ident, $scalar:ident,
-     $curve_id:literal, $a_raw:expr, $b_raw:expr, $curve_type:ident) => {
+     $curve_id:literal, $a_raw:expr, $b_raw:expr, $curve_type:ident, $same_scalar_mul:ident) => {
         /// Represents a point in the projective coordinate space.
         #[derive(Copy, Clone, Debug)]
         #[cfg_attr(feature = "repr-c", repr(C))]
@@ -165,6 +191,8 @@ macro_rules! new_curve_impl {
                     .ct_eq(&(z6 * $name::curve_constant_b()))
                     | self.z.is_zero()
             }
+
+            impl_batch_mul_same_scalar_vartime!($same_scalar_mul, $name);
         }
 
         impl group::Curve for $name {
@@ -955,7 +983,8 @@ new_curve_impl!(
     "pallas",
     [0, 0, 0, 0],
     [5, 0, 0, 0],
-    special_a0_b5
+    special_a0_b5,
+    glv
 );
 new_curve_impl!(
     (pub),
@@ -967,7 +996,8 @@ new_curve_impl!(
     "vesta",
     [0, 0, 0, 0],
     [5, 0, 0, 0],
-    special_a0_b5
+    special_a0_b5,
+    glv
 );
 new_curve_impl!(
     (pub(crate)),
@@ -984,7 +1014,8 @@ new_curve_impl!(
         0x18354a2eb0ea8c9c,
     ],
     [1265, 0, 0, 0],
-    general
+    general,
+    native
 );
 new_curve_impl!(
     (pub(crate)),
@@ -1001,7 +1032,8 @@ new_curve_impl!(
         0x267f9b2ee592271a,
     ],
     [1265, 0, 0, 0],
-    general
+    general,
+    native
 );
 
 impl Ep {

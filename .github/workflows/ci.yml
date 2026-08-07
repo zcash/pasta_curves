@@ -43,6 +43,21 @@ jobs:
       - name: Verify working directory is clean
         run: git diff --exit-code
 
+  test-alloc-fallback:
+    name: Test alloc without GLV
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        run: >
+          cargo test
+          --verbose
+          --release
+          --no-default-features
+          --features alloc
+      - name: Verify working directory is clean
+        run: git diff --exit-code
+
   no-std:
     name: Check no-std target ${{ matrix.target }}
     runs-on: ubuntu-latest
@@ -123,6 +138,7 @@ jobs:
     needs:
       - test
       - test-32-bit
+      - test-alloc-fallback
       - no-std
       - bitrot
     # `always()` is load-bearing: without it this job is skipped when a

@@ -7,6 +7,11 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `CurveExt::batch_mul_same_scalar_vartime`, for component-wise
+  multiplication of affine points by the same public scalar. Pallas and Vesta
+  use batched GLV multiplication when the `glv` feature is enabled.
+
 ## [0.5.2] - 2026-07-23
 ### Added
 - `pasta_curves::deferred` module, behind the new `deferred` feature flag. This
