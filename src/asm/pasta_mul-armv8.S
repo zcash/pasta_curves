@@ -5,9 +5,10 @@
 // Adapted from the pre-generated Mach-O assembly in Semolina v0.1.4:
 // https://github.com/supranational/semolina/blob/v0.1.4/src/mach-o/pasta_mul-armv8.S
 //
-// Only Montgomery multiplication, squaring, and the squaring reduction helper
-// are retained. Symbols are renamed for this crate. The implementation relies
-// on both Pasta moduli having limb 2 equal to zero and limb 3 equal to 2^62.
+// Only Montgomery multiplication, squaring, conversion, and their shared
+// reduction helper are retained. Symbols are renamed for this crate. The
+// implementation relies on both Pasta moduli having limb 2 equal to zero and
+// limb 3 equal to 2^62.
 
 .text
 
@@ -308,6 +309,39 @@ _pasta_curves_sqr_mont_pasta:
     ldp x19,x20,[x29,#16]
     ldp x21,x22,[x29,#32]
     ldr x29,[sp],#48
+    .long 3573752767
+    ret
+
+.globl _pasta_curves_from_mont_pasta
+.private_extern _pasta_curves_from_mont_pasta
+
+.align 5
+_pasta_curves_from_mont_pasta:
+    .long 3573752639
+    stp x29,x30,[sp,#-16]!
+    add x29,sp,#0
+
+    mov x4,x3
+    ldp x10,x11,[x1]
+    ldp x12,x13,[x1,#16]
+
+    bl L$pasta_curves_mul_by_1_mont_pasta
+    ldr x30,[x29,#8]
+
+    subs x14,x10,x5
+    sbcs x15,x11,x6
+    sbcs x16,x12,x7
+    sbcs x17,x13,x8
+
+    csel x10,x10,x14,lo
+    csel x11,x11,x15,lo
+    csel x12,x12,x16,lo
+    csel x13,x13,x17,lo
+
+    stp x10,x11,[x0]
+    stp x12,x13,[x0,#16]
+
+    ldr x29,[sp],#16
     .long 3573752767
     ret
 
