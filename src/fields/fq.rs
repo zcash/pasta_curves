@@ -168,7 +168,7 @@ impl<'a, 'b> Mul<&'b Fq> for &'a Fq {
 
     #[inline]
     fn mul(self, rhs: &'b Fq) -> Fq {
-        self.mul(rhs)
+        self.mul_runtime(rhs)
     }
 }
 
@@ -369,6 +369,48 @@ impl Fq {
         Fq::montgomery_reduce(u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7])
     }
 
+    #[inline]
+    fn mul_runtime(&self, rhs: &Self) -> Self {
+        #[cfg(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple"
+        ))]
+        {
+            Fq(super::aarch64_asm::mul(&self.0, &rhs.0, &MODULUS.0, INV))
+        }
+
+        #[cfg(not(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple"
+        )))]
+        {
+            self.mul(rhs)
+        }
+    }
+
+    #[inline]
+    fn square_runtime(&self) -> Self {
+        #[cfg(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple"
+        ))]
+        {
+            Fq(super::aarch64_asm::square(&self.0, &MODULUS.0, INV))
+        }
+
+        #[cfg(not(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple"
+        )))]
+        {
+            self.square()
+        }
+    }
+
     /// Subtracts `rhs` from `self`, returning the result.
     #[cfg_attr(not(feature = "uninline-portable"), inline)]
     pub const fn sub(&self, rhs: &Self) -> Self {
@@ -544,7 +586,7 @@ impl ff::Field for Fq {
 
     #[inline(always)]
     fn square(&self) -> Self {
-        self.square()
+        self.square_runtime()
     }
 
     fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
@@ -818,6 +860,54 @@ impl ec_gpu::GpuField for Fq {
 
     fn modulus() -> alloc::vec::Vec<u32> {
         crate::fields::u64_to_u32(&MODULUS.0[..])
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "aarch64-asm",
+    target_arch = "aarch64",
+    target_vendor = "apple"
+))]
+#[test]
+fn aarch64_asm_matches_portable_arithmetic() {
+    use rand::SeedableRng;
+
+    let modulus_minus_one =
+        Fq::from_raw([MODULUS.0[0] - 1, MODULUS.0[1], MODULUS.0[2], MODULUS.0[3]]);
+    let boundaries = [
+        Fq::zero(),
+        Fq::one(),
+        -Fq::one(),
+        Fq::from_raw([1, 0, 0, 0]),
+        modulus_minus_one,
+        Fq::from_raw([u64::MAX; 4]),
+    ];
+
+    for lhs in boundaries {
+        assert_eq!(<Fq as Field>::square(&lhs), Fq::square(&lhs));
+        for rhs in boundaries {
+            assert_eq!(&lhs * &rhs, Fq::mul(&lhs, &rhs));
+        }
+    }
+
+    let mut rng = rand_xorshift::XorShiftRng::from_seed([0xa5; 16]);
+    for _ in 0..1024 {
+        let lhs = Fq::from_raw([
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+        ]);
+        let rhs = Fq::from_raw([
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+        ]);
+
+        assert_eq!(&lhs * &rhs, Fq::mul(&lhs, &rhs));
+        assert_eq!(<Fq as Field>::square(&lhs), Fq::square(&lhs));
     }
 }
 

@@ -7,6 +7,10 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `aarch64-asm` feature flag, which enables an assembly backend for runtime
+  `Fp` and `Fq` multiplication and squaring on Apple AArch64 targets.
+
 ## [0.5.2] - 2026-07-23
 ### Added
 - `pasta_curves::deferred` module, behind the new `deferred` feature flag. This

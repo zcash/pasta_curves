@@ -168,6 +168,9 @@ Defined in `Cargo.toml`; `default = ["bits", "sqrt-table"]`.
 - `bits` — enables the `ff/bits` integration (`PrimeFieldBits`). *(default)*
 - `sqrt-table` — large precomputed tables (on the heap) that speed up square roots;
   implies `alloc`, pulls in `lazy_static`. *(default)*
+- `aarch64-asm` — uses an assembly backend for runtime `Fp` and `Fq`
+  multiplication and squaring on Apple AArch64 targets; pulls in `cc` as a
+  build dependency.
 - `glv` — variable-time GLV scalar multiplication for non-secret scalars (implies `alloc`).
 - `deferred` — the `deferred` module: `DeferredField` and a wide `Product` accumulator
   for batching many field multiplications behind a single Montgomery reduction.
