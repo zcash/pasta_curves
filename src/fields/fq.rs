@@ -705,6 +705,18 @@ impl ff::PrimeField for Fq {
     fn to_repr(&self) -> Self::Repr {
         // Turn into canonical form by computing
         // (a.R) / R = a
+        #[cfg(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple"
+        ))]
+        let tmp = Fq(super::aarch64_asm::from_mont(&self.0, &MODULUS.0, INV));
+
+        #[cfg(not(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple"
+        )))]
         let tmp = Fq::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
 
         let mut res = [0; 32];
@@ -869,24 +881,71 @@ impl ec_gpu::GpuField for Fq {
     target_arch = "aarch64",
     target_vendor = "apple"
 ))]
+fn aarch64_asm_portable_repr(value: Fq) -> [u8; 32] {
+    let value = Fq::montgomery_reduce(value.0[0], value.0[1], value.0[2], value.0[3], 0, 0, 0, 0);
+    let mut repr = [0; 32];
+    for (bytes, limb) in repr.chunks_exact_mut(8).zip(value.0) {
+        bytes.copy_from_slice(&limb.to_le_bytes());
+    }
+    repr
+}
+
+#[cfg(all(
+    test,
+    feature = "aarch64-asm",
+    target_arch = "aarch64",
+    target_vendor = "apple"
+))]
+fn aarch64_asm_check_repr(value: Fq) {
+    let portable = aarch64_asm_portable_repr(value);
+    assert_eq!(value.to_repr(), portable);
+    assert_eq!(Fq::from_repr(portable).unwrap(), value);
+    assert_eq!(value.is_odd().unwrap_u8(), portable[0] & 1);
+}
+
+#[cfg(all(
+    test,
+    feature = "aarch64-asm",
+    target_arch = "aarch64",
+    target_vendor = "apple"
+))]
+fn aarch64_asm_portable_cmp(lhs: Fq, rhs: Fq) -> core::cmp::Ordering {
+    aarch64_asm_portable_repr(lhs)
+        .iter()
+        .zip(aarch64_asm_portable_repr(rhs).iter())
+        .rev()
+        .find_map(|(lhs, rhs)| match lhs.cmp(rhs) {
+            core::cmp::Ordering::Equal => None,
+            ordering => Some(ordering),
+        })
+        .unwrap_or(core::cmp::Ordering::Equal)
+}
+
+#[cfg(all(
+    test,
+    feature = "aarch64-asm",
+    target_arch = "aarch64",
+    target_vendor = "apple"
+))]
 #[test]
 fn aarch64_asm_matches_portable_arithmetic() {
     use rand::SeedableRng;
 
-    let modulus_minus_one =
-        Fq::from_raw([MODULUS.0[0] - 1, MODULUS.0[1], MODULUS.0[2], MODULUS.0[3]]);
+    let max_montgomery_residue = Fq([MODULUS.0[0] - 1, MODULUS.0[1], MODULUS.0[2], MODULUS.0[3]]);
     let boundaries = [
         Fq::zero(),
         Fq::one(),
         -Fq::one(),
         Fq::from_raw([1, 0, 0, 0]),
-        modulus_minus_one,
+        max_montgomery_residue,
         Fq::from_raw([u64::MAX; 4]),
     ];
 
     for lhs in boundaries {
+        aarch64_asm_check_repr(lhs);
         assert_eq!(<Fq as Field>::square(&lhs), Fq::square(&lhs));
         for rhs in boundaries {
+            assert_eq!(lhs.cmp(&rhs), aarch64_asm_portable_cmp(lhs, rhs));
             assert_eq!(&lhs * &rhs, Fq::mul(&lhs, &rhs));
         }
     }
@@ -906,6 +965,8 @@ fn aarch64_asm_matches_portable_arithmetic() {
             rng.next_u64(),
         ]);
 
+        aarch64_asm_check_repr(lhs);
+        assert_eq!(lhs.cmp(&rhs), aarch64_asm_portable_cmp(lhs, rhs));
         assert_eq!(&lhs * &rhs, Fq::mul(&lhs, &rhs));
         assert_eq!(<Fq as Field>::square(&lhs), Fq::square(&lhs));
     }
