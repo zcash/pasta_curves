@@ -197,7 +197,7 @@ macro_rules! new_curve_impl {
                     acc = $base::conditional_select(&(acc * p.z), &acc, skip);
 
                     // Set the coordinates to the correct value
-                    let tmp2 = tmp.square();
+                    let tmp2 = Field::square(&tmp);
                     let tmp3 = tmp2 * tmp;
 
                     q.x = p.x * tmp2;
@@ -209,7 +209,7 @@ macro_rules! new_curve_impl {
 
             fn to_affine(&self) -> Self::AffineRepr {
                 let zinv = self.z.invert().unwrap_or($base::zero());
-                let zinv2 = zinv.square();
+                let zinv2 = Field::square(&zinv);
                 let x = self.x * zinv2;
                 let zinv3 = zinv2 * zinv;
                 let y = self.y * zinv3;
@@ -368,8 +368,8 @@ macro_rules! new_curve_impl {
                 } else if bool::from(rhs.is_identity()) {
                     *self
                 } else {
-                    let z1z1 = self.z.square();
-                    let z2z2 = rhs.z.square();
+                    let z1z1 = Field::square(&self.z);
+                    let z2z2 = Field::square(&rhs.z);
                     let u1 = self.x * z2z2;
                     let u2 = rhs.x * z1z1;
                     let s1 = self.y * z2z2 * rhs.z;
@@ -383,16 +383,16 @@ macro_rules! new_curve_impl {
                         }
                     } else {
                         let h = u2 - u1;
-                        let i = (h + h).square();
+                        let i = Field::square(&(h + h));
                         let j = h * i;
                         let r = s2 - s1;
                         let r = r + r;
                         let v = u1 * i;
-                        let x3 = r.square() - j - v - v;
+                        let x3 = Field::square(&r) - j - v - v;
                         let s1 = s1 * j;
                         let s1 = s1 + s1;
                         let y3 = r * (v - x3) - s1;
-                        let z3 = (self.z + rhs.z).square() - z1z1 - z2z2;
+                        let z3 = Field::square(&(self.z + rhs.z)) - z1z1 - z2z2;
                         let z3 = z3 * h;
 
                         $name {
@@ -412,7 +412,7 @@ macro_rules! new_curve_impl {
                 } else if bool::from(rhs.is_identity()) {
                     *self
                 } else {
-                    let z1z1 = self.z.square();
+                    let z1z1 = Field::square(&self.z);
                     let u2 = rhs.x * z1z1;
                     let s2 = rhs.y * z1z1 * self.z;
 
@@ -424,18 +424,18 @@ macro_rules! new_curve_impl {
                         }
                     } else {
                         let h = u2 - self.x;
-                        let hh = h.square();
+                        let hh = Field::square(&h);
                         let i = hh + hh;
                         let i = i + i;
                         let j = h * i;
                         let r = s2 - self.y;
                         let r = r + r;
                         let v = self.x * i;
-                        let x3 = r.square() - j - v - v;
+                        let x3 = Field::square(&r) - j - v - v;
                         let j = self.y * j;
                         let j = j + j;
                         let y3 = r * (v - x3) - j;
-                        let z3 = (self.z + h).square() - z1z1 - hh;
+                        let z3 = Field::square(&(self.z + h)) - z1z1 - hh;
 
                         $name {
                             x: x3, y: y3, z: z3
@@ -539,14 +539,14 @@ macro_rules! new_curve_impl {
                         }
                     } else {
                         let h = rhs.x - self.x;
-                        let hh = h.square();
+                        let hh = Field::square(&h);
                         let i = hh + hh;
                         let i = i + i;
                         let j = h * i;
                         let r = rhs.y - self.y;
                         let r = r + r;
                         let v = self.x * i;
-                        let x3 = r.square() - j - v - v;
+                        let x3 = Field::square(&r) - j - v - v;
                         let j = self.y * j;
                         let j = j + j;
                         let y3 = r * (v - x3) - j;
@@ -814,15 +814,15 @@ macro_rules! impl_projective_curve_specific {
             //
             // There are no points of order 2.
 
-            let a = self.x.square();
-            let b = self.y.square();
-            let c = b.square();
+            let a = Field::square(&self.x);
+            let b = Field::square(&self.y);
+            let c = Field::square(&b);
             let d = self.x + b;
-            let d = d.square();
+            let d = Field::square(&d);
             let d = d - a - c;
             let d = d + d;
             let e = a + a + a;
-            let f = e.square();
+            let f = Field::square(&e);
             let z3 = self.z * self.y;
             let z3 = z3 + z3;
             let x3 = f - (d + d);
