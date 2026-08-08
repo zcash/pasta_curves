@@ -4,6 +4,16 @@
 mod fp;
 mod fq;
 
+// Keep the assembly FFI exception contained within a private module whose
+// public interface consists only of safe wrappers.
+#[allow(unsafe_code)]
+#[cfg(all(
+    feature = "aarch64-asm",
+    target_arch = "aarch64",
+    target_vendor = "apple"
+))]
+mod aarch64_asm;
+
 pub use fp::*;
 pub use fq::*;
 
