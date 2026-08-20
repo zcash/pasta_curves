@@ -297,8 +297,14 @@ impl Fq {
         // constant `R2` or `R3`.
         let d0 = Fq([limbs[0], limbs[1], limbs[2], limbs[3]]);
         let d1 = Fq([limbs[4], limbs[5], limbs[6], limbs[7]]);
-        // Convert to Montgomery form
-        d0 * R2 + d1 * R3
+        // Convert to Montgomery form. `d0` and `d1` are unreduced, so use the
+        // portable multiplication: its classical 8-limb reduction is valid for
+        // any 256-bit value times a canonical constant, with no precondition
+        // on the constant's limbs. The inline-assembly `mul` tolerates an
+        // unreduced lhs only while every rhs limb stays at most `2^64 - 4`
+        // (see `aarch64_asm.rs`); this cold path is not worth carrying that
+        // coupling, and hashing dominates its callers anyway.
+        Fq::mul(&d0, &R2).add(&Fq::mul(&d1, &R3))
     }
 
     /// Converts from an integer represented in little endian
@@ -1063,7 +1069,7 @@ fn test_sqrt_32bit_overflow() {
 
 #[test]
 fn test_pow_vartime() {
-    use rand::SeedableRng;
+    use rand::{Rng, SeedableRng};
 
     // The classic square-and-multiply loop, as a reference for the fused
     // implementation.
@@ -1262,4 +1268,80 @@ fn test_from_u512() {
             0x52ea589e69712cc0
         ])
     );
+}
+
+#[cfg(all(
+    test,
+    feature = "aarch64-asm",
+    target_arch = "aarch64",
+    target_vendor = "apple"
+))]
+#[test]
+fn aarch64_asm_mul_unreduced_lhs_matches_portable() {
+    use rand::{Rng, SeedableRng};
+
+    // `from_u512` feeds raw (unreduced) 256-bit digits as the lhs of the
+    // inline `mul`, with `R2`/`R3` as the rhs. The five-limb accumulator
+    // tolerates an unreduced lhs only while every rhs limb is at most
+    // `2^64 - 4` (see the contract in `aarch64_asm.rs`); assert the
+    // constants keep that invariant, then pin the behaviour against the
+    // portable implementation on the most adversarial inputs known.
+    for by in [R2, R3] {
+        for limb in by.0 {
+            assert!(limb <= u64::MAX - 3);
+        }
+    }
+
+    // lhs values with the low limbs solved so the first two Montgomery
+    // quotients hit (R2) or approach (R3, whose low limb is even) their
+    // maximum `2^64 - 1` while the top
+    // limbs are all-ones: jointly the nearest known approach to the
+    // carry-chain wrap described in `aarch64_asm.rs`.
+    let forced_q_r2 = Fq([0xf3bfcadeeeeeeeef, 0x27fa6352b2545d71, u64::MAX, u64::MAX]);
+    let forced_q_r3 = Fq([0x0000000000000d24, 0x00000000000007c2, u64::MAX, u64::MAX]);
+
+    let check = |lhs: Fq, by: Fq| {
+        // Inherent `Fq::mul` is the portable implementation; its classical
+        // 8-limb reduction is valid for any lhs when `by` is canonical.
+        assert_eq!(lhs.mul_runtime(&by), Fq::mul(&lhs, &by), "lhs {:x?}", lhs.0);
+    };
+
+    check(Fq([u64::MAX; 4]), R2);
+    check(Fq([u64::MAX; 4]), R3);
+    check(forced_q_r2, R2);
+    check(forced_q_r3, R3);
+
+    let mut rng = rand_xorshift::XorShiftRng::from_seed([0x6b; 16]);
+    for i in 0..20_000u32 {
+        let mut l = [0u64; 4];
+        for w in l.iter_mut() {
+            *w = rng.next_u64();
+        }
+        if i % 2 == 0 {
+            l[3] = u64::MAX;
+            l[2] = u64::MAX;
+        }
+        check(Fq(l), R2);
+        check(Fq(l), R3);
+    }
+
+    // End-to-end `from_u512` against a portable recomposition.
+    let portable_from_u512 = |l: [u64; 8]| {
+        let d0 = Fq([l[0], l[1], l[2], l[3]]);
+        let d1 = Fq([l[4], l[5], l[6], l[7]]);
+        Fq::mul(&d0, &R2).add(&Fq::mul(&d1, &R3))
+    };
+    assert_eq!(
+        Fq::from_u512([u64::MAX; 8]),
+        portable_from_u512([u64::MAX; 8])
+    );
+    for _ in 0..10_000u32 {
+        let mut l = [0u64; 8];
+        for w in l.iter_mut() {
+            *w = rng.next_u64();
+        }
+        l[3] |= 0xc000000000000000;
+        l[7] |= 0xc000000000000000;
+        assert_eq!(Fq::from_u512(l), portable_from_u512(l), "limbs {:x?}", l);
+    }
 }
