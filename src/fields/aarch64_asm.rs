@@ -16,6 +16,14 @@ extern "C" {
         modulus: *const Limbs,
         inv: u64,
     );
+    fn pasta_curves_sqr_n_mul_mont_pasta(
+        out: *mut Limbs,
+        value: *const Limbs,
+        count: usize,
+        rhs: *const Limbs,
+        modulus: *const Limbs,
+        inv: u64,
+    );
     fn pasta_curves_from_mont_pasta(
         out: *mut Limbs,
         value: *const Limbs,
@@ -56,6 +64,29 @@ pub(super) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     // duration of the call. The backend writes exactly four limbs to `out`.
     unsafe {
         pasta_curves_sqr_mont_pasta(&mut out, value, modulus, inv);
+    }
+    out
+}
+
+/// Squares a canonical Montgomery residue `count` times, then multiplies the
+/// result by the canonical Montgomery residue `rhs`, keeping the accumulator
+/// in registers throughout.
+#[inline]
+pub(super) fn sqr_n_mul(
+    value: &Limbs,
+    count: usize,
+    rhs: &Limbs,
+    modulus: &Limbs,
+    inv: u64,
+) -> Limbs {
+    // The assembly decrements the count before testing it, so a zero count
+    // would wrap around and effectively never terminate.
+    assert!(count >= 1);
+    let mut out = Limbs::default();
+    // SAFETY: All pointers refer to four initialized `u64` limbs for the
+    // duration of the call. The backend writes exactly four limbs to `out`.
+    unsafe {
+        pasta_curves_sqr_n_mul_mont_pasta(&mut out, value, count, rhs, modulus, inv);
     }
     out
 }

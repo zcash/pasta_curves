@@ -411,6 +411,34 @@ impl Fq {
         }
     }
 
+    /// Squares `self` `n` times (`n` must be at least 1), then multiplies the
+    /// result by `by`. The assembly backend keeps the accumulator in
+    /// registers for the whole chain.
+    #[inline]
+    fn sqr_n_mul_runtime(&self, n: u32, by: &Self) -> Self {
+        assert!(n >= 1);
+
+        #[cfg(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple"
+        ))]
+        {
+            Fq(super::aarch64_asm::sqr_n_mul(
+                &self.0, n as usize, &by.0, &MODULUS.0, INV,
+            ))
+        }
+
+        #[cfg(not(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple"
+        )))]
+        {
+            (0..n).fold(*self, |acc, _| acc.square()).mul(by)
+        }
+    }
+
     /// Subtracts `rhs` from `self`, returning the result.
     #[cfg_attr(not(feature = "uninline-portable"), inline)]
     pub const fn sub(&self, rhs: &Self) -> Self {
@@ -630,19 +658,39 @@ impl ff::Field for Fq {
     }
 
     fn pow_vartime<S: AsRef<[u64]>>(&self, exp: S) -> Self {
-        let mut res = Self::one();
-        let mut found_one = false;
+        // Walk the exponent bits MSB-first, fusing each run of squarings with
+        // the multiplication that follows it. This performs exactly the same
+        // field operations as the classic square-and-multiply loop, but lets
+        // the assembly backend keep the accumulator in registers for the
+        // whole run.
+        let mut res: Option<Self> = None;
+        let mut squares = 0;
         for e in exp.as_ref().iter().rev() {
             for i in (0..64).rev() {
-                if found_one {
-                    res = res.square();
+                if res.is_some() {
+                    squares += 1;
                 }
 
                 if ((*e >> i) & 1) == 1 {
-                    found_one = true;
-                    res *= self;
+                    res = Some(match res {
+                        Some(res) => {
+                            let res = res.sqr_n_mul_runtime(squares, self);
+                            squares = 0;
+                            res
+                        }
+                        None => *self,
+                    });
                 }
             }
+        }
+
+        let mut res = match res {
+            Some(res) => res,
+            None => return Self::one(),
+        };
+        // Flush the squarings for any trailing zero bits.
+        for _ in 0..squares {
+            res = res.square_runtime();
         }
         res
     }
@@ -789,34 +837,32 @@ lazy_static! {
 
 impl SqrtTableHelpers for Fq {
     fn pow_by_t_minus1_over2(&self) -> Self {
-        let sqr = |x: Fq, i: u32| (0..i).fold(x, |x, _| x.square());
-
-        let s10 = self.square();
+        let s10 = self.square_runtime();
         let s11 = s10 * self;
-        let s111 = s11.square() * self;
+        let s111 = s11.sqr_n_mul_runtime(1, self);
         let s1001 = s111 * s10;
         let s1011 = s1001 * s10;
         let s1101 = s1011 * s10;
-        let sa = sqr(*self, 129) * self;
-        let sb = sqr(sa, 7) * s1001;
-        let sc = sqr(sb, 7) * s1101;
-        let sd = sqr(sc, 4) * s11;
-        let se = sqr(sd, 6) * s111;
-        let sf = sqr(se, 3) * s111;
-        let sg = sqr(sf, 10) * s1001;
-        let sh = sqr(sg, 4) * s1001;
-        let si = sqr(sh, 5) * s1001;
-        let sj = sqr(si, 5) * s1001;
-        let sk = sqr(sj, 3) * s1001;
-        let sl = sqr(sk, 4) * s1011;
-        let sm = sqr(sl, 4) * s1011;
-        let sn = sqr(sm, 5) * s11;
-        let so = sqr(sn, 4) * self;
-        let sp = sqr(so, 5) * s11;
-        let sq = sqr(sp, 4) * s111;
-        let sr = sqr(sq, 5) * s1011;
-        let ss = sqr(sr, 3) * self;
-        sqr(ss, 4) // st
+        let sa = self.sqr_n_mul_runtime(129, self);
+        let sb = sa.sqr_n_mul_runtime(7, &s1001);
+        let sc = sb.sqr_n_mul_runtime(7, &s1101);
+        let sd = sc.sqr_n_mul_runtime(4, &s11);
+        let se = sd.sqr_n_mul_runtime(6, &s111);
+        let sf = se.sqr_n_mul_runtime(3, &s111);
+        let sg = sf.sqr_n_mul_runtime(10, &s1001);
+        let sh = sg.sqr_n_mul_runtime(4, &s1001);
+        let si = sh.sqr_n_mul_runtime(5, &s1001);
+        let sj = si.sqr_n_mul_runtime(5, &s1001);
+        let sk = sj.sqr_n_mul_runtime(3, &s1001);
+        let sl = sk.sqr_n_mul_runtime(4, &s1011);
+        let sm = sl.sqr_n_mul_runtime(4, &s1011);
+        let sn = sm.sqr_n_mul_runtime(5, &s11);
+        let so = sn.sqr_n_mul_runtime(4, self);
+        let sp = so.sqr_n_mul_runtime(5, &s11);
+        let sq = sp.sqr_n_mul_runtime(4, &s111);
+        let sr = sq.sqr_n_mul_runtime(5, &s1011);
+        let ss = sr.sqr_n_mul_runtime(3, self);
+        (0..4).fold(ss, |x, _| x.square_runtime()) // st
     }
 
     fn get_lower_32(&self) -> u32 {
@@ -941,12 +987,22 @@ fn aarch64_asm_matches_portable_arithmetic() {
         Fq::from_raw([u64::MAX; 4]),
     ];
 
+    fn portable_sqr_n_mul(value: Fq, n: u32, by: Fq) -> Fq {
+        (0..n).fold(value, |acc, _| Fq::square(&acc)).mul(&by)
+    }
+
     for lhs in boundaries {
         aarch64_asm_check_repr(lhs);
         assert_eq!(<Fq as Field>::square(&lhs), Fq::square(&lhs));
         for rhs in boundaries {
             assert_eq!(lhs.cmp(&rhs), aarch64_asm_portable_cmp(lhs, rhs));
             assert_eq!(&lhs * &rhs, Fq::mul(&lhs, &rhs));
+            for n in [1, 2, 7] {
+                assert_eq!(
+                    lhs.sqr_n_mul_runtime(n, &rhs),
+                    portable_sqr_n_mul(lhs, n, rhs)
+                );
+            }
         }
     }
 
@@ -969,6 +1025,12 @@ fn aarch64_asm_matches_portable_arithmetic() {
         assert_eq!(lhs.cmp(&rhs), aarch64_asm_portable_cmp(lhs, rhs));
         assert_eq!(&lhs * &rhs, Fq::mul(&lhs, &rhs));
         assert_eq!(<Fq as Field>::square(&lhs), Fq::square(&lhs));
+        for n in [1, 129] {
+            assert_eq!(
+                lhs.sqr_n_mul_runtime(n, &rhs),
+                portable_sqr_n_mul(lhs, n, rhs)
+            );
+        }
     }
 }
 
@@ -997,6 +1059,76 @@ fn test_sqrt() {
 #[test]
 fn test_sqrt_32bit_overflow() {
     assert!((Fq::from(5)).sqrt().is_none().unwrap_u8() == 1);
+}
+
+#[test]
+fn test_pow_vartime() {
+    use rand::SeedableRng;
+
+    // The classic square-and-multiply loop, as a reference for the fused
+    // implementation.
+    fn pow_vartime_reference(base: &Fq, exp: &[u64]) -> Fq {
+        let mut res = Fq::one();
+        let mut found_one = false;
+        for e in exp.iter().rev() {
+            for i in (0..64).rev() {
+                if found_one {
+                    res = Fq::square(&res);
+                }
+
+                if ((*e >> i) & 1) == 1 {
+                    found_one = true;
+                    res = Fq::mul(&res, base);
+                }
+            }
+        }
+        res
+    }
+
+    let mut rng = rand_xorshift::XorShiftRng::from_seed([0xa5; 16]);
+
+    let mut exponents = vec![
+        [0, 0, 0, 0],
+        [1, 0, 0, 0],
+        [2, 0, 0, 0],
+        // A single high bit exercises the trailing-squarings flush.
+        [0, 0, 0, 1 << 63],
+        [1 << 63, 0, 0, 0],
+        [u64::MAX; 4],
+        // The q - 2 exponent used by `invert`.
+        [
+            0x8c46eb20ffffffff,
+            0x224698fc0994a8dd,
+            0x0,
+            0x4000000000000000,
+        ],
+    ];
+    for _ in 0..10 {
+        exponents.push([
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+        ]);
+    }
+
+    for base in [
+        Fq::zero(),
+        Fq::one(),
+        -Fq::one(),
+        Fq::random(&mut rng),
+        Fq::random(&mut rng),
+    ] {
+        for exp in &exponents {
+            assert_eq!(base.pow_vartime(exp), pow_vartime_reference(&base, exp));
+        }
+        // Short and empty exponent slices behave like zero-padded ones.
+        assert_eq!(base.pow_vartime([7]), pow_vartime_reference(&base, &[7]));
+        assert_eq!(
+            base.pow_vartime([0u64; 0]),
+            pow_vartime_reference(&base, &[])
+        );
+    }
 }
 
 #[test]
