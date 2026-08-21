@@ -42,6 +42,22 @@
 //! `fq.rs` still pin the unreduced-`lhs` behaviour against the `R2`/`R3`
 //! constants in case a future caller relies on it.
 //!
+//! The canonical-`rhs` requirement and the accumulator no-wrap requirement
+//! are separate. Canonical `rhs` gives `rhs < p`; the per-limb bound above
+//! does not imply this. If `m < R` is the Montgomery cancellation factor and
+//! `lhs < R` is any four-limb value, the final candidate satisfies
+//! `(lhs * rhs + m * p) / R < 2p < R`. The separate per-limb condition only
+//! ensures that the implementation computes this candidate without an
+//! intermediate five-limb addition wrapping.
+//!
+//! Because `mul` relies on that bound to omit a fifth candidate limb, a
+//! non-canonical `rhs` is no longer merely tolerated with a non-canonical
+//! (but congruent) output: for `rhs >= R - p` the candidate can reach `R`,
+//! and the dropped limb makes the result an **incorrect residue** that still
+//! looks canonical. Every in-crate caller supplies a canonical `rhs` by
+//! construction; `mul` and `square` debug-assert the precondition so a future
+//! caller that breaks it fails loudly under test instead of silently.
+//!
 //! There are no branches and no memory accesses inside the blocks, so the
 //! code is constant-time.
 
@@ -66,11 +82,28 @@ extern "C" {
     );
 }
 
+/// Whether `value < modulus` as little-endian 256-bit integers.
+#[inline(always)]
+fn is_canonical(value: &Limbs, modulus: &Limbs) -> bool {
+    for i in (0..4).rev() {
+        if value[i] != modulus[i] {
+            return value[i] < modulus[i];
+        }
+    }
+    false
+}
+
 /// Multiplies two Montgomery residues for a Pasta modulus. `rhs` must be
-/// canonical. `lhs` may be unreduced only if every `rhs` limb is at most
-/// `2^64 - 4`; see the module docs for the carry-chain bound behind this.
+/// canonical (debug-asserted; a violation yields an incorrect residue, see
+/// the module docs). `lhs` may be unreduced only if every `rhs` limb is at
+/// most `2^64 - 4`; see the module docs for the carry-chain bound behind
+/// this.
 #[inline(always)]
 pub(super) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
+    debug_assert!(
+        is_canonical(rhs, modulus),
+        "aarch64_asm::mul requires a canonical rhs"
+    );
     let (o0, o1, o2, o3): (u64, u64, u64, u64);
     // SAFETY: straight-line register-only arithmetic; no memory access, no
     // stack use, and outputs depend only on the declared inputs.
@@ -230,20 +263,20 @@ pub(super) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs 
             "lsr {t3}, {q}, #2",                // t3 = high(q * p[3]).
             "adc {r4}, {r4}, xzr",              // Propagate carry to limb 4.
 
-            // Shift out the fourth cancelled limb. r4 records any 257th bit.
+            // Shift out the fourth cancelled limb. Canonical rhs gives
+            // lhs*rhs < R*p, and m < R gives m*p < R*p. Thus the candidate
+            // (lhs*rhs + m*p)/R is below 2p < R, so no fifth limb exists.
             "adds {r0}, {r1}, {t0}",            // Final candidate limb 0.
             "adcs {r1}, {r2}, {t1}",            // Final candidate limb 1.
             "adcs {r2}, {r3}, xzr",             // Final candidate limb 2.
             "adcs {r3}, {r4}, {t3}",            // Final candidate limb 3.
-            "adc {r4}, xzr, xzr",               // Final candidate carry limb.
 
-            // Subtract the five-limb value p = [p0,p1,0,p3,0].
+            // Subtract p = [p0,p1,0,p3].
             "mov {q}, #0x4000000000000000",     // Materialize p3 = 2^62.
             "subs {t0}, {r0}, {p0}",            // Tentative result limb 0 = candidate - p[0].
             "sbcs {t1}, {r1}, {p1}",            // Tentative result limb 1 minus p[1].
             "sbcs {t2}, {r2}, xzr",             // Tentative result limb 2; p[2] is zero.
             "sbcs {t3}, {r3}, {q}",             // Tentative result limb 3 minus p[3].
-            "sbcs xzr, {r4}, xzr",              // Include the carry limb in the comparison.
 
             // `lo` means subtraction borrowed, so retain the original candidate.
             "csel {r0}, {r0}, {t0}, lo",        // Select canonical output limb 0.
@@ -277,9 +310,14 @@ pub(super) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs 
     [o0, o1, o2, o3]
 }
 
-/// Squares a canonical Montgomery residue for a Pasta modulus.
+/// Squares a canonical Montgomery residue for a Pasta modulus (the input's
+/// canonicity is debug-asserted).
 #[inline(always)]
 pub(super) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
+    debug_assert!(
+        is_canonical(value, modulus),
+        "aarch64_asm::square requires a canonical input"
+    );
     let mut a0 = value[0];
     let mut a1 = value[1];
     let mut a2 = value[2];

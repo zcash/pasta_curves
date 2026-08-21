@@ -1286,9 +1286,15 @@ fn aarch64_asm_mul_unreduced_lhs_matches_portable() {
     // inline `mul`, with `R2`/`R3` as the rhs. The five-limb accumulator
     // tolerates an unreduced lhs only while every rhs limb is at most
     // `2^64 - 4` (see the contract in `aarch64_asm.rs`); assert the
-    // constants keep that invariant, then pin the behaviour against the
-    // portable implementation on the most adversarial inputs known.
-    for by in [R2, R3] {
+    // selected rhs values keep that invariant, then pin the behaviour against
+    // the portable implementation on the most adversarial inputs known.
+    let mut max_canonical = MODULUS;
+    max_canonical.0[0] -= 1;
+    let dense_limb = u64::MAX - 3;
+    let mut dense_canonical = Fp([dense_limb; 4]);
+    dense_canonical.0[3] = MODULUS.0[3] - 1;
+    let canonical_rhs = [R2, R3, max_canonical, dense_canonical];
+    for by in canonical_rhs {
         for limb in by.0 {
             assert!(limb <= u64::MAX - 3);
         }
@@ -1311,6 +1317,10 @@ fn aarch64_asm_mul_unreduced_lhs_matches_portable() {
     check(Fp([u64::MAX; 4]), R3);
     check(forced_q_r2, R2);
     check(forced_q_r3, R3);
+    // These maximize the full 256-bit lhs while taking the canonical rhs
+    // close to p. They exercise the final candidate's `T < 2p < R` bound.
+    check(Fp([u64::MAX; 4]), max_canonical);
+    check(Fp([u64::MAX; 4]), dense_canonical);
 
     let mut rng = rand_xorshift::XorShiftRng::from_seed([0x9d; 16]);
     for i in 0..20_000u32 {
@@ -1345,4 +1355,141 @@ fn aarch64_asm_mul_unreduced_lhs_matches_portable() {
         l[7] |= 0xc000000000000000;
         assert_eq!(Fp::from_u512(l), portable_from_u512(l), "limbs {:x?}", l);
     }
+}
+
+/// Whether `x` holds a reduced residue (limbs below the modulus).
+#[cfg(test)]
+fn is_canonical(x: &Fp) -> bool {
+    for i in (0..4).rev() {
+        if x.0[i] != MODULUS.0[i] {
+            return x.0[i] < MODULUS.0[i];
+        }
+    }
+    false
+}
+
+#[test]
+fn constants_are_canonical() {
+    // Every named constant must be a reduced residue: the `aarch64-asm`
+    // multiplication requires a canonical rhs, and constants are the one
+    // class of values that bypass the reducing constructors.
+    assert!(
+        !is_canonical(&MODULUS),
+        "the modulus itself is not canonical"
+    );
+    let constants: [(&str, Fp); 11] = [
+        ("R", R),
+        ("R2", R2),
+        ("R3", R3),
+        ("GENERATOR", GENERATOR),
+        ("ROOT_OF_UNITY", ROOT_OF_UNITY),
+        ("DELTA", DELTA),
+        ("TWO_INV", <Fp as ff::PrimeField>::TWO_INV),
+        (
+            "MULTIPLICATIVE_GENERATOR",
+            <Fp as ff::PrimeField>::MULTIPLICATIVE_GENERATOR,
+        ),
+        (
+            "ROOT_OF_UNITY_INV",
+            <Fp as ff::PrimeField>::ROOT_OF_UNITY_INV,
+        ),
+        ("ZETA", <Fp as ff::WithSmallOrderMulGroup<3>>::ZETA),
+        ("zero", Fp::zero()),
+    ];
+    for (name, value) in constants {
+        assert!(
+            is_canonical(&value),
+            "{name} is not canonical: {:x?}",
+            value.0
+        );
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "aarch64-asm",
+    target_arch = "aarch64",
+    target_vendor = "apple"
+))]
+#[test]
+fn aarch64_asm_mul_canonical_sweep_matches_portable() {
+    use rand::{Rng, SeedableRng};
+
+    // Random canonical operands: the inline `mul` must agree with the
+    // portable implementation and return a canonical residue.
+    let mut rng = rand_xorshift::XorShiftRng::from_seed([0x42; 16]);
+    let mut random = || {
+        let mut l = [0u64; 4];
+        for w in l.iter_mut() {
+            *w = rng.next_u64();
+        }
+        Fp::from_raw(l)
+    };
+    for _ in 0..200_000u32 {
+        let a = random();
+        let b = random();
+        let asm = a.mul_runtime(&b);
+        assert_eq!(asm, Fp::mul(&a, &b), "lhs {:x?} rhs {:x?}", a.0, b.0);
+        assert!(is_canonical(&asm));
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "aarch64-asm",
+    target_arch = "aarch64",
+    target_vendor = "apple"
+))]
+#[test]
+fn aarch64_asm_mul_unreduced_lhs_near_modulus_rhs_matches_portable() {
+    use rand::{Rng, SeedableRng};
+
+    // The inline `mul` omits the fifth candidate limb on the strength of
+    // `(lhs * rhs + m * modulus) / R < 2 * modulus < R`, which holds for any
+    // 256-bit lhs once the rhs is canonical. Stress that bound where it is
+    // tightest: lhs with its top bit set, rhs within a few limbs of the
+    // modulus (kept canonical, and within the per-limb no-wrap condition
+    // that an unreduced lhs separately requires).
+    let mut rng = rand_xorshift::XorShiftRng::from_seed([0x17; 16]);
+    let mut n = 0u32;
+    while n < 100_000 {
+        let lhs = Fp([
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64() | (1 << 63),
+        ]);
+        let mut rhs = MODULUS;
+        rhs.0[0] = rhs.0[0].wrapping_sub(rng.next_u64() >> (rng.next_u32() % 64));
+        if rng.next_u32() & 1 == 1 {
+            rhs.0[1] = rhs.0[1].wrapping_sub(rng.next_u64() >> 60);
+        }
+        if !is_canonical(&rhs) || rhs.0.iter().any(|&l| l > u64::MAX - 3) {
+            continue;
+        }
+        n += 1;
+        let asm = lhs.mul_runtime(&rhs);
+        assert_eq!(
+            asm,
+            Fp::mul(&lhs, &rhs),
+            "lhs {:x?} rhs {:x?}",
+            lhs.0,
+            rhs.0
+        );
+        assert!(is_canonical(&asm));
+    }
+}
+
+#[cfg(all(
+    test,
+    debug_assertions,
+    feature = "aarch64-asm",
+    target_arch = "aarch64",
+    target_vendor = "apple"
+))]
+#[test]
+#[should_panic(expected = "requires a canonical rhs")]
+fn aarch64_asm_mul_rejects_non_canonical_rhs_in_debug() {
+    // The modulus itself is the smallest non-canonical value.
+    let _ = Fp::one().mul_runtime(&MODULUS);
 }
