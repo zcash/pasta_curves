@@ -469,7 +469,15 @@ impl Fq {
             target_vendor = "apple"
         ))]
         {
-            (0..n).fold(*self, |acc, _| acc.square_runtime())
+            // Calling the dedicated single-square routine is faster than
+            // entering the repeated-squaring loop for a one-element chain.
+            if n == 1 {
+                self.square_runtime()
+            } else {
+                Fq(super::aarch64_asm::sqr_n(
+                    &self.0, n as usize, &MODULUS.0, INV,
+                ))
+            }
         }
 
         #[cfg(not(all(
@@ -1024,9 +1032,16 @@ fn aarch64_asm_matches_portable_arithmetic() {
         (0..n).fold(value, |acc, _| Fq::square(&acc)).mul(&by)
     }
 
+    fn portable_sqr_n(value: Fq, n: u32) -> Fq {
+        (0..n).fold(value, |acc, _| Fq::square(&acc))
+    }
+
     for lhs in boundaries {
         aarch64_asm_check_repr(lhs);
         assert_eq!(<Fq as Field>::square(&lhs), Fq::square(&lhs));
+        for n in [1, 2, 7, 129] {
+            assert_eq!(lhs.sqr_n_runtime(n), portable_sqr_n(lhs, n));
+        }
         for rhs in boundaries {
             assert_eq!(lhs.cmp(&rhs), aarch64_asm_portable_cmp(lhs, rhs));
             assert_eq!(&lhs * &rhs, Fq::mul(&lhs, &rhs));
@@ -1059,6 +1074,7 @@ fn aarch64_asm_matches_portable_arithmetic() {
         assert_eq!(&lhs * &rhs, Fq::mul(&lhs, &rhs));
         assert_eq!(<Fq as Field>::square(&lhs), Fq::square(&lhs));
         for n in [1, 129] {
+            assert_eq!(lhs.sqr_n_runtime(n), portable_sqr_n(lhs, n));
             assert_eq!(
                 lhs.sqr_n_mul_runtime(n, &rhs),
                 portable_sqr_n_mul(lhs, n, rhs)

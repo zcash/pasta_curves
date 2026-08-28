@@ -1,7 +1,7 @@
 //! Private Apple AArch64 backend for the Pasta fields.
 //!
 //! Montgomery multiplication and squaring are implemented as inline `asm!`
-//! blocks below; the fused repeated-squaring chain and the canonical-form
+//! blocks below; the fused repeated-squaring chains and the canonical-form
 //! conversion remain in `src/asm/pasta_mul-armv8.S` and are reached through
 //! `extern "C"`.
 //!
@@ -58,14 +58,22 @@
 //! construction; `mul` and `square` debug-assert the precondition so a future
 //! caller that breaks it fails loudly under test instead of silently.
 //!
-//! There are no branches and no memory accesses inside the blocks, so the
-//! code is constant-time.
+//! The inline blocks have no branches or memory accesses. The out-of-line
+//! repeated-squaring chains branch only on their public counts, so the code
+//! is constant-time.
 
 use core::arch::asm;
 
 type Limbs = [u64; 4];
 
 extern "C" {
+    fn pasta_curves_sqr_n_mont_pasta(
+        out: *mut Limbs,
+        value: *const Limbs,
+        count: usize,
+        modulus: *const Limbs,
+        inv: u64,
+    );
     fn pasta_curves_sqr_n_mul_mont_pasta(
         out: *mut Limbs,
         value: *const Limbs,
@@ -512,6 +520,26 @@ pub(super) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     [a0, a1, a2, a3]
 }
 
+/// Squares a canonical Montgomery residue `count` times, keeping the lazy
+/// accumulator in registers and canonicalizing it once at the end.
+#[inline]
+pub(super) fn sqr_n(value: &Limbs, count: usize, modulus: &Limbs, inv: u64) -> Limbs {
+    // The assembly decrements the count before testing it, so a zero count
+    // would wrap around and effectively never terminate.
+    assert!(count >= 1);
+    debug_assert!(
+        is_canonical(value, modulus),
+        "aarch64_asm::sqr_n requires a canonical starting value"
+    );
+    let mut out = Limbs::default();
+    // SAFETY: All pointers refer to four initialized `u64` limbs for the
+    // duration of the call. The backend writes exactly four limbs to `out`.
+    unsafe {
+        pasta_curves_sqr_n_mont_pasta(&mut out, value, count, modulus, inv);
+    }
+    out
+}
+
 /// Squares a canonical Montgomery residue `count` times, then multiplies the
 /// result by the canonical Montgomery residue `rhs`, keeping the accumulator
 /// in registers throughout.
@@ -526,6 +554,14 @@ pub(super) fn sqr_n_mul(
     // The assembly decrements the count before testing it, so a zero count
     // would wrap around and effectively never terminate.
     assert!(count >= 1);
+    debug_assert!(
+        is_canonical(value, modulus),
+        "aarch64_asm::sqr_n_mul requires a canonical starting value"
+    );
+    debug_assert!(
+        is_canonical(rhs, modulus),
+        "aarch64_asm::sqr_n_mul requires a canonical multiplier"
+    );
     let mut out = Limbs::default();
     // SAFETY: All pointers refer to four initialized `u64` limbs for the
     // duration of the call. The backend writes exactly four limbs to `out`.
