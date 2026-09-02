@@ -21,7 +21,7 @@ jobs:
       # The toolchain repository has no release tags, so pin the `master` branch
       # and select the channel through the `toolchain` input instead of the
       # (unpinnable) `@beta` branch ref.
-      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         id: toolchain
         with:
           toolchain: beta
