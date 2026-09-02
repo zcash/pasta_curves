@@ -106,6 +106,9 @@ pub fn iso_map<F: Field, C: CurveExt<Base = F>, I: CurveExt<Base = F>>(
 }
 
 #[allow(clippy::many_single_char_names)]
+// `C` is unused in the body, but callers name it explicitly through the
+// `new_curve_impl` macro, so removing it is a breaking API change.
+#[allow(clippy::extra_unused_type_parameters)]
 pub fn map_to_curve_simple_swu<F: PrimeField, C: CurveExt<Base = F>, I: CurveExt<Base = F>>(
     u: &F,
     theta: F,

@@ -1,4 +1,5 @@
-///! Benchmarks for the Fq field.
+//! Benchmarks for the Fq field.
+
 use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 
 use rand::SeedableRng;
