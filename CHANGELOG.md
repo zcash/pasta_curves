@@ -8,6 +8,16 @@ and this project adheres to Rust's notion of
 ## [Unreleased]
 ### Changed
 - MSRV is now 1.88.0.
+- The portable (pure Rust) `Fp` and `Fq` wide-squaring routine moved into a
+  shared internal `fields::portable` module. Both fields delegate to the same
+  limb-array implementation; the algorithm and its results are unchanged.
+- Portable squaring on x86-64 now reduces the low half of its product first
+  and adds the high half once, keeping four limbs live through the
+  cancellation rounds instead of eight. Other targets retain their existing
+  classical reduction, and multiplication is unchanged.
+- Portable squaring chains driven by the square-root tables no longer
+  canonicalize after every squaring; the accumulator is kept below twice the
+  modulus and canonicalized once at the end of the chain.
 
 ## [0.5.2] - 2026-07-23
 ### Added
