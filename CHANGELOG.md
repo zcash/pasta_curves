@@ -12,8 +12,28 @@ and this project adheres to Rust's notion of
   the new `aarch64-asm` feature flag. The feature is opt-in and has no effect
   on other targets; with it disabled the existing portable implementation is
   used unchanged.
+- The `aarch64-asm` backend's exponentiation chains (`invert`, `pow_vartime`,
+  and the square-root chains) use a fused "square `n` times, then multiply"
+  assembly routine that keeps the accumulator in registers for the whole run.
 
 ### Changed
+- `Fp::pow_vartime` and `Fq::pow_vartime` now fuse each run of squarings with
+  the following multiplication. The sequence of field operations (and thus
+  the variable-time profile, which depends only on the exponent) is
+  unchanged. This applies on every target, not only Apple AArch64; without
+  the assembly backend the fused helper falls back to the portable
+  square-and-multiply loop.
+- The `aarch64-asm` backend now implements runtime multiplication and
+  squaring as inline assembly with register operands instead of calls into
+  the assembly file. This removes the per-operation call and memory
+  round-trip, which speeds up all composed arithmetic, notably curve point
+  operations (`double`, mixed addition) and everything built on them.
+- The `aarch64-asm` Montgomery multiplication no longer captures and compares
+  a provably-zero fifth output limb. Direct `Fp` and `Fq` multiplication
+  benchmarks are approximately 1.7% faster on Apple M4. The bound that makes
+  the limb provably zero needs a canonical `rhs` (which every caller already
+  supplies); the assembly wrappers now debug-assert it, since a violation
+  would yield an incorrect residue rather than a merely non-canonical one.
 - MSRV is now 1.88.0.
 
 ## [0.5.2] - 2026-07-23
