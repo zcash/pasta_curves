@@ -1069,7 +1069,7 @@ fn test_sqrt_32bit_overflow() {
 
 #[test]
 fn test_pow_vartime() {
-    use rand::{Rng, SeedableRng};
+    use rand::SeedableRng;
 
     // The classic square-and-multiply loop, as a reference for the fused
     // implementation.
@@ -1278,7 +1278,7 @@ fn test_from_u512() {
 ))]
 #[test]
 fn aarch64_asm_mul_unreduced_lhs_matches_portable() {
-    use rand::{Rng, SeedableRng};
+    use rand::SeedableRng;
 
     // `from_u512` feeds raw (unreduced) 256-bit digits as the lhs of the
     // inline `mul`, with `R2`/`R3` as the rhs. The five-limb accumulator
@@ -1352,7 +1352,7 @@ fn aarch64_asm_mul_unreduced_lhs_matches_portable() {
         }
         l[3] |= 0xc000000000000000;
         l[7] |= 0xc000000000000000;
-        assert_eq!(Fq::from_u512(l), portable_from_u512(l), "limbs {:x?}", l);
+        assert_eq!(Fq::from_u512(l), portable_from_u512(l), "limbs {l:x?}");
     }
 }
 
@@ -1412,7 +1412,7 @@ fn constants_are_canonical() {
 ))]
 #[test]
 fn aarch64_asm_mul_canonical_sweep_matches_portable() {
-    use rand::{Rng, SeedableRng};
+    use rand::SeedableRng;
 
     // Random canonical operands: the inline `mul` must agree with the
     // portable implementation and return a canonical residue.
@@ -1441,7 +1441,7 @@ fn aarch64_asm_mul_canonical_sweep_matches_portable() {
 ))]
 #[test]
 fn aarch64_asm_mul_unreduced_lhs_near_modulus_rhs_matches_portable() {
-    use rand::{Rng, SeedableRng};
+    use rand::SeedableRng;
 
     // The inline `mul` omits the fifth candidate limb on the strength of
     // `(lhs * rhs + m * modulus) / R < 2 * modulus < R`, which holds for any
