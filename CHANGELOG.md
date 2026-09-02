@@ -11,6 +11,9 @@ and this project adheres to Rust's notion of
   the build (`"aarch64"`, `"x86-64"`, or `"portable"`), intended for
   diagnostics only. Passing the compiler flag `--cfg pasta_curves_noasm`
   compiles the backend out on any target.
+- `CurveExt::batch_mul_same_scalar_vartime`, for component-wise
+  multiplication of affine points by the same public scalar. Pallas and Vesta
+  use batched GLV multiplication when the `glv` feature is enabled.
 
 ### Changed
 - `Fp::invert` and `Fq::invert` use a constant-time inversion by divsteps
