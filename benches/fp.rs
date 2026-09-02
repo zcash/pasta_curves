@@ -1,4 +1,5 @@
-///! Benchmarks for the Fp field.
+//! Benchmarks for the Fp field.
+
 use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 
 use rand::SeedableRng;
