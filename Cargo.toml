@@ -52,6 +52,7 @@ harness = false
 required-features = ["glv"]
 
 [dependencies]
+rustler = { version = "0.29.1", optional = true}
 ff = { version = "0.13", default-features = false }
 group = { version = "0.13", default-features = false }
 rand = { version = "0.8", default-features = false }
@@ -82,3 +83,4 @@ repr-c = []
 uninline-portable = []
 deferred = []
 serde = ["hex", "serde_crate"]
+repr-erlang=["rustler"]
