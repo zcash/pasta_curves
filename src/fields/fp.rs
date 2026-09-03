@@ -297,8 +297,14 @@ impl Fp {
         // constant `R2` or `R3`.
         let d0 = Fp([limbs[0], limbs[1], limbs[2], limbs[3]]);
         let d1 = Fp([limbs[4], limbs[5], limbs[6], limbs[7]]);
-        // Convert to Montgomery form
-        d0 * R2 + d1 * R3
+        // Convert to Montgomery form. `d0` and `d1` are unreduced, so use the
+        // portable multiplication: its classical 8-limb reduction is valid for
+        // any 256-bit value times a canonical constant, with no precondition
+        // on the constant's limbs. The inline-assembly `mul` tolerates an
+        // unreduced lhs only while every rhs limb stays at most `2^64 - 4`
+        // (see `aarch64_asm.rs`); this cold path is not worth carrying that
+        // coupling, and hashing dominates its callers anyway.
+        Fp::mul(&d0, &R2).add(&Fp::mul(&d1, &R3))
     }
 
     /// Converts from an integer represented in little endian
@@ -408,6 +414,34 @@ impl Fp {
         )))]
         {
             self.square()
+        }
+    }
+
+    /// Squares `self` `n` times (`n` must be at least 1), then multiplies the
+    /// result by `by`. The assembly backend keeps the accumulator in
+    /// registers for the whole chain.
+    #[inline]
+    fn sqr_n_mul_runtime(&self, n: u32, by: &Self) -> Self {
+        assert!(n >= 1);
+
+        #[cfg(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple"
+        ))]
+        {
+            Fp(super::aarch64_asm::sqr_n_mul(
+                &self.0, n as usize, &by.0, &MODULUS.0, INV,
+            ))
+        }
+
+        #[cfg(not(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple"
+        )))]
+        {
+            (0..n).fold(*self, |acc, _| acc.square()).mul(by)
         }
     }
 
@@ -630,19 +664,39 @@ impl ff::Field for Fp {
     }
 
     fn pow_vartime<S: AsRef<[u64]>>(&self, exp: S) -> Self {
-        let mut res = Self::one();
-        let mut found_one = false;
+        // Walk the exponent bits MSB-first, fusing each run of squarings with
+        // the multiplication that follows it. This performs exactly the same
+        // field operations as the classic square-and-multiply loop, but lets
+        // the assembly backend keep the accumulator in registers for the
+        // whole run.
+        let mut res: Option<Self> = None;
+        let mut squares = 0;
         for e in exp.as_ref().iter().rev() {
             for i in (0..64).rev() {
-                if found_one {
-                    res = res.square();
+                if res.is_some() {
+                    squares += 1;
                 }
 
                 if ((*e >> i) & 1) == 1 {
-                    found_one = true;
-                    res *= self;
+                    res = Some(match res {
+                        Some(res) => {
+                            let res = res.sqr_n_mul_runtime(squares, self);
+                            squares = 0;
+                            res
+                        }
+                        None => *self,
+                    });
                 }
             }
+        }
+
+        let mut res = match res {
+            Some(res) => res,
+            None => return Self::one(),
+        };
+        // Flush the squarings for any trailing zero bits.
+        for _ in 0..squares {
+            res = res.square_runtime();
         }
         res
     }
@@ -790,34 +844,32 @@ lazy_static! {
 
 impl SqrtTableHelpers for Fp {
     fn pow_by_t_minus1_over2(&self) -> Self {
-        let sqr = |x: Fp, i: u32| (0..i).fold(x, |x, _| x.square());
-
-        let r10 = self.square();
+        let r10 = self.square_runtime();
         let r11 = r10 * self;
-        let r110 = r11.square();
+        let r110 = r11.square_runtime();
         let r111 = r110 * self;
         let r1001 = r111 * r10;
         let r1101 = r111 * r110;
-        let ra = sqr(*self, 129) * self;
-        let rb = sqr(ra, 7) * r1001;
-        let rc = sqr(rb, 7) * r1101;
-        let rd = sqr(rc, 4) * r11;
-        let re = sqr(rd, 6) * r111;
-        let rf = sqr(re, 3) * r111;
-        let rg = sqr(rf, 10) * r1001;
-        let rh = sqr(rg, 5) * r1001;
-        let ri = sqr(rh, 4) * r1001;
-        let rj = sqr(ri, 3) * r111;
-        let rk = sqr(rj, 4) * r1001;
-        let rl = sqr(rk, 5) * r11;
-        let rm = sqr(rl, 4) * r111;
-        let rn = sqr(rm, 4) * r11;
-        let ro = sqr(rn, 6) * r1001;
-        let rp = sqr(ro, 5) * r1101;
-        let rq = sqr(rp, 4) * r11;
-        let rr = sqr(rq, 7) * r111;
-        let rs = sqr(rr, 3) * r11;
-        rs.square() // rt
+        let ra = self.sqr_n_mul_runtime(129, self);
+        let rb = ra.sqr_n_mul_runtime(7, &r1001);
+        let rc = rb.sqr_n_mul_runtime(7, &r1101);
+        let rd = rc.sqr_n_mul_runtime(4, &r11);
+        let re = rd.sqr_n_mul_runtime(6, &r111);
+        let rf = re.sqr_n_mul_runtime(3, &r111);
+        let rg = rf.sqr_n_mul_runtime(10, &r1001);
+        let rh = rg.sqr_n_mul_runtime(5, &r1001);
+        let ri = rh.sqr_n_mul_runtime(4, &r1001);
+        let rj = ri.sqr_n_mul_runtime(3, &r111);
+        let rk = rj.sqr_n_mul_runtime(4, &r1001);
+        let rl = rk.sqr_n_mul_runtime(5, &r11);
+        let rm = rl.sqr_n_mul_runtime(4, &r111);
+        let rn = rm.sqr_n_mul_runtime(4, &r11);
+        let ro = rn.sqr_n_mul_runtime(6, &r1001);
+        let rp = ro.sqr_n_mul_runtime(5, &r1101);
+        let rq = rp.sqr_n_mul_runtime(4, &r11);
+        let rr = rq.sqr_n_mul_runtime(7, &r111);
+        let rs = rr.sqr_n_mul_runtime(3, &r11);
+        rs.square_runtime() // rt
     }
 
     fn get_lower_32(&self) -> u32 {
@@ -942,12 +994,22 @@ fn aarch64_asm_matches_portable_arithmetic() {
         Fp::from_raw([u64::MAX; 4]),
     ];
 
+    fn portable_sqr_n_mul(value: Fp, n: u32, by: Fp) -> Fp {
+        (0..n).fold(value, |acc, _| Fp::square(&acc)).mul(&by)
+    }
+
     for lhs in boundaries {
         aarch64_asm_check_repr(lhs);
         assert_eq!(<Fp as Field>::square(&lhs), Fp::square(&lhs));
         for rhs in boundaries {
             assert_eq!(lhs.cmp(&rhs), aarch64_asm_portable_cmp(lhs, rhs));
             assert_eq!(&lhs * &rhs, Fp::mul(&lhs, &rhs));
+            for n in [1, 2, 7] {
+                assert_eq!(
+                    lhs.sqr_n_mul_runtime(n, &rhs),
+                    portable_sqr_n_mul(lhs, n, rhs)
+                );
+            }
         }
     }
 
@@ -970,6 +1032,12 @@ fn aarch64_asm_matches_portable_arithmetic() {
         assert_eq!(lhs.cmp(&rhs), aarch64_asm_portable_cmp(lhs, rhs));
         assert_eq!(&lhs * &rhs, Fp::mul(&lhs, &rhs));
         assert_eq!(<Fp as Field>::square(&lhs), Fp::square(&lhs));
+        for n in [1, 129] {
+            assert_eq!(
+                lhs.sqr_n_mul_runtime(n, &rhs),
+                portable_sqr_n_mul(lhs, n, rhs)
+            );
+        }
     }
 }
 
@@ -1005,6 +1073,76 @@ fn test_pow_by_t_minus1_over2() {
     // NB: TWO_INV is standing in as a "random" field element
     let v = (Fp::TWO_INV).pow_by_t_minus1_over2();
     assert!(v == ff::Field::pow_vartime(&Fp::TWO_INV, T_MINUS1_OVER2));
+}
+
+#[test]
+fn test_pow_vartime() {
+    use rand::SeedableRng;
+
+    // The classic square-and-multiply loop, as a reference for the fused
+    // implementation.
+    fn pow_vartime_reference(base: &Fp, exp: &[u64]) -> Fp {
+        let mut res = Fp::one();
+        let mut found_one = false;
+        for e in exp.iter().rev() {
+            for i in (0..64).rev() {
+                if found_one {
+                    res = Fp::square(&res);
+                }
+
+                if ((*e >> i) & 1) == 1 {
+                    found_one = true;
+                    res = Fp::mul(&res, base);
+                }
+            }
+        }
+        res
+    }
+
+    let mut rng = rand_xorshift::XorShiftRng::from_seed([0xa5; 16]);
+
+    let mut exponents = vec![
+        [0, 0, 0, 0],
+        [1, 0, 0, 0],
+        [2, 0, 0, 0],
+        // A single high bit exercises the trailing-squarings flush.
+        [0, 0, 0, 1 << 63],
+        [1 << 63, 0, 0, 0],
+        [u64::MAX; 4],
+        // The p - 2 exponent used by `invert`.
+        [
+            0x992d30ecffffffff,
+            0x224698fc094cf91b,
+            0x0,
+            0x4000000000000000,
+        ],
+    ];
+    for _ in 0..10 {
+        exponents.push([
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+        ]);
+    }
+
+    for base in [
+        Fp::zero(),
+        Fp::one(),
+        -Fp::one(),
+        Fp::random(&mut rng),
+        Fp::random(&mut rng),
+    ] {
+        for exp in &exponents {
+            assert_eq!(base.pow_vartime(exp), pow_vartime_reference(&base, exp));
+        }
+        // Short and empty exponent slices behave like zero-padded ones.
+        assert_eq!(base.pow_vartime([7]), pow_vartime_reference(&base, &[7]));
+        assert_eq!(
+            base.pow_vartime([0u64; 0]),
+            pow_vartime_reference(&base, &[])
+        );
+    }
 }
 
 #[test]
@@ -1132,4 +1270,226 @@ fn test_from_u512() {
             0x26ebe27e262f471d
         ])
     );
+}
+
+#[cfg(all(
+    test,
+    feature = "aarch64-asm",
+    target_arch = "aarch64",
+    target_vendor = "apple"
+))]
+#[test]
+fn aarch64_asm_mul_unreduced_lhs_matches_portable() {
+    use rand::SeedableRng;
+
+    // `from_u512` feeds raw (unreduced) 256-bit digits as the lhs of the
+    // inline `mul`, with `R2`/`R3` as the rhs. The five-limb accumulator
+    // tolerates an unreduced lhs only while every rhs limb is at most
+    // `2^64 - 4` (see the contract in `aarch64_asm.rs`); assert the
+    // selected rhs values keep that invariant, then pin the behaviour against
+    // the portable implementation on the most adversarial inputs known.
+    let mut max_canonical = MODULUS;
+    max_canonical.0[0] -= 1;
+    let dense_limb = u64::MAX - 3;
+    let mut dense_canonical = Fp([dense_limb; 4]);
+    dense_canonical.0[3] = MODULUS.0[3] - 1;
+    let canonical_rhs = [R2, R3, max_canonical, dense_canonical];
+    for by in canonical_rhs {
+        for limb in by.0 {
+            assert!(limb <= u64::MAX - 3);
+        }
+    }
+
+    // lhs values with the low limbs solved so the first two Montgomery
+    // quotients hit (or approach) their maximum `2^64 - 1` while the top
+    // limbs are all-ones: jointly the nearest known approach to the
+    // carry-chain wrap described in `aarch64_asm.rs`.
+    let forced_q_r2 = Fp([0x3cc9961eeeeeeeef, 0x907f42c685cc8a31, u64::MAX, u64::MAX]);
+    let forced_q_r3 = Fp([0x032c286da5f9b149, 0x3f747fab2d936552, u64::MAX, u64::MAX]);
+
+    let check = |lhs: Fp, by: Fp| {
+        // Inherent `Fp::mul` is the portable implementation; its classical
+        // 8-limb reduction is valid for any lhs when `by` is canonical.
+        assert_eq!(lhs.mul_runtime(&by), Fp::mul(&lhs, &by), "lhs {:x?}", lhs.0);
+    };
+
+    check(Fp([u64::MAX; 4]), R2);
+    check(Fp([u64::MAX; 4]), R3);
+    check(forced_q_r2, R2);
+    check(forced_q_r3, R3);
+    // These maximize the full 256-bit lhs while taking the canonical rhs
+    // close to p. They exercise the final candidate's `T < 2p < R` bound.
+    check(Fp([u64::MAX; 4]), max_canonical);
+    check(Fp([u64::MAX; 4]), dense_canonical);
+
+    let mut rng = rand_xorshift::XorShiftRng::from_seed([0x9d; 16]);
+    for i in 0..20_000u32 {
+        let mut l = [0u64; 4];
+        for w in l.iter_mut() {
+            *w = rng.next_u64();
+        }
+        if i % 2 == 0 {
+            l[3] = u64::MAX;
+            l[2] = u64::MAX;
+        }
+        check(Fp(l), R2);
+        check(Fp(l), R3);
+    }
+
+    // End-to-end `from_u512` against a portable recomposition.
+    let portable_from_u512 = |l: [u64; 8]| {
+        let d0 = Fp([l[0], l[1], l[2], l[3]]);
+        let d1 = Fp([l[4], l[5], l[6], l[7]]);
+        Fp::mul(&d0, &R2).add(&Fp::mul(&d1, &R3))
+    };
+    assert_eq!(
+        Fp::from_u512([u64::MAX; 8]),
+        portable_from_u512([u64::MAX; 8])
+    );
+    for _ in 0..10_000u32 {
+        let mut l = [0u64; 8];
+        for w in l.iter_mut() {
+            *w = rng.next_u64();
+        }
+        l[3] |= 0xc000000000000000;
+        l[7] |= 0xc000000000000000;
+        assert_eq!(Fp::from_u512(l), portable_from_u512(l), "limbs {l:x?}");
+    }
+}
+
+/// Whether `x` holds a reduced residue (limbs below the modulus).
+#[cfg(test)]
+fn is_canonical(x: &Fp) -> bool {
+    for i in (0..4).rev() {
+        if x.0[i] != MODULUS.0[i] {
+            return x.0[i] < MODULUS.0[i];
+        }
+    }
+    false
+}
+
+#[test]
+fn constants_are_canonical() {
+    // Every named constant must be a reduced residue: the `aarch64-asm`
+    // multiplication requires a canonical rhs, and constants are the one
+    // class of values that bypass the reducing constructors.
+    assert!(
+        !is_canonical(&MODULUS),
+        "the modulus itself is not canonical"
+    );
+    let constants: [(&str, Fp); 11] = [
+        ("R", R),
+        ("R2", R2),
+        ("R3", R3),
+        ("GENERATOR", GENERATOR),
+        ("ROOT_OF_UNITY", ROOT_OF_UNITY),
+        ("DELTA", DELTA),
+        ("TWO_INV", <Fp as ff::PrimeField>::TWO_INV),
+        (
+            "MULTIPLICATIVE_GENERATOR",
+            <Fp as ff::PrimeField>::MULTIPLICATIVE_GENERATOR,
+        ),
+        (
+            "ROOT_OF_UNITY_INV",
+            <Fp as ff::PrimeField>::ROOT_OF_UNITY_INV,
+        ),
+        ("ZETA", <Fp as ff::WithSmallOrderMulGroup<3>>::ZETA),
+        ("zero", Fp::zero()),
+    ];
+    for (name, value) in constants {
+        assert!(
+            is_canonical(&value),
+            "{name} is not canonical: {:x?}",
+            value.0
+        );
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "aarch64-asm",
+    target_arch = "aarch64",
+    target_vendor = "apple"
+))]
+#[test]
+fn aarch64_asm_mul_canonical_sweep_matches_portable() {
+    use rand::SeedableRng;
+
+    // Random canonical operands: the inline `mul` must agree with the
+    // portable implementation and return a canonical residue.
+    let mut rng = rand_xorshift::XorShiftRng::from_seed([0x42; 16]);
+    let mut random = || {
+        let mut l = [0u64; 4];
+        for w in l.iter_mut() {
+            *w = rng.next_u64();
+        }
+        Fp::from_raw(l)
+    };
+    for _ in 0..200_000u32 {
+        let a = random();
+        let b = random();
+        let asm = a.mul_runtime(&b);
+        assert_eq!(asm, Fp::mul(&a, &b), "lhs {:x?} rhs {:x?}", a.0, b.0);
+        assert!(is_canonical(&asm));
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "aarch64-asm",
+    target_arch = "aarch64",
+    target_vendor = "apple"
+))]
+#[test]
+fn aarch64_asm_mul_unreduced_lhs_near_modulus_rhs_matches_portable() {
+    use rand::SeedableRng;
+
+    // The inline `mul` omits the fifth candidate limb on the strength of
+    // `(lhs * rhs + m * modulus) / R < 2 * modulus < R`, which holds for any
+    // 256-bit lhs once the rhs is canonical. Stress that bound where it is
+    // tightest: lhs with its top bit set, rhs within a few limbs of the
+    // modulus (kept canonical, and within the per-limb no-wrap condition
+    // that an unreduced lhs separately requires).
+    let mut rng = rand_xorshift::XorShiftRng::from_seed([0x17; 16]);
+    let mut n = 0u32;
+    while n < 100_000 {
+        let lhs = Fp([
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64() | (1 << 63),
+        ]);
+        let mut rhs = MODULUS;
+        rhs.0[0] = rhs.0[0].wrapping_sub(rng.next_u64() >> (rng.next_u32() % 64));
+        if rng.next_u32() & 1 == 1 {
+            rhs.0[1] = rhs.0[1].wrapping_sub(rng.next_u64() >> 60);
+        }
+        if !is_canonical(&rhs) || rhs.0.iter().any(|&l| l > u64::MAX - 3) {
+            continue;
+        }
+        n += 1;
+        let asm = lhs.mul_runtime(&rhs);
+        assert_eq!(
+            asm,
+            Fp::mul(&lhs, &rhs),
+            "lhs {:x?} rhs {:x?}",
+            lhs.0,
+            rhs.0
+        );
+        assert!(is_canonical(&asm));
+    }
+}
+
+#[cfg(all(
+    test,
+    debug_assertions,
+    feature = "aarch64-asm",
+    target_arch = "aarch64",
+    target_vendor = "apple"
+))]
+#[test]
+#[should_panic(expected = "requires a canonical rhs")]
+fn aarch64_asm_mul_rejects_non_canonical_rhs_in_debug() {
+    // The modulus itself is the smallest non-canonical value.
+    let _ = Fp::one().mul_runtime(&MODULUS);
 }
