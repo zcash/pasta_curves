@@ -6,6 +6,13 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- An assembly implementation of Pallas and Vesta base and scalar field
+  multiplication, squaring and Montgomery reduction for Apple AArch64, behind
+  the new `aarch64-asm` feature flag. The feature is opt-in and has no effect
+  on other targets; with it disabled the existing portable implementation is
+  used unchanged.
+
 ### Changed
 - MSRV is now 1.88.0.
 

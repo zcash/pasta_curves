@@ -168,7 +168,7 @@ impl Mul<&Fp> for &Fp {
 
     #[inline]
     fn mul(self, rhs: &Fp) -> Fp {
-        self.mul(rhs)
+        self.mul_runtime(rhs)
     }
 }
 
@@ -369,6 +369,48 @@ impl Fp {
         Fp::montgomery_reduce(u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7])
     }
 
+    #[inline]
+    fn mul_runtime(&self, rhs: &Self) -> Self {
+        #[cfg(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple"
+        ))]
+        {
+            Fp(super::aarch64_asm::mul(&self.0, &rhs.0, &MODULUS.0, INV))
+        }
+
+        #[cfg(not(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple"
+        )))]
+        {
+            self.mul(rhs)
+        }
+    }
+
+    #[inline]
+    fn square_runtime(&self) -> Self {
+        #[cfg(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple"
+        ))]
+        {
+            Fp(super::aarch64_asm::square(&self.0, &MODULUS.0, INV))
+        }
+
+        #[cfg(not(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple"
+        )))]
+        {
+            self.square()
+        }
+    }
+
     /// Subtracts `rhs` from `self`, returning the result.
     #[cfg_attr(not(feature = "uninline-portable"), inline)]
     pub const fn sub(&self, rhs: &Self) -> Self {
@@ -544,7 +586,7 @@ impl ff::Field for Fp {
 
     #[inline(always)]
     fn square(&self) -> Self {
-        self.square()
+        self.square_runtime()
     }
 
     fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
@@ -663,6 +705,18 @@ impl ff::PrimeField for Fp {
     fn to_repr(&self) -> Self::Repr {
         // Turn into canonical form by computing
         // (a.R) / R = a
+        #[cfg(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple"
+        ))]
+        let tmp = Fp(super::aarch64_asm::from_mont(&self.0, &MODULUS.0, INV));
+
+        #[cfg(not(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple"
+        )))]
         let tmp = Fp::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
 
         let mut res = [0; 32];
@@ -819,6 +873,103 @@ impl ec_gpu::GpuField for Fp {
 
     fn modulus() -> alloc::vec::Vec<u32> {
         crate::fields::u64_to_u32(&MODULUS.0[..])
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "aarch64-asm",
+    target_arch = "aarch64",
+    target_vendor = "apple"
+))]
+fn aarch64_asm_portable_repr(value: Fp) -> [u8; 32] {
+    let value = Fp::montgomery_reduce(value.0[0], value.0[1], value.0[2], value.0[3], 0, 0, 0, 0);
+    let mut repr = [0; 32];
+    for (bytes, limb) in repr.chunks_exact_mut(8).zip(value.0) {
+        bytes.copy_from_slice(&limb.to_le_bytes());
+    }
+    repr
+}
+
+#[cfg(all(
+    test,
+    feature = "aarch64-asm",
+    target_arch = "aarch64",
+    target_vendor = "apple"
+))]
+fn aarch64_asm_check_repr(value: Fp) {
+    let portable = aarch64_asm_portable_repr(value);
+    assert_eq!(value.to_repr(), portable);
+    assert_eq!(Fp::from_repr(portable).unwrap(), value);
+    assert_eq!(value.is_odd().unwrap_u8(), portable[0] & 1);
+}
+
+#[cfg(all(
+    test,
+    feature = "aarch64-asm",
+    target_arch = "aarch64",
+    target_vendor = "apple"
+))]
+fn aarch64_asm_portable_cmp(lhs: Fp, rhs: Fp) -> core::cmp::Ordering {
+    aarch64_asm_portable_repr(lhs)
+        .iter()
+        .zip(aarch64_asm_portable_repr(rhs).iter())
+        .rev()
+        .find_map(|(lhs, rhs)| match lhs.cmp(rhs) {
+            core::cmp::Ordering::Equal => None,
+            ordering => Some(ordering),
+        })
+        .unwrap_or(core::cmp::Ordering::Equal)
+}
+
+#[cfg(all(
+    test,
+    feature = "aarch64-asm",
+    target_arch = "aarch64",
+    target_vendor = "apple"
+))]
+#[test]
+fn aarch64_asm_matches_portable_arithmetic() {
+    use rand::SeedableRng;
+
+    let max_montgomery_residue = Fp([MODULUS.0[0] - 1, MODULUS.0[1], MODULUS.0[2], MODULUS.0[3]]);
+    let boundaries = [
+        Fp::zero(),
+        Fp::one(),
+        -Fp::one(),
+        Fp::from_raw([1, 0, 0, 0]),
+        max_montgomery_residue,
+        Fp::from_raw([u64::MAX; 4]),
+    ];
+
+    for lhs in boundaries {
+        aarch64_asm_check_repr(lhs);
+        assert_eq!(<Fp as Field>::square(&lhs), Fp::square(&lhs));
+        for rhs in boundaries {
+            assert_eq!(lhs.cmp(&rhs), aarch64_asm_portable_cmp(lhs, rhs));
+            assert_eq!(&lhs * &rhs, Fp::mul(&lhs, &rhs));
+        }
+    }
+
+    let mut rng = rand_xorshift::XorShiftRng::from_seed([0x5a; 16]);
+    for _ in 0..1024 {
+        let lhs = Fp::from_raw([
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+        ]);
+        let rhs = Fp::from_raw([
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+        ]);
+
+        aarch64_asm_check_repr(lhs);
+        assert_eq!(lhs.cmp(&rhs), aarch64_asm_portable_cmp(lhs, rhs));
+        assert_eq!(&lhs * &rhs, Fp::mul(&lhs, &rhs));
+        assert_eq!(<Fp as Field>::square(&lhs), Fp::square(&lhs));
     }
 }
 
