@@ -6,6 +6,11 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `CurveExt::batch_mul_same_scalar_vartime`, for component-wise
+  multiplication of affine points by the same public scalar. Pallas and Vesta
+  use batched GLV multiplication when the `glv` feature is enabled.
+
 ### Changed
 - MSRV is now 1.88.0.
 
