@@ -8,11 +8,19 @@ jobs:
     name: Clippy (MSRV)
     timeout-minutes: 30
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # check out the repository
+      checks: write # post Clippy annotations as a check run
+
     steps:
-      - uses: actions/checkout@v3
-      - name: Run clippy
-        uses: actions-rs/clippy-check@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          name: Clippy (MSRV)
+          persist-credentials: false
+      - name: Run clippy
+        uses: auguwu/clippy-action@9817d076b82df0194935be9db6154c56ac07b317 # 1.5.0
+        with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features --all-targets -- -D warnings
+          # cargo-level flags go in `check-args` (before the `--`); lint levels
+          # go in `deny`/`warn` (the action places them after the `--`).
+          check-args: --all-features --all-targets
+          deny: warnings

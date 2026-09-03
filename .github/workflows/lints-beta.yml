@@ -10,15 +10,32 @@ jobs:
     timeout-minutes: 30
     runs-on: ubuntu-latest
     continue-on-error: true
+    permissions:
+      contents: read # check out the repository
+      checks: write # post Clippy annotations as a check run
+
     steps:
-      - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@beta
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The toolchain repository has no release tags, so pin the `master` branch
+      # and select the channel through the `toolchain` input instead of the
+      # (unpinnable) `@beta` branch ref.
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         id: toolchain
-      - run: rustup override set ${{steps.toolchain.outputs.name}}
+        with:
+          toolchain: beta
+          components: clippy # auguwu/clippy-action expects clippy already installed
+      - run: rustup override set "${TOOLCHAIN}"
+        shell: sh
+        env:
+          TOOLCHAIN: ${{steps.toolchain.outputs.name}}
       - name: Run Clippy (beta)
-        uses: actions-rs/clippy-check@v1
+        uses: auguwu/clippy-action@9817d076b82df0194935be9db6154c56ac07b317 # 1.5.0
         continue-on-error: true
         with:
-          name: Clippy (beta)
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features --all-targets -- -W clippy::all
+          # cargo-level flags go in `check-args` (before the `--`); lint levels
+          # go in `deny`/`warn` (the action places them after the `--`).
+          check-args: --all-features --all-targets
+          warn: clippy::all
