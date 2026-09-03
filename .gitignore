@@ -1,4 +1,5 @@
 /target
+/xtask/target
 **/*.rs.bk
 .vscode
 **/*.html
