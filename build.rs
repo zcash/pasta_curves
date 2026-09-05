@@ -11,9 +11,9 @@ fn main() {
 #[cfg(feature = "aarch64-asm")]
 fn build_aarch64_asm() {
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
-    let target_vendor = env::var("CARGO_CFG_TARGET_VENDOR").unwrap();
+    let target_family = env::var("CARGO_CFG_TARGET_FAMILY").unwrap();
 
-    if target_arch == "aarch64" && target_vendor == "apple" {
+    if target_arch == "aarch64" && target_family == "unix" {
         cc::Build::new()
             .file("src/asm/pasta_mul-armv8.S")
             .compile("pasta_curves_aarch64");

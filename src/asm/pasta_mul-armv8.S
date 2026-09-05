@@ -18,7 +18,7 @@
 // R = 2^256. Registers named as limbs below always list the least-significant
 // limb first.
 //
-// Apple AArch64 argument registers:
+// AArch64 procedure-call argument registers:
 //
 // - sqr_n:      x0 = out, x1 = value, x2 = count, x3 = modulus, x4 = inv
 // - sqr_n_mul:  x0 = out, x1 = value, x2 = count, x3 = rhs, x4 = modulus,
@@ -31,11 +31,19 @@
 
 .text
 
-.globl _pasta_curves_from_mont_pasta
-.private_extern _pasta_curves_from_mont_pasta
+#ifdef __APPLE__
+#define C_SYMBOL(name) _##name
+#define PRIVATE_SYMBOL(name) .private_extern C_SYMBOL(name)
+#else
+#define C_SYMBOL(name) name
+#define PRIVATE_SYMBOL(name) .hidden C_SYMBOL(name)
+#endif
+
+.globl C_SYMBOL(pasta_curves_from_mont_pasta)
+PRIVATE_SYMBOL(pasta_curves_from_mont_pasta)
 
 .align 5
-_pasta_curves_from_mont_pasta:
+C_SYMBOL(pasta_curves_from_mont_pasta):
     .long 3573752639        // `paciasp`: sign LR with the entry stack pointer.
     stp x29,x30,[sp,#-16]! // Allocate frame; save frame pointer and signed LR.
     add x29,sp,#0           // Set the frame pointer to the new stack top.
@@ -161,8 +169,8 @@ L$pasta_curves_mul_by_1_mont_pasta:
 
     ret                     // Return to from_mont through x30.
 
-.globl _pasta_curves_sqr_n_mul_mont_pasta
-.private_extern _pasta_curves_sqr_n_mul_mont_pasta
+.globl C_SYMBOL(pasta_curves_sqr_n_mul_mont_pasta)
+PRIVATE_SYMBOL(pasta_curves_sqr_n_mul_mont_pasta)
 
 // Squares the input `count` times (count must be at least 1), then multiplies
 // by `rhs`, keeping the accumulator in registers throughout. Intermediate
@@ -177,7 +185,7 @@ L$pasta_curves_mul_by_1_mont_pasta:
 // wrap; callers must pass at least 1.
 
 .align 5
-_pasta_curves_sqr_n_mul_mont_pasta:
+C_SYMBOL(pasta_curves_sqr_n_mul_mont_pasta):
     stp x29,x30,[sp,#-80]! // Allocate frame; save frame pointer and LR.
     add x29,sp,#0           // Set the frame pointer to the new stack top.
     stp x19,x20,[sp,#16]    // Preserve callee-saved scratch x19 and x20.
@@ -529,8 +537,8 @@ L$pasta_curves_sqr_n_canonicalize:
     ldr x29,[sp],#80        // Restore frame pointer and release the frame.
     ret                     // Return; x30 still holds the caller's address.
 
-.globl _pasta_curves_sqr_n_mont_pasta
-.private_extern _pasta_curves_sqr_n_mont_pasta
+.globl C_SYMBOL(pasta_curves_sqr_n_mont_pasta)
+PRIVATE_SYMBOL(pasta_curves_sqr_n_mont_pasta)
 
 // Squares the input `count` times (count must be at least 1), retaining the
 // lazy accumulator in registers across the entire chain and canonicalizing
@@ -538,7 +546,7 @@ L$pasta_curves_sqr_n_canonicalize:
 // square-and-multiply path remains instruction-for-instruction unchanged.
 
 .align 5
-_pasta_curves_sqr_n_mont_pasta:
+C_SYMBOL(pasta_curves_sqr_n_mont_pasta):
     stp x29,x30,[sp,#-80]! // Allocate frame; save frame pointer and LR.
     add x29,sp,#0           // Set the frame pointer to the new stack top.
     stp x19,x20,[sp,#16]    // Preserve callee-saved scratch x19 and x20.

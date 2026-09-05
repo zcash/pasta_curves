@@ -11,7 +11,7 @@ mod portable;
 #[cfg(all(
     feature = "aarch64-asm",
     target_arch = "aarch64",
-    target_vendor = "apple"
+    target_family = "unix"
 ))]
 mod aarch64_asm;
 
