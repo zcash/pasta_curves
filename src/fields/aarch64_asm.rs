@@ -1,4 +1,4 @@
-//! Private Unix AArch64 backend for the Pasta fields.
+//! Private 64-bit-pointer Unix AArch64 backend for the Pasta fields.
 //!
 //! Montgomery multiplication and squaring are implemented as inline `asm!`
 //! blocks below; the fused repeated-squaring chains and the canonical-form
