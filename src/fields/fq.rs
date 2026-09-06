@@ -151,7 +151,26 @@ impl Sub<&Fq> for &Fq {
 
     #[inline]
     fn sub(self, rhs: &Fq) -> Fq {
-        self.sub(rhs)
+        #[cfg(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple",
+            target_pointer_width = "64",
+            target_endian = "little",
+        ))]
+        {
+            Fq(super::aarch64_asm::sub(&self.0, &rhs.0, &MODULUS.0))
+        }
+        #[cfg(not(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple",
+            target_pointer_width = "64",
+            target_endian = "little",
+        )))]
+        {
+            self.sub(rhs)
+        }
     }
 }
 
@@ -1093,6 +1112,7 @@ fn aarch64_asm_matches_portable_arithmetic() {
             assert_eq!(lhs.cmp(&rhs), aarch64_asm_portable_cmp(lhs, rhs));
             assert_eq!(&lhs * &rhs, Fq::mul(&lhs, &rhs));
             assert_eq!(&lhs + &rhs, Fq::add(&lhs, &rhs));
+            assert_eq!(&lhs - &rhs, Fq::sub(&lhs, &rhs));
             for n in [1, 2, 7] {
                 assert_eq!(
                     lhs.sqr_n_mul_runtime(n, &rhs),
@@ -1110,6 +1130,12 @@ fn aarch64_asm_matches_portable_arithmetic() {
         limbs[bit / 64] = 1 << (bit % 64);
         let lhs = Fq(limbs);
         let complement = Fq::sub(&MODULUS, &lhs);
+        let raw_one = Fq([1, 0, 0, 0]);
+        // Subtracting one from a single set bit borrows across lower limbs;
+        // reversing the operands also exercises conditional modulus addition.
+        assert_eq!(&lhs - &raw_one, Fq::sub(&lhs, &raw_one));
+        assert_eq!(&raw_one - &lhs, Fq::sub(&raw_one, &lhs));
+        assert_eq!(&lhs - &lhs, Fq::ZERO);
         for rhs in [complement.sub(&Fq([1, 0, 0, 0])), complement] {
             assert_eq!(&lhs + &rhs, Fq::add(&lhs, &rhs));
         }
@@ -1134,6 +1160,7 @@ fn aarch64_asm_matches_portable_arithmetic() {
         assert_eq!(lhs.cmp(&rhs), aarch64_asm_portable_cmp(lhs, rhs));
         assert_eq!(&lhs * &rhs, Fq::mul(&lhs, &rhs));
         assert_eq!(&lhs + &rhs, Fq::add(&lhs, &rhs));
+        assert_eq!(&lhs - &rhs, Fq::sub(&lhs, &rhs));
         assert_eq!(&lhs + &lhs, Fq::double(&lhs));
         assert_eq!(<Fq as Field>::square(&lhs), Fq::square(&lhs));
         for n in [1, 129] {

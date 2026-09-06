@@ -1,7 +1,7 @@
 //! Private little-endian, 64-bit-pointer Unix AArch64 backend for the Pasta
 //! fields.
 //!
-//! On Apple targets, modular addition also uses an inline assembly block.
+//! On Apple targets, modular addition and subtraction also use inline blocks.
 //! Montgomery multiplication and squaring are implemented as inline `asm!`
 //! blocks below; the fused repeated-squaring chains and the canonical-form
 //! conversion remain in `src/asm/pasta_mul-armv8.S` and are reached through
@@ -159,6 +159,62 @@ fn is_canonical(value: &Limbs, modulus: &Limbs) -> bool {
         }
     }
     false
+}
+
+/// Subtracts two residues for a Pasta modulus, adding the modulus back on
+/// underflow. Like [`add`] and [`mul`], the block hardcodes the Pasta
+/// modulus shape (`modulus[2] == 0`). Canonical inputs (debug-asserted)
+/// guarantee a canonical result: the difference lies strictly between `-p`
+/// and `p`, so one conditional addition suffices, and the final carry is
+/// discarded after wrapping modulo `2^256`. Unlike [`add`], this computes
+/// the same function as the inherent portable `sub` on all inputs — both
+/// drop the top borrow and mask-add the modulus — so the contract is not
+/// narrower than the portable path.
+#[cfg(target_vendor = "apple")]
+#[inline(always)]
+pub(super) fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
+    debug_assert!(
+        is_canonical(lhs, modulus),
+        "aarch64_asm::sub requires a canonical lhs"
+    );
+    debug_assert!(
+        is_canonical(rhs, modulus),
+        "aarch64_asm::sub requires a canonical rhs"
+    );
+    let [mut r0, mut r1, mut r2, mut r3] = *lhs;
+    // SAFETY: register-only arithmetic with declared inputs and outputs;
+    // no memory or stack access and no data-dependent control flow.
+    unsafe {
+        asm!(
+            "subs {r0}, {r0}, {b0}",
+            "sbcs {r1}, {r1}, {b1}",
+            "sbcs {r2}, {r2}, {b2}",
+            "sbcs {r3}, {r3}, {b3}",
+            "csel {t0}, {p0}, xzr, cc",
+            "csel {t1}, {p1}, xzr, cc",
+            "csel {t3}, {p3}, xzr, cc",
+            "adds {r0}, {r0}, {t0}",
+            "adcs {r1}, {r1}, {t1}",
+            "adcs {r2}, {r2}, xzr",
+            "adc {r3}, {r3}, {t3}",
+            r0 = inout(reg) r0,
+            r1 = inout(reg) r1,
+            r2 = inout(reg) r2,
+            r3 = inout(reg) r3,
+            b0 = in(reg) rhs[0],
+            b1 = in(reg) rhs[1],
+            b2 = in(reg) rhs[2],
+            b3 = in(reg) rhs[3],
+            p0 = in(reg) modulus[0],
+            p1 = in(reg) modulus[1],
+            p3 = in(reg) modulus[3],
+            t0 = out(reg) _,
+            t1 = out(reg) _,
+            t3 = out(reg) _,
+            options(pure, nomem, nostack),
+        );
+    }
+    [r0, r1, r2, r3]
 }
 
 /// Multiplies two Montgomery residues for a Pasta modulus. `rhs` must be
