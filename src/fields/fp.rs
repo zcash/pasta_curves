@@ -160,7 +160,26 @@ impl Add<&Fp> for &Fp {
 
     #[inline]
     fn add(self, rhs: &Fp) -> Fp {
-        self.add(rhs)
+        #[cfg(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple",
+            target_pointer_width = "64",
+            target_endian = "little",
+        ))]
+        {
+            Fp(super::aarch64_asm::add(&self.0, &rhs.0, &MODULUS.0))
+        }
+        #[cfg(not(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple",
+            target_pointer_width = "64",
+            target_endian = "little",
+        )))]
+        {
+            self.add(rhs)
+        }
     }
 }
 
@@ -1074,6 +1093,7 @@ fn aarch64_asm_matches_portable_arithmetic() {
         for rhs in boundaries {
             assert_eq!(lhs.cmp(&rhs), aarch64_asm_portable_cmp(lhs, rhs));
             assert_eq!(&lhs * &rhs, Fp::mul(&lhs, &rhs));
+            assert_eq!(&lhs + &rhs, Fp::add(&lhs, &rhs));
             for n in [1, 2, 7] {
                 assert_eq!(
                     lhs.sqr_n_mul_runtime(n, &rhs),
@@ -1084,6 +1104,19 @@ fn aarch64_asm_matches_portable_arithmetic() {
     }
 
     let mut rng = rand_xorshift::XorShiftRng::from_seed([0x5a; 16]);
+    // Exercise carries across each limb and sums immediately around p.
+    // These are raw Montgomery residues; 2^bit < p for bit < 254.
+    for bit in 0..254 {
+        let mut limbs = [0; 4];
+        limbs[bit / 64] = 1 << (bit % 64);
+        let lhs = Fp(limbs);
+        let complement = Fp::sub(&MODULUS, &lhs);
+        for rhs in [complement.sub(&Fp([1, 0, 0, 0])), complement] {
+            assert_eq!(&lhs + &rhs, Fp::add(&lhs, &rhs));
+        }
+        assert_eq!(&lhs + &lhs, Fp::double(&lhs));
+    }
+
     for _ in 0..1024 {
         let lhs = Fp::from_raw([
             rng.next_u64(),
@@ -1101,6 +1134,8 @@ fn aarch64_asm_matches_portable_arithmetic() {
         aarch64_asm_check_repr(lhs);
         assert_eq!(lhs.cmp(&rhs), aarch64_asm_portable_cmp(lhs, rhs));
         assert_eq!(&lhs * &rhs, Fp::mul(&lhs, &rhs));
+        assert_eq!(&lhs + &rhs, Fp::add(&lhs, &rhs));
+        assert_eq!(&lhs + &lhs, Fp::double(&lhs));
         assert_eq!(<Fp as Field>::square(&lhs), Fp::square(&lhs));
         for n in [1, 129] {
             assert_eq!(lhs.sqr_n_runtime(n), portable_sqr_n(lhs, n));

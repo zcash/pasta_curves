@@ -1,6 +1,7 @@
 //! Private little-endian, 64-bit-pointer Unix AArch64 backend for the Pasta
 //! fields.
 //!
+//! On Apple targets, modular addition also uses an inline assembly block.
 //! Montgomery multiplication and squaring are implemented as inline `asm!`
 //! blocks below; the fused repeated-squaring chains and the canonical-form
 //! conversion remain in `src/asm/pasta_mul-armv8.S` and are reached through
@@ -66,6 +67,64 @@
 use core::arch::asm;
 
 type Limbs = [u64; 4];
+
+/// Adds two residues for a Pasta modulus and conditionally subtracts the
+/// modulus. Like [`mul`], the block hardcodes the Pasta modulus shape
+/// (`modulus[2] == 0`). Both inputs must be canonical (debug-asserted; a
+/// violation yields an incorrect residue): the top carry of the addition is
+/// dropped and only one subtraction is attempted, both justified by
+/// `2p < 2^256`. This contract is narrower than the inherent portable `add`,
+/// which carries into a fifth limb; unreduced values (such as `mul`'s lazy
+/// `lhs`) must be reduced before reaching this path. Keeping both carry
+/// chains in one block avoids materializing carries between Rust operations.
+#[cfg(target_vendor = "apple")]
+#[inline(always)]
+pub(super) fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
+    debug_assert!(
+        is_canonical(lhs, modulus),
+        "aarch64_asm::add requires a canonical lhs"
+    );
+    debug_assert!(
+        is_canonical(rhs, modulus),
+        "aarch64_asm::add requires a canonical rhs"
+    );
+    let [mut r0, mut r1, mut r2, mut r3] = *lhs;
+    // SAFETY: register-only arithmetic with declared inputs and outputs;
+    // no memory or stack access and no data-dependent control flow.
+    unsafe {
+        asm!(
+            "adds {r0}, {r0}, {b0}",
+            "adcs {r1}, {r1}, {b1}",
+            "adcs {r2}, {r2}, {b2}",
+            "adc {r3}, {r3}, {b3}",
+            "subs {t0}, {r0}, {p0}",
+            "sbcs {t1}, {r1}, {p1}",
+            "sbcs {t2}, {r2}, xzr",
+            "sbcs {t3}, {r3}, {p3}",
+            "csel {r0}, {t0}, {r0}, cs",
+            "csel {r1}, {t1}, {r1}, cs",
+            "csel {r2}, {t2}, {r2}, cs",
+            "csel {r3}, {t3}, {r3}, cs",
+            r0 = inout(reg) r0,
+            r1 = inout(reg) r1,
+            r2 = inout(reg) r2,
+            r3 = inout(reg) r3,
+            b0 = in(reg) rhs[0],
+            b1 = in(reg) rhs[1],
+            b2 = in(reg) rhs[2],
+            b3 = in(reg) rhs[3],
+            p0 = in(reg) modulus[0],
+            p1 = in(reg) modulus[1],
+            p3 = in(reg) modulus[3],
+            t0 = out(reg) _,
+            t1 = out(reg) _,
+            t2 = out(reg) _,
+            t3 = out(reg) _,
+            options(pure, nomem, nostack),
+        );
+    }
+    [r0, r1, r2, r3]
+}
 
 extern "C" {
     fn pasta_curves_sqr_n_mont_pasta(
