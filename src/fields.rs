@@ -11,7 +11,7 @@ mod portable;
 #[cfg(all(
     feature = "aarch64-asm",
     target_arch = "aarch64",
-    target_family = "unix",
+    any(target_family = "unix", target_os = "none"),
     target_pointer_width = "64",
     target_endian = "little"
 ))]

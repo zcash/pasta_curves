@@ -1,5 +1,5 @@
-//! Private little-endian, 64-bit-pointer Unix AArch64 backend for the Pasta
-//! fields.
+//! Private little-endian, 64-bit-pointer AArch64 backend for Unix and
+//! bare-metal targets.
 //!
 //! Modular addition and subtraction also use inline blocks.
 //! Montgomery multiplication and squaring are implemented as inline `asm!`
