@@ -1,7 +1,7 @@
 //! Private little-endian, 64-bit-pointer Unix AArch64 backend for the Pasta
 //! fields.
 //!
-//! On Apple targets, modular addition and subtraction also use inline blocks.
+//! Modular addition and subtraction also use inline blocks.
 //! Montgomery multiplication and squaring are implemented as inline `asm!`
 //! blocks below; the fused repeated-squaring chains and the canonical-form
 //! conversion remain in `src/asm/pasta_mul-armv8.S` and are reached through
@@ -77,7 +77,6 @@ type Limbs = [u64; 4];
 /// which carries into a fifth limb; unreduced values (such as `mul`'s lazy
 /// `lhs`) must be reduced before reaching this path. Keeping both carry
 /// chains in one block avoids materializing carries between Rust operations.
-#[cfg(target_vendor = "apple")]
 #[inline(always)]
 pub(super) fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
     debug_assert!(
@@ -170,7 +169,6 @@ fn is_canonical(value: &Limbs, modulus: &Limbs) -> bool {
 /// the same function as the inherent portable `sub` on all inputs — both
 /// drop the top borrow and mask-add the modulus — so the contract is not
 /// narrower than the portable path.
-#[cfg(target_vendor = "apple")]
 #[inline(always)]
 pub(super) fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
     debug_assert!(

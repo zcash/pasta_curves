@@ -154,7 +154,7 @@ impl Sub<&Fp> for &Fp {
         #[cfg(all(
             feature = "aarch64-asm",
             target_arch = "aarch64",
-            target_vendor = "apple",
+            target_family = "unix",
             target_pointer_width = "64",
             target_endian = "little",
         ))]
@@ -164,7 +164,7 @@ impl Sub<&Fp> for &Fp {
         #[cfg(not(all(
             feature = "aarch64-asm",
             target_arch = "aarch64",
-            target_vendor = "apple",
+            target_family = "unix",
             target_pointer_width = "64",
             target_endian = "little",
         )))]
@@ -182,7 +182,7 @@ impl Add<&Fp> for &Fp {
         #[cfg(all(
             feature = "aarch64-asm",
             target_arch = "aarch64",
-            target_vendor = "apple",
+            target_family = "unix",
             target_pointer_width = "64",
             target_endian = "little",
         ))]
@@ -192,7 +192,7 @@ impl Add<&Fp> for &Fp {
         #[cfg(not(all(
             feature = "aarch64-asm",
             target_arch = "aarch64",
-            target_vendor = "apple",
+            target_family = "unix",
             target_pointer_width = "64",
             target_endian = "little",
         )))]
