@@ -696,8 +696,28 @@ impl ff::Field for Fp {
         ])
     }
 
+    #[inline(always)]
     fn double(&self) -> Self {
-        self.double()
+        #[cfg(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple",
+            target_pointer_width = "64",
+            target_endian = "little",
+        ))]
+        {
+            Self(super::aarch64_asm::add(&self.0, &self.0, &MODULUS.0))
+        }
+        #[cfg(not(all(
+            feature = "aarch64-asm",
+            target_arch = "aarch64",
+            target_vendor = "apple",
+            target_pointer_width = "64",
+            target_endian = "little",
+        )))]
+        {
+            self.double()
+        }
     }
 
     #[inline(always)]
@@ -1086,12 +1106,20 @@ fn aarch64_asm_matches_portable_arithmetic() {
     use rand::SeedableRng;
 
     let max_montgomery_residue = Fp([MODULUS.0[0] - 1, MODULUS.0[1], MODULUS.0[2], MODULUS.0[3]]);
+    // Raw Montgomery residues straddling the doubling reduction threshold.
+    let half_modulus = Fp(core::array::from_fn(|limb| {
+        (MODULUS.0[limb] >> 1) | (MODULUS.0.get(limb + 1).copied().unwrap_or(0) << 63)
+    }));
+    let raw_one = Fp([1, 0, 0, 0]);
     let boundaries = [
         Fp::zero(),
         Fp::one(),
         -Fp::one(),
         Fp::from_raw([1, 0, 0, 0]),
         max_montgomery_residue,
+        Fp::sub(&half_modulus, &raw_one),
+        half_modulus,
+        Fp::add(&half_modulus, &raw_one),
         Fp::from_raw([u64::MAX; 4]),
     ];
 
@@ -1105,6 +1133,7 @@ fn aarch64_asm_matches_portable_arithmetic() {
 
     for lhs in boundaries {
         aarch64_asm_check_repr(lhs);
+        assert_eq!(<Fp as Field>::double(&lhs), Fp::double(&lhs));
         assert_eq!(<Fp as Field>::square(&lhs), Fp::square(&lhs));
         for n in [1, 2, 7, 129] {
             assert_eq!(lhs.sqr_n_runtime(n), portable_sqr_n(lhs, n));
@@ -1137,6 +1166,7 @@ fn aarch64_asm_matches_portable_arithmetic() {
         assert_eq!(&lhs - &raw_one, Fp::sub(&lhs, &raw_one));
         assert_eq!(&raw_one - &lhs, Fp::sub(&raw_one, &lhs));
         assert_eq!(&lhs - &lhs, Fp::ZERO);
+        assert_eq!(<Fp as Field>::double(&lhs), Fp::double(&lhs));
         for rhs in [complement.sub(&Fp([1, 0, 0, 0])), complement] {
             assert_eq!(&lhs + &rhs, Fp::add(&lhs, &rhs));
         }
@@ -1157,6 +1187,7 @@ fn aarch64_asm_matches_portable_arithmetic() {
             rng.next_u64(),
         ]);
 
+        assert_eq!(<Fp as Field>::double(&lhs), Fp::double(&lhs));
         aarch64_asm_check_repr(lhs);
         assert_eq!(lhs.cmp(&rhs), aarch64_asm_portable_cmp(lhs, rhs));
         assert_eq!(&lhs * &rhs, Fp::mul(&lhs, &rhs));
