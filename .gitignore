@@ -3,3 +3,4 @@
 **/*.rs.bk
 .vscode
 **/*.html
+__pycache__
