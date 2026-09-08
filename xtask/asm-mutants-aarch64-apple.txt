@@ -1,0 +1,60 @@
+# Mutants of src/asm/pasta_mul-armv8.S that survive the test suite.
+#
+# A baseline, not a suppression list: `cargo xtask asm-mutants` fails when the
+# observed survivors differ from this file in either direction. An untracked
+# survivor is newly missing coverage; a tracked mutant that is now killed means
+# this file is out of date.
+#
+# The entries here are equivalent mutants, which no test can kill. The
+# comment above each carries the argument, which is about the arithmetic
+# rather than the instruction stream; see sage/README.md, and
+# `python3 sage/asm_mutant_witnesses.py --check-invariants` to recheck them.
+#
+# Entries record the instruction as well as the id, because an edit to the
+# assembly renumbers the ids. `cargo xtask asm-mutants --verify-list` checks
+# that without running anything.
+#
+# Format: <mutation id> | <the instruction it mutates>
+
+
+# The final candidate's fifth limb in `mul`. With `lhs < 2^256` and a canonical
+# `rhs` the candidate is `(lhs * rhs + Q * p) / 2^256 < 2p`, and both Pasta
+# moduli have `p[3] = 2^62`, so `2p < 2^256` and this carry is always zero. The
+# per-round fifth limbs are a different matter, and the same argument does not
+# reach them: the vectors below make them one when `lhs` is unreduced, but not
+# the addition into them wrap, which happens only outside the operand range in
+# src/fields/aarch64_asm.rs and is wrong there rather than unreduced.
+adc/15/carry-clear | adc x23,xzr,xzr
+
+# The doubled cross-term carry into limb 7 of `sqr`. A canonical `value` has
+# `value[3] <= 2^62`, which keeps twice the cross-term sum below the `2^448`
+# where limb 7 begins. `square` is only ever called on a canonical element, so
+# the carry never fires.
+adc/19/carry-clear | adc x22,xzr,xzr
+
+# The 257th candidate bit in `sqr`. The reduced low half is at most `p` and the
+# untouched high half is below `p`, so their sum is below `2p + 1 < 2^256`.
+adc/21/carry-clear | adc x19,xzr,xzr
+
+# `from_mont`'s borrow chain. Reducing `value < p` yields
+# `(value + Q * p) / R <= (R * p - 1) / R < p`, so the result is already
+# canonical and the tentative subtraction always borrows. Forcing a borrow into
+# limb 1, 2 or 3 can only change the final decision when the candidate's limb 3
+# equals `p[3]`; but `candidate < p` with `candidate[3] == p[3]` forces
+# `candidate[2] == 0` and `candidate[1] <= p[1]`, which makes the real chain
+# produce that same borrow anyway. Note the asymmetry, which is a check on the
+# argument: the opposite direction, suppressing a borrow, is not equivalent, and
+# those mutants are killed.
+sbcs/9/carry-clear | sbcs x15,x11,x6
+sbcs/10/carry-clear | sbcs x16,x12,x7
+sbcs/11/carry-clear | sbcs x17,x13,x8
+
+# `from_mont`'s conditional subtraction. By the same bound, the subtraction
+# always borrows, so `lo` is always true and the candidate is always kept.
+# Selecting the first operand unconditionally is therefore a no-op. The block is
+# dead code for every input the crate can produce; it is cheap and constant-time
+# and guards the routine against a non-canonical argument, so it is kept.
+csel/9/select-first | csel x10,x10,x14,lo
+csel/10/select-first | csel x11,x11,x15,lo
+csel/11/select-first | csel x12,x12,x16,lo
+csel/12/select-first | csel x13,x13,x17,lo
