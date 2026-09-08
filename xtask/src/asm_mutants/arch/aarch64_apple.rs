@@ -170,14 +170,16 @@ mod tests {
     #[test]
     fn rejects_changed_source() {
         let mutation = AArch64Apple::mutations(SOURCE).unwrap().remove(0);
-        assert!(mutation
-            .apply(&SOURCE.replace("x1,x2,x3", "x1,x2,x4"))
-            .is_err());
+        assert!(
+            mutation
+                .apply(&SOURCE.replace("x1,x2,x3", "x1,x2,x4"))
+                .is_err()
+        );
     }
 
     #[test]
     fn enumerates_every_supported_instruction_in_the_backend() {
-        let source = include_str!("../../../src/asm/pasta_mul-armv8.S");
+        let source = include_str!("../../../../src/asm/pasta_mul-armv8.S");
         let mutations = AArch64Apple::mutations(source).unwrap();
         // 77 ADCS + 29 ADC + 11 SBCS + 12 CSEL, with two mutations each.
         assert_eq!(mutations.len(), 258);
