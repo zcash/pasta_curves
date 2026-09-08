@@ -5,9 +5,10 @@
 # survivor is newly missing coverage; a tracked mutant that is now killed means
 # this file is out of date.
 #
-# Each entry is marked UNCOVERED, a real gap still to be closed, or
-# EQUIVALENT, which no test can kill; the comment above it carries the
-# argument. See sage/README.md.
+# The entries here are equivalent mutants, which no test can kill. The
+# comment above each carries the argument, which is about the arithmetic
+# rather than the instruction stream; see sage/README.md, and
+# `python3 sage/asm_mutant_witnesses.py --check-invariants` to recheck them.
 #
 # Entries record the instruction as well as the id, because an edit to the
 # assembly renumbers the ids. `cargo xtask asm-mutants --verify-list` checks
@@ -16,55 +17,26 @@
 # Format: <mutation id> | <the instruction it mutates>
 
 
-# UNCOVERED. Adding `low(q * p[3])` during the reduction, once per round of
-# `mul`. The carry-in is the carry out of the `adcs x21,x21,xzr` above, which is
-# set only when limb 2 is exactly all-ones and a carry arrives into it: about
-# 2^-64, so random operands never reach it.
-adcs/5/carry-clear | adcs x22,x22,x17
-adcs/16/carry-clear | adcs x22,x22,x17
-adcs/27/carry-clear | adcs x22,x22,x17
-adcs/38/carry-clear | adcs x22,x22,x17
-
-# UNCOVERED. The same propagation one pass later, adding `high(q * p[3])` while
-# shifting out the cancelled limb. Same shape, same probability.
-adcs/19/carry-clear | adcs x22,x23,x17
-adcs/30/carry-clear | adcs x22,x23,x17
-
-# UNCOVERED. The fifth accumulator limb after a round of `mul`. This is only
-# reachable when the left operand is not canonical, which happens for real:
-# `from_u512` multiplies an arbitrary 256-bit value by `R2` or `R3`. The
-# identical site after round 1 is already covered, which is why it is absent
-# from this list.
-adc/3/carry-clear | adc x23,xzr,xzr
-adc/11/carry-clear | adc x23,xzr,xzr
-
-# UNCOVERED. The same all-ones-limb propagations inside the shared reduction
-# helper, which `sqr` and `from_mont` both call.
-adcs/60/carry-clear | adcs x13,x13,x17
-adcs/65/carry-clear | adcs x13,x13,x17
-adcs/75/carry-clear | adcs x13,x13,x17
-adc/24/carry-clear | adc x9,xzr,xzr
-adc/25/carry-clear | adc x13,x9,x17
-adc/27/carry-clear | adc x13,x9,x17
-
-# EQUIVALENT. The final candidate's fifth limb in `mul`. With `lhs < 2^256` and
-# `rhs < p` the candidate is `(lhs * rhs + Q * p) / 2^256 < 2p`, and both Pasta
+# The final candidate's fifth limb in `mul`. With `lhs < 2^256` and a canonical
+# `rhs` the candidate is `(lhs * rhs + Q * p) / 2^256 < 2p`, and both Pasta
 # moduli have `p[3] = 2^62`, so `2p < 2^256` and this carry is always zero. The
-# per-round fifth limbs above are a different matter: those do become one.
+# per-round fifth limbs are a different matter, and the same argument does not
+# reach them: the vectors below make them one when `lhs` is unreduced, but not
+# the addition into them wrap, which happens only outside the operand range in
+# src/fields/aarch64_asm.rs and is wrong there rather than unreduced.
 adc/15/carry-clear | adc x23,xzr,xzr
 
-# EQUIVALENT. The doubled cross-term carry into limb 7 of `sqr`. A canonical
-# `value` has `value[3] <= 2^62`, which keeps twice the cross-term sum below the
-# `2^448` where limb 7 begins. `square` is only ever called on a canonical
-# element, so the carry never fires.
+# The doubled cross-term carry into limb 7 of `sqr`. A canonical `value` has
+# `value[3] <= 2^62`, which keeps twice the cross-term sum below the `2^448`
+# where limb 7 begins. `square` is only ever called on a canonical element, so
+# the carry never fires.
 adc/19/carry-clear | adc x22,xzr,xzr
 
-# EQUIVALENT. The 257th candidate bit in `sqr`. The reduced low half is at most
-# `p` and the untouched high half is below `p`, so their sum is below
-# `2p + 1 < 2^256`.
+# The 257th candidate bit in `sqr`. The reduced low half is at most `p` and the
+# untouched high half is below `p`, so their sum is below `2p + 1 < 2^256`.
 adc/21/carry-clear | adc x19,xzr,xzr
 
-# EQUIVALENT. `from_mont`'s borrow chain. Reducing `value < p` yields
+# `from_mont`'s borrow chain. Reducing `value < p` yields
 # `(value + Q * p) / R <= (R * p - 1) / R < p`, so the result is already
 # canonical and the tentative subtraction always borrows. Forcing a borrow into
 # limb 1, 2 or 3 can only change the final decision when the candidate's limb 3
@@ -77,11 +49,11 @@ sbcs/9/carry-clear | sbcs x15,x11,x6
 sbcs/10/carry-clear | sbcs x16,x12,x7
 sbcs/11/carry-clear | sbcs x17,x13,x8
 
-# EQUIVALENT. `from_mont`'s conditional subtraction. By the same bound the
-# subtraction always borrows, so `lo` is always true and the candidate is always
-# kept, which makes selecting the first operand a no-op. The block is dead code
-# for every input the crate can produce; it is cheap and constant-time and
-# guards the routine against a non-canonical argument, so it is kept.
+# `from_mont`'s conditional subtraction. By the same bound, the subtraction
+# always borrows, so `lo` is always true and the candidate is always kept.
+# Selecting the first operand unconditionally is therefore a no-op. The block is
+# dead code for every input the crate can produce; it is cheap and constant-time
+# and guards the routine against a non-canonical argument, so it is kept.
 csel/9/select-first | csel x10,x10,x14,lo
 csel/10/select-first | csel x11,x11,x15,lo
 csel/11/select-first | csel x12,x12,x16,lo
