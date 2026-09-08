@@ -6,7 +6,50 @@ use super::super::runner::Harness;
 
 const ASM_SOURCE: &str = "src/asm/pasta_mul-armv8.S";
 
-const MUTABLE_MNEMONICS: [&str; 4] = ["adcs", "adc", "sbcs", "csel"];
+/// Every mnemonic the mutations read or write.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Mnemonic {
+    Adc,
+    Adcs,
+    Add,
+    Adds,
+    Csel,
+    Mov,
+    Sbcs,
+    Subs,
+}
+
+impl Mnemonic {
+    /// The mnemonics whose behaviour depends on the carry flag.
+    const MUTABLE: [Self; 4] = [Self::Adcs, Self::Adc, Self::Sbcs, Self::Csel];
+
+    fn parse(text: &str) -> Option<Self> {
+        Some(match text.to_ascii_lowercase().as_str() {
+            "adc" => Self::Adc,
+            "adcs" => Self::Adcs,
+            "add" => Self::Add,
+            "adds" => Self::Adds,
+            "csel" => Self::Csel,
+            "mov" => Self::Mov,
+            "sbcs" => Self::Sbcs,
+            "subs" => Self::Subs,
+            _ => return None,
+        })
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Adc => "adc",
+            Self::Adcs => "adcs",
+            Self::Add => "add",
+            Self::Adds => "adds",
+            Self::Csel => "csel",
+            Self::Mov => "mov",
+            Self::Sbcs => "sbcs",
+            Self::Subs => "subs",
+        }
+    }
+}
 
 pub(crate) struct AArch64Apple;
 
@@ -16,7 +59,8 @@ impl Harness for AArch64Apple {
     }
 
     fn mutations(source: &str) -> Result<Vec<Mutation>, String> {
-        mutations::prepare(source, &MUTABLE_MNEMONICS, replacements)
+        let mutable: Vec<&str> = Mnemonic::MUTABLE.iter().map(|m| m.as_str()).collect();
+        mutations::prepare(source, &mutable, replacements)
     }
 
     fn with_mutation(cmd: &mut Command, mutated_asm: Option<&Path>) {
@@ -31,8 +75,13 @@ impl Harness for AArch64Apple {
 fn replacements(
     instruction: &ParsedInstruction<'_>,
 ) -> Result<Vec<(&'static str, String)>, String> {
-    let mnemonic = instruction.mnemonic.to_ascii_lowercase();
-    let expected = if mnemonic == "csel" { 4 } else { 3 };
+    let mnemonic = Mnemonic::parse(instruction.mnemonic).ok_or_else(|| {
+        format!(
+            "unsupported mutation mnemonic {} at line {}",
+            instruction.mnemonic, instruction.line
+        )
+    })?;
+    let expected = if mnemonic == Mnemonic::Csel { 4 } else { 3 };
     if instruction.operands.len() != expected {
         return Err(format!(
             "{} at line {} has {} operands, expected {expected}",
@@ -41,7 +90,9 @@ fn replacements(
             instruction.operands.len()
         ));
     }
-    let emit = |mnemonic: &str, operands: &[&str]| format!("{mnemonic} {}", operands.join(","));
+    let emit = |mnemonic: Mnemonic, operands: &[&str]| {
+        format!("{} {}", mnemonic.as_str(), operands.join(","))
+    };
     let pair = |first: String, second: String| format!("{first}\n{}{second}", instruction.indent);
     let width = register_width(instruction.operands[0]).ok_or_else(|| {
         format!(
@@ -60,53 +111,61 @@ fn replacements(
     }
     let zero = if width == 64 { "xzr" } else { "wzr" };
 
-    let replacements = match mnemonic.as_str() {
-        "adcs" => vec![
-            ("carry-clear", emit("adds", &instruction.operands)),
+    let replacements = match mnemonic {
+        Mnemonic::Adcs => vec![
+            ("carry-clear", emit(Mnemonic::Adds, &instruction.operands)),
             (
                 "carry-set",
                 pair(
-                    emit("subs", &[zero, zero, zero]),
-                    emit("adcs", &instruction.operands),
+                    emit(Mnemonic::Subs, &[zero, zero, zero]),
+                    emit(Mnemonic::Adcs, &instruction.operands),
                 ),
             ),
         ],
-        "sbcs" => vec![
-            ("carry-set", emit("subs", &instruction.operands)),
+        Mnemonic::Sbcs => vec![
+            ("carry-set", emit(Mnemonic::Subs, &instruction.operands)),
             (
                 "carry-clear",
                 pair(
-                    emit("adds", &[zero, zero, zero]),
-                    emit("sbcs", &instruction.operands),
+                    emit(Mnemonic::Adds, &[zero, zero, zero]),
+                    emit(Mnemonic::Sbcs, &instruction.operands),
                 ),
             ),
         ],
-        "adc" => {
+        Mnemonic::Adc => {
             let destination = instruction.operands[0];
             if destination.eq_ignore_ascii_case("xzr") {
                 return Err("ADC mutation with xzr destination is unsupported".to_owned());
             }
             vec![
-                ("carry-clear", emit("add", &instruction.operands)),
+                ("carry-clear", emit(Mnemonic::Add, &instruction.operands)),
                 (
                     "carry-set",
                     pair(
-                        emit("add", &instruction.operands),
-                        emit("add", &[destination, destination, "#1"]),
+                        emit(Mnemonic::Add, &instruction.operands),
+                        emit(Mnemonic::Add, &[destination, destination, "#1"]),
                     ),
                 ),
             ]
         }
-        "csel" => {
+        Mnemonic::Csel => {
             let destination = instruction.operands[0];
             let when_true = instruction.operands[1];
             let when_false = instruction.operands[2];
             vec![
-                ("select-first", emit("mov", &[destination, when_true])),
-                ("select-second", emit("mov", &[destination, when_false])),
+                (
+                    "select-first",
+                    emit(Mnemonic::Mov, &[destination, when_true]),
+                ),
+                (
+                    "select-second",
+                    emit(Mnemonic::Mov, &[destination, when_false]),
+                ),
             ]
         }
-        mnemonic => return Err(format!("unsupported mutation mnemonic {mnemonic}")),
+        other => {
+            return Err(format!("unsupported mutation mnemonic {}", other.as_str()));
+        }
     };
 
     Ok(replacements)
@@ -144,6 +203,24 @@ mod tests {
         "    sbcs xzr,x7,x8\n",
         "    csel x9,x10,x11,lo // choose\n",
     );
+
+    #[test]
+    fn mnemonic_names_round_trip() {
+        for mnemonic in [
+            Mnemonic::Adc,
+            Mnemonic::Adcs,
+            Mnemonic::Add,
+            Mnemonic::Adds,
+            Mnemonic::Csel,
+            Mnemonic::Mov,
+            Mnemonic::Sbcs,
+            Mnemonic::Subs,
+        ] {
+            assert_eq!(Mnemonic::parse(mnemonic.as_str()), Some(mnemonic));
+        }
+        assert_eq!(Mnemonic::parse("ADCS"), Some(Mnemonic::Adcs));
+        assert_eq!(Mnemonic::parse("umulh"), None);
+    }
 
     #[test]
     fn parses_supported_instructions_and_builds_stable_ids() {
