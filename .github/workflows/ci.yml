@@ -98,6 +98,10 @@ jobs:
             fields::fq::aarch64_asm_matches_portable_arithmetic)
           echo "$out"
           echo "$out" | grep -q '2 passed'
+      - name: Check the tracked list of surviving mutants
+        run: cargo xtask asm-mutants --verify-list
+      - name: Run the mutation harness's own tests
+        run: cargo test --manifest-path xtask/Cargo.toml
       - name: Verify working directory is clean
         run: git diff --exit-code
 
