@@ -1183,6 +1183,60 @@ fn aarch64_asm_matches_portable_at_carry_boundaries() {
     }
 }
 
+#[cfg(all(
+    test,
+    feature = "aarch64-asm",
+    target_arch = "aarch64",
+    target_vendor = "apple"
+))]
+#[test]
+fn aarch64_asm_vectors_respect_the_documented_operand_range() {
+    // The contract in `src/fields/aarch64_asm.rs`: `rhs` is canonical, and an
+    // unreduced `lhs` additionally needs every `rhs` limb at most `2^64 - 4`.
+    // `p[3] = 2^62` is the fact behind `2p < 2^256`, which the equivalence
+    // arguments in xtask/asm-mutants-aarch64-apple.txt rest on.
+    fn below(value: &[u64; 4], bound: &[u64; 4]) -> bool {
+        for index in (0..4).rev() {
+            if value[index] != bound[index] {
+                return value[index] < bound[index];
+            }
+        }
+        false
+    }
+
+    fn limbs_capped(value: &[u64; 4]) -> bool {
+        value.iter().all(|limb| *limb <= u64::MAX - 3)
+    }
+
+    assert_eq!(MODULUS.0[3], 1 << 62);
+
+    // `from_u512` is the caller that passes an unreduced `lhs`, so the cap on
+    // these two is what keeps it inside the contract.
+    for constant in [R2, R3] {
+        assert!(limbs_capped(&constant.0), "from_u512 needs a capped rhs");
+    }
+
+    let mut unreduced_left = 0;
+    for (lhs, rhs) in AARCH64_ASM_CARRY_PRODUCTS {
+        assert!(below(&rhs, &MODULUS.0), "mul needs a canonical rhs");
+        if !below(&lhs, &MODULUS.0) {
+            unreduced_left += 1;
+            assert!(limbs_capped(&rhs), "an unreduced lhs needs a capped rhs");
+        }
+    }
+    assert!(
+        unreduced_left > 0,
+        "the vectors are documented to include an unreduced left operand",
+    );
+
+    for value in AARCH64_ASM_CARRY_REDUCTIONS {
+        assert!(
+            below(&value, &MODULUS.0),
+            "square and from_mont need a canonical value",
+        );
+    }
+}
+
 #[test]
 fn test_inv() {
     // Compute -(r^{-1} mod 2^64) mod 2^64 by exponentiating

@@ -91,13 +91,17 @@ jobs:
         run: cargo test --verbose --release --features aarch64-asm
       - name: Confirm the backend's own tests ran
         # A cfg-gated test that silently compiles out still reports success,
-        # so assert that both differential tests were actually executed.
+        # so assert that each of the backend's tests was actually executed.
         run: |
           out=$(cargo test --release --features aarch64-asm -- --exact \
             fields::fp::aarch64_asm_matches_portable_arithmetic \
-            fields::fq::aarch64_asm_matches_portable_arithmetic)
+            fields::fq::aarch64_asm_matches_portable_arithmetic \
+            fields::fp::aarch64_asm_matches_portable_at_carry_boundaries \
+            fields::fq::aarch64_asm_matches_portable_at_carry_boundaries \
+            fields::fp::aarch64_asm_vectors_respect_the_documented_operand_range \
+            fields::fq::aarch64_asm_vectors_respect_the_documented_operand_range)
           echo "$out"
-          echo "$out" | grep -q '2 passed'
+          echo "$out" | grep -q '6 passed'
       - name: Check the tracked list of surviving mutants
         run: cargo xtask asm-mutants --verify-list
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
