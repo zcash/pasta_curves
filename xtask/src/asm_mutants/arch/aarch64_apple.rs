@@ -5,6 +5,7 @@ use super::super::mutations::{self, Mutation};
 use super::super::runner::Harness;
 
 const ASM_SOURCE: &str = "src/asm/pasta_mul-armv8.S";
+const SURVIVORS: &str = "xtask/asm-mutants-aarch64-apple.txt";
 
 /// Every mnemonic the mutations read or write.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -56,6 +57,10 @@ pub(crate) struct AArch64Apple;
 impl Harness for AArch64Apple {
     fn source_path() -> &'static str {
         ASM_SOURCE
+    }
+
+    fn survivors_path() -> &'static str {
+        SURVIVORS
     }
 
     fn mutations(source: &str) -> Result<Vec<Mutation>, String> {

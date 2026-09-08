@@ -55,7 +55,31 @@ pub(super) struct Mutation {
     replacement: String,
 }
 
+#[cfg(test)]
 impl Mutation {
+    /// Builds a mutation with just the fields the survivor tracking reads.
+    pub(super) fn for_test(id: &str, instruction: &str) -> Self {
+        Mutation {
+            id: id.to_owned(),
+            line: 1,
+            range: 0..0,
+            original: instruction.to_owned(),
+            replacement: String::new(),
+        }
+    }
+}
+
+impl Mutation {
+    /// The unmutated instruction this mutation replaces, without any comment.
+    pub fn instruction(&self) -> &str {
+        &self.original
+    }
+
+    /// The text this mutation puts in its place.
+    pub fn replacement(&self) -> &str {
+        &self.replacement
+    }
+
     /// Applies this mutation to the assembly source.
     pub fn apply(&self, source: &str) -> Result<String, String> {
         let actual = source

@@ -8,11 +8,15 @@ use std::{
 use testdir::testdir;
 
 use super::mutations::{self, Mutation};
+use super::survivors;
 
 /// Test harness for a specific architecture.
 pub(super) trait Harness {
     /// Returns the source path for this architecture's assembly.
     fn source_path() -> &'static str;
+
+    /// Returns the path of the tracked list of surviving mutants.
+    fn survivors_path() -> &'static str;
 
     /// Generates all individual mutations from the given assembly.
     ///
@@ -23,12 +27,49 @@ pub(super) trait Harness {
     fn with_mutation(cmd: &mut Command, mutated_asm: Option<&Path>);
 }
 
-pub(super) fn run<Arch: Harness>() -> Result<(), String> {
-    let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+pub(super) fn run<Arch: Harness>(verify_list_only: bool, list_sites: bool) -> Result<(), String> {
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .ok_or("xtask manifest has no parent")?
         .to_owned();
+
+    let source_path = repo_root.join(Arch::source_path());
+    let source = fs::read_to_string(&source_path)
+        .map_err(|error| format!("failed to read {}: {error}", source_path.display()))?;
+
+    let mutations = Arch::mutations(&source)?;
+
+    if list_sites {
+        for mutation in &mutations {
+            println!(
+                "{}\t{}\t{}\t{}",
+                mutation.id,
+                mutation.line,
+                mutation.instruction(),
+                mutation.replacement().replace('\n', "\\n"),
+            );
+        }
+        return Ok(());
+    }
+
+    let survivors_path = repo_root.join(Arch::survivors_path());
+    let expected = survivors::parse(
+        &fs::read_to_string(&survivors_path)
+            .map_err(|error| format!("failed to read {}: {error}", survivors_path.display()))?,
+    )
+    .map_err(|error| format!("{}: {error}", survivors_path.display()))?;
+    survivors::verify_sites(&expected, &mutations)?;
+
+    if verify_list_only {
+        println!(
+            "{} tracked survivors still name mutation sites in {}",
+            expected.len(),
+            Arch::source_path(),
+        );
+        return Ok(());
+    }
+
+    let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let dir: PathBuf = testdir!();
     let target_dir = dir.join("target");
 
@@ -48,12 +89,6 @@ pub(super) fn run<Arch: Harness>() -> Result<(), String> {
 
         cmd
     };
-
-    let source_path = repo_root.join(Arch::source_path());
-    let source = fs::read_to_string(&source_path)
-        .map_err(|error| format!("failed to read {}: {error}", source_path.display()))?;
-
-    let mutations = Arch::mutations(&source)?;
 
     println!("Running baseline and {} assembly mutants", mutations.len());
     let baseline = test_command(None, false)
@@ -114,19 +149,17 @@ pub(super) fn run<Arch: Harness>() -> Result<(), String> {
     }
 
     println!(
-        "\nResult: {killed} killed, {crashed} crashed, {} invalid, {} survived",
+        "\nResult: {killed} killed, {crashed} crashed, {} invalid, {} survived \
+         ({} tracked)",
         invalid.len(),
-        survivors.len()
+        survivors.len(),
+        expected.len(),
     );
-    if invalid.is_empty() && survivors.is_empty() {
-        Ok(())
-    } else {
-        Err(format!(
-            "invalid mutants:\n{}\nsurviving mutants:\n{}",
-            mutations::format(&invalid),
-            mutations::format(&survivors),
-        ))
+    if !invalid.is_empty() {
+        return Err(format!("invalid mutants:\n{}", mutations::format(&invalid),));
     }
+
+    survivors::compare(&expected, &survivors)
 }
 
 #[derive(Debug, Eq, PartialEq)]
