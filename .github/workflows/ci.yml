@@ -100,10 +100,38 @@ jobs:
           echo "$out" | grep -q '2 passed'
       - name: Check the tracked list of surviving mutants
         run: cargo xtask asm-mutants --verify-list
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.10"
+      - name: Check the interpreter against this CPU
+        working-directory: sage
+        env:
+          PASTA_CURVES_REQUIRE_HARDWARE_CHECK: "1"
+        run: uv run --frozen --python 3.14 --only-group test pytest -v
       - name: Run the mutation harness's own tests
         run: cargo test --manifest-path xtask/Cargo.toml
       - name: Verify working directory is clean
         run: git diff --exit-code
+
+  check-sage:
+    name: Check the derivation scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.10"
+      - name: Check formatting
+        working-directory: sage
+        run: uv run --frozen --python 3.14 --only-group format ruff format --check
+      - name: Run mypy
+        working-directory: sage
+        run: uv run --frozen --python 3.14 --only-group typecheck mypy
+      - name: Run the interpreter's unit tests
+        working-directory: sage
+        run: uv run --frozen --python 3.14 --only-group test pytest
 
   bitrot:
     name: Bitrot check

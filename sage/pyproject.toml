@@ -14,4 +14,14 @@ dependencies = [
 package = false
 
 [dependency-groups]
+format = ["ruff ~= 0.16.6"]
 test = ["pytest ~= 9.1"]
+typecheck = ["mypy ~= 2.3", { include-group = "test" }]
+
+[tool.ruff]
+line-length = 80
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["asm_aarch64.py", "asm_mutant_witnesses.py", "tests"]
