@@ -1077,7 +1077,7 @@ fn fp_sqrt_table_matches_tonelli_shanks() {
     for _ in 0..1_000 {
         let input = Fp::random(&mut rng);
         let table = input.sqrt();
-        let reference = ff::helpers::sqrt_tonelli_shanks(&input, &T_MINUS1_OVER2);
+        let reference = ff::helpers::sqrt_tonelli_shanks(&input, T_MINUS1_OVER2);
 
         assert_eq!(table.is_some().unwrap_u8(), reference.is_some().unwrap_u8());
         if bool::from(table.is_some()) {
