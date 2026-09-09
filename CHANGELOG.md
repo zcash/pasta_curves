@@ -7,6 +7,10 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 ### Added
+- Assembly-backed field addition, subtraction and doubling for the
+  `aarch64-asm` backend, alongside the existing multiplication and squaring.
+  The `Add`, `Sub` and `ff::Field::double` operators route through inline
+  assembly; the inherent `const` methods are unchanged.
 - An assembly implementation of Pallas and Vesta base and scalar field
   multiplication, squaring and Montgomery reduction for Apple AArch64, behind
   the new `aarch64-asm` feature flag. The feature is opt-in and has no effect
@@ -27,6 +31,27 @@ and this project adheres to Rust's notion of
   the simplified SWU and isogeny formulas, which produce on-curve points by
   construction; the debug assertions are retained. About 5% faster for Vesta
   hash-to-curve on Apple AArch64.
+- The `aarch64-asm` backend now builds on 64-bit little-endian Unix AArch64
+  targets, not only Apple ones, emitting Mach-O or ELF symbol directives as
+  the target requires. The gate is a conjunction of the properties the
+  assembly actually depends on, so ILP32 and big-endian AArch64
+  configurations continue to use the portable implementation, as does every
+  non-AArch64 target. Performance was measured on Apple M4; other cores are
+  expected, but not verified, to benefit.
+- Portable squaring chains no longer canonicalize after every squaring,
+  including the trailing squarings in variable-time exponentiation. The
+  square-root tables use the chains on every architecture. The x86-64 path
+  additionally reduces the low half of its product first and adds the high
+  half once, as the assembly backend does, keeping four limbs live through
+  the cancellation rounds instead of eight. Other targets retain their
+  existing classical reduction, and multiplication is unchanged.
+- The portable wide-squaring routine for `Fp` and `Fq` now lives in a shared
+  `fields::portable` module. Both fields delegate to the same limb-array
+  implementation; the algorithm and the generated operations are unchanged.
+- The `aarch64-asm` repeated-squaring chains keep their lazy accumulator in
+  registers and canonicalize only once. On Apple M4, chains of 2 to 128
+  squares are 6 to 13 percent faster; the fused square-and-multiply chains
+  are unchanged.
 - `Fp::pow_vartime` and `Fq::pow_vartime` now fuse each run of squarings with
   the following multiplication. The sequence of field operations (and thus
   the variable-time profile, which depends only on the exponent) is
@@ -45,6 +70,10 @@ and this project adheres to Rust's notion of
   supplies); the assembly wrappers now debug-assert it, since a violation
   would yield an incorrect residue rather than a merely non-canonical one.
 - MSRV is now 1.88.0.
+
+### Security
+- The `aarch64-asm` backend preserves BTI hardening metadata and declares a
+  non-executable stack when linked into ELF applications.
 
 ## [0.5.2] - 2026-07-23
 ### Added
