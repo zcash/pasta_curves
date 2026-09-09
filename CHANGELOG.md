@@ -19,6 +19,16 @@ and this project adheres to Rust's notion of
 - `Fp::invert` and `Fq::invert` use a constant-time inversion by divsteps
   (Bernstein et al.), rather than exponentiation by `p - 2`. It is about
   4.5 times as fast, and its timing still does not depend on the input.
+- `Fp` and `Fq` square-root table lookups now hash their normalized Montgomery
+  representations directly, with generated multiply-and-shift perfect hashes.
+  This removes four Montgomery reductions and four integer remainders per
+  square root, and implements the `get_lower_32` TODO this crate already
+  carried. Measured at 2.3% on `Fp::sqrt` and 1.8% on `Fq::sqrt`, on Apple
+  AArch64 with the assembly backend.
+- Hash-to-curve no longer re-checks the curve equation in release builds after
+  the simplified SWU and isogeny formulas, which produce on-curve points by
+  construction; the debug assertions are retained. About 5% faster for Vesta
+  hash-to-curve on Apple AArch64.
 
 ## [0.6.0] - 2026-09-25
 ### Added
