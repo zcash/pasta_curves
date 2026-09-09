@@ -123,6 +123,19 @@ struct Trans2x2 {
     r: i64,
 }
 
+/// Computes the wider cancellation multiplier used after a negative-eta
+/// divstep swap on AArch64.
+///
+/// Keeping this out of line prevents the AArch64 backend from speculatively
+/// evaluating both cancellation formulas before selecting one.
+#[cfg(target_arch = "aarch64")]
+#[inline(never)]
+fn negative_eta_multiplier(f: u64, g: u64, mask: u64) -> u64 {
+    f.wrapping_mul(g)
+        .wrapping_mul(f.wrapping_mul(f).wrapping_sub(2))
+        & mask
+}
+
 /// An upstream `VERIFY_CHECK`: live in unit tests (including `--release`
 /// runs, where `debug_assert!` would be inert) and in debug builds; compiled
 /// out of production builds. Keep every check ported from upstream on this
@@ -323,10 +336,17 @@ fn divsteps_62_var(mut eta: i64, f0: u64, g0: u64) -> (Trans2x2, i64) {
             };
             verify!((1..=62).contains(&limit), "limit out of range");
             m = (u64::MAX >> (64 - limit)) & 63;
-            w = f
-                .wrapping_mul(g)
-                .wrapping_mul(f.wrapping_mul(f).wrapping_sub(2))
-                & m;
+            #[cfg(target_arch = "aarch64")]
+            {
+                w = negative_eta_multiplier(f, g, m);
+            }
+            #[cfg(not(target_arch = "aarch64"))]
+            {
+                w = f
+                    .wrapping_mul(g)
+                    .wrapping_mul(f.wrapping_mul(f).wrapping_sub(2))
+                    & m;
+            }
         } else {
             // A simpler formula that cancels up to 4 bits of g:
             // f + (((f + 1) & 4) << 1) is the inverse of f modulo 16.
