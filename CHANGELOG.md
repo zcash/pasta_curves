@@ -8,6 +8,11 @@ and this project adheres to Rust's notion of
 ## [Unreleased]
 ### Changed
 - MSRV is now 1.88.0.
+- `Field::invert` for `Fp` and `Fq` now uses a variable-time 62-divstep
+  safegcd inversion instead of exponentiation by `p - 2`. The returned value
+  and the `is_some` flag are unchanged, but the running time now depends on
+  the value being inverted. Callers that require data-oblivious inversion
+  should use `self.pow_vartime([p - 2])` explicitly.
 
 ## [0.5.2] - 2026-07-23
 ### Added
