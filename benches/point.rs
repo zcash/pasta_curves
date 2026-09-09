@@ -1,6 +1,6 @@
 //! Benchmarks for point operations.
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 use pasta_curves::arithmetic::CurveExt;
 use pasta_curves::{pallas, vesta};
@@ -21,6 +21,23 @@ fn point_bench<C: CurveExt>(c: &mut Criterion, name: &str) {
     group.bench_function("point addition", |bencher| bencher.iter(|| a + b));
 
     group.bench_function("point subtraction", |bencher| bencher.iter(|| a - b));
+
+    // Dependent operations exercise changing projective coordinates and keep
+    // the arithmetic inside the timed loop even under aggressive inlining.
+    group.bench_function("point doubling serial", |bencher| {
+        let mut point = a;
+        bencher.iter(|| {
+            point = black_box(point).double();
+            black_box(point)
+        });
+    });
+    group.bench_function("point addition serial", |bencher| {
+        let mut point = a;
+        bencher.iter(|| {
+            point = black_box(point) + black_box(b);
+            black_box(point)
+        });
+    });
 
     group.bench_function("point to_bytes", |bencher| bencher.iter(|| a.to_bytes()));
 

@@ -37,6 +37,22 @@ pub(crate) trait SqrtTableHelpers: ff::PrimeField {
     /// chain.
     fn pow_by_t_minus1_over2(&self) -> Self;
 
+    /// Squares this element `n` times. `n` must be at least 1.
+    ///
+    /// Implementations may leave the accumulator unreduced between squarings
+    /// and canonicalize once at the end.
+    fn sqr_n(&self, n: u32) -> Self {
+        assert!(n >= 1);
+        (0..n).fold(*self, |acc, _| acc.square())
+    }
+
+    /// Squares this element `n` times, then multiplies by `by`. `n` must be
+    /// at least 1. The closing multiplication lets implementations skip the
+    /// per-squaring correction entirely.
+    fn sqr_n_mul(&self, n: u32, by: &Self) -> Self {
+        self.sqr_n(n) * by
+    }
+
     /// Returns the representation-derived key for the square-root hash table.
     ///
     /// The key need not have meaning outside the table lookup. It must be
@@ -203,13 +219,11 @@ impl<F: SqrtTableHelpers> SqrtTables<F> {
         // The overall cost of this part is similar to a single full-width exponentiation,
         // regardless of S.
 
-        let sqr = |x: F, i: u32| (0..i).fold(x, |x, _| x.square());
-
         // s = div^(2^S - 1)
-        let s = (0..5).fold(*div, |d: F, i| sqr(d, 1 << i) * d);
+        let s = (0..5).fold(*div, |d: F, i| d.sqr_n_mul(1 << i, &d));
 
         // t == div^(2^(S+1) - 1)
-        let t = s.square() * div;
+        let t = s.sqr_n_mul(1, div);
 
         // w = (num * t)^((T-1)/2) * s
         let w = (t * num).pow_by_t_minus1_over2() * s;
@@ -249,13 +263,12 @@ impl<F: SqrtTableHelpers> SqrtTables<F> {
 
     /// Common part of sqrt_ratio and sqrt_alt: return their result given v = u^((T-1)/2) and uv = u * v.
     fn sqrt_common(&self, uv: &F, v: &F) -> F {
-        let sqr = |x: F, i: u32| (0..i).fold(x, |x, _| x.square());
         let inv = |x: F| self.inv[self.hasher.hash(&x)] as usize;
 
         let x3 = *uv * v;
-        let x2 = sqr(x3, 8);
-        let x1 = sqr(x2, 8);
-        let x0 = sqr(x1, 8);
+        let x2 = x3.sqr_n(8);
+        let x1 = x2.sqr_n(8);
+        let x0 = x1.sqr_n(8);
 
         // i = 0, 1
         let mut t_ = inv(x0); // = t >> 16

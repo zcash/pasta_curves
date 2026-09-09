@@ -3,6 +3,7 @@
 
 mod fp;
 mod fq;
+mod portable;
 
 // Keep the assembly FFI exception contained within a private module whose
 // public interface consists only of safe wrappers.
@@ -10,7 +11,9 @@ mod fq;
 #[cfg(all(
     feature = "aarch64-asm",
     target_arch = "aarch64",
-    target_vendor = "apple"
+    any(target_family = "unix", target_os = "none"),
+    target_pointer_width = "64",
+    target_endian = "little"
 ))]
 mod aarch64_asm;
 
