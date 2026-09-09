@@ -53,6 +53,7 @@ jobs:
     strategy:
       matrix:
         target:
+          - aarch64-unknown-none
           - thumbv6m-none-eabi
           - wasm32-unknown-unknown
           - wasm32-wasip1
@@ -70,12 +71,7 @@ jobs:
           --no-default-features
 
   aarch64-asm:
-    name: Apple AArch64 assembly backend
-    # macos-latest is Apple silicon, which is the only target the
-    # `aarch64-asm` feature actually compiles assembly for. The `test`
-    # matrix reaches this code through `--all-features`; this job pins the
-    # feature on its own, so a break is attributed rather than buried in a
-    # combined run, and so the backend's tests are known to have run.
+    name: AArch64 assembly backend (Apple, Mach-O)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -98,6 +94,34 @@ jobs:
             fields::fq::aarch64_asm_matches_portable_arithmetic)
           echo "$out"
           echo "$out" | grep -q '2 passed'
+      - name: Verify working directory is clean
+        run: git diff --exit-code
+
+  aarch64-asm-linux:
+    name: AArch64 assembly backend (Linux, ELF)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Confirm the runner is AArch64 Linux
+        run: test "$(uname -sm)" = "Linux aarch64"
+      - name: Build with the assembly backend
+        run: cargo build --verbose --features aarch64-asm
+      - name: Run tests with the assembly backend
+        run: cargo test --verbose --release --features aarch64-asm
+      - name: Confirm the backend's own tests ran
+        run: |
+          out=$(cargo test --release --features aarch64-asm -- --exact \
+            fields::fp::aarch64_asm_matches_portable_arithmetic \
+            fields::fq::aarch64_asm_matches_portable_arithmetic)
+          echo "$out"
+          echo "$out" | grep -q '2 passed'
+      - name: Build the assembly backend for bare-metal AArch64
+        run: |
+          rustup target add aarch64-unknown-none
+          cargo build --verbose --no-default-features \
+            --features aarch64-asm --target aarch64-unknown-none
       - name: Verify working directory is clean
         run: git diff --exit-code
 
@@ -173,6 +197,7 @@ jobs:
       - test-32-bit
       - no-std
       - aarch64-asm
+      - aarch64-asm-linux
       - bitrot
     # `always()` is load-bearing: without it this job is skipped when a
     # needed job fails, and GitHub treats a skipped required check as
