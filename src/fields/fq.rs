@@ -576,15 +576,18 @@ impl ff::Field for Fq {
 
     /// Computes the multiplicative inverse of this element,
     /// failing if the element is zero.
+    ///
+    /// This runs a **variable-time** 62-divstep safegcd inversion (the
+    /// crate-internal `modinv62` module): its timing depends on the value
+    /// being inverted, which every inversion call site tolerates. The result
+    /// and the `is_some` flag are identical to the previous (data-oblivious)
+    /// Fermat implementation, which remains expressible as
+    /// `self.pow_vartime([q - 2])`.
     fn invert(&self) -> CtOption<Self> {
-        let tmp = self.pow_vartime([
-            0x8c46eb20ffffffff,
-            0x224698fc0994a8dd,
-            0x0,
-            0x4000000000000000,
-        ]);
-
-        CtOption::new(tmp, !self.ct_eq(&Self::zero()))
+        match super::modinv62::invert::<super::modinv62::FqParams>(&self.0) {
+            Some(limbs) => CtOption::new(Fq(limbs), Choice::from(1)),
+            None => CtOption::new(Self::zero(), Choice::from(0)),
+        }
     }
 
     fn pow_vartime<S: AsRef<[u64]>>(&self, exp: S) -> Self {

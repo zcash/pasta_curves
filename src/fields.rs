@@ -3,6 +3,7 @@
 
 mod fp;
 mod fq;
+mod modinv62;
 
 pub use fp::*;
 pub use fq::*;

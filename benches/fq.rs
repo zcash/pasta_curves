@@ -134,6 +134,10 @@ fn bench_fq_invert(b: &mut Bencher) {
 
     let v: Vec<Fq> = (0..SAMPLES).map(|_| Fq::random(&mut rng)).collect();
 
+    // The unit-test instrumentation is compiled out of bench builds; sanity-
+    // check the production codegen of the divstep inversion once per run.
+    assert_eq!(v[0] * v[0].invert().unwrap(), Fq::ONE);
+
     let mut count = 0;
     b.iter(|| {
         count = (count + 1) % SAMPLES;
