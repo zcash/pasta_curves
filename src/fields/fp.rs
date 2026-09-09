@@ -837,9 +837,11 @@ impl PrimeFieldBits for Fp {
 
 #[cfg(feature = "sqrt-table")]
 lazy_static! {
-    // The perfect hash parameters are found by `squareroottab.sage` in zcash/pasta.
+    // The perfect hash parameters were found by searching the normalized
+    // Montgomery representations of the order-256 subgroup. Construction and
+    // `fp_sqrt_table_hash_is_perfect` exhaustively check their safety invariant.
     #[cfg_attr(docsrs, doc(cfg(feature = "sqrt-table")))]
-    static ref FP_TABLES: SqrtTables<Fp> = SqrtTables::new(0x11BE, 1098);
+    static ref FP_TABLES: SqrtTables<Fp> = SqrtTables::new(0x54C11DB5);
 }
 
 impl SqrtTableHelpers for Fp {
@@ -872,11 +874,8 @@ impl SqrtTableHelpers for Fp {
         rs.square_runtime() // rt
     }
 
-    fn get_lower_32(&self) -> u32 {
-        // TODO: don't reduce, just hash the Montgomery form. (Requires rebuilding perfect hash table.)
-        let tmp = Fp::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
-
-        tmp.0[0] as u32
+    fn sqrt_hash_key(&self) -> u32 {
+        self.0[0] as u32
     }
 }
 
@@ -1061,6 +1060,32 @@ fn test_sqrt() {
     // NB: TWO_INV is standing in as a "random" field element
     let v = (Fp::TWO_INV).square().sqrt().unwrap();
     assert!(v == Fp::TWO_INV || (-v) == Fp::TWO_INV);
+}
+
+#[cfg(feature = "sqrt-table")]
+#[test]
+fn fp_sqrt_table_hash_is_perfect() {
+    FP_TABLES.assert_hash_table_is_consistent();
+}
+
+#[cfg(feature = "sqrt-table")]
+#[test]
+fn fp_sqrt_table_matches_tonelli_shanks() {
+    use rand::SeedableRng;
+
+    let mut rng = rand_xorshift::XorShiftRng::from_seed([0x46; 16]);
+    for _ in 0..1_000 {
+        let input = Fp::random(&mut rng);
+        let table = input.sqrt();
+        let reference = ff::helpers::sqrt_tonelli_shanks(&input, T_MINUS1_OVER2);
+
+        assert_eq!(table.is_some().unwrap_u8(), reference.is_some().unwrap_u8());
+        if bool::from(table.is_some()) {
+            let table = table.unwrap();
+            let reference = reference.unwrap();
+            assert!(table == reference || table == -reference);
+        }
+    }
 }
 
 #[test]
