@@ -17,6 +17,16 @@ and this project adheres to Rust's notion of
   assembly routine that keeps the accumulator in registers for the whole run.
 
 ### Changed
+- `Fp` and `Fq` square-root table lookups now hash their normalized Montgomery
+  representations directly, with generated multiply-and-shift perfect hashes.
+  This removes four Montgomery reductions and four integer remainders per
+  square root, and implements the `get_lower_32` TODO this crate already
+  carried. Measured at 2.3% on `Fp::sqrt` and 1.8% on `Fq::sqrt`, on Apple
+  AArch64 with the assembly backend.
+- Hash-to-curve no longer re-checks the curve equation in release builds after
+  the simplified SWU and isogeny formulas, which produce on-curve points by
+  construction; the debug assertions are retained. About 5% faster for Vesta
+  hash-to-curve on Apple AArch64.
 - `Fp::pow_vartime` and `Fq::pow_vartime` now fuse each run of squarings with
   the following multiplication. The sequence of field operations (and thus
   the variable-time profile, which depends only on the exponent) is
