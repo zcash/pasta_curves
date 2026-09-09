@@ -7,6 +7,16 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 ### Changed
+- Migrated to `ff 0.14`, `group 0.14`, `rand 0.10` and `rand_xorshift 0.5`.
+  This is a BREAKING change to public trait shape:
+  - `Curve::AffineRepr` is now `Curve::Affine`.
+  - The `Affine` associated type moves off `PrimeCurve` and `CofactorCurve`
+    onto the new `group::CurveAffine` supertrait, which also carries
+    `identity`, `generator`, `is_identity` and `to_curve`. Implementors no
+    longer write `PrimeCurveAffine` or `CofactorCurveAffine` impls at all;
+    `group` provides those by blanket impl.
+  - `Group::random` and `Field::random` are replaced by the fallible
+    `try_random`, following `rand`'s move to a failing RNG interface.
 - MSRV is now 1.88.0.
 
 ## [0.5.2] - 2026-07-23
