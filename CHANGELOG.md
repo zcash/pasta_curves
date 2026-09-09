@@ -19,6 +19,33 @@ and this project adheres to Rust's notion of
 ### Changed
 - MSRV is now 1.85.0.
 - Migrated to `ff 0.14`, `group 0.14`, `rand 0.10`.
+- `Fp` and `Fq` square-root table lookups now hash their normalized Montgomery
+  representations directly, with generated multiply-and-shift perfect hashes.
+  This removes four Montgomery reductions and four integer remainders per
+  square root, and implements the `get_lower_32` TODO this crate already
+  carried. Measured at 2.3% on `Fp::sqrt` and 1.8% on `Fq::sqrt`, on Apple
+  AArch64 with the assembly backend.
+- Hash-to-curve no longer re-checks the curve equation in release builds after
+  the simplified SWU and isogeny formulas, which produce on-curve points by
+  construction; the debug assertions are retained. About 5% faster for Vesta
+  hash-to-curve on Apple AArch64.
+- `Fp::pow_vartime` and `Fq::pow_vartime` now fuse each run of squarings with
+  the following multiplication. The sequence of field operations (and thus
+  the variable-time profile, which depends only on the exponent) is
+  unchanged. This applies on every target, not only Apple AArch64; without
+  the assembly backend the fused helper falls back to the portable
+  square-and-multiply loop.
+- The `aarch64-asm` backend now implements runtime multiplication and
+  squaring as inline assembly with register operands instead of calls into
+  the assembly file. This removes the per-operation call and memory
+  round-trip, which speeds up all composed arithmetic, notably curve point
+  operations (`double`, mixed addition) and everything built on them.
+- The `aarch64-asm` Montgomery multiplication no longer captures and compares
+  a provably-zero fifth output limb. Direct `Fp` and `Fq` multiplication
+  benchmarks are approximately 1.7% faster on Apple M4. The bound that makes
+  the limb provably zero needs a canonical `rhs` (which every caller already
+  supplies); the assembly wrappers now debug-assert it, since a violation
+  would yield an incorrect residue rather than a merely non-canonical one.
 
 ## [0.5.2] - 2026-07-23
 ### Added
