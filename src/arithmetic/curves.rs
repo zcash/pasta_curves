@@ -24,7 +24,7 @@ pub trait CurveExt:
     + Default
     + ConditionallySelectable
     + ConstantTimeEq
-    + From<<Self as PrimeCurve>::Affine>
+    + From<<Self as group::Curve>::Affine>
 {
     /// The scalar field of this elliptic curve.
     type ScalarExt: ff::WithSmallOrderMulGroup<3>;
@@ -93,11 +93,11 @@ pub trait CurveAffine:
         Scalar = <Self as CurveAffine>::ScalarExt,
         Curve = <Self as CurveAffine>::CurveExt,
     > + Default
-    + Add<Output = <Self as PrimeCurveAffine>::Curve>
-    + Sub<Output = <Self as PrimeCurveAffine>::Curve>
+    + Add<Output = <Self as group::CurveAffine>::Curve>
+    + Sub<Output = <Self as group::CurveAffine>::Curve>
     + ConditionallySelectable
     + ConstantTimeEq
-    + From<<Self as PrimeCurveAffine>::Curve>
+    + From<<Self as group::CurveAffine>::Curve>
 {
     /// The scalar field of this elliptic curve.
     type ScalarExt: ff::WithSmallOrderMulGroup<3> + Ord;

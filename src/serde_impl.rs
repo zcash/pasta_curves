@@ -137,7 +137,7 @@ mod tests {
     use core::fmt::Debug;
 
     use ff::Field;
-    use group::{prime::PrimeCurveAffine, Curve, Group};
+    use group::{Curve, CurveAffine, Group};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 

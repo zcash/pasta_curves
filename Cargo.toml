@@ -25,7 +25,7 @@ criterion = "0.4"
 # Minimal features, and held in Cargo.lock at a release that builds on the
 # pinned MSRV toolchain.
 proptest = { version = "1", default-features = false, features = ["std"] }
-rand_xorshift = "0.3"
+rand_xorshift = "0.5"
 serde_json = "1.0"
 
 [[bench]]
@@ -52,9 +52,9 @@ harness = false
 required-features = ["glv"]
 
 [dependencies]
-ff = { version = "0.13", default-features = false }
-group = { version = "0.13", default-features = false }
-rand = { version = "0.8", default-features = false }
+ff = { version = "0.14", default-features = false }
+group = { version = "0.14", default-features = false }
+rand = { version = "0.10", default-features = false }
 static_assertions = "1.1.0"
 subtle = { version = "2.3", default-features = false }
 

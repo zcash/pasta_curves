@@ -38,7 +38,7 @@ use alloc::vec::Vec;
 use ff::PrimeField;
 #[cfg(test)]
 use ff::WithSmallOrderMulGroup;
-use group::prime::PrimeCurveAffine;
+use group::CurveAffine as _;
 
 use crate::arithmetic::{mac, sbb, CurveExt};
 use crate::{pallas, vesta};
