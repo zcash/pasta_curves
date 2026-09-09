@@ -24,3 +24,19 @@ jobs:
           # go in `deny`/`warn` (the action places them after the `--`).
           check-args: --all-features --all-targets
           deny: warnings
+
+  clippy-aarch64-asm:
+    name: Clippy (Apple AArch64 assembly backend)
+    timeout-minutes: 30
+    # The gated backend is compiled out everywhere else, so the ubuntu clippy
+    # job above never lints a line of it.
+    runs-on: macos-latest
+    permissions:
+      contents: read # check out the repository
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run clippy
+        run: cargo clippy --all-targets --features aarch64-asm -- -D warnings

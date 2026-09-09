@@ -69,6 +69,38 @@ jobs:
           --target ${{ matrix.target }}
           --no-default-features
 
+  aarch64-asm:
+    name: Apple AArch64 assembly backend
+    # macos-latest is Apple silicon, which is the only target the
+    # `aarch64-asm` feature actually compiles assembly for. The `test`
+    # matrix reaches this code through `--all-features`; this job pins the
+    # feature on its own, so a break is attributed rather than buried in a
+    # combined run, and so the backend's tests are known to have run.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Confirm the runner is Apple AArch64
+        # If GitHub ever moves macos-latest back to x86_64, the feature would
+        # compile out and every check below would pass vacuously.
+        run: test "$(uname -sm)" = "Darwin arm64"
+      - name: Build with the assembly backend
+        run: cargo build --verbose --features aarch64-asm
+      - name: Run tests with the assembly backend
+        run: cargo test --verbose --release --features aarch64-asm
+      - name: Confirm the backend's own tests ran
+        # A cfg-gated test that silently compiles out still reports success,
+        # so assert that both differential tests were actually executed.
+        run: |
+          out=$(cargo test --release --features aarch64-asm -- --exact \
+            fields::fp::aarch64_asm_matches_portable_arithmetic \
+            fields::fq::aarch64_asm_matches_portable_arithmetic)
+          echo "$out"
+          echo "$out" | grep -q '2 passed'
+      - name: Verify working directory is clean
+        run: git diff --exit-code
+
   bitrot:
     name: Bitrot check
     runs-on: ubuntu-latest
@@ -140,6 +172,7 @@ jobs:
       - test
       - test-32-bit
       - no-std
+      - aarch64-asm
       - bitrot
     # `always()` is load-bearing: without it this job is skipped when a
     # needed job fails, and GitHub treats a skipped required check as

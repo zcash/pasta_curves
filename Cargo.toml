@@ -14,6 +14,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/zcash/pasta_curves"
 documentation = "https://docs.rs/pasta_curves"
 readme = "README.md"
+build = "build.rs"
 
 [package.metadata.docs.rs]
 all-features = true
@@ -72,6 +73,7 @@ serde_crate = { version = "1.0.16", optional = true, default-features = false, f
 hex = { version = "0.4", optional = true, default-features = false, features = ["alloc", "serde"] }
 
 [features]
+aarch64-asm = ["dep:cc"]
 default = ["bits", "sqrt-table"]
 alloc = ["group/alloc", "blake2b_simd"]
 bits = ["ff/bits"]
@@ -82,3 +84,7 @@ repr-c = []
 uninline-portable = []
 deferred = []
 serde = ["hex", "serde_crate"]
+
+[build-dependencies]
+# Latest release compatible with the MSRV.
+cc = { version = "1", optional = true }
