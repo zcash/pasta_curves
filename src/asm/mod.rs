@@ -91,6 +91,9 @@
 
 use core::arch::asm;
 
+#[cfg(test)]
+mod tests;
+
 /// Four little-endian 64-bit limbs, least significant first: a field element
 /// (in Montgomery form, or canonical after [`from_mont`]) or a modulus.
 pub type Limbs = [u64; 4];
