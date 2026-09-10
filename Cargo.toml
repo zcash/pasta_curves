@@ -75,6 +75,10 @@ zeroize = { version = "1", optional = true, default-features = false }
 serde_crate = { version = "1.0.16", optional = true, default-features = false, features = ["alloc"], package = "serde" }
 hex = { version = "0.4", optional = true, default-features = false, features = ["alloc", "serde"] }
 
+[build-dependencies]
+# Assembles `src/asm/pasta_mul-armv8.S` on Apple AArch64; a no-op elsewhere.
+cc = "1"
+
 [features]
 default = ["bits", "sqrt-table"]
 alloc = ["group/alloc", "blake2b_simd"]

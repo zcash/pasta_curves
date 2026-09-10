@@ -21,6 +21,9 @@ mod macros;
 mod curves;
 mod fields;
 
+#[cfg(all(target_arch = "aarch64", target_vendor = "apple"))]
+mod asm;
+
 pub mod arithmetic;
 #[cfg(feature = "deferred")]
 #[cfg_attr(docsrs, doc(cfg(feature = "deferred")))]
