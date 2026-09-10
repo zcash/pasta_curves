@@ -1,0 +1,21 @@
+{
+    "export_file_path": "work/export.ndjson",
+    "use_stdin": false,
+    "permitted_axioms": [
+        "propext",
+        "Classical.choice",
+        "Quot.sound",
+        "sorryAx",
+        "Lean.trustCompiler",
+        "Lean.ofReduceBool",
+        "Lean.ofReduceNat"
+    ],
+    "unpermitted_axiom_hard_error": true,
+    "num_threads": 4,
+    "nat_extension": true,
+    "string_extension": true,
+    "pp_declars": [],
+    "unknown_pp_declar_hard_error": true,
+    "pp_to_stdout": true,
+    "print_success_message": true
+}
