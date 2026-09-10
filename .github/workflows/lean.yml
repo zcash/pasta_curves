@@ -1,0 +1,76 @@
+name: Lean
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build the formalization (lake)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Installs the toolchain from `lean/lean-toolchain`, fetches the Mathlib cache, and
+      # runs `lake build`; warnings fail the build.
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1.5.0
+        with:
+          lake-package-directory: lean
+          build-args: --wfail
+
+  transcription:
+    name: Transcription and proof skeletons are current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Regenerates the Lean transcription and the vectors from the crate's own assembly and
+      # inline blocks, fails if they differ from the committed files, and checks that the
+      # generated parts of the proofs are the current skeletons.
+      - name: Regenerate and compare
+        run: lean/scripts/check.sh
+
+  # Re-checks the library with nanoda, an independent reimplementation of the Lean kernel
+  # (see lean/scripts/check_nanoda.sh). A separate job so `build` reports quickly; this one
+  # starts only after a green build, and its `lake build` restores the build cache that job
+  # saved, so it verifies rather than rebuilds.
+  nanoda:
+    name: An independent kernel accepts the build
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1.5.0
+        with:
+          lake-package-directory: lean
+      - name: Build lean4export at the pinned toolchain's tag
+        working-directory: lean
+        run: |
+          TOOLCHAIN=$(cat lean-toolchain)
+          git clone --depth 1 --branch "${TOOLCHAIN##*:}" \
+            https://github.com/leanprover/lean4export work/lean4export
+          cd work/lean4export && lake build
+      - name: Build nanoda at the pinned revision
+        working-directory: lean
+        run: |
+          git clone --depth 1 \
+            --revision=418320295890faed83a96fd97907b12a3b6728c2 \
+            https://github.com/ammkrn/nanoda_lib work/nanoda_lib
+          cargo build --release --manifest-path work/nanoda_lib/Cargo.toml
+      - name: Export the library and re-check it
+        working-directory: lean
+        run: |
+          scripts/check_nanoda.sh work/lean4export/.lake/build/bin/lean4export \
+            work/nanoda_lib/target/release/nanoda_bin

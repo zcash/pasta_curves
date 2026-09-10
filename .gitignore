@@ -3,3 +3,4 @@
 .vscode
 **/*.html
 /lean/.lake
+/lean/work
