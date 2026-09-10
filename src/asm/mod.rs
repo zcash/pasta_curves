@@ -37,6 +37,11 @@ mod aarch64;
 #[cfg(any(target_arch = "x86_64", doc))]
 mod x86_64;
 
+// The tests use std only to catch the debug assertions they check, so a release test build
+// stays free of it.
+#[cfg(all(test, debug_assertions))]
+extern crate std;
+
 #[cfg(test)]
 mod tests;
 

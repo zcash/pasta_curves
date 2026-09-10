@@ -310,3 +310,110 @@ fn from_mont_known_answers() {
         ]
     );
 }
+
+/// The reference vectors: outputs of Semolina's `mul_mont_pasta`, `sqr_mont_pasta`, and
+/// `from_mont_pasta` as vendored by pasta_curves at `8ad85e9fab7929f6236960e472f432a4bd9ccd74`,
+/// recorded on an Apple M-series machine. One vector per line: the routine (`MUL`, `SQR`,
+/// `FROM`), the field (`Fp`, `Fq`), the operands, and the output, each 256-bit value as 64
+/// big-endian hex digits.
+const VECTORS: &str = include_str!("../../test-vectors/pasta_mul-armv8-vectors.txt");
+
+/// A 256-bit value written as 64 big-endian hex digits, as little-endian limbs.
+fn parse_limbs(hex: &str) -> Limbs {
+    assert_eq!(hex.len(), 64);
+    let limb = |i: usize| u64::from_str_radix(&hex[16 * (3 - i)..16 * (4 - i)], 16).unwrap();
+    [limb(0), limb(1), limb(2), limb(3)]
+}
+
+/// A vector line: the routine, the field, the first operand, the second operand of a
+/// multiplication, and the recorded output.
+fn parse_vector(line: &str) -> (&str, &'static Field, Limbs, Option<Limbs>, Limbs) {
+    let mut words = line.split_whitespace();
+    let op = words.next().unwrap();
+    let f = match words.next().unwrap() {
+        "Fp" => &FP,
+        "Fq" => &FQ,
+        key => panic!("unknown field {key}"),
+    };
+    let first = parse_limbs(words.next().unwrap());
+    let second = parse_limbs(words.next().unwrap());
+    let third = words.next().map(parse_limbs);
+    assert!(words.next().is_none(), "{line}");
+    match third {
+        Some(expected) => (op, f, first, Some(second), expected),
+        None => (op, f, first, None, second),
+    }
+}
+
+/// Whether a vector's operands are inside its routine's contract: for the multiplication, a
+/// canonical left operand, or a canonical right operand whose limbs 1 to 3 are at most
+/// `2^64 - 3` (the contract that the proofs establish); for the squaring, a canonical input;
+/// for the conversion, any input.
+fn in_contract(op: &str, f: &Field, first: &Limbs, second: Option<&Limbs>) -> bool {
+    match op {
+        "MUL" => {
+            let rhs = second.unwrap();
+            super::is_canonical(first, &f.modulus)
+                || (super::is_canonical(rhs, &f.modulus)
+                    && rhs[1..].iter().all(|&limb| limb <= u64::MAX - 2))
+        }
+        "SQR" => super::is_canonical(first, &f.modulus),
+        _ => true,
+    }
+}
+
+/// Every reference vector whose operands are inside its routine's contract is reproduced by
+/// the crate's routines, which transcribe the routines that produced the vectors. The 180
+/// vectors outside the contracts, multiplications with unreduced operands, are not run: the
+/// block drops the fifth limb of its final candidate, which can change the result there (it
+/// agrees with the routine on 136 of them and differs on 44, all with both operands
+/// unreduced). In a debug build the test checks instead that the block's assertion of its
+/// contract fires on each of them. Where a panic cannot be caught, it skips them, with one
+/// warning.
+#[test]
+fn hardware_vectors_match() {
+    let mut checked = [0usize; 3];
+    let mut outside = 0usize;
+    for line in VECTORS.lines().filter(|line| !line.is_empty()) {
+        let (op, f, first, second, expected) = parse_vector(line);
+        if !in_contract(op, f, &first, second.as_ref()) {
+            assert_eq!(op, "MUL", "{line}");
+            outside += 1;
+            // The assertion itself needs no std. Catching its panic needs both std and a
+            // panic strategy that unwinds.
+            #[cfg(all(debug_assertions, panic = "unwind"))]
+            {
+                let rhs = second.unwrap();
+                let panic = std::panic::catch_unwind(|| mul(&first, &rhs, &f.modulus, f.inv))
+                    .expect_err("the debug assertion of mul's contract did not fire");
+                let message = panic
+                    .downcast_ref::<&str>()
+                    .expect("the assertion's message is a string literal");
+                assert!(
+                    message.contains("requires a canonical lhs"),
+                    "{line}: {message}"
+                );
+            }
+            continue;
+        }
+        let actual = match op {
+            "MUL" => mul(&first, &second.unwrap(), &f.modulus, f.inv),
+            "SQR" => square(&first, &f.modulus, f.inv),
+            "FROM" => from_mont(&first, &f.modulus, f.inv),
+            _ => panic!("unknown routine {op}"),
+        };
+        assert_eq!(actual, expected, "{line}");
+        checked[match op {
+            "MUL" => 0,
+            "SQR" => 1,
+            _ => 2,
+        }] += 1;
+    }
+    assert_eq!(checked, [806, 32, 34]);
+    assert_eq!(outside, 180);
+    #[cfg(all(debug_assertions, not(panic = "unwind")))]
+    std::eprintln!(
+        "warning: the block's assertion of its contract was not checked to fire on the \
+         {outside} vectors outside it, since panics cannot be caught here"
+    );
+}
