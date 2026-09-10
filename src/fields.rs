@@ -19,7 +19,7 @@ fn u64_to_u32(limbs: &[u64]) -> alloc::vec::Vec<u32> {
 #[cfg(feature = "gpu")]
 #[test]
 fn test_u64_to_u32() {
-    use rand::{RngCore, SeedableRng};
+    use rand::{Rng, SeedableRng};
     use rand_xorshift::XorShiftRng;
 
     let mut rng = XorShiftRng::from_seed([0; 16]);
