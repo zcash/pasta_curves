@@ -6,6 +6,7 @@ import PastaAArch64Asm.Semantics
 import PastaAArch64Asm.Transcription
 import PastaAArch64Asm.Compositions
 import PastaAArch64Asm.Vectors
+import PastaAArch64Asm.Spec
 
 /-!
 # The crate's AArch64 Pasta Montgomery routines, formalized
