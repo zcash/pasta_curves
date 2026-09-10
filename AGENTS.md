@@ -51,6 +51,15 @@ The crate is dual-licensed `MIT OR Apache-2.0`. Unless stated otherwise, any con
 intentionally submitted for inclusion is dual-licensed as above, with no additional
 terms. See `README.md`, `LICENSE-MIT`, and `LICENSE-APACHE`.
 
+**Check the license of anything you bring in before building on it.** Before adding a
+dependency, vendoring a file, or transcribing, porting, or generating code from someone
+else's work, read that artifact's own license: its file header, its `LICENSE`, its manifest's
+license field. A statement in a repository's README that all its code is dual-licensed does
+not cover files that repository vendored from elsewhere. A port, a transcription, generated
+code, or comments quoting a source are derivative works and inherit the source's license.
+Anything not compatible with the crate's licensing must be raised with the maintainers before
+work starts. For Rust dependencies, `cargo license --avoid-dev-deps` lists what ships.
+
 ### AI Disclosure
 
 If AI tools were used in preparing a commit, the contributor MUST include a
@@ -82,6 +91,43 @@ Co-Authored-By: Claude <noreply@anthropic.com>
   indexing, or early returns into arithmetic that may handle secret scalars or field
   elements. Return `CtOption` for fallible constant-time operations rather than `Option`
   or panicking.
+
+## The assembly backend (`src/asm`)
+
+The `asm` module is the Apple AArch64 assembly backend for the Pasta field arithmetic:
+Montgomery multiplication, squaring, a fused repeated-squaring chain, and conversion out of
+Montgomery form, as inline `asm!` blocks and one assembled `.S` file. It is the one part of
+the crate that allows unsafe code. Its priorities are those of the crate: **correctness,
+constant-time behaviour, and performance**, in that order.
+
+The routines are transcriptions of Supranational's Semolina v0.1.4 (see `src/asm/README.md`).
+The instruction streams are the object of machine-checked correctness proofs, so a change to
+an instruction is a change to a specification: keep the transcription, its documentation, and
+the proofs in step, and do not "improve" the assembly in passing.
+
+The module is compiled only on `target_arch = "aarch64"` with `target_vendor = "apple"`,
+where the build script assembles `src/asm/pasta_mul-armv8.S` with the `cc` crate. On that
+target, beside the crate's usual checks:
+
+```sh
+cargo test asm::                # the backend's tests, with the debug assertions they check
+cargo test --release asm::      # the same tests on the release code
+```
+
+A cfg-gated test that compiles out still reports success, so CI counts the `#[test]`
+functions under `src/asm` and requires the run of the module's tests to report exactly that
+many passed, in both profiles. Every target the backend compiles on has a std to link, so CI
+also builds `core` from source on a nightly toolchain instead of using the sysroot
+(`cargo +nightly build --release --no-default-features -Z build-std=core,compiler_builtins
+--target aarch64-apple-darwin`), which proves that nothing in the backend reaches for std.
+
+- **Preserve constant-time behaviour in the backend.** No secret-dependent branches or memory
+  accesses in the blocks or the `.S`; conditional reductions use `csel` after a full-width
+  subtraction.
+- **Operand contracts are stated on the entry points and checked by `debug_assert!`.** A
+  change to a contract needs a change to the proofs that establish it.
+- **The `.S` symbols keep their `pasta_curves_` prefix**, so that the file stays identical to
+  the one the transcription and proofs were made from; renaming them is a coordinated change.
 
 ## Build & Test Commands
 
