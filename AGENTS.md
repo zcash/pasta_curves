@@ -95,19 +95,19 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 ## The assembly backend (`src/asm`)
 
 The `asm` module is the Apple AArch64 assembly backend for the Pasta field arithmetic:
-Montgomery multiplication, squaring, a fused repeated-squaring chain, and conversion out of
-Montgomery form, as inline `asm!` blocks and one assembled `.S` file. It is the one part of
-the crate that allows unsafe code. Its priorities are those of the crate: **correctness,
-constant-time behaviour, and performance**, in that order.
+Montgomery multiplication and squaring as inline `asm!` blocks, and a repeated-squaring chain
+and conversion out of Montgomery form composed from them. It is the one part of the crate that
+allows unsafe code. Its priorities are those of the crate: **correctness, constant-time
+behaviour, and performance**, in that order.
 
 The routines are transcriptions of Supranational's Semolina v0.1.4 (see `src/asm/README.md`).
 The instruction streams are the object of machine-checked correctness proofs, so a change to
 an instruction is a change to a specification: keep the transcription, its documentation, and
 the proofs in step, and do not "improve" the assembly in passing.
 
-The module is compiled only on `target_arch = "aarch64"` with `target_vendor = "apple"`,
-where the build script assembles `src/asm/pasta_mul-armv8.S` with the `cc` crate. On that
-target, beside the crate's usual checks:
+The module is compiled only on `target_arch = "aarch64"` with `target_vendor = "apple"`;
+elsewhere the `asm` module is absent. Nothing is assembled at build time, so no C toolchain is
+needed. On that target, beside the crate's usual checks:
 
 ```sh
 cargo test asm::                # the backend's tests, with the debug assertions they check
@@ -122,12 +122,10 @@ also builds `core` from source on a nightly toolchain instead of using the sysro
 --target aarch64-apple-darwin`), which proves that nothing in the backend reaches for std.
 
 - **Preserve constant-time behaviour in the backend.** No secret-dependent branches or memory
-  accesses in the blocks or the `.S`; conditional reductions use `csel` after a full-width
-  subtraction.
+  accesses in the blocks; the repeated-squaring loop branches only on its public count.
+  Conditional reductions use `csel` after a full-width subtraction.
 - **Operand contracts are stated on the entry points and checked by `debug_assert!`.** A
   change to a contract needs a change to the proofs that establish it.
-- **The `.S` symbols keep their `pasta_curves_` prefix**, so that the file stays identical to
-  the one the transcription and proofs were made from; renaming them is a coordinated change.
 
 ## Build & Test Commands
 
