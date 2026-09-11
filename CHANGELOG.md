@@ -6,6 +6,11 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `CurveExt::batch_mul_same_scalar_vartime`, for component-wise
+  multiplication of affine points by the same public scalar. Pallas and Vesta
+  use batched GLV multiplication when the `glv` feature is enabled.
+
 ### Changed
 - Migrated to `ff 0.14`, `group 0.14`, `rand 0.10` and `rand_xorshift 0.5`.
   This is a BREAKING change to public trait shape:
