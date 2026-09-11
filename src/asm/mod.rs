@@ -30,42 +30,31 @@
 //! `modulus[0]`, `modulus[1]`, and `inv` vary between Fp and Fq, so a single
 //! implementation serves both fields.
 //!
-//! Canonicity contract (same as the assembly): `rhs` in `mul` and the input
-//! of `square` must be canonical (below the modulus). `lhs` in `mul` may be
-//! an unreduced 256-bit value **only if every `rhs` limb is at most
-//! `2^64 - 4`**; with both operands canonical the routines are always safe.
-//! Outputs are canonical.
+//! Operand contract of `mul`: either `lhs` is canonical (below the modulus)
+//! and `rhs` is any four-limb value, or `rhs` is canonical with each of its
+//! limbs 1 to 3 at most `2^64 - 3` and `lhs` is any four-limb value. This is
+//! the contract that the machine-checked proofs in `lean/` establish
+//! (`mulMont_spec_of_lhs_lt` and `mulMont_spec_of_rhs_lt`). The input of
+//! `square` must be canonical, a contract that the proofs do not cover. With
+//! both operands canonical the routines are always safe. Outputs are
+//! canonical. `mul` and `square` debug-assert their contracts, so that a
+//! caller outside them fails loudly under test instead of silently.
 //!
-//! The `lhs` caveat exists because `mul` keeps a five-limb accumulator (one
-//! word fewer than textbook CIOS). The only carry chain that can wrap is the
-//! one folding in the high cross-products: its tail computes
+//! Two things can go wrong outside the contract. First, `mul` keeps a
+//! five-limb accumulator (one word fewer than textbook CIOS), and the carry
+//! chain folding in the high cross-products can wrap: its tail computes
 //! `acc4 + high(lhs[3] * rhs_limb) + carry` with `acc4 <= 2`, which reaches
-//! `2^64` only when `high(lhs[3] * rhs_limb) >= 2^64 - 3`, i.e. when
-//! `lhs[3]` and some `rhs` limb are both within 3 of `2^64`. A canonical
-//! `lhs` has `lhs[3] <= 2^62`, and any `rhs` limb `<= 2^64 - 4` caps the
-//! high product at `2^64 - 5`, so either condition alone rules the wrap out.
-//! No current caller passes an unreduced `lhs`: `from_u512`, the one place
-//! that produces unreduced values, deliberately uses the portable
-//! multiplication instead. The
-//! `aarch64_asm_mul_unreduced_lhs_matches_portable` tests in `fp.rs` and
-//! `fq.rs` still pin the unreduced-`lhs` behaviour against the `R2`/`R3`
-//! constants in case a future caller relies on it.
-//!
-//! The canonical-`rhs` requirement and the accumulator no-wrap requirement
-//! are separate. Canonical `rhs` gives `rhs < p`; the per-limb bound above
-//! does not imply this. If `m < R` is the Montgomery cancellation factor and
-//! `lhs < R` is any four-limb value, the final candidate satisfies
-//! `(lhs * rhs + m * p) / R < 2p < R`. The separate per-limb condition only
-//! ensures that the implementation computes this candidate without an
-//! intermediate five-limb addition wrapping.
-//!
-//! Because `mul` relies on that bound to omit a fifth candidate limb, a
-//! non-canonical `rhs` is no longer merely tolerated with a non-canonical
-//! (but congruent) output: for `rhs >= R - p` the candidate can reach `R`,
-//! and the dropped limb makes the result an **incorrect residue** that still
-//! looks canonical. Every in-crate caller supplies a canonical `rhs` by
-//! construction; `mul` and `square` debug-assert the precondition so a future
-//! caller that breaks it fails loudly under test instead of silently.
+//! `2^64` only when `high(lhs[3] * rhs_limb) >= 2^64 - 3`. A canonical `lhs`
+//! has `lhs[3] <= 2^62`, and a `rhs` limb at most `2^64 - 3` caps the high
+//! product at `2^64 - 4`, so either condition alone rules the wrap out.
+//! Whether the chain can wrap with a `rhs` limb of `2^64 - 2` is not settled
+//! by the proofs. Second, `mul` keeps only four limbs of its final candidate
+//! `(lhs * rhs + m * p) / R`, where `m < R` is the Montgomery cancellation
+//! factor. The candidate is below `2p < R` whenever `lhs * rhs < R * p`, which
+//! a canonical `lhs` (with `rhs < R`) or a canonical `rhs` (with `lhs < R`)
+//! gives, so under either contract the dropped fifth limb is zero. With both
+//! operands unreduced the candidate can reach `R`, and the result is then an
+//! incorrect residue that still looks canonical.
 //!
 //! There are no branches and no memory accesses inside the blocks, and the
 //! repeated-squaring loop branches only on its public count, so the code is
@@ -106,16 +95,18 @@ fn is_canonical(value: &Limbs, modulus: &Limbs) -> bool {
     false
 }
 
-/// Multiplies two Montgomery residues for a Pasta modulus. `rhs` must be
-/// canonical (debug-asserted; a violation yields an incorrect residue, see
-/// the crate docs). `lhs` may be unreduced only if every `rhs` limb is at
-/// most `2^64 - 4`; see the crate docs for the carry-chain bound behind
-/// this.
+/// Multiplies two Montgomery residues for a Pasta modulus. Either `lhs` is
+/// canonical and `rhs` is any four-limb value, or `rhs` is canonical with
+/// limbs 1 to 3 at most `2^64 - 3` and `lhs` is any four-limb value. The
+/// contract is debug-asserted, and the module docs say what goes wrong outside
+/// it.
 #[inline(always)]
 pub fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     debug_assert!(
-        is_canonical(rhs, modulus),
-        "aarch64_asm::mul requires a canonical rhs"
+        is_canonical(lhs, modulus)
+            || (is_canonical(rhs, modulus) && rhs[1..].iter().all(|&limb| limb <= u64::MAX - 2)),
+        "aarch64_asm::mul requires a canonical lhs, or a canonical rhs with limbs 1 to 3 at most \
+         2^64 - 3"
     );
     let (o0, o1, o2, o3): (u64, u64, u64, u64);
     // SAFETY: straight-line register-only arithmetic; no memory access, no
@@ -540,8 +531,9 @@ pub fn sqr_n_mul(value: &Limbs, count: usize, rhs: &Limbs, modulus: &Limbs, inv:
 
 /// Converts a Montgomery residue into its canonical integer,
 /// `value * 2^-256 mod p`, as a Montgomery multiplication by one. Any
-/// four-limb `value` is accepted: `1` is canonical, and its limbs satisfy the
-/// bound that the crate docs require of `rhs` for an unreduced `lhs`.
+/// four-limb `value` is accepted: `1` is canonical with limbs 1 to 3 zero, so
+/// it is a right operand inside the multiplication's contract for any left
+/// operand (`mulMont_spec_of_rhs_lt` in `lean/`).
 #[inline]
 pub fn from_mont(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     mul(value, &[1, 0, 0, 0], modulus, inv)
