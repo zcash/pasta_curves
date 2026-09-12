@@ -13,7 +13,6 @@ rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/zcash/pasta_curves"
 documentation = "https://docs.rs/pasta_curves"
-readme = "README.md"
 
 [package.metadata.docs.rs]
 all-features = true
