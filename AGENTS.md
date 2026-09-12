@@ -184,6 +184,9 @@ cargo test --release --all-features
 cargo test --release --no-default-features
 ```
 
+`scripts/ci.sh` runs every check CI runs, these, the assembly backend's, and the formalization's,
+in one go; a check whose tool is not installed is skipped with a note on how to install it.
+
 ### Toolchain note
 
 `rust-toolchain.toml` pins the MSRV toolchain (currently **1.63.0**), whose old codegen

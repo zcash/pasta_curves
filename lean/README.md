@@ -53,7 +53,8 @@ scripts/check_nanoda.sh               re-check the build with an independent ker
 ```
 
 Namespace `PastaAArch64Asm`, mirroring the package. The package is built with Lake from
-this directory (`lake build`), with Mathlib pinned in `lake-manifest.json`.
+this directory (`lake build`), with Mathlib pinned in `lake-manifest.json`. `scripts/ci.sh` at
+the repository root runs these checks together with the crate's.
 
 ## Value representation
 
