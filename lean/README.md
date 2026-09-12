@@ -118,6 +118,12 @@ chain still folded in the hypothesis, keeps every clear cheap. With the rounds f
 the round lemma is proved once over a 33-instruction body and applied three times, and no
 proof needs more than the default budget.
 
+The squaring block's proof keeps the flat chain: its four cancellation steps thread a computed
+quotient rather than a loaded limb, so they are not factored into a round. The arithmetic that
+would otherwise run over the whole context is in three lemmas over free variables (the
+eight-limb schoolbook identity, one cancellation step, applied four times, and the final
+conditional subtraction), so every `omega` runs in a small context.
+
 ## Theorems
 
 With `p = p0 + 2^64 p1 + 2^192 · 2^62` (the modulus limbs are `[p0, p1, 0, 2^62]`, as the
@@ -142,21 +148,23 @@ code assumes) and `inv · p0 ≡ −1 (mod 2^64)`:
   its right operand, a canonical operand with limbs 1 to 3 zero, so for every four-limb
   `value` the output is below `p` and `output · 2^256 ≡ value (mod p)`; the theorem is
   `mulMont_spec_of_rhs_lt` at `1`.
-* `sqrMont_spec` (to prove): if `a < p`, the squaring block's output is below `p` and
-  `output · 2^256 ≡ a² (mod p)`. The block is transcribed and checked against the vectors.
-* `sqrNMul`, the crate's `sqr_n_mul` as `sqrN` (the squaring block `count` times) then the
-  multiplication block: not yet stated; it needs `sqrMont_spec`.
+* `sqrMont_spec` (proved): if `a < p`, the squaring block's output is below `p` and
+  `output · 2^256 ≡ a² (mod p)`. The block forms the eight-limb square exactly, reduces its
+  low half by four Montgomery cancellation steps, adds the high half, and reduces once
+  conditionally. The candidate is below `2 · p`, so the carry the block drops there is `0`.
+* `sqrN_spec` and `sqrNMul_spec` (proved): the crate's `sqr_n_mul` as `sqrN` (the squaring
+  block `count` times) then the multiplication block. For `a < p` the chain's value stays
+  below `p`, with `output · 2^(256 (2^count − 1)) ≡ a^(2^count) (mod p)` after the squarings,
+  so the multiplication is under its first contract; the composition's output is below `p`
+  with `output · 2^(256 · 2^count) ≡ a^(2^count) · rhs (mod p)` for any four-limb `rhs`.
 
 ## Status
 
 Present: the semantics, the generator, the generated transcription of the two inline blocks,
 the compositions, the vectors, the CI checks (regeneration, skeletons, and the nanoda
-re-check), and the proofs of the multiplication block with its two operand contracts and of
-the conversion as that block at `1`.
+re-check), and the proofs of both blocks and both compositions: the multiplication block
+with its two operand contracts, the conversion as that block at `1`, the squaring block for a
+canonical input, and the repeated-squaring chain with its final multiplication.
 
-Remaining, in order:
-
-1. `sqrMont`: the cross-term schoolbook, the doubling, and the "can't overflow" claims; then
-   `sqrNMul` as the composition.
-2. The instantiation at the crate's two moduli and `inv` constants, as theorems about the
-   Pallas and Vesta fields rather than about a modulus of the assumed shape.
+Remaining: the instantiation at the crate's two moduli and `inv` constants, as theorems about
+the Pallas and Vesta fields rather than about a modulus of the assumed shape.
