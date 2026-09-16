@@ -23,7 +23,7 @@ jobs:
       fail-fast: false
       matrix:
         # macos-latest is Apple silicon.
-        os: [ubuntu-24.04-arm, macos-latest]
+        os: [ubuntu-24.04-arm, macos-latest, windows-11-arm]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,6 +36,7 @@ jobs:
       - name: Test the backend (debug, with the debug assertions)
         run: cargo test --verbose asm::
       - name: Confirm every test of the backend ran, in both profiles
+        shell: bash
         # A cfg-gated test that silently compiles out still reports success,
         # so count the `#[test]` functions under `src/asm` and require the
         # run of the module's tests to report exactly that many passed. A test
