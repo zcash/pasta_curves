@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Run the checks CI runs, in one go: the crate's checks (.github/workflows/ci.yml and
-# lints-stable.yml), the assembly backend's (asm.yml), the formalization's (lean.yml), and the
-# workflow audit (zizmor.yml). Intended to be run interactively from a checkout: a check whose
-# tool is not installed is skipped with a note on how to install it, and the first failing
-# check stops the run. The checks that need another host (the 32-bit tests, the book, code
-# coverage) are not mirrored.
+# lints-stable.yml), the assembly backend's (asm.yml), the formalization's (lean.yml), the
+# script linters (lint.yml), and the workflow audit (zizmor.yml). Intended to be run
+# interactively from a checkout: a check whose tool is not installed is skipped with a note on
+# how to install it, and the first failing check stops the run. The checks that need another
+# host (the 32-bit tests, the book, code coverage) are not mirrored.
 #
 # Usage, from anywhere in the checkout: scripts/ci.sh
 # LAKE selects the lake that builds the formalization (default: `lake` from PATH, which
@@ -109,6 +109,26 @@ else
   skip "zizmor" \
     "  install it with one of: cargo install zizmor; brew install zizmor; pipx install zizmor
   (https://docs.zizmor.sh/)"
+fi
+
+# ---- The script linters (lint.yml) ----
+step "shellcheck"
+if command -v shellcheck >/dev/null; then
+  shellcheck scripts/*.sh lean/scripts/*.sh book/edithtml.sh
+else
+  skip "shellcheck" \
+    "  install it with one of: brew install shellcheck; apt-get install shellcheck
+  (https://github.com/koalaman/shellcheck)"
+fi
+
+step "ruff"
+if command -v ruff >/dev/null; then
+  ruff check .
+  ruff format --check .
+else
+  skip "ruff" \
+    "  install it with one of: pipx install ruff; brew install ruff
+  (https://docs.astral.sh/ruff/)"
 fi
 
 # ---- The formalization (lean.yml) ----
