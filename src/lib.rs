@@ -65,6 +65,7 @@ fn test_endo_consistency() {
 fn backend_name() {
     // The backend's condition, restated: the target, and the absence of the opt-out flag.
     let supported = cfg!(all(
+        feature = "asm",
         not(pasta_curves_noasm),
         any(
             target_arch = "aarch64",
@@ -85,6 +86,7 @@ fn backend_name() {
     assert_eq!(BACKEND, expected);
 }
 
+#[cfg(feature = "asm")]
 #[cfg(test)]
 mod asm_gate_tests {
     use crate::BACKEND;

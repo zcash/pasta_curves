@@ -34,7 +34,7 @@ jobs:
         # compile out and every check below would pass vacuously.
         run: test "$(uname -sm)" = "Darwin arm64"
       - name: Test the backend (debug, with the debug assertions)
-        run: cargo test --verbose 'asm::'
+        run: cargo test --verbose --features asm 'asm::'
       - name: Confirm every test of the backend ran, in both profiles
         shell: bash
         # A cfg-gated test that silently compiles out still reports success,
@@ -46,7 +46,7 @@ jobs:
           echo "tests in the backend: $expected"
           test "$expected" -gt 0
           for profile in "" --release; do
-            out=$(cargo test $profile asm:: 2>&1)
+            out=$(cargo test $profile --features asm asm:: 2>&1)
             echo "$out"
             echo "$out" | grep -q "^test result: ok. $expected passed"
           done

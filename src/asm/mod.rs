@@ -12,7 +12,8 @@
 //! # Availability
 //!
 //! The module provides a backend for `target_arch = "aarch64"`, and for
-//! `target_arch = "x86_64"` with 64-bit pointers. On x86-64, `add`, `sub`, and
+//! `target_arch = "x86_64"` with 64-bit pointers, when the `asm` feature flag
+//! is enabled. On x86-64, `add`, `sub`, and
 //! `from_mont` are register-only, while `mul`, `square`, and the routines built
 //! on them read limbs through pointers; the x32 ABI's 32-bit pointers would
 //! break them (see the x86-64 module's docs for why registers alone cannot
@@ -57,9 +58,9 @@
 
 /// Declares items, a local binding, or a block only where this module has a backend.
 ///
-/// The expansion carries the target and absence of `--cfg pasta_curves_noasm`,
-/// so code that uses the backend does not repeat the backend condition. Write an
-/// extra pair of braces to cfg-gate arbitrary statements in a block:
+/// The expansion carries the target, presence of the `asm` feature, and absence of
+/// `--cfg pasta_curves_noasm`, so code that uses the backend does not repeat the backend
+/// condition. Write an extra pair of braces to cfg-gate arbitrary statements in a block:
 /// `if_asm_supported! {{ ... }}`. A binding used after the macro must instead be
 /// written without the extra braces: `if_asm_supported! { let value = expression; }`.
 macro_rules! if_asm_supported {
@@ -68,6 +69,7 @@ macro_rules! if_asm_supported {
         // 64-bit pointers; and Apple x86-64 targets reserve `rbp`, and so have fewer available
         // registers than the squaring blocks need.
         #[cfg(all(
+            feature = "asm",
             not(pasta_curves_noasm),
             any(
                 target_arch = "aarch64",
@@ -96,6 +98,7 @@ macro_rules! if_asm_supported {
 macro_rules! if_asm_unsupported {
     (@cfg $($tokens:tt)+) => {
         #[cfg(not(all(
+            feature = "asm",
             not(pasta_curves_noasm),
             any(
                 target_arch = "aarch64",

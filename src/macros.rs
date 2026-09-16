@@ -1,3 +1,13 @@
+/// A nicer wrapper around the asm-gating macros.
+///
+/// The result can be used as a function's tail expression or assigned to a local binding.
+macro_rules! if_asm {
+    ($asm:expr, $portable:expr $(,)?) => {{
+        if_asm_supported! {{ $asm }}
+        if_asm_unsupported! {{ $portable }}
+    }};
+}
+
 macro_rules! impl_add_binop_specify_output {
     ($lhs:ident, $rhs:ident, $output:ident) => {
         impl<'b> ::core::ops::Add<&'b $rhs> for $lhs {

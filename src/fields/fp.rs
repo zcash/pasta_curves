@@ -146,7 +146,7 @@ impl Sub<&Fp> for &Fp {
 
     #[inline]
     fn sub(self, rhs: &Fp) -> Fp {
-        self.sub(rhs)
+        self.sub_runtime(rhs)
     }
 }
 
@@ -155,7 +155,7 @@ impl Add<&Fp> for &Fp {
 
     #[inline]
     fn add(self, rhs: &Fp) -> Fp {
-        self.add(rhs)
+        self.add_runtime(rhs)
     }
 }
 
@@ -164,7 +164,7 @@ impl Mul<&Fp> for &Fp {
 
     #[inline]
     fn mul(self, rhs: &Fp) -> Fp {
-        self.mul(rhs)
+        self.mul_runtime(rhs)
     }
 }
 
@@ -297,8 +297,14 @@ impl Fp {
         // constant `R2` or `R3`.
         let d0 = Fp([limbs[0], limbs[1], limbs[2], limbs[3]]);
         let d1 = Fp([limbs[4], limbs[5], limbs[6], limbs[7]]);
-        // Convert to Montgomery form
-        d0 * R2 + d1 * R3
+        // Convert to Montgomery form. `d0` and `d1` are unreduced, so use the
+        // portable multiplication: its classical 8-limb reduction is valid for
+        // any 256-bit value times a canonical constant, with no precondition
+        // on the constant's limbs. The inline-assembly `mul` tolerates an
+        // unreduced lhs only while every rhs limb stays at most `2^64 - 3`
+        // (see `crate::asm::mul`); this cold path is not worth carrying that
+        // coupling, and hashing dominates its callers anyway.
+        Fp::mul_portable(&d0, &R2).add(&Fp::mul_portable(&d1, &R3))
     }
 
     /// Converts from an integer represented in little endian
@@ -308,8 +314,23 @@ impl Fp {
     }
 
     /// Squares this element.
-    #[cfg_attr(not(feature = "uninline-portable"), inline)]
+    #[inline]
     pub const fn square(&self) -> Fp {
+        // If `core::intrinsics::const_eval_select` (or equiv) is ever stablilised, we
+        // could use it here to switch in the assembly backend at runtime.
+        self.square_portable()
+    }
+
+    #[cfg_attr(not(feature = "uninline-portable"), inline)]
+    fn square_runtime(&self) -> Self {
+        if_asm!(
+            Fp(crate::asm::square(&self.0, &MODULUS.0, INV)),
+            self.square_portable()
+        )
+    }
+
+    #[cfg_attr(not(feature = "uninline-portable"), inline(always))]
+    const fn square_portable(&self) -> Fp {
         let u = self.square_unreduced();
         Fp::montgomery_reduce(u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7])
     }
@@ -363,15 +384,45 @@ impl Fp {
     }
 
     /// Multiplies `rhs` by `self`, returning the result.
-    #[cfg_attr(not(feature = "uninline-portable"), inline)]
+    #[inline]
     pub const fn mul(&self, rhs: &Self) -> Self {
+        // If `core::intrinsics::const_eval_select` (or equiv) is ever stablilised, we
+        // could use it here to switch in the assembly backend at runtime.
+        self.mul_portable(rhs)
+    }
+
+    #[cfg_attr(not(feature = "uninline-portable"), inline)]
+    fn mul_runtime(&self, rhs: &Self) -> Self {
+        if_asm!(
+            Fp(crate::asm::mul(&self.0, &rhs.0, &MODULUS.0, INV)),
+            self.mul_portable(rhs)
+        )
+    }
+
+    #[cfg_attr(not(feature = "uninline-portable"), inline(always))]
+    const fn mul_portable(&self, rhs: &Self) -> Self {
         let u = self.mul_unreduced(rhs);
         Fp::montgomery_reduce(u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7])
     }
 
     /// Subtracts `rhs` from `self`, returning the result.
-    #[cfg_attr(not(feature = "uninline-portable"), inline)]
+    #[inline]
     pub const fn sub(&self, rhs: &Self) -> Self {
+        // If `core::intrinsics::const_eval_select` (or equiv) is ever stablilised, we
+        // could use it here to switch in the assembly backend at runtime.
+        self.sub_portable(rhs)
+    }
+
+    #[cfg_attr(not(feature = "uninline-portable"), inline)]
+    fn sub_runtime(&self, rhs: &Self) -> Self {
+        if_asm!(
+            Fp(crate::asm::sub(&self.0, &rhs.0, &MODULUS.0)),
+            self.sub_portable(rhs)
+        )
+    }
+
+    #[cfg_attr(not(feature = "uninline-portable"), inline(always))]
+    const fn sub_portable(&self, rhs: &Self) -> Self {
         let (d0, borrow) = sbb(self.0[0], rhs.0[0], 0);
         let (d1, borrow) = sbb(self.0[1], rhs.0[1], borrow);
         let (d2, borrow) = sbb(self.0[2], rhs.0[2], borrow);
@@ -388,8 +439,23 @@ impl Fp {
     }
 
     /// Adds `rhs` to `self`, returning the result.
-    #[cfg_attr(not(feature = "uninline-portable"), inline)]
+    #[inline]
     pub const fn add(&self, rhs: &Self) -> Self {
+        // If `core::intrinsics::const_eval_select` (or equiv) is ever stablilised, we
+        // could use it here to switch in the assembly backend at runtime.
+        self.add_portable(rhs)
+    }
+
+    #[cfg_attr(not(feature = "uninline-portable"), inline)]
+    fn add_runtime(&self, rhs: &Self) -> Self {
+        if_asm!(
+            Fp(crate::asm::add(&self.0, &rhs.0, &MODULUS.0)),
+            self.add_portable(rhs)
+        )
+    }
+
+    #[cfg_attr(not(feature = "uninline-portable"), inline(always))]
+    const fn add_portable(&self, rhs: &Self) -> Self {
         let (d0, carry) = adc(self.0[0], rhs.0[0], 0);
         let (d1, carry) = adc(self.0[1], rhs.0[1], carry);
         let (d2, carry) = adc(self.0[2], rhs.0[2], carry);
@@ -545,12 +611,13 @@ impl ff::Field for Fp {
     }
 
     fn double(&self) -> Self {
-        self.double()
+        // TODO: This can be achieved more efficiently with a bitshift.
+        self.add_runtime(self)
     }
 
     #[inline(always)]
     fn square(&self) -> Self {
-        self.square()
+        self.square_runtime()
     }
 
     fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
@@ -675,7 +742,10 @@ impl ff::PrimeField for Fp {
     fn to_repr(&self) -> Self::Repr {
         // Turn into canonical form by computing
         // (a.R) / R = a
-        let tmp = Fp::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = if_asm!(
+            Fp(crate::asm::from_mont(&self.0, &MODULUS.0, INV)),
+            Fp::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0),
+        );
 
         let mut res = [0; 32];
         res[0..8].copy_from_slice(&tmp.0[0].to_le_bytes());

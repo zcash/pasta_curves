@@ -24,7 +24,8 @@ imported from zakura-pasta-curves.
 ## Usage
 
 The module provides a backend for `target_arch = "aarch64"`, and for `target_arch = "x86_64"`
-with 64-bit pointers. On x86-64, `add`, `sub`, and `from_mont` are register-only (MULX needs
+with 64-bit pointers, when the `asm` feature flag is enabled. On x86-64, `add`, `sub`, and
+`from_mont` are register-only (MULX needs
 BMI2 for `from_mont`). `mul`, `square`, and the routines built on them read limbs through
 pointers, which the x32 ABI's 32-bit pointers would break, so the module has no backend on that
 target; they also need MULX and ADCX/ADOX (BMI2 and ADX: Intel Broadwell / AMD Zen or newer).
@@ -67,7 +68,7 @@ The squaring blocks and the conversion out of Montgomery form make the same canc
 
 ## Testing
 
-Where the module has a backend, `cargo test --release` runs known-answer tests of the six entry
+Where the module has a backend, `cargo test --release --features asm` runs known-answer tests of the six entry
 points for both fields and replays the reference vectors recorded from the AArch64 assembly; in
 a debug build it also checks that the operand assertions fire outside the contracts. Elsewhere,
 and with `--cfg pasta_curves_noasm`, the backend has no tests to run. `scripts/ci.sh` runs every

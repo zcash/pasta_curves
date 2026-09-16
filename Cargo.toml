@@ -25,7 +25,8 @@ rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
 targets = []
 
 [lints.rust]
-# `--cfg pasta_curves_noasm` compiles the assembly backend out; see `src/asm/README.md`.
+# `--cfg pasta_curves_noasm` compiles the assembly backend out, even if `asm` is
+# enabled; see `src/asm/README.md`.
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(pasta_curves_noasm)'] }
 
 [dev-dependencies]
@@ -87,6 +88,7 @@ hex = { version = "0.4", optional = true, default-features = false, features = [
 [features]
 default = ["bits", "sqrt-table"]
 alloc = ["group/alloc", "blake2b_simd"]
+asm = []
 bits = ["ff/bits"]
 glv = ["alloc"]
 gpu = ["alloc", "ec-gpu"]

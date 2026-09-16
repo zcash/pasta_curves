@@ -65,8 +65,8 @@ if [ "$(uname -m)" = "arm64" ] || [ "$(uname -m)" = "aarch64" ]; then
   echo "tests in the backend: $expected"
   test "$expected" -gt 0
   for profile in "" --release; do
-    step "cargo test $profile asm::"
-    out=$(cargo test $profile asm:: 2>&1) || { echo "$out"; exit 1; }
+    step "cargo test $profile --features asm asm::"
+    out=$(cargo test $profile --features asm asm:: 2>&1) || { echo "$out"; exit 1; }
     echo "$out"
     echo "$out" | grep -q "^test result: ok. $expected passed" ||
       { echo "expected exactly $expected tests of the backend to pass"; exit 1; }
