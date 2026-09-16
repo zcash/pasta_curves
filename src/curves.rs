@@ -11,9 +11,9 @@ use alloc::boxed::Box;
 
 use ff::{Field, PrimeField};
 use group::{
+    Curve as _, CurveAffine as _, Group as _, GroupEncoding,
     cofactor::{CofactorCurve, CofactorGroup},
     prime::{PrimeCurve, PrimeGroup},
-    Curve as _, CurveAffine as _, Group as _, GroupEncoding,
 };
 use rand::TryRng;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};

@@ -40,7 +40,7 @@ use ff::PrimeField;
 use ff::WithSmallOrderMulGroup;
 use group::CurveAffine as _;
 
-use crate::arithmetic::{mac, sbb, CurveExt};
+use crate::arithmetic::{CurveExt, mac, sbb};
 use crate::{pallas, vesta};
 
 mod private {
