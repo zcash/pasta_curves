@@ -666,7 +666,7 @@ impl ff::Field for Fp {
         for e in exp.as_ref().iter().rev() {
             for i in (0..64).rev() {
                 if found_one {
-                    res = res.square();
+                    res = Field::square(&res);
                 }
 
                 if ((*e >> i) & 1) == 1 {
@@ -818,11 +818,11 @@ lazy_static! {
 
 impl SqrtTableHelpers for Fp {
     fn pow_by_t_minus1_over2(&self) -> Self {
-        let sqr = |x: Fp, i: u32| (0..i).fold(x, |x, _| x.square());
+        let sqr = |x: Fp, i: u32| (0..i).fold(x, |x, _| Field::square(&x));
 
-        let r10 = self.square();
+        let r10 = Field::square(self);
         let r11 = r10 * self;
-        let r110 = r11.square();
+        let r110 = Field::square(&r11);
         let r111 = r110 * self;
         let r1001 = r111 * r10;
         let r1101 = r111 * r110;
@@ -845,7 +845,7 @@ impl SqrtTableHelpers for Fp {
         let rq = sqr(rp, 4) * r11;
         let rr = sqr(rq, 7) * r111;
         let rs = sqr(rr, 3) * r11;
-        rs.square() // rt
+        Field::square(&rs) // rt
     }
 
     fn get_lower_32(&self) -> u32 {
@@ -922,7 +922,7 @@ fn test_inv() {
 #[test]
 fn test_sqrt() {
     // NB: TWO_INV is standing in as a "random" field element
-    let v = (Fp::TWO_INV).square().sqrt().unwrap();
+    let v = Field::square(&Fp::TWO_INV).sqrt().unwrap();
     assert!(v == Fp::TWO_INV || (-v) == Fp::TWO_INV);
 }
 
@@ -941,7 +941,7 @@ fn test_pow_by_t_minus1_over2() {
 #[test]
 fn test_sqrt_ratio_and_alt() {
     // (true, sqrt(num/div)), if num and div are nonzero and num/div is a square in the field
-    let num = (Fp::TWO_INV).square();
+    let num = Field::square(&Fp::TWO_INV);
     let div = Fp::from(25);
     let div_inverse = div.invert().unwrap();
     let expected = Fp::TWO_INV * Fp::from(5).invert().unwrap();
@@ -976,7 +976,7 @@ fn test_sqrt_ratio_and_alt() {
     assert!(v_alt == v);
 
     // (false, 0), if num is nonzero and div is zero
-    let num = (Fp::TWO_INV).square();
+    let num = Field::square(&Fp::TWO_INV);
     let div = Fp::zero();
     let expected = Fp::zero();
     let (is_square, v) = Fp::sqrt_ratio(&num, &div);

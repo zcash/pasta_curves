@@ -662,7 +662,7 @@ impl ff::Field for Fq {
         for e in exp.as_ref().iter().rev() {
             for i in (0..64).rev() {
                 if found_one {
-                    res = res.square();
+                    res = Field::square(&res);
                 }
 
                 if ((*e >> i) & 1) == 1 {
@@ -813,11 +813,11 @@ lazy_static! {
 
 impl SqrtTableHelpers for Fq {
     fn pow_by_t_minus1_over2(&self) -> Self {
-        let sqr = |x: Fq, i: u32| (0..i).fold(x, |x, _| x.square());
+        let sqr = |x: Fq, i: u32| (0..i).fold(x, |x, _| Field::square(&x));
 
-        let s10 = self.square();
+        let s10 = Field::square(self);
         let s11 = s10 * self;
-        let s111 = s11.square() * self;
+        let s111 = Field::square(&s11) * self;
         let s1001 = s111 * s10;
         let s1011 = s1001 * s10;
         let s1101 = s1011 * s10;
@@ -917,7 +917,7 @@ fn test_inv() {
 #[test]
 fn test_sqrt() {
     // NB: TWO_INV is standing in as a "random" field element
-    let v = (Fq::TWO_INV).square().sqrt().unwrap();
+    let v = Field::square(&Fq::TWO_INV).sqrt().unwrap();
     assert!(v == Fq::TWO_INV || (-v) == Fq::TWO_INV);
 }
 
@@ -936,7 +936,7 @@ fn test_pow_by_t_minus1_over2() {
 #[test]
 fn test_sqrt_ratio_and_alt() {
     // (true, sqrt(num/div)), if num and div are nonzero and num/div is a square in the field
-    let num = (Fq::TWO_INV).square();
+    let num = Field::square(&Fq::TWO_INV);
     let div = Fq::from(25);
     let div_inverse = div.invert().unwrap();
     let expected = Fq::TWO_INV * Fq::from(5).invert().unwrap();
@@ -971,7 +971,7 @@ fn test_sqrt_ratio_and_alt() {
     assert!(v_alt == v);
 
     // (false, 0), if num is nonzero and div is zero
-    let num = (Fq::TWO_INV).square();
+    let num = Field::square(&Fq::TWO_INV);
     let div = Fq::zero();
     let expected = Fq::zero();
     let (is_square, v) = Fq::sqrt_ratio(&num, &div);
