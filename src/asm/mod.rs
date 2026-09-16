@@ -8,7 +8,7 @@
 // The routines are not yet reached from the field types.
 #![allow(dead_code)]
 
-//! Apple AArch64 assembly backend for the Pasta fields.
+//! AArch64 assembly backend for the Pasta fields.
 //!
 //! Montgomery multiplication and squaring are inline `asm!` blocks below. The
 //! repeated-squaring chain and the conversion out of Montgomery form are
@@ -62,10 +62,10 @@
 //!
 //! # Availability
 //!
-//! The backend exists only for `target_arch = "aarch64"` with
-//! `target_vendor = "apple"`; elsewhere the `asm` module is absent. Nothing is
-//! assembled at build time: the blocks are compiled by the Rust toolchain, so
-//! no C toolchain is needed, and the module adds no dependency.
+//! The backend exists only for `target_arch = "aarch64"`; elsewhere the `asm`
+//! module is absent. Nothing is assembled at build time: the blocks are
+//! compiled by the Rust toolchain, so no C toolchain is needed, and the module
+//! adds no dependency.
 //!
 //! # Provenance
 //!

@@ -1,8 +1,7 @@
-# Apple AArch64 assembly backend
+# AArch64 assembly backend
 
-Apple AArch64 assembly backend for the crate's Pasta (Pallas and Vesta) field arithmetic:
-Montgomery multiplication, squaring, a repeated-squaring chain, and conversion out of Montgomery
-form, for the `aarch64-apple-*` targets.
+AArch64 assembly backend for the crate's Pasta (Pallas and Vesta) field arithmetic: Montgomery
+multiplication, squaring, a repeated-squaring chain, and conversion out of Montgomery form.
 
 ## Provenance
 
@@ -20,9 +19,9 @@ reaches the chain and the conversion through assembled routines instead.
 
 ## Usage
 
-The module is compiled only on `target_arch = "aarch64"` with `target_vendor = "apple"`;
-elsewhere the `asm` module is absent. Nothing is assembled at build time: the blocks are
-compiled by the Rust toolchain, so no C toolchain is needed, and the module adds no dependency.
+The module is compiled only on `target_arch = "aarch64"`; elsewhere the `asm` module is absent.
+Nothing is assembled at build time: the blocks are compiled by the Rust toolchain, so no C
+toolchain is needed, and the module adds no dependency.
 
 Field elements and moduli are `[u64; 4]`, least significant limb first, and `inv` is
 `-modulus[0]^-1 mod 2^64`. The routines take the modulus and `inv` as arguments, so one
@@ -32,5 +31,5 @@ of each entry point.
 
 ## Testing
 
-On Apple AArch64, `cargo test --release` runs known-answer tests of the four entry points for
-both fields; on other targets there is nothing to test.
+On AArch64, `cargo test --release` runs known-answer tests of the four entry points for both
+fields; on other targets there is nothing to test.

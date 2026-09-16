@@ -94,9 +94,9 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ## The assembly backend (`src/asm`)
 
-The `asm` module is the Apple AArch64 assembly backend for the Pasta field arithmetic:
-Montgomery multiplication and squaring as inline `asm!` blocks, and a repeated-squaring chain
-and conversion out of Montgomery form composed from them. It is the one part of the crate that
+The `asm` module is the AArch64 assembly backend for the Pasta field arithmetic: Montgomery
+multiplication and squaring as inline `asm!` blocks, and a repeated-squaring chain and
+conversion out of Montgomery form composed from them. It is the one part of the crate that
 allows unsafe code. Its priorities are those of the crate: **correctness, constant-time
 behaviour, and performance**, in that order.
 
@@ -105,9 +105,9 @@ The instruction streams are the object of machine-checked correctness proofs, so
 an instruction is a change to a specification: keep the transcription, its documentation, and
 the proofs in step, and do not "improve" the assembly in passing.
 
-The module is compiled only on `target_arch = "aarch64"` with `target_vendor = "apple"`;
-elsewhere the `asm` module is absent. Nothing is assembled at build time, so no C toolchain is
-needed. On that target, beside the crate's usual checks:
+The module is compiled only on `target_arch = "aarch64"`; elsewhere the `asm` module is absent.
+Nothing is assembled at build time, so no C toolchain is needed. On AArch64, beside the crate's
+usual checks:
 
 ```sh
 cargo test asm::                # the backend's tests, with the debug assertions they check
@@ -116,10 +116,10 @@ cargo test --release asm::      # the same tests on the release code
 
 A cfg-gated test that compiles out still reports success, so CI counts the `#[test]`
 functions under `src/asm` and requires the run of the module's tests to report exactly that
-many passed, in both profiles. Every target the backend compiles on has a std to link, so CI
-also builds `core` from source on a nightly toolchain instead of using the sysroot
-(`cargo +nightly build --release --no-default-features -Z build-std=core,compiler_builtins
---target aarch64-apple-darwin`), which proves that nothing in the backend reaches for std.
+many passed, in both profiles. CI also builds `core` from source on a nightly toolchain
+instead of using the sysroot (`cargo +nightly build --release --no-default-features -Z
+build-std=core,compiler_builtins --target aarch64-apple-darwin`), which proves that nothing in
+the backend reaches for std.
 
 - **Preserve constant-time behaviour in the backend.** No secret-dependent branches or memory
   accesses in the blocks; the repeated-squaring loop branches only on its public count.
