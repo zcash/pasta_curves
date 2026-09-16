@@ -333,6 +333,19 @@ impl Fq {
         Fq::montgomery_reduce(u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7])
     }
 
+    /// Squares `self` `n` times, then multiplies the result by `by`.
+    ///
+    /// The assembly backend keeps the accumulator in registers for the whole chain.
+    #[inline]
+    pub(crate) fn sqr_n_mul_runtime(&self, n: u32, by: &Self) -> Self {
+        if_asm!(
+            Fq(crate::asm::sqr_n_mul(
+                &self.0, n as usize, &by.0, &MODULUS.0, INV,
+            )),
+            (0..n).fold(*self, |acc, _| acc.square_portable()).mul(by),
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[cfg_attr(not(feature = "uninline-portable"), inline(always))]
     const fn montgomery_reduce(
@@ -657,19 +670,39 @@ impl ff::Field for Fq {
     }
 
     fn pow_vartime<S: AsRef<[u64]>>(&self, exp: S) -> Self {
-        let mut res = Self::one();
-        let mut found_one = false;
+        // Walk the exponent bits MSB-first, fusing each run of squarings with
+        // the multiplication that follows it. This performs exactly the same
+        // field operations as the classic square-and-multiply loop, but lets
+        // the assembly backend keep the accumulator in registers for the
+        // whole run.
+        let mut res: Option<Self> = None;
+        let mut squares = 0;
         for e in exp.as_ref().iter().rev() {
             for i in (0..64).rev() {
-                if found_one {
-                    res = Field::square(&res);
+                if res.is_some() {
+                    squares += 1;
                 }
 
                 if ((*e >> i) & 1) == 1 {
-                    found_one = true;
-                    res *= self;
+                    res = Some(match res {
+                        Some(res) => {
+                            let res = res.sqr_n_mul_runtime(squares, self);
+                            squares = 0;
+                            res
+                        }
+                        None => *self,
+                    });
                 }
             }
+        }
+
+        let mut res = match res {
+            Some(res) => res,
+            None => return Self::one(),
+        };
+        // Flush the squarings for any trailing zero bits.
+        for _ in 0..squares {
+            res = res.square_runtime();
         }
         res
     }
@@ -813,34 +846,32 @@ lazy_static! {
 
 impl SqrtTableHelpers for Fq {
     fn pow_by_t_minus1_over2(&self) -> Self {
-        let sqr = |x: Fq, i: u32| (0..i).fold(x, |x, _| Field::square(&x));
-
-        let s10 = Field::square(self);
+        let s10 = self.square_runtime();
         let s11 = s10 * self;
-        let s111 = Field::square(&s11) * self;
+        let s111 = s11.sqr_n_mul_runtime(1, self);
         let s1001 = s111 * s10;
         let s1011 = s1001 * s10;
         let s1101 = s1011 * s10;
-        let sa = sqr(*self, 129) * self;
-        let sb = sqr(sa, 7) * s1001;
-        let sc = sqr(sb, 7) * s1101;
-        let sd = sqr(sc, 4) * s11;
-        let se = sqr(sd, 6) * s111;
-        let sf = sqr(se, 3) * s111;
-        let sg = sqr(sf, 10) * s1001;
-        let sh = sqr(sg, 4) * s1001;
-        let si = sqr(sh, 5) * s1001;
-        let sj = sqr(si, 5) * s1001;
-        let sk = sqr(sj, 3) * s1001;
-        let sl = sqr(sk, 4) * s1011;
-        let sm = sqr(sl, 4) * s1011;
-        let sn = sqr(sm, 5) * s11;
-        let so = sqr(sn, 4) * self;
-        let sp = sqr(so, 5) * s11;
-        let sq = sqr(sp, 4) * s111;
-        let sr = sqr(sq, 5) * s1011;
-        let ss = sqr(sr, 3) * self;
-        sqr(ss, 4) // st
+        let sa = self.sqr_n_mul_runtime(129, self);
+        let sb = sa.sqr_n_mul_runtime(7, &s1001);
+        let sc = sb.sqr_n_mul_runtime(7, &s1101);
+        let sd = sc.sqr_n_mul_runtime(4, &s11);
+        let se = sd.sqr_n_mul_runtime(6, &s111);
+        let sf = se.sqr_n_mul_runtime(3, &s111);
+        let sg = sf.sqr_n_mul_runtime(10, &s1001);
+        let sh = sg.sqr_n_mul_runtime(4, &s1001);
+        let si = sh.sqr_n_mul_runtime(5, &s1001);
+        let sj = si.sqr_n_mul_runtime(5, &s1001);
+        let sk = sj.sqr_n_mul_runtime(3, &s1001);
+        let sl = sk.sqr_n_mul_runtime(4, &s1011);
+        let sm = sl.sqr_n_mul_runtime(4, &s1011);
+        let sn = sm.sqr_n_mul_runtime(5, &s11);
+        let so = sn.sqr_n_mul_runtime(4, self);
+        let sp = so.sqr_n_mul_runtime(5, &s11);
+        let sq = sp.sqr_n_mul_runtime(4, &s111);
+        let sr = sq.sqr_n_mul_runtime(5, &s1011);
+        let ss = sr.sqr_n_mul_runtime(3, self);
+        (0..4).fold(ss, |x, _| x.square_runtime()) // st
     }
 
     fn get_lower_32(&self) -> u32 {

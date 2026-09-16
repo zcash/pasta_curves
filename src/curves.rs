@@ -82,7 +82,7 @@ macro_rules! new_curve_impl {
                     let x = $base::try_random(rng)?;
                     let ysign = (rng.try_next_u32()? % 2) as u8;
 
-                    let x3 = Field::square(&x) * x;
+                    let x3 = x.sqr_n_mul_runtime(1, &x);
                     let y = (x3 + $name::curve_constant_b()).sqrt();
                     if let Some(y) = Option::<$base>::from(y) {
                         let sign = y.is_odd().unwrap_u8();
@@ -710,7 +710,7 @@ macro_rules! new_curve_impl {
 
                 $base::from_repr(tmp).and_then(|x| {
                     CtOption::new(Self::identity(), x.is_zero() & (!ysign)).or_else(|| {
-                        let x3 = Field::square(&x) * x;
+                        let x3 = x.sqr_n_mul_runtime(1, &x);
                         (x3 + $name::curve_constant_b()).sqrt().and_then(|y| {
                             let sign = y.is_odd();
 
