@@ -25,31 +25,7 @@ LAKE=${LAKE:-lake}
 # below), so a module cannot silently drop out of the re-check.
 ROOTS=(PastaAsm)
 
-python3 - "${ROOTS[@]}" <<'EOF'
-import re, sys
-from pathlib import Path
-roots = sys.argv[1:]
-files = [Path("PastaAsm.lean")]
-files += sorted(Path("PastaAsm").rglob("*.lean"))
-mod = lambda p: ".".join(p.with_suffix("").parts)
-imports = {mod(f): set(re.findall(r"^import\s+([A-Za-z0-9_.]+)", f.read_text(), re.M))
-           for f in files}
-reachable, todo = set(), list(roots)
-while todo:
-    m = todo.pop()
-    if m in reachable or m not in imports:
-        continue
-    reachable.add(m)
-    todo.extend(imports[m])
-missing = sorted(set(imports) - reachable)
-if missing:
-    print("VIOLATION: module(s) outside the export roots' import closure:",
-          file=sys.stderr)
-    for m in missing:
-        print(f"  {m}", file=sys.stderr)
-    sys.exit(1)
-print(f"export coverage: all {len(imports)} project modules reachable from the roots")
-EOF
+python3 scripts/check_export_coverage.py "${ROOTS[@]}"
 
 mkdir -p work
 "$LAKE" env "$LEAN4EXPORT" "${ROOTS[@]}" > work/export.ndjson
