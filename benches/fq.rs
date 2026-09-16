@@ -1,6 +1,6 @@
 //! Benchmarks for the Fq field.
 
-use criterion::{criterion_group, criterion_main, Bencher, Criterion};
+use criterion::{Bencher, Criterion, criterion_group, criterion_main};
 
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;

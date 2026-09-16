@@ -1,6 +1,6 @@
 //! Benchmarks for GLV scalar multiplication.
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 
 use ff::Field;
 use pasta_curves::glv::{Decomposed, GlvParams, Table};

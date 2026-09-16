@@ -1,7 +1,7 @@
 use ff::PrimeField;
 use group::GroupEncoding;
 use serde_crate::{
-    de::Error as DeserializeError, Deserialize, Deserializer, Serialize, Serializer,
+    Deserialize, Deserializer, Serialize, Serializer, de::Error as DeserializeError,
 };
 
 use crate::{
