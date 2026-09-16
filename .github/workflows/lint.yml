@@ -1,0 +1,39 @@
+name: Lint scripts
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # shellcheck is preinstalled on the Ubuntu runner images.
+      - name: Lint the shell scripts
+        run: shellcheck --version && shellcheck scripts/*.sh lean/scripts/*.sh book/edithtml.sh
+
+  ruff:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Pinned so a new ruff release cannot fail an unrelated change; the rules are in
+      # ruff.toml.
+      - name: Lint the Python scripts
+        run: pipx run ruff==0.16.7 check .
+      - name: Check the Python scripts' formatting
+        run: pipx run ruff==0.16.7 format --check .
