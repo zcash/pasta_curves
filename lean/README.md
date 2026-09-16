@@ -120,7 +120,8 @@ scripts/gen_x86_64.py                 x86-64 decoding, flag validation, and proo
 scripts/test_*.py                     the generator's tests, run by check.sh
 scripts/check.sh                      regenerate and diff, skeleton check, generator tests (CI)
 scripts/check_nanoda.sh               re-check the build with an independent kernel (CI)
-scripts/check_export_axioms.py        the axiom census of that export, run by check_nanoda.sh
+scripts/check_export_coverage.py      the export roots reach every module, run by check_nanoda.sh
+scripts/check_export_axioms.py        the axiom census of the export, run by check_nanoda.sh
 ```
 
 Shared declarations use namespace `PastaAsm`; architecture declarations use
