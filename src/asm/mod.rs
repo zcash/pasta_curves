@@ -1,4 +1,4 @@
-// Copyright the pasta-aarch64-asm contributors.
+// Copyright the pasta-asm contributors.
 // SPDX-License-Identifier: Apache-2.0
 
 // The crate denies unsafe code by default; the assembly backend is the one place that allows
@@ -7,14 +7,14 @@
 // The routines are not yet reached from the field types.
 #![allow(dead_code)]
 
-//! AArch64 assembly backend for the Pasta fields.
+//! Assembly backends for the Pasta fields.
 //!
 //! # Availability
 //!
-//! The backend exists only for `target_arch = "aarch64"`; elsewhere the `asm`
-//! module is absent. Nothing is assembled at build time: the blocks are
-//! compiled by the Rust toolchain, so no C toolchain is needed, and the module
-//! adds no dependency.
+//! The module currently provides a backend only for `target_arch = "aarch64"`;
+//! elsewhere the `asm` module is absent. Nothing is assembled at build time:
+//! the blocks are compiled by the Rust toolchain, so no C toolchain is needed,
+//! and the module adds no dependency.
 //!
 //! # Provenance
 //!
@@ -55,8 +55,8 @@ pub fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     debug_assert!(
         is_canonical(lhs, modulus)
             || (is_canonical(rhs, modulus) && rhs[1..].iter().all(|&limb| limb <= u64::MAX - 2)),
-        "aarch64_asm::mul requires a canonical lhs, or a canonical rhs with limbs 1 to 3 at most \
-         2^64 - 3"
+        "pasta_curves::asm::mul requires a canonical lhs, or a canonical rhs with limbs 1 to 3 \
+         at most 2^64 - 3"
     );
 
     #[cfg(target_arch = "aarch64")]
@@ -71,7 +71,7 @@ pub fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
 pub fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     debug_assert!(
         is_canonical(value, modulus),
-        "aarch64_asm::square requires a canonical input"
+        "pasta_curves::asm::square requires a canonical input"
     );
 
     #[cfg(target_arch = "aarch64")]

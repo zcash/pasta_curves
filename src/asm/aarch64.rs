@@ -1,5 +1,5 @@
 // Copyright Supranational LLC (the Montgomery routines, transcribed from Semolina v0.1.4).
-// Copyright the zakura-core and pasta-aarch64-asm contributors (the transcription and wrappers).
+// Copyright the zakura-core and pasta-asm contributors (the transcription and wrappers).
 // SPDX-License-Identifier: Apache-2.0
 
 //! AArch64 backend for the Pasta fields.
@@ -66,8 +66,8 @@ pub(crate) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs 
     debug_assert!(
         is_canonical(lhs, modulus)
             || (is_canonical(rhs, modulus) && rhs[1..].iter().all(|&limb| limb <= u64::MAX - 2)),
-        "aarch64_asm::mul requires a canonical lhs, or a canonical rhs with limbs 1 to 3 at most \
-         2^64 - 3"
+        "pasta_curves::asm::mul requires a canonical lhs, or a canonical rhs with limbs 1 to 3 \
+         at most 2^64 - 3"
     );
     let (o0, o1, o2, o3): (u64, u64, u64, u64);
     // SAFETY: straight-line register-only arithmetic; no memory access, no
@@ -281,7 +281,7 @@ pub(crate) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs 
 pub(crate) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     debug_assert!(
         is_canonical(value, modulus),
-        "aarch64_asm::square requires a canonical input"
+        "pasta_curves::asm::square requires a canonical input"
     );
     let mut a0 = value[0];
     let mut a1 = value[1];

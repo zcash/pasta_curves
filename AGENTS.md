@@ -92,22 +92,22 @@ Co-Authored-By: Claude <noreply@anthropic.com>
   elements. Return `CtOption` for fallible constant-time operations rather than `Option`
   or panicking.
 
-## The assembly backend (`src/asm`)
+## The assembly backends (`src/asm`)
 
-The `asm` module is the AArch64 assembly backend for the Pasta field arithmetic: Montgomery
-multiplication and squaring as inline `asm!` blocks, and a repeated-squaring chain and
-conversion out of Montgomery form composed from them. It is the one part of the crate that
-allows unsafe code. Its priorities are those of the crate: **correctness, constant-time
-behaviour, and performance**, in that order.
+The `asm` module provides assembly backends for the Pasta field arithmetic. It currently
+contains an AArch64 backend: Montgomery multiplication and squaring as inline `asm!` blocks, and
+a repeated-squaring chain and conversion out of Montgomery form composed from them. It is the
+one part of the crate that allows unsafe code. Its priorities are those of the crate:
+**correctness, constant-time behaviour, and performance**, in that order.
 
 The routines are transcriptions of Supranational's Semolina v0.1.4 (see `src/asm/README.md`).
 The instruction streams are the object of machine-checked correctness proofs, so a change to
 an instruction is a change to a specification: keep the transcription, its documentation, and
 the proofs in step, and do not "improve" the assembly in passing.
 
-The module is compiled only on `target_arch = "aarch64"`; elsewhere the `asm` module is absent.
-Nothing is assembled at build time, so no C toolchain is needed. On AArch64, beside the crate's
-usual checks:
+The module currently provides a backend on `target_arch = "aarch64"`; elsewhere the `asm` module
+is absent. Nothing is assembled at build time, so no C toolchain is needed. On AArch64, beside
+the crate's usual checks:
 
 ```sh
 cargo test asm::                # the backend's tests, with the debug assertions they check
