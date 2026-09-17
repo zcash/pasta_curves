@@ -289,4 +289,24 @@ fn from_mont_known_answers() {
         assert_eq!(from_mont(&f.r2, &f.modulus, f.inv), f.r);
         assert_eq!(from_mont(&ZERO, &f.modulus, f.inv), ZERO);
     }
+    // `from_mont` accepts any four-limb value: the all-ones input is the
+    // extreme case of that contract, where the candidate is largest.
+    assert_eq!(
+        from_mont(&[u64::MAX; 4], &FP.modulus, FP.inv),
+        [
+            0xc9eda265ac589659,
+            0x75a6de91c8d4fcc3,
+            0x8f34d6691037659a,
+            0x1e0e3b00e1dd872a,
+        ]
+    );
+    assert_eq!(
+        from_mont(&[u64::MAX; 4], &FQ.modulus, FQ.inv),
+        [
+            0x2b2d474371e59083,
+            0x5bb8b7d46bcea6f2,
+            0xa86f41a73faf20ec,
+            0x20857622e89b86ac,
+        ]
+    );
 }

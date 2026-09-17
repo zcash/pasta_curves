@@ -42,8 +42,8 @@
 //! operands are also why `mul` and `square` — and the public routines
 //! composed from them — gate on 64-bit pointers: their blocks bind pointers
 //! to registers and use them as full-width addresses, which the x32 ABI's
-//! 32-bit pointers would break. `add` and `sub` are register-only and are
-//! available on every x86-64 target. The pointers reference the caller's own
+//! 32-bit pointers would break. `add`, `sub`, and `from_mont` are
+//! register-only and are available on every x86-64 target. The pointers reference the caller's own
 //! arrays: there is no packed parameter block to build and no spill stores,
 //! only loads that are expected to hit L1. The modulus and inverse travel as
 //! separate arguments, as on AArch64: `inv` is bound to a register of its own
@@ -71,16 +71,16 @@
 //! constant-time.
 //!
 //! ISA requirement: `mul` and `square` use MULX (BMI2) and ADCX/ADOX (ADX:
-//! Intel Broadwell / AMD Zen or newer). They are not runtime-checked: code
-//! built where they are available uses these instructions unconditionally,
-//! and running it on an older CPU faults with an illegal instruction. `add`
-//! and `sub` use baseline x86-64 instructions only.
+//! Intel Broadwell / AMD Zen or newer). `from_mont` uses MULX (BMI2) alone.
+//! None of these are runtime-checked: code built where they are available
+//! uses the instructions unconditionally, and running it on an older CPU
+//! faults with an illegal instruction. `add` and `sub` use baseline x86-64
+//! instructions only.
 
 use core::arch::asm;
 
 use super::{Limbs, is_canonical};
 
-#[cfg(target_pointer_width = "64")]
 const PASTA_HIGH_LIMB: u64 = 1 << 62;
 
 /// Adds two canonical residues and conditionally subtracts the modulus.
@@ -741,4 +741,146 @@ pub(super) fn sqr_n_mul(
         acc = square_hi(square_lo(acc), modulus, inv);
     }
     mul(&acc, rhs, modulus, inv)
+}
+
+/// Converts a Montgomery residue into its canonical integer, as a
+/// multiplication by one: the four Montgomery cancellations of the squaring
+/// step on the rotating window of `value` itself, then an in-place
+/// conditional subtraction of the modulus.
+///
+/// A multiplication by one has no product rows: `value` is its own
+/// accumulator, so the whole reduction fits registers without memory
+/// operands (`nomem`), unlike [`mul`]. The result's bounds follow the
+/// squaring step's: the input value plays the role a canonical right
+/// operand's product plays there, so the final candidate stays below `2p`
+/// for any four-limb input and the four-limb conditional subtraction
+/// suffices.
+///
+/// # Safety
+///
+/// `modulus` must be a Pasta modulus and `inv` its derived inverse. Any
+/// four-limb `value` is accepted.
+#[inline(always)]
+pub(super) fn from_mont(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
+    let (o0, o1, o2, o3): (u64, u64, u64, u64);
+    // SAFETY: straight-line register-only arithmetic with declared inputs
+    // and outputs; no memory or stack access, and outputs depend only on
+    // the declared inputs.
+    unsafe {
+        asm!(
+            // Four Montgomery cancellations on the rotating window of
+            // value itself; the window rotates down one register per step
+            // and the fifth limb is carried in a scratch register.
+            // Step 0: window [z0, z1, z2, z3], carry into a.
+            "mov rdx, {z0}",
+            "imul rdx, {inv}",                       // rdx = q.
+            "mulx {t2}, {t1}, {p1}",                 // t1/t2 = low/high(q*p1).
+            "mov {a}, rdx",
+            "shl {a}, 62",                           // low(q*p3); p2 is zero.
+            "neg {z0}",                              // CF = (limb0 != 0).
+            "adc {z1}, {t1}",
+            "adc {z2}, 0",
+            "adc {z3}, {a}",
+            "mov {a}, 0",
+            "adc {a}, 0",                            // Carry above limb 3.
+            // t1 = high(q*p0); low is spent.
+            "mulx {t1}, {z0}, {p0}",
+            "mov {z0}, rdx",
+            "shr {z0}, 2",                           // high(q*p3).
+            "add {z1}, {t1}",                        // New limb 0.
+            "adc {z2}, {t2}",                        // New limb 1 += high(q*p1).
+            "adc {z3}, 0",                           // New limb 2.
+            "adc {a}, {z0}",                         // New limb 3 += high(q*p3).
+            // Step 1: window [z1, z2, z3, a], carry into z0.
+            "mov rdx, {z1}",
+            "imul rdx, {inv}",
+            "mulx {t2}, {t1}, {p1}",
+            "mov {z0}, rdx",
+            "shl {z0}, 62",
+            "neg {z1}",
+            "adc {z2}, {t1}",
+            "adc {z3}, 0",
+            "adc {a}, {z0}",
+            "mov {z0}, 0",
+            "adc {z0}, 0",
+            "mulx {t1}, {z1}, {p0}",
+            "mov {z1}, rdx",
+            "shr {z1}, 2",
+            "add {z2}, {t1}",
+            "adc {z3}, {t2}",
+            "adc {a}, 0",
+            "adc {z0}, {z1}",
+            // Step 2: window [z2, z3, a, z0], carry into z1.
+            "mov rdx, {z2}",
+            "imul rdx, {inv}",
+            "mulx {t2}, {t1}, {p1}",
+            "mov {z1}, rdx",
+            "shl {z1}, 62",
+            "neg {z2}",
+            "adc {z3}, {t1}",
+            "adc {a}, 0",
+            "adc {z0}, {z1}",
+            "mov {z1}, 0",
+            "adc {z1}, 0",
+            "mulx {t1}, {z2}, {p0}",
+            "mov {z2}, rdx",
+            "shr {z2}, 2",
+            "add {z3}, {t1}",
+            "adc {a}, {t2}",
+            "adc {z0}, 0",
+            "adc {z1}, {z2}",
+            // Step 3: window [z3, a, z0, z1], carry into z2.
+            "mov rdx, {z3}",
+            "imul rdx, {inv}",
+            "mulx {t2}, {t1}, {p1}",
+            "mov {z2}, rdx",
+            "shl {z2}, 62",
+            "neg {z3}",
+            "adc {a}, {t1}",
+            "adc {z0}, 0",
+            "adc {z1}, {z2}",
+            "mov {z2}, 0",
+            "adc {z2}, 0",
+            "mulx {t1}, {z3}, {p0}",
+            "mov {z3}, rdx",
+            "shr {z3}, 2",
+            "add {a}, {t1}",
+            "adc {z0}, {t2}",
+            "adc {z1}, 0",
+            "adc {z2}, {z3}",
+
+            // Conditional subtraction of p = [p0, p1, 0, 2^62]. The
+            // candidate sits in [a, z0, z1, z2]; the top limb is staged
+            // through z4. The candidate stays below 2p, so no carry escapes
+            // and four limbs suffice.
+            "movabs rdx, {p3}",                      // Materialize p3 = 2^62.
+            "mov {t1}, {a}",
+            "mov {t2}, {z0}",
+            "mov {z3}, {z1}",
+            "mov {z4}, {z2}",
+            "sub {t1}, {p0}",
+            "sbb {t2}, {p1}",
+            "sbb {z3}, 0",
+            "sbb {z4}, rdx",
+            "cmovnc {a}, {t1}",
+            "cmovnc {z0}, {t2}",
+            "cmovnc {z1}, {z3}",
+            "cmovnc {z2}, {z4}",
+            a = out(reg) o0,
+            z0 = inout(reg) value[0] => o1,
+            z1 = inout(reg) value[1] => o2,
+            z2 = inout(reg) value[2] => o3,
+            z3 = inout(reg) value[3] => _,
+            z4 = out(reg) _,
+            t1 = out(reg) _,
+            t2 = out(reg) _,
+            p0 = in(reg) modulus[0],
+            p1 = in(reg) modulus[1],
+            inv = in(reg) inv,
+            p3 = const PASTA_HIGH_LIMB,
+            out("rdx") _,
+            options(pure, nomem, nostack),
+        );
+    }
+    [o0, o1, o2, o3]
 }

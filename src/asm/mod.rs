@@ -12,15 +12,16 @@
 //! # Availability
 //!
 //! The module provides a backend for `target_arch = "aarch64"` and, in part,
-//! for `target_arch = "x86_64"`: `add` and `sub` are register-only and work on
-//! every x86-64 target, while `mul`, `square`, and the routines built on them
-//! read limbs through pointers, so they require 64-bit pointers (the x32 ABI's
-//! 32-bit pointers would break them; see the x86-64 module's docs for why
-//! registers alone cannot serve there) and a CPU with BMI2 and ADX (MULX,
-//! ADCX/ADOX: Intel Broadwell / AMD Zen or newer) at run time — neither is
-//! checked. Elsewhere the `asm` module is absent. Nothing is assembled at build
-//! time: the blocks are compiled by the Rust toolchain, so no C toolchain is
-//! needed, and the module adds no dependency.
+//! for `target_arch = "x86_64"`: `add`, `sub`, and `from_mont` are
+//! register-only and work on every x86-64 target, while `mul`, `square`, and
+//! the routines built on them read limbs through pointers, so they require
+//! 64-bit pointers (the x32 ABI's 32-bit pointers would break them; see the
+//! x86-64 module's docs for why registers alone cannot serve there) and a CPU
+//! with BMI2 and ADX (MULX, ADCX/ADOX: Intel Broadwell / AMD Zen or newer) at
+//! run time — neither is checked. `from_mont` uses MULX (BMI2) alone. Elsewhere
+//! the `asm` module is absent. Nothing is assembled at build time: the blocks
+//! are compiled by the Rust toolchain, so no C toolchain is needed, and the
+//! module adds no dependency.
 //!
 //! # Provenance
 //!
@@ -230,11 +231,18 @@ pub fn sqr_n_mul(value: &Limbs, count: usize, rhs: &Limbs, modulus: &Limbs, inv:
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
 /// correctly derived from it. Any other values will cause undefined results.
-#[cfg(any(
-    target_arch = "aarch64",
-    all(target_arch = "x86_64", target_pointer_width = "64")
-))]
 #[inline]
 pub fn from_mont(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
-    mul(value, &[1, 0, 0, 0], modulus, inv)
+    // On aarch64, `mul` can be inlined and optimised by Rust.
+    #[cfg(target_arch = "aarch64")]
+    {
+        mul(value, &[1, 0, 0, 0], modulus, inv)
+    }
+
+    // On x86_64, `mul` can't be inlined due to register pressure, so we use a dedicated
+    // register-only assembly implementation instead.
+    #[cfg(target_arch = "x86_64")]
+    {
+        x86_64::from_mont(value, modulus, inv)
+    }
 }
