@@ -22,32 +22,6 @@
 //! `modulus[0]`, `modulus[1]`, and `inv` vary between Fp and Fq, so a single
 //! implementation serves both fields.
 //!
-//! Operand contract of `mul`: either `lhs` is canonical (below the modulus)
-//! and `rhs` is any four-limb value, or `rhs` is canonical with each of its
-//! limbs 1 to 3 at most `2^64 - 3` and `lhs` is any four-limb value. This is
-//! the contract that the machine-checked proofs in `lean/` establish
-//! (`mulMont_spec_of_lhs_lt` and `mulMont_spec_of_rhs_lt`). The input of
-//! `square` must be canonical, a contract that the proofs do not cover. With
-//! both operands canonical the routines are always safe. Outputs are
-//! canonical. `mul` and `square` debug-assert their contracts, so that a
-//! caller outside them fails loudly under test instead of silently.
-//!
-//! Two things can go wrong outside the contract. First, `mul` keeps a
-//! five-limb accumulator (one word fewer than textbook CIOS), and the carry
-//! chain folding in the high cross-products can wrap: its tail computes
-//! `acc4 + high(lhs[3] * rhs_limb) + carry` with `acc4 <= 2`, which reaches
-//! `2^64` only when `high(lhs[3] * rhs_limb) >= 2^64 - 3`. A canonical `lhs`
-//! has `lhs[3] <= 2^62`, and a `rhs` limb at most `2^64 - 3` caps the high
-//! product at `2^64 - 4`, so either condition alone rules the wrap out.
-//! Whether the chain can wrap with a `rhs` limb of `2^64 - 2` is not settled
-//! by the proofs. Second, `mul` keeps only four limbs of its final candidate
-//! `(lhs * rhs + m * p) / R`, where `m < R` is the Montgomery cancellation
-//! factor. The candidate is below `2p < R` whenever `lhs * rhs < R * p`, which
-//! a canonical `lhs` (with `rhs < R`) or a canonical `rhs` (with `lhs < R`)
-//! gives, so under either contract the dropped fifth limb is zero. With both
-//! operands unreduced the candidate can reach `R`, and the result is then an
-//! incorrect residue that still looks canonical.
-//!
 //! There are no branches and no memory accesses inside the blocks, and the
 //! repeated-squaring loop branches only on its public count, so the code is
 //! constant-time.
@@ -56,11 +30,28 @@ use core::arch::asm;
 
 use super::{Limbs, is_canonical};
 
-/// Multiplies two Montgomery residues for a Pasta modulus. Either `lhs` is
-/// canonical and `rhs` is any four-limb value, or `rhs` is canonical with
-/// limbs 1 to 3 at most `2^64 - 3` and `lhs` is any four-limb value. The
-/// contract is debug-asserted, and the module docs say what goes wrong outside
-/// it.
+/// Multiplies two Montgomery residues for a Pasta modulus.
+///
+/// # Safety
+///
+/// Either `lhs` is canonical and `rhs` is any four-limb value, or `rhs` is canonical with
+/// limbs 1 to 3 at most `2^64 - 3` and `lhs` is any four-limb value.
+///
+/// Two things can go wrong outside the contract. First, `mul` keeps a
+/// five-limb accumulator (one word fewer than textbook CIOS), and the carry
+/// chain folding in the high cross-products can wrap: its tail computes
+/// `acc4 + high(lhs[3] * rhs_limb) + carry` with `acc4 <= 2`, which reaches
+/// `2^64` only when `high(lhs[3] * rhs_limb) >= 2^64 - 3`. A canonical `lhs`
+/// has `lhs[3] <= 2^62`, and a `rhs` limb at most `2^64 - 3` caps the high
+/// product at `2^64 - 4`, so either condition alone rules the wrap out.
+/// Whether the chain can wrap with a `rhs` limb of `2^64 - 2` is not settled
+/// by the proofs. Second, `mul` keeps only four limbs of its final candidate
+/// `(lhs * rhs + m * p) / R`, where `m < R` is the Montgomery cancellation
+/// factor. The candidate is below `2p < R` whenever `lhs * rhs < R * p`, which
+/// a canonical `lhs` (with `rhs < R`) or a canonical `rhs` (with `lhs < R`)
+/// gives, so under either contract the dropped fifth limb is zero. With both
+/// operands unreduced the candidate can reach `R`, and the result is then an
+/// incorrect residue that still looks canonical.
 #[inline(always)]
 pub(crate) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     debug_assert!(
@@ -275,8 +266,9 @@ pub(crate) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs 
     [o0, o1, o2, o3]
 }
 
-/// Squares a canonical Montgomery residue for a Pasta modulus (the input's
-/// canonicity is debug-asserted).
+/// Squares a canonical Montgomery residue for a Pasta modulus.
+///
+/// Ihe input's canonicity is debug-asserted.
 #[inline(always)]
 pub(crate) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     debug_assert!(
