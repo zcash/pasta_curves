@@ -283,6 +283,11 @@ macro_rules! new_curve_impl {
             }
         }
 
+        /// Zeroizing a point overwrites it with the identity, which is the `Default` value.
+        #[cfg(feature = "zeroize")]
+        #[cfg_attr(docsrs, doc(cfg(feature = "zeroize")))]
+        impl zeroize::DefaultIsZeroes for $name {}
+
         impl ConstantTimeEq for $name {
             fn ct_eq(&self, other: &Self) -> Choice {
                 // Is (xz^2, yz^3, z) equal to (x'z'^2, yz'^3, z') when converted to affine?
@@ -717,6 +722,11 @@ macro_rules! new_curve_impl {
                 $name_affine::identity()
             }
         }
+
+        /// Zeroizing a point overwrites it with the identity, which is the `Default` value.
+        #[cfg(feature = "zeroize")]
+        #[cfg_attr(docsrs, doc(cfg(feature = "zeroize")))]
+        impl zeroize::DefaultIsZeroes for $name_affine {}
 
         impl<'a> From<&'a $name> for $name_affine {
             fn from(p: &'a $name) -> $name_affine {
@@ -1177,4 +1187,34 @@ impl Eq {
         0x53c3808d9e2f2357,
         0x2b3483a1ee9a382f,
     ]);
+}
+
+#[cfg(all(test, feature = "zeroize"))]
+mod zeroize_tests {
+    use group::{CurveAffine, Group};
+    use zeroize::Zeroize;
+
+    use super::{Ep, EpAffine, Eq, EqAffine};
+
+    #[test]
+    fn projective_points_zeroize_to_identity() {
+        let mut p = Ep::generator();
+        p.zeroize();
+        assert!(bool::from(p.is_identity()));
+
+        let mut q = Eq::generator();
+        q.zeroize();
+        assert!(bool::from(q.is_identity()));
+    }
+
+    #[test]
+    fn affine_points_zeroize_to_identity() {
+        let mut p = EpAffine::generator();
+        p.zeroize();
+        assert!(bool::from(p.is_identity()));
+
+        let mut q = EqAffine::generator();
+        q.zeroize();
+        assert!(bool::from(q.is_identity()));
+    }
 }
