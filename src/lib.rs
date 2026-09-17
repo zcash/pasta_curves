@@ -21,7 +21,7 @@ mod macros;
 mod curves;
 mod fields;
 
-#[cfg(any(target_arch = "aarch64", doc))]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64", doc))]
 mod asm;
 
 pub mod arithmetic;

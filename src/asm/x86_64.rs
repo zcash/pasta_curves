@@ -60,7 +60,7 @@
 //! both operands canonical they are always safe. `lhs` in `mul` may be an
 //! unreduced 256-bit value only if every `rhs` limb is at most `2^64 - 4`
 //! (the accumulator no-wrap bound) — a condition that is *not* asserted.
-//! [`PrimeField::from_repr`](ff::PrimeField::from_repr) passes its decoded,
+//! pasta_curve's `PrimeField::from_repr` impls pass its decoded,
 //! potentially unreduced value as `lhs`, but its `R2` multiplier satisfies
 //! the limb bound. `from_u512` continues to use the portable path. The
 //! `x86_64_asm_mul_unreduced_lhs_near_modulus_rhs_matches_portable` tests
@@ -80,6 +80,7 @@ use core::arch::asm;
 
 use super::{Limbs, is_canonical};
 
+#[cfg(target_pointer_width = "64")]
 const PASTA_HIGH_LIMB: u64 = 1 << 62;
 
 /// Adds two canonical residues and conditionally subtracts the modulus.
@@ -215,6 +216,7 @@ pub(super) fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 // Keep the assembly behind a call boundary. It consumes nearly every x86-64
 // register; forcing it into a register-heavy caller can make allocation
 // impossible instead of merely causing spills.
+#[cfg(target_pointer_width = "64")]
 #[inline(never)]
 pub(super) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     debug_assert!(
@@ -456,6 +458,7 @@ pub(super) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs 
 ///
 /// Kept behind a call boundary for the register-allocation reason documented
 /// on [`mul`].
+#[cfg(target_pointer_width = "64")]
 #[inline(never)]
 pub(super) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     debug_assert!(

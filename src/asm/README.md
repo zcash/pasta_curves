@@ -20,9 +20,13 @@ reaches the chain and the conversion through assembled routines instead.
 
 ## Usage
 
-The module currently provides a backend only on `target_arch = "aarch64"`; elsewhere the `asm`
-module is absent. Nothing is assembled at build time: the blocks are compiled by the Rust
-toolchain, so no C toolchain is needed, and the module adds no dependency.
+The module provides a backend for `target_arch = "aarch64"` and, in part, for
+`target_arch = "x86_64"`: `add` and `sub` are register-only and available on every x86-64
+target, while `mul`, `square`, and the routines built on them read limbs through pointers and
+so require 64-bit pointers, plus MULX and ADCX/ADOX (BMI2 and ADX: Intel Broadwell / AMD Zen or
+newer). Elsewhere the `asm` module is absent. Nothing is assembled at build time: the blocks
+are compiled by the Rust toolchain, so no C toolchain is needed, and the module adds no
+dependency.
 
 Field elements and moduli are `[u64; 4]`, least significant limb first, and `inv` is
 `-modulus[0]^-1 mod 2^64`. The routines take the modulus and `inv` as arguments, so one

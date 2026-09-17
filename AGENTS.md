@@ -94,20 +94,22 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ## The assembly backends (`src/asm`)
 
-The `asm` module provides assembly backends for the Pasta field arithmetic. It currently
-contains an AArch64 backend: Montgomery multiplication and squaring as inline `asm!` blocks, and
-a repeated-squaring chain and conversion out of Montgomery form composed from them. It is the
-one part of the crate that allows unsafe code. Its priorities are those of the crate:
-**correctness, constant-time behaviour, and performance**, in that order.
+The `asm` module provides assembly backends for the Pasta field arithmetic. It contains an
+AArch64 backend and an x86-64 backend: Montgomery multiplication and squaring as inline `asm!`
+blocks, modular addition and subtraction, and a repeated-squaring chain and conversion out of
+Montgomery form composed from them. It is the one part of the crate that allows unsafe code. Its
+priorities are those of the crate: **correctness, constant-time behaviour, and performance**, in
+that order.
 
 The routines are transcriptions of Supranational's Semolina v0.1.4 (see `src/asm/README.md`).
 The instruction streams are the object of machine-checked correctness proofs, so a change to
 an instruction is a change to a specification: keep the transcription, its documentation, and
 the proofs in step, and do not "improve" the assembly in passing.
 
-The module currently provides a backend on `target_arch = "aarch64"`; elsewhere the `asm` module
-is absent. Nothing is assembled at build time, so no C toolchain is needed. On AArch64, beside
-the crate's usual checks:
+The module provides a backend on `target_arch = "aarch64"` and, in part, on
+`target_arch = "x86_64"`: `add` and `sub` on every x86-64 target, and `mul` and `square` on
+x86-64 with 64-bit pointers. Elsewhere the `asm` module is absent. Nothing is assembled at
+build time, so no C toolchain is needed. On all of those, beside the crate's usual checks:
 
 ```sh
 cargo test asm::                # the backend's tests, with the debug assertions they check
