@@ -6,6 +6,13 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `pasta_curves::{EpAffine, EqAffine}::from_xy_unchecked`, a `const`
+  constructor that builds an affine point from coordinates without checking
+  that it lies on the curve. It is intended for protocol constants and
+  precomputed tables, which can now be written as `const` or `static` items
+  instead of paying for `CurveAffine::from_xy` on every use.
+
 ### Changed
 - Migrated to `ff 0.14`, `group 0.14`, `rand 0.10` and `rand_xorshift 0.5`.
   This is a BREAKING change to public trait shape:
