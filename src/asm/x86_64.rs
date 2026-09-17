@@ -465,13 +465,28 @@ pub(super) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
         is_canonical(value, modulus),
         "pasta_curves::asm::square requires a canonical input"
     );
-    let (o0, o1, o2, o3): (u64, u64, u64, u64);
-    // SAFETY: straight-line arithmetic reading only the eight words
-    // behind the two passed references (`readonly`): the input's four limbs
-    // and the four modulus limbs, with `inv` arriving in a register of its
-    // own. No stack use, and outputs depend only on the declared inputs.
-    // The input pointer's register is reclaimed as the reduction's carry
-    // limb once phase 1 has consumed the last load.
+    square_hi(square_lo(*value), modulus, inv)
+}
+
+/// Phase one of squaring: the 512-bit product as cross products, one
+/// doubling pass, and the diagonals (ten MULX against the multiplication's
+/// sixteen). Always inlined so that [`sqr_n_mul`]'s loop can pass the
+/// accumulator in registers: the block occupies fifteen simultaneous
+/// registers, which is the most the compiler will allocate to one block in
+/// both the release and dev profiles.
+///
+/// # Safety
+///
+/// The block is straight-line register-only arithmetic with declared
+/// inputs and outputs; no memory or stack access.
+#[cfg(target_pointer_width = "64")]
+#[inline(always)]
+fn square_lo(value: Limbs) -> [u64; 8] {
+    let (z0, z1, z2, z3, z4, z5, z6, z7): (u64, u64, u64, u64, u64, u64, u64, u64);
+    let [a0, a1, a2, a3] = value;
+    // SAFETY: straight-line register-only arithmetic with declared inputs
+    // and outputs; no memory or stack access, and outputs depend only on
+    // the declared inputs.
     unsafe {
         asm!(
             // Phase 1: the 512-bit square in z0..z7.
@@ -479,25 +494,25 @@ pub(super) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
             "xor {z5:e}, {z5:e}",
             "xor {z6:e}, {z6:e}",
             "xor {z7:e}, {z7:e}",
-            "mov rdx, qword ptr [{a}]",
-            "mulx {t1}, {z1}, qword ptr [{a} + 8]",  // a0*a1.
-            "mulx {t2}, {z2}, qword ptr [{a} + 16]", // a0*a2.
-            "mulx {z4}, {z3}, qword ptr [{a} + 24]", // a0*a3.
+            "mov rdx, {a0}",
+            "mulx {t1}, {z1}, {a1}",              // a0*a1.
+            "mulx {t2}, {z2}, {a2}",              // a0*a2.
+            "mulx {z4}, {z3}, {a3}",              // a0*a3.
             "add {z2}, {t1}",                        // Fold high(a0*a1).
             // Fold high(a0*a2) and carry.
             "adc {z3}, {t2}",
             "adc {z4}, 0",
-            "mov rdx, qword ptr [{a} + 8]",
-            "mulx {t2}, {t1}, qword ptr [{a} + 16]", // a1*a2.
+            "mov rdx, {a1}",
+            "mulx {t2}, {t1}, {a2}",              // a1*a2.
             "add {z3}, {t1}",
             "adc {z4}, {t2}",
             "adc {z5}, 0",
-            "mulx {t2}, {t1}, qword ptr [{a} + 24]", // a1*a3.
+            "mulx {t2}, {t1}, {a3}",              // a1*a3.
             "add {z4}, {t1}",
             "adc {z5}, {t2}",
             "adc {z6}, 0",
-            "mov rdx, qword ptr [{a} + 16]",
-            "mulx {t2}, {t1}, qword ptr [{a} + 24]", // a2*a3.
+            "mov rdx, {a2}",
+            "mulx {t2}, {t1}, {a3}",              // a2*a3.
             "add {z5}, {t1}",
             "adc {z6}, {t2}",
             "adc {z7}, 0",
@@ -512,27 +527,67 @@ pub(super) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
             "adc {z7}, {z7}",
             // Add the diagonal squares in one carry chain (MOV and MULX
             // preserve flags).
-            "mov rdx, qword ptr [{a}]",
+            "mov rdx, {a0}",
             "mulx {t2}, {z0}, rdx",                  // z0 = low(a0^2).
             "add {z1}, {t2}",                        // High(a0^2).
-            "mov rdx, qword ptr [{a} + 8]",
+            "mov rdx, {a1}",
             "mulx {t2}, {t1}, rdx",
             "adc {z2}, {t1}",
             "adc {z3}, {t2}",
-            "mov rdx, qword ptr [{a} + 16]",
+            "mov rdx, {a2}",
             "mulx {t2}, {t1}, rdx",
             "adc {z4}, {t1}",
             "adc {z5}, {t2}",
-            "mov rdx, qword ptr [{a} + 24]",
+            "mov rdx, {a3}",
             "mulx {t2}, {t1}, rdx",
             "adc {z6}, {t1}",
             "adc {z7}, {t2}",                        // a^2 < 2^510: no carry out.
+            a0 = in(reg) a0,
+            a1 = in(reg) a1,
+            a2 = in(reg) a2,
+            a3 = in(reg) a3,
+            z0 = out(reg) z0,
+            z1 = out(reg) z1,
+            z2 = out(reg) z2,
+            z3 = out(reg) z3,
+            z4 = out(reg) z4,
+            z5 = out(reg) z5,
+            z6 = out(reg) z6,
+            z7 = out(reg) z7,
+            t1 = out(reg) _,
+            t2 = out(reg) _,
+            out("rdx") _,
+            options(pure, nomem, nostack),
+        );
+    }
+    [z0, z1, z2, z3, z4, z5, z6, z7]
+}
 
+/// Phase two of squaring: four Montgomery cancellations on the rotating
+/// four-limb window of the low product half, the high product half folded
+/// in (the sum stays below `2p`, so no carry escapes — see the AArch64
+/// module's bounds), and a CMOV conditional subtraction. Always inlined
+/// like [`square_lo`], for the same loop-accumulator reason.
+///
+/// # Safety
+///
+/// `product` must be the square of a canonical value. The memory operand
+/// reads the four modulus limbs.
+#[cfg(target_pointer_width = "64")]
+#[inline(always)]
+fn square_hi(product: [u64; 8], modulus: &Limbs, inv: u64) -> Limbs {
+    let (o0, o1, o2, o3): (u64, u64, u64, u64);
+    // SAFETY: straight-line arithmetic reading only the four modulus words
+    // behind the passed reference (`readonly`), with `inv` arriving in a
+    // register of its own. No stack use, and outputs depend only on the
+    // declared inputs.
+    unsafe {
+        asm!(
             // Phase 2: four Montgomery cancellations on the low half, the
             // same two-sweep step as [`mul`]'s. The window rotates down one
-            // register per step; {a} (its loads are done) serves as the
-            // first carried fifth limb.
-            // Step 0: window [z0, z1, z2, z3], carry into {a}.
+            // register per step; the fifth limb alternates between the two
+            // otherwise-dead high product limbs.
+            // Step 0: window [z0, z1, z2, z3], carry into a.
             "mov rdx, {z0}",
             "imul rdx, {inv}",                       // rdx = q.
             "mulx {t2}, {t1}, qword ptr [{p} + 8]",  // t1/t2 = low/high(q*p1).
@@ -629,18 +684,20 @@ pub(super) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
             "cmovnc {z0}, {t2}",
             "cmovnc {z1}, {z3}",
             "cmovnc {z2}, {z4}",
-            a = inout(reg) value.as_ptr() => o0,
+            // Window limbs: each z register is both an input (a product limb)
+            // and a rewritten accumulator position; z3 and z4 end as scratch.
+            a = out(reg) o0,
             p = in(reg) modulus.as_ptr(),
             inv = in(reg) inv,
             p3 = const PASTA_HIGH_LIMB,
-            z0 = out(reg) o1,
-            z1 = out(reg) o2,
-            z2 = out(reg) o3,
-            z3 = out(reg) _,
-            z4 = out(reg) _,
-            z5 = out(reg) _,
-            z6 = out(reg) _,
-            z7 = out(reg) _,
+            z0 = inout(reg) product[0] => o1,
+            z1 = inout(reg) product[1] => o2,
+            z2 = inout(reg) product[2] => o3,
+            z3 = inout(reg) product[3] => _,
+            z4 = inout(reg) product[4] => _,
+            z5 = in(reg) product[5],
+            z6 = in(reg) product[6],
+            z7 = in(reg) product[7],
             t1 = out(reg) _,
             t2 = out(reg) _,
             out("rdx") _,
@@ -648,4 +705,40 @@ pub(super) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
         );
     }
     [o0, o1, o2, o3]
+}
+
+/// Squares `value` `count` times, then multiplies by the canonical `rhs`.
+///
+/// The loop keeps the accumulator in registers: each squaring is the
+/// always-inlined [`square_lo`] and [`square_hi`] pair, so there is no call
+/// boundary or return-value traffic per iteration — the ~250 squarings of a
+/// field inversion would otherwise pay `square`'s call cost each time. The
+/// final multiplication goes through [`mul`]'s call boundary, once.
+///
+/// # Safety
+///
+/// `value` and `rhs` must be canonical (debug-asserted). The memory
+/// operands read the four modulus limbs.
+#[cfg(target_pointer_width = "64")]
+#[inline(never)]
+pub(super) fn sqr_n_mul(
+    value: &Limbs,
+    count: usize,
+    rhs: &Limbs,
+    modulus: &Limbs,
+    inv: u64,
+) -> Limbs {
+    debug_assert!(
+        is_canonical(value, modulus),
+        "pasta_curves::asm::sqr_n_mul requires a canonical value"
+    );
+    debug_assert!(
+        is_canonical(rhs, modulus),
+        "pasta_curves::asm::sqr_n_mul requires a canonical rhs"
+    );
+    let mut acc = *value;
+    for _ in 0..count {
+        acc = square_hi(square_lo(acc), modulus, inv);
+    }
+    mul(&acc, rhs, modulus, inv)
 }

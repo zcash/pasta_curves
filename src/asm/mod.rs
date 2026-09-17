@@ -201,11 +201,22 @@ pub fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
 ))]
 #[inline]
 pub fn sqr_n_mul(value: &Limbs, count: usize, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
-    let mut acc = *value;
-    for _ in 0..count {
-        acc = square(&acc, modulus, inv);
+    // On aarch64, `square` and `mul` can be inlined and optimised by Rust.
+    #[cfg(target_arch = "aarch64")]
+    {
+        let mut acc = *value;
+        for _ in 0..count {
+            acc = square(&acc, modulus, inv);
+        }
+        mul(&acc, rhs, modulus, inv)
     }
-    mul(&acc, rhs, modulus, inv)
+
+    // On x86_64, `square` and `mul` can't be inlined due to register pressure, so we need
+    // a separate fused assembly implementation.
+    #[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
+    {
+        x86_64::sqr_n_mul(value, count, rhs, modulus, inv)
+    }
 }
 
 /// Converts a Montgomery residue into its canonical integer, `value * 2^-256 mod p`, as a
