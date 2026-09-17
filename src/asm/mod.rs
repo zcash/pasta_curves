@@ -45,6 +45,56 @@ fn is_canonical(value: &Limbs, modulus: &Limbs) -> bool {
     false
 }
 
+/// Adds two residues for a Pasta modulus and conditionally subtracts the modulus.
+///
+/// # Safety
+///
+/// Both inputs must be canonical; this is debug-asserted.
+///
+/// `modulus` must be either the Pallas or Vesta field modulus. Any other values will
+/// cause undefined results.
+#[inline(always)]
+pub fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
+    debug_assert!(
+        is_canonical(lhs, modulus),
+        "pasta_curves::asm::add requires a canonical lhs"
+    );
+    debug_assert!(
+        is_canonical(rhs, modulus),
+        "pasta_curves::asm::add requires a canonical rhs"
+    );
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        aarch64::add(lhs, rhs, modulus)
+    }
+}
+
+/// Subtracts two residues for a Pasta modulus, adding the modulus back on underflow.
+///
+/// # Safety
+///
+/// Both inputs must be canonical; this is debug-asserted.
+///
+/// `modulus` must be either the Pallas or Vesta field modulus. Any other values will
+/// cause undefined results.
+#[inline(always)]
+pub fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
+    debug_assert!(
+        is_canonical(lhs, modulus),
+        "pasta_curves::asm::sub requires a canonical lhs"
+    );
+    debug_assert!(
+        is_canonical(rhs, modulus),
+        "pasta_curves::asm::sub requires a canonical rhs"
+    );
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        aarch64::sub(lhs, rhs, modulus)
+    }
+}
+
 /// Multiplies two Montgomery residues for a Pasta modulus.
 ///
 /// # Safety

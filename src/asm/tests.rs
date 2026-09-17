@@ -8,7 +8,7 @@
 //! the `mul` tests beside it in `src/fields/fp.rs` and `src/fields/fq.rs`. The
 //! field types do not use the backend yet.
 
-use super::{Limbs, from_mont, mul, sqr_n_mul, square};
+use super::{Limbs, add, from_mont, mul, sqr_n_mul, square, sub};
 
 /// One field's constants and known answers.
 struct Field {
@@ -17,6 +17,10 @@ struct Field {
     inv: u64,
     /// `R = 2^256 mod p`, the Montgomery form of `1`.
     r: Limbs,
+    /// `2R mod p`.
+    two_r: Limbs,
+    /// `3R mod p`.
+    three_r: Limbs,
     /// `R^2 mod p`.
     r2: Limbs,
     /// `R^3 mod p`.
@@ -27,6 +31,8 @@ struct Field {
     r7: Limbs,
     /// `mul(p - 1, p - 1)`.
     pm1_sq: Limbs,
+    /// `p - 2`.
+    pm2: Limbs,
 }
 
 /// The Pallas base field (`pasta_curves::Fp`).
@@ -42,6 +48,18 @@ const FP: Field = Field {
         0x34786d38fffffffd,
         0x992c350be41914ad,
         0xffffffffffffffff,
+        0x3fffffffffffffff,
+    ],
+    two_r: [
+        0xcfc3a984fffffff9,
+        0x1011d11bbee5303e,
+        0xffffffffffffffff,
+        0x3fffffffffffffff,
+    ],
+    three_r: [
+        0x6b0ee5d0fffffff5,
+        0x86f76d2b99b14bd0,
+        0xfffffffffffffffe,
         0x3fffffffffffffff,
     ],
     r2: [
@@ -74,6 +92,12 @@ const FP: Field = Field {
         0x70cb2996efc89a65,
         0x21f1c4ff1e2278d5,
     ],
+    pm2: [
+        0x992d30ecffffffff,
+        0x224698fc094cf91b,
+        0x0000000000000000,
+        0x4000000000000000,
+    ],
 };
 
 /// The Vesta base field (`pasta_curves::Fq`).
@@ -89,6 +113,18 @@ const FQ: Field = Field {
         0x5b2b3e9cfffffffd,
         0x992c350be3420567,
         0xffffffffffffffff,
+        0x3fffffffffffffff,
+    ],
+    two_r: [
+        0x2a0f9218fffffff9,
+        0x1011d11bbcef61f1,
+        0xffffffffffffffff,
+        0x3fffffffffffffff,
+    ],
+    three_r: [
+        0xf8f3e594fffffff5,
+        0x86f76d2b969cbe7a,
+        0xfffffffffffffffe,
         0x3fffffffffffffff,
     ],
     r2: [
@@ -121,6 +157,12 @@ const FQ: Field = Field {
         0x5790be58c050df13,
         0x1f7a89dd17647953,
     ],
+    pm2: [
+        0x8c46eb20ffffffff,
+        0x224698fc0994a8dd,
+        0x0000000000000000,
+        0x4000000000000000,
+    ],
 };
 
 const FIELDS: [&Field; 2] = [&FP, &FQ];
@@ -133,6 +175,32 @@ fn p_minus_1(f: &Field) -> Limbs {
     let mut limbs = f.modulus;
     limbs[0] -= 1;
     limbs
+}
+
+#[test]
+fn add_known_answers() {
+    for f in FIELDS {
+        assert_eq!(add(&f.r, &f.r, &f.modulus), f.two_r);
+        assert_eq!(add(&f.r, &f.two_r, &f.modulus), f.three_r);
+        assert_eq!(add(&f.two_r, &f.r, &f.modulus), f.three_r);
+        let pm1 = p_minus_1(f);
+        assert_eq!(add(&pm1, &pm1, &f.modulus), f.pm2);
+        assert_eq!(add(&ZERO, &pm1, &f.modulus), pm1);
+        assert_eq!(add(&pm1, &ZERO, &f.modulus), pm1);
+    }
+}
+
+#[test]
+fn sub_known_answers() {
+    for f in FIELDS {
+        assert_eq!(sub(&f.r, &f.r, &f.modulus), ZERO);
+        assert_eq!(sub(&f.two_r, &f.r, &f.modulus), f.r);
+        assert_eq!(sub(&f.three_r, &f.r, &f.modulus), f.two_r);
+        assert_eq!(sub(&f.three_r, &f.two_r, &f.modulus), f.r);
+        let pm1 = p_minus_1(f);
+        assert_eq!(sub(&pm1, &pm1, &f.modulus), ZERO);
+        assert_eq!(sub(&pm1, &f.pm2, &f.modulus), ONE);
+    }
 }
 
 #[test]

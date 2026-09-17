@@ -27,8 +27,9 @@ use core::arch::asm;
 
 use super::{Limbs, is_canonical};
 
-/// Adds two residues for a Pasta modulus and conditionally subtracts the
-/// modulus. Like [`mul`], the block hardcodes the Pasta modulus shape
+/// Adds two residues for a Pasta modulus and conditionally subtracts the modulus.
+///
+/// Like [`mul`], the block hardcodes the Pasta modulus shape
 /// (`modulus[2] == 0`). Both inputs must be canonical (debug-asserted; a
 /// violation yields an incorrect residue): the top carry of the addition is
 /// dropped and only one subtraction is attempted, both justified by
@@ -85,7 +86,9 @@ pub(super) fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 }
 
 /// Subtracts two residues for a Pasta modulus, adding the modulus back on
-/// underflow. Like [`add`] and [`mul`], the block hardcodes the Pasta
+/// underflow.
+///
+/// Like [`add`] and [`mul`], the block hardcodes the Pasta
 /// modulus shape (`modulus[2] == 0`). Canonical inputs (debug-asserted)
 /// guarantee a canonical result: the difference lies strictly between `-p`
 /// and `p`, so one conditional addition suffices, and the final carry is
