@@ -153,7 +153,9 @@ cd .. && lean/scripts/check.sh   # regenerate the transcription and check the sk
 - **`Transcription.lean` and `Vectors.lean` are generated** by `lean/scripts/gen.py` from the
   `asm!` blocks in `src/asm/aarch64.rs` and the vectors file. Never edit them by hand; change
   the generator or its inputs and regenerate. `Compositions.lean` is hand-written and mirrors
-  the Rust of `sqr_n_mul` and `from_mont`; a change to either changes both.
+  the Rust of `src/asm/mod.rs` (the compositions `sqr_n_mul` and `from_mont`, `is_canonical`,
+  and the condition that `mul` asserts), and `Fields.lean` states the two fields' constants; a
+  change on either side changes the other.
 - **In `Spec.lean`, the generated skeleton lines are not edited either.** Only the theorem
   statements and the `-- BEGIN ... -- END` annotation blocks are hand-written; `gen.py
   --check-spec` requires the rest to be the current skeleton. A change to a block regenerates

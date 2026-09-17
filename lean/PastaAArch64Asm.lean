@@ -8,6 +8,7 @@ import PastaAArch64Asm.Compositions
 import PastaAArch64Asm.Fields
 import PastaAArch64Asm.Vectors
 import PastaAArch64Asm.Spec
+import PastaAArch64Asm.Entry
 
 /-!
 # The crate's AArch64 Pasta Montgomery routines, formalized
