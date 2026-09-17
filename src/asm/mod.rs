@@ -24,7 +24,7 @@
 //!
 //! [Semolina]: https://github.com/supranational/semolina
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", doc))]
 mod aarch64;
 
 #[cfg(test)]

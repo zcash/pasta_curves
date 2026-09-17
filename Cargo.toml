@@ -19,6 +19,8 @@ documentation = "https://docs.rs/pasta_curves"
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
+# Build one synthetic documentation set containing every architecture backend.
+targets = []
 
 [dev-dependencies]
 bincode = "1.3"

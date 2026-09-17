@@ -121,6 +121,11 @@ instead of using the sysroot (`cargo +nightly build --release --no-default-featu
 build-std=core,compiler_builtins --target aarch64-apple-darwin`), which proves that nothing in
 the backend reaches for std.
 
+Documentation is a synthetic cross-platform build: `cfg(doc)` retains APIs that are unavailable
+on the rustdoc host, while `doc(cfg(...))` renders their real architecture requirements. Because
+`doc(cfg)` is still unstable, docs.rs builds on nightly with `--cfg docsrs`. When adding another
+backend, update these conditions and keep doc-only fallback bodies non-executable.
+
 - **Preserve constant-time behaviour in the backend.** No secret-dependent branches or memory
   accesses in the blocks; the repeated-squaring loop branches only on its public count.
   Conditional reductions use `csel` after a full-width subtraction.
