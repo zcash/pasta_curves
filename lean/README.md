@@ -31,6 +31,9 @@ What is trusted, beyond Lean's kernel and standard axioms:
    transcribe, and by Semolina's `from_mont_pasta`, whose value `fromMont` computes as a
    multiplication by `1`; the examples cover the operands inside the proved contracts, where
    the blocks compute the same values.
+5. The field constants in `Fields.lean`, the modulus limbs and `inv` of the two Pasta base
+   fields as the crate's tests spell them: `decide` checks that the limbs encode the primes as
+   pasta_curves states them, and every vector is checked with them.
 
 Not modelled formally: the compiler's handling of the blocks' operands, that is, the
 allocation of registers to the placeholders and the `options(pure, nomem, nostack)`
@@ -44,6 +47,7 @@ PastaAArch64Asm.lean                  root module, imports everything below
 PastaAArch64Asm/Semantics.lean        registers, carry, instruction functions
 PastaAArch64Asm/Transcription.lean    GENERATED: the blocks and the round
 PastaAArch64Asm/Compositions.lean     the crate's two compositions of the blocks
+PastaAArch64Asm/Fields.lean           the crate's two fields, with the facts that the proofs assume
 PastaAArch64Asm/Vectors.lean          GENERATED: reference vectors, kernel-checked
 PastaAArch64Asm/Spec.lean             the theorems
 ../test-vectors/pasta_mul-armv8-vectors.txt   the hardware outputs the examples are generated from

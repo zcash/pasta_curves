@@ -503,12 +503,8 @@ namespace PastaAArch64Asm
     return "".join(parts)
 
 
-FIELDS = {
-    "Fp": ("pallasBase", "⟨0x992d30ed00000001, 0x224698fc094cf91b, 0, 0x4000000000000000⟩",
-           "0x992d30ecffffffff"),
-    "Fq": ("vestaBase", "⟨0x8c46eb2100000001, 0x224698fc0994a8dd, 0, 0x4000000000000000⟩",
-           "0x8c46eb20ffffffff"),
-}
+# The crate's two fields, by the vectors file's key, as `Fields.lean` names them.
+FIELDS = {"Fp": "pallasBase", "Fq": "vestaBase"}
 
 
 # The two moduli as integers, for classifying the vectors' operands.
@@ -533,7 +529,7 @@ def in_contract(op, key, operands):
 
 
 def gen_vectors(lines):
-    out = [HEADER_VECTORS, "import PastaAArch64Asm.Compositions\n", """
+    out = [HEADER_VECTORS, "import PastaAArch64Asm.Compositions\nimport PastaAArch64Asm.Fields\n", """
 /-!
 # Reference vectors for the transcribed blocks
 
@@ -549,26 +545,20 @@ the routines' outputs on operands outside the proved contracts (unreduced operan
 block's dropped fifth limb can change the result, and those are left out here, with their
 number recorded at the end.
 
-The modulus limbs and `inv` are the crate's constants for its `Fp` (the Pallas base field)
-and `Fq` (the Vesta base field).
+The modulus limbs and `inv` are `pallasBase` and `vestaBase` from `Fields.lean`, the crate's
+constants for its `Fp` (the Pallas base field) and `Fq` (the Vesta base field).
 -/
 
 namespace PastaAArch64Asm
 
 """]
-    for key, (prefix, limbs, inv) in FIELDS.items():
-        field = "Pallas" if key == "Fp" else "Vesta"
-        out.append(f"/-- The {field} base field modulus, as the crate's `MODULUS` limbs. -/\n")
-        out.append(f"def {prefix}Modulus : Limbs := {limbs}\n\n")
-        out.append(f"/-- `-p^-1 mod 2^64` for the {field} base field, the crate's `INV`. -/\n")
-        out.append(f"def {prefix}Inv : Nat := {inv}\n\n")
     n, skipped = 0, {}
     for line in lines:
         parts = line.split()
         if not parts:
             continue
         op, key, *vals = parts
-        prefix = FIELDS[key][0]
+        prefix = FIELDS[key]
         fn = {"MUL": "mulMont", "SQR": "sqrMont", "FROM": "fromMont"}.get(op)
         if fn is None:
             raise ValueError(line)
@@ -581,7 +571,7 @@ namespace PastaAArch64Asm
         out.append(f"example :\n    {fn}\n")
         for v in vals:
             out.append(f"      {v}\n")
-        out.append(f"      {prefix}Modulus {prefix}Inv =\n    (Limbs.ofNat 0x{r}) := by\n  decide +kernel\n\n")
+        out.append(f"      {prefix}.modulus {prefix}.inv =\n    (Limbs.ofNat 0x{r}) := by\n  decide +kernel\n\n")
         n += 1
     omitted = ", ".join(f"{k} {op}" for op, k in sorted(skipped.items())) or "none"
     out.append(f"\n-- {n} vectors; omitted as outside the proved contracts: {omitted}.\n\n"
