@@ -42,9 +42,10 @@ fields; on other targets there is nothing to test. `scripts/ci.sh` runs every ch
 ## Formal verification
 
 `lean/` holds a Lean 4 development that models the routines formally and contributes to assuring
-their correctness: an instruction-level model, with proofs for the multiplication block under
-each of its two operand contracts, for the squaring block on a canonical input, for the
-conversion out of Montgomery form on any input, and for the repeated-squaring chain with its
-final multiplication. The transcription is generated from the module's own inline blocks, CI
-regenerates and diffs it, and an independent implementation of the Lean kernel re-checks the
-build. See [`lean/README.md`](../../lean/README.md).
+their correctness. The model is at the instruction level. The multiplication block is proved
+under each of its two operand contracts, the squaring block on a canonical input, the conversion
+out of Montgomery form on any input, and the repeated-squaring chain with its final
+multiplication. From those, each of the four entry points is proved at either Pasta field, under
+the condition that the entry point asserts. The transcription is generated from the module's own
+inline blocks, CI regenerates and diffs it, and an independent implementation of the Lean kernel
+re-checks the build. See [`lean/README.md`](../../lean/README.md).

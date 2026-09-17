@@ -126,9 +126,9 @@ pub fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 ///
 /// Either `lhs` is canonical (below the modulus) and `rhs` is any four-limb value, or
 /// `rhs` is canonical with each of its limbs 1 to 3 at most `2^64 - 3` and `lhs` is any
-/// four-limb value. This is the contract that the machine-checked proofs in `lean/`
-/// establish (`mulMont_spec_of_lhs_lt` and `mulMont_spec_of_rhs_lt`), and is
-/// debug-asserted.
+/// four-limb value. This is debug-asserted, and under it the machine-checked proofs in
+/// `lean/` establish the result (`mul_entry_spec`, from `mulMont_spec_of_lhs_lt` and
+/// `mulMont_spec_of_rhs_lt`).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
 /// correctly derived from it. Any other values will cause undefined results.
@@ -162,8 +162,8 @@ pub fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
 ///
 /// # Safety
 ///
-/// The input of `square` must be canonical, a contract that the proofs do not cover; this
-/// is debug-asserted.
+/// The input of `square` must be canonical. This is debug-asserted, and under it the
+/// machine-checked proofs in `lean/` establish the result (`square_entry_spec`).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
 /// correctly derived from it. Any other values will cause undefined results.
@@ -192,7 +192,8 @@ pub fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
 /// Squares a canonical Montgomery residue `count` times, then multiplies the
 /// result by the canonical Montgomery residue `rhs`.
 ///
-/// A `count` of zero is just the multiplication.
+/// A `count` of zero is just the multiplication. For a canonical `value`, the machine-checked
+/// proofs in `lean/` establish the result (`sqrNMul_entry_spec`).
 ///
 /// Each step is one of the inline blocks, which the compiler inlines, so the accumulator
 /// stays in registers throughout.
@@ -229,8 +230,8 @@ pub fn sqr_n_mul(value: &Limbs, count: usize, rhs: &Limbs, modulus: &Limbs, inv:
 /// Montgomery multiplication by one.
 ///
 /// Any four-limb `value` is accepted: `1` is canonical with limbs 1 to 3 zero, so it is a
-/// right operand inside the multiplication's contract for any left operand
-/// (`mulMont_spec_of_rhs_lt` in `lean/`).
+/// right operand inside the multiplication's contract for any left operand; the
+/// machine-checked proofs in `lean/` establish the result (`fromMont_entry_spec`).
 ///
 /// # Safety
 ///
