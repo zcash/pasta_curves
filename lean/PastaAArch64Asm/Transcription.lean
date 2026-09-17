@@ -1,6 +1,6 @@
 /-
 Copyright Supranational LLC (the routines, transcribed from Semolina v0.1.4).
-Copyright (c) 2026 the pasta-aarch64-asm contributors (the transcription).
+Copyright (c) 2026 the pasta-asm contributors (the transcription).
 Released under the Apache License, Version 2.0, as described in the file LICENSE.
 -/
 import PastaAArch64Asm.Semantics
