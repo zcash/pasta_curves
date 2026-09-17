@@ -31,9 +31,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Pinned so a new ruff release cannot fail an unrelated change; the rules are in
-      # ruff.toml.
+      # Pinned by version and by the hashes of the published wheels, so a new ruff release
+      # cannot fail an unrelated change and the pinned release cannot be swapped underneath;
+      # the rules are in ruff.toml. The environment lives outside the checkout so that
+      # `ruff check .` does not lint it.
+      - name: Install ruff, hash-pinned
+        run: |
+          python3 -m venv "$RUNNER_TEMP/lint-venv"
+          "$RUNNER_TEMP/lint-venv/bin/pip" install --require-hashes -r scripts/lint-requirements.txt
       - name: Lint the Python scripts
-        run: pipx run ruff==0.16.7 check .
+        run: '"$RUNNER_TEMP/lint-venv/bin/ruff" check .'
       - name: Check the Python scripts' formatting
-        run: pipx run ruff==0.16.7 format --check .
+        run: '"$RUNNER_TEMP/lint-venv/bin/ruff" format --check .'

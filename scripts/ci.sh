@@ -127,8 +127,11 @@ if command -v ruff >/dev/null; then
   ruff format --check .
 else
   skip "ruff" \
-    "  install it with one of: pipx install ruff; brew install ruff
-  (https://docs.astral.sh/ruff/)"
+    "  install it with one of:
+    pipx install ruff
+    brew install ruff
+    python3 -m venv DIR && DIR/bin/pip install --require-hashes -r scripts/lint-requirements.txt
+  (the last is CI's pinned build; https://docs.astral.sh/ruff/)"
 fi
 
 # ---- The formalization (lean.yml) ----
