@@ -47,13 +47,13 @@ OUT_VECTORS = Path("lean/PastaAArch64Asm/Vectors.lean")
 
 HEADER = """/-
 Copyright Supranational LLC (the routines, transcribed from Semolina v0.1.4).
-Copyright (c) 2026 the pasta-aarch64-asm contributors (the transcription).
+Copyright (c) 2026 the pasta-asm contributors (the transcription).
 Released under the Apache License, Version 2.0, as described in the file LICENSE.
 -/
 """
 
 HEADER_VECTORS = """/-
-Copyright (c) 2026 the pasta-aarch64-asm contributors.
+Copyright (c) 2026 the pasta-asm contributors.
 Released under the Apache License, Version 2.0, as described in the file LICENSE.
 -/
 """
