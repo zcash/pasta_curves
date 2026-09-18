@@ -187,6 +187,7 @@ fn add_known_answers() {
         assert_eq!(add(&pm1, &pm1, &f.modulus), f.pm2);
         assert_eq!(add(&ZERO, &pm1, &f.modulus), pm1);
         assert_eq!(add(&pm1, &ZERO, &f.modulus), pm1);
+        assert_eq!(add(&pm1, &ONE, &f.modulus), ZERO);
     }
 }
 
@@ -200,6 +201,8 @@ fn sub_known_answers() {
         let pm1 = p_minus_1(f);
         assert_eq!(sub(&pm1, &pm1, &f.modulus), ZERO);
         assert_eq!(sub(&pm1, &f.pm2, &f.modulus), ONE);
+        assert_eq!(sub(&ZERO, &pm1, &f.modulus), ONE);
+        assert_eq!(sub(&ZERO, &ONE, &f.modulus), pm1);
     }
 }
 
