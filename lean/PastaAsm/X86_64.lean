@@ -4,6 +4,9 @@ Released under the Apache License, Version 2.0, as described in the file LICENSE
 -/
 import PastaAsm.X86_64.Semantics
 import PastaAsm.X86_64.Transcription
+import PastaAsm.X86_64.Compositions
+import PastaAsm.X86_64.Vectors
+import PastaAsm.X86_64.Checks
 
 /-!
 # The crate's x86-64 Pasta arithmetic, formalized
