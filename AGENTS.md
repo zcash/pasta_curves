@@ -137,11 +137,13 @@ backend, update these conditions and keep doc-only fallback bodies non-executabl
 
 ## The Lean formalization (`lean`)
 
-`lean/` is a Lake package (`PastaAsm`) with shared definitions and an `AArch64` submodule that
-models the backend's AArch64 routines formally and contributes to assuring their correctness;
-see `lean/README.md` for the trust story, the theorems and their caveats, and how those theorems
-are proven. Build it from that directory with the elan-managed `lake` for its `lean-toolchain`
-(a `lake` of another Lean version corrupts the shared `.lake` cache):
+`lean/` is a Lake package (`PastaAsm`) with shared definitions and architecture-specific
+submodules. Its instruction-level models contribute to assuring the backend's routines'
+correctness; see `lean/README.md` for the implemented coverage, trust story, theorems and their
+caveats, and how those theorems are proven. All architectures use the same formalization
+pipeline; adding another architecture extends its existing verification coverage and tooling.
+Build it from that directory with the elan-managed `lake` for its `lean-toolchain` (a `lake` of
+another Lean version corrupts the shared `.lake` cache):
 
 ```sh
 cd lean
@@ -150,17 +152,67 @@ lake build --wfail          # warnings fail the build, as in CI
 cd .. && lean/scripts/check.sh   # regenerate the transcription and check the skeletons
 ```
 
-- **`AArch64/Transcription.lean` and `AArch64/Vectors.lean` are generated** by
-  `lean/scripts/gen.py` from the `asm!` blocks in `src/asm/aarch64.rs` and the vectors file.
-  Never edit them by hand; change the generator or its inputs and regenerate.
-  `AArch64/Compositions.lean` is hand-written and mirrors the AArch64 Rust compositions
-  `sqr_n_mul` and `from_mont`; the shared `Compositions.lean` models `is_canonical` and the
-  condition that `mul` asserts. `Fields.lean` states the two fields' constants; a change on
-  either side changes the other.
-- **In `AArch64/Spec.lean`, the generated skeleton lines are not edited either.** Only the
-  theorem statements and the `-- BEGIN ... -- END` annotation blocks are hand-written; `gen.py
-  --check-spec` requires the rest to be the current skeleton. A change to a block regenerates
-  the skeleton, and the annotations are then moved to their new places.
+- **Every architecture's `Transcription.lean` and `Vectors.lean` are generated** by
+  `lean/scripts/gen.py` from its Rust `asm!` blocks and the reference vectors. Never edit them
+  by hand; change the generator or its inputs and regenerate. Architecture-specific
+  `Compositions.lean` mirrors the actual Rust compositions, not another backend's implementation.
+  Shared `Compositions.lean` models common operand checks; `Fields.lean` states the two fields'
+  constants. A change on either side changes the other.
+- **Every architecture's block proofs use generated, checked skeletons.** Generated skeleton
+  lines in `Spec.lean` (or `Spec/*.lean`) are not hand-edited. Only theorem statements and
+  `-- BEGIN ... -- END` annotation blocks are hand-written. Skeleton generation and `check_spec`
+  must be available for each architecture, and the checker must require the unannotated proof
+  to match the current generated skeleton. A changed block regenerates the skeleton; its
+  annotations are then moved to their new places. Independently handwritten instruction traces
+  or proof scripts are not a substitute for this synchronization check.
+- **Architecture modules have consistent roles.** `Semantics` defines instruction behavior;
+  `Transcription` contains generated block models; `Compositions` models Rust around those
+  blocks; `Vectors` contains generated kernel-checked reference examples; `Spec` proves block
+  and composition correctness; `Entry` contains correctness **theorems** specializing those
+  results to `PastaField` and the actual asserted operand contracts, not redundant value wrappers.
+  Split per-block proof files belong under `<Architecture>/Spec/`, imported by its `Spec.lean`.
+  Shared arithmetic, constants, and architecture-independent lemmas stay outside ISA modules.
+- **Extend the shared generator pipeline.** `gen.py` owns CLI orchestration, binding storage,
+  liveness, formatting, vector emission, SSA naming, and proof skeleton generation/checking.
+  `asm_source.py` owns the self-contained Rust source parser and operand/output validation.
+  `gen_<architecture>.py` backends supply ISA-specific operand, instruction, flag, and
+  round-recognition rules through the shared machinery. Keep common code in `gen.py`, near
+  the existing implementation; a separate general-purpose module needs a substantial,
+  self-contained responsibility. Extend shared components rather than duplicating them.
+  Reject unsupported syntax, uninitialized register/flag reads, and unmodeled memory accesses;
+  test those rejection paths.
+
+### Adding or extending an architecture
+
+Before implementation, inspect the existing backend end to end and record a parity checklist:
+semantics, operand/flag validation, mechanical transcription, repeated-round handling, Rust
+compositions/contracts, generated vectors, generated proof skeletons, `check_spec`, block and
+composition proofs, field-specialized entry theorems, root imports, and CI/export checks.
+For each item identify the existing implementation, what can be shared, any genuine ISA-specific
+difference, and the command that verifies it. A missing feature is unfinished work, not an
+implicit exception. Obtain explicit operator agreement before omitting or weakening a feature;
+do not change these instructions or coverage documentation to legitimize an omission.
+
+- Cover every actual assembly block, including helper blocks, and every public composition.
+  Factor repeated rounds when appropriate, with mechanical validation of the factoring;
+  do not force identical helper structures onto different instruction schedules.
+- Generate reference checks for both Pasta fields using the existing vector corpus and its
+  contract filtering, extended only where actual backend contracts require it. Preserve vector
+  provenance: AArch64 hardware outputs reused for x86 are cross-backend reference checks, not
+  x86 hardware captures. Small handwritten examples do not replace generated vector coverage.
+- Match actual Rust assertions at both public and backend entry points. Report discrepancies
+  rather than silently strengthening theorem assumptions or changing Rust to make a proof fit.
+- `gen.py --check` and `scripts/check.sh` must check all architectures' transcriptions, vectors,
+  and proof skeletons, and run generator validation tests. Register every completed module in
+  the root import closure so the independent-kernel export includes it. A passing `lake build`
+  does not validate files that the build never imports.
+- Work in small self-contained commits, each building with `lake build --wfail` and passing
+  the relevant generation/skeleton tests. Intermediate coverage may be incomplete, but must be
+  explicitly tracked to completion; do not claim architecture support is complete until the
+  parity checklist is satisfied. Report any unavailable independent-kernel check separately.
+- During moves or refactoring, preserve existing comments, annotation markers, theorem bodies,
+  and generated output unless a change is necessary for the requested implementation. Do not
+  rewrite or drop explanatory text as incidental cleanup.
 - **No `sorry`, no `native_decide`, no new axioms.** The nanoda re-check permits only the three
   standard axioms; concrete facts are checked by `decide +kernel`.
 

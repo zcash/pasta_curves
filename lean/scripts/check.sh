@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Check that the Lean transcription of the crate's inline AArch64 Pasta Montgomery blocks
-# is current: regenerating the Lean files from the crate's `asm!` blocks reproduces the
+# Check that the Lean transcriptions of the crate's inline Pasta Montgomery blocks
+# are current: regenerating the Lean files from the crate's `asm!` blocks reproduces the
 # committed files exactly, and the generated parts of the proofs in Spec.lean are the ones
 # the generator produces.
 #
@@ -8,8 +8,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-python3 lean/scripts/gen.py
-git diff --exit-code -- \
-  lean/PastaAsm/AArch64/Transcription.lean lean/PastaAsm/AArch64/Vectors.lean
-python3 lean/scripts/gen.py --check-spec lean/PastaAsm/AArch64/Spec.lean
+python3 lean/scripts/gen.py --check
+python3 lean/scripts/gen.py --check-specs
+PYTHONDONTWRITEBYTECODE=1 python3 lean/scripts/test_gen.py
+PYTHONDONTWRITEBYTECODE=1 python3 lean/scripts/test_vectors.py
 echo "Lean transcription: current."

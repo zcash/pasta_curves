@@ -4,6 +4,11 @@ The `PastaAsm` library separates shared arithmetic definitions and lemmas from
 architecture-specific models. Currently only the AArch64 backend is formalized;
 the x86-64 backend does not yet have a Lean model or correctness proof.
 
+Both architectures use `scripts/gen.py`, with shared Rust `asm!` parsing and
+architecture-specific instruction emitters; `--check` compares generated output without
+rewriting it.
+Generator validation tests run as part of `scripts/check.sh`.
+
 ## Goal
 
 A machine-checked proof that the crate's routines compute Montgomery multiplication, squaring,
