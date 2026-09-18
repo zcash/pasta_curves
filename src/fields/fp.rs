@@ -257,6 +257,10 @@ impl Default for Fp {
     }
 }
 
+#[cfg(feature = "zeroize")]
+#[cfg_attr(docsrs, doc(cfg(feature = "zeroize")))]
+impl zeroize::DefaultIsZeroes for Fp {}
+
 impl Fp {
     /// Returns zero, the additive identity.
     #[inline]
@@ -977,4 +981,14 @@ fn test_from_u512() {
             0x26ebe27e262f471d
         ])
     );
+}
+
+#[cfg(feature = "zeroize")]
+#[test]
+fn test_zeroize() {
+    use zeroize::Zeroize;
+
+    let mut a = <Fp as ff::Field>::ONE;
+    a.zeroize();
+    assert_eq!(a, Fp::zero());
 }
