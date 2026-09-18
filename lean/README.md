@@ -6,10 +6,16 @@ architecture-specific models. The AArch64 backend has transcriptions and correct
 `X86_64/Transcription.lean` mechanically transcribes all six assembly blocks from
 `src/asm/x86_64.rs`. The x86-64 addition and subtraction blocks have correctness proofs in
 `X86_64/Spec/Add.lean` and `X86_64/Spec/Sub.lean`, with field-specialized `add_entry_spec`
-and `sub_entry_spec` theorems in `X86_64/Entry.lean`. The remaining
-block proofs are added separately. `X86_64/Spec.lean` exposes the completed block proofs;
-`Compositions.lean` mirrors the Rust compositions and `Checks.lean` supplies kernel-checked
-arithmetic regressions, not hardware vectors.
+and `sub_entry_spec` theorems in `X86_64/Entry.lean`. `X86_64/Spec/Square.lean` proves
+the exact eight-limb square. Montgomery multiplication, conversion, square reduction, and
+their composition/entry-point theorems remain incomplete and are deferred for interactive work.
+`X86_64/Spec.lean` exposes the completed block proofs; `Compositions.lean` mirrors Rust.
+`X86_64/Vectors.lean` contains 740 generated cross-backend checks against the existing
+AArch64 hardware corpus, not x86 hardware captures. Both fields are covered. Of the 312
+excluded multiplication vectors, 180 fail the public contract and another 132 fail the
+x86 backend's additional canonical-rhs assertion. The Rust replay test excludes the same
+132 vectors on x86-64 and checks, in a debug build, that the assertion fires on each of them.
+`Checks.lean` supplies additional kernel-checked arithmetic regressions.
 
 Both architectures use `scripts/gen.py`, with shared Rust `asm!` parsing and
 architecture-specific instruction emitters; `--check` compares generated output without

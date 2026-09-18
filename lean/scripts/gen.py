@@ -606,11 +606,12 @@ SPEC_MANIFEST = {
     "lean/PastaAsm/AArch64/Spec/Square.lean": ("AArch64", ("sqrMont",)),
     "lean/PastaAsm/X86_64/Spec/Add.lean": ("X86_64", ("addMod",)),
     "lean/PastaAsm/X86_64/Spec/Sub.lean": ("X86_64", ("subMod",)),
+    "lean/PastaAsm/X86_64/Spec/Square.lean": ("X86_64", ("squareLo",)),
 }
 
 # Missing proofs are tracked by routine, not by hypothetical files.
 UNPROVED_ROUTINES = {
-    "X86_64": ("mulMont", "squareLo", "squareHi", "fromMont"),
+    "X86_64": ("mulMont", "squareHi", "fromMont"),
 }
 
 
