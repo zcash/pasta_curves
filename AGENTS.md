@@ -95,11 +95,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 ## The assembly backends (`src/asm`)
 
 The `asm` module provides assembly backends for the Pasta field arithmetic. It contains an
-AArch64 backend and an x86-64 backend: Montgomery multiplication and squaring as inline `asm!`
-blocks, modular addition and subtraction, and a repeated-squaring chain and conversion out of
-Montgomery form composed from them. It is the one part of the crate that allows unsafe code. Its
-priorities are those of the crate: **correctness, constant-time behaviour, and performance**, in
-that order.
+AArch64 backend and an x86-64 backend: Montgomery multiplication and squaring, and modular
+addition and subtraction, as inline `asm!` blocks, and a repeated-squaring chain and conversion
+out of Montgomery form composed from them. It is the one part of the crate that allows unsafe
+code. Its priorities are those of the crate: **correctness, constant-time behaviour, and
+performance**, in that order.
 
 The routines are transcriptions of Supranational's Semolina v0.1.4 (see `src/asm/README.md`).
 The instruction streams are the object of machine-checked correctness proofs, so a change to

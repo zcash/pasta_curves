@@ -62,9 +62,12 @@ fn is_canonical(value: &Limbs, modulus: &Limbs) -> bool {
 
 /// Adds two residues for a Pasta modulus and conditionally subtracts the modulus.
 ///
+/// Outputs are canonical.
+///
 /// # Safety
 ///
-/// Both inputs must be canonical; this is debug-asserted.
+/// Both inputs must be canonical. This is debug-asserted, and under it the machine-checked
+/// proofs in `lean/` establish the result (`add_entry_spec`).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus. Any other values will
 /// cause undefined results.
@@ -92,9 +95,12 @@ pub fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 
 /// Subtracts two residues for a Pasta modulus, adding the modulus back on underflow.
 ///
+/// Outputs are canonical.
+///
 /// # Safety
 ///
-/// Both inputs must be canonical; this is debug-asserted.
+/// Both inputs must be canonical. This is debug-asserted, and under it the machine-checked
+/// proofs in `lean/` establish the result (`sub_entry_spec`).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus. Any other values will
 /// cause undefined results.
