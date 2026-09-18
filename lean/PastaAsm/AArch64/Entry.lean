@@ -2,14 +2,15 @@
 Copyright (c) 2026 the pasta-asm contributors.
 Released under the Apache License, Version 2.0, as described in the file LICENSE.
 -/
-import PastaAArch64Asm.Fields
-import PastaAArch64Asm.Spec
+import PastaAsm.Fields
+import PastaAsm.Spec
+import PastaAsm.AArch64.Spec
 
 /-!
 # The crate's entry points at its fields
 
-`Spec.lean` proves the blocks and the compositions for any modulus of the assumed shape, under
-arithmetic conditions on the operands. The theorems here restate them for the crate's four
+`PastaAsm.AArch64.Spec` proves the blocks and the compositions for any modulus of the assumed shape,
+under arithmetic conditions on the operands. The theorems here restate them for the crate's four
 entry points as `src/asm/mod.rs` exposes them: at either of its fields (a `PastaField`, whose facts
 discharge the hypotheses on the modulus), and under the condition that the entry point checks
 in a debug build (`mulContract` for `mul`, `isCanonical` for `square` and for the squarings of
@@ -17,28 +18,7 @@ in a debug build (`mulContract` for `mul`, `isCanonical` for `square` and for th
 The results are stated against the Montgomery radix `R = 2^256` of `Fields.lean`.
 -/
 
-namespace PastaAArch64Asm
-
-/-- `isCanonical` decides `value < modulus` on four-limb values. -/
-theorem isCanonical_iff (value modulus : Limbs) (hv : value.Bounded) (hm : modulus.Bounded) :
-    isCanonical value modulus = true ↔ value.toNat < modulus.toNat := by
-  obtain ⟨hv0, hv1, hv2, hv3⟩ := hv
-  obtain ⟨hm0, hm1, hm2, hm3⟩ := hm
-  unfold isCanonical Limbs.toNat
-  split_ifs <;> simp only [decide_eq_true_iff, false_iff, not_lt] <;> omega
-
-/-- `mulContract` decides the disjunction of the two proved operand contracts of the
-multiplication block. -/
-theorem mulContract_iff (lhs rhs modulus : Limbs) (hlhs : lhs.Bounded) (hrhs : rhs.Bounded)
-    (hm : modulus.Bounded) :
-    mulContract lhs rhs modulus = true ↔
-      lhs.toNat < modulus.toNat ∨
-        (rhs.toNat < modulus.toNat ∧
-          rhs.l1 + 3 ≤ 2^64 ∧ rhs.l2 + 3 ≤ 2^64 ∧ rhs.l3 + 3 ≤ 2^64) := by
-  unfold mulContract
-  simp only [Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_iff,
-    isCanonical_iff lhs modulus hlhs hm, isCanonical_iff rhs modulus hrhs hm]
-  omega
+namespace PastaAsm.AArch64
 
 /-- The crate's `mul` at a Pasta field: when the condition it asserts holds, the result is
 canonical, with `R * result ≡ lhs * rhs (mod p)`. -/
@@ -110,4 +90,4 @@ theorem sub_entry_spec (F : PastaField) (lhs rhs : Limbs) (hlhs : lhs.Bounded)
     ((isCanonical_iff lhs F.modulus hlhs F.bounded).1 hl)
     ((isCanonical_iff rhs F.modulus hrhs F.bounded).1 hr) _ rfl
 
-end PastaAArch64Asm
+end PastaAsm.AArch64

@@ -2,20 +2,20 @@
 Copyright (c) 2026 the pasta-asm contributors.
 Released under the Apache License, Version 2.0, as described in the file LICENSE.
 -/
-import PastaAArch64Asm.Semantics
+import PastaAsm.Semantics
 
 /-!
 # The crate's two fields
 
 The crate's routines take the modulus limbs and `inv` from the caller, for either Pasta base
 field. This module states those constants once, with the facts about them that the theorems in
-`Spec.lean` assume: the limbs are `[p0, p1, 0, 2^62]` and `inv * p0 ≡ -1 (mod 2^64)`. Each fact
-is closed by `decide`, and two examples check that the limbs encode the primes as pasta_curves
-states them. The vectors in `Vectors.lean` exercise both fields' constants against the hardware
-outputs.
+`AArch64/Spec.lean` assume: the limbs are `[p0, p1, 0, 2^62]` and `inv * p0 ≡ -1 (mod 2^64)`. Each
+fact is closed by `decide`, and two examples check that the limbs encode the primes as pasta_curves
+states them. The vectors in `AArch64/Vectors.lean` exercise both fields' constants against the
+hardware outputs.
 -/
 
-namespace PastaAArch64Asm
+namespace PastaAsm
 
 /-- The Montgomery radix, one more than the largest four-limb value: the crate holds a residue
 `x` as `x * R mod p`, and the entry-point theorems state their results against it. -/
@@ -67,4 +67,4 @@ def vestaBase : PastaField where
 example : vestaBase.modulus.toNat =
     0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001 := by decide
 
-end PastaAArch64Asm
+end PastaAsm

@@ -23,14 +23,14 @@ LAKE=${LAKE:-lake}
 
 # The export root: the package's root module, which imports every other module (checked
 # below), so a module cannot silently drop out of the re-check.
-ROOTS=(PastaAArch64Asm)
+ROOTS=(PastaAsm)
 
 python3 - "${ROOTS[@]}" <<'EOF'
 import re, sys
 from pathlib import Path
 roots = sys.argv[1:]
-files = [Path("PastaAArch64Asm.lean")]
-files += sorted(Path("PastaAArch64Asm").rglob("*.lean"))
+files = [Path("PastaAsm.lean")]
+files += sorted(Path("PastaAsm").rglob("*.lean"))
 mod = lambda p: ".".join(p.with_suffix("").parts)
 imports = {mod(f): set(re.findall(r"^import\s+([A-Za-z0-9_.]+)", f.read_text(), re.M))
            for f in files}

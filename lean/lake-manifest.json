@@ -91,6 +91,6 @@
    "inputRev": "v4.30.0",
    "inherited": true,
    "configFile": "lakefile.toml"}],
- "name": "PastaAArch64Asm",
+ "name": "PastaAsm",
  "lakeDir": ".lake",
  "fixedToolchain": false}

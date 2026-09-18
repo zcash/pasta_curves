@@ -2,8 +2,8 @@
 Copyright (c) 2026 the pasta-asm contributors.
 Released under the Apache License, Version 2.0, as described in the file LICENSE.
 -/
-import PastaAArch64Asm.Compositions
-import PastaAArch64Asm.Fields
+import PastaAsm.AArch64.Compositions
+import PastaAsm.Fields
 
 /-!
 # Reference vectors for the transcribed blocks
@@ -24,7 +24,7 @@ The modulus limbs and `inv` are `pallasBase` and `vestaBase` from `Fields.lean`,
 constants for its `Fp` (the Pallas base field) and `Fq` (the Vesta base field).
 -/
 
-namespace PastaAArch64Asm
+namespace PastaAsm.AArch64
 
 example :
     sqrMont
@@ -6953,4 +6953,4 @@ example :
 
 -- 874 vectors; omitted as outside the proved contracts: 180 MUL.
 
-end PastaAArch64Asm
+end PastaAsm.AArch64

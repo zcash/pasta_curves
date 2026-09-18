@@ -10,6 +10,6 @@ cd "$(dirname "$0")/../.."
 
 python3 lean/scripts/gen.py
 git diff --exit-code -- \
-  lean/PastaAArch64Asm/Transcription.lean lean/PastaAArch64Asm/Vectors.lean
-python3 lean/scripts/gen.py --check-spec lean/PastaAArch64Asm/Spec.lean
+  lean/PastaAsm/AArch64/Transcription.lean lean/PastaAsm/AArch64/Vectors.lean
+python3 lean/scripts/gen.py --check-spec lean/PastaAsm/AArch64/Spec.lean
 echo "Lean transcription: current."

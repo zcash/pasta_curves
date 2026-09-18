@@ -4,27 +4,16 @@ Released under the Apache License, Version 2.0, as described in the file LICENSE
 -/
 
 /-!
-# AArch64 instruction semantics for the Pasta Montgomery routines
-
-The subset of AArch64 that the crate's routines and inline blocks use: `mul`, `umulh`,
-`adds`/`adcs`/`adc`, `subs`/`sbcs`, `lsl`/`lsr` by an immediate, `csel` on the `lo` and `cs`
-conditions, and `mov`. Loads and stores are not modelled as memory operations: the generated
-programs read their operand limbs where the assembly loads them and return the limbs the assembly
-stores.
+# Generic semantics for the Pasta arithmetic routines
 
 A register value is a natural number below `2^64`. The bound is maintained by construction:
 every instruction reduces its result modulo `2^64`, and the carry flag is the quotient of the
 same sum by `2^64`, so it is `0` or `1` whenever the inputs are in range. Working in `Nat`
 rather than a fixed-width type keeps the proofs in `omega`'s fragment (`%` and `/` by
 literals) and lets the reference vectors be checked by the kernel with `decide`.
-
-AArch64's carry convention for subtraction is the one modelled here: after `subs`/`sbcs` the
-carry is set exactly when no borrow occurred, so `sbcs` subtracts `1 - carry` and `subs`
-behaves as `sbcs` with the carry set. The `lo` condition of `csel` (also written `cc`) is
-"carry clear", and `cs` is "carry set".
 -/
 
-namespace PastaAArch64Asm
+namespace PastaAsm
 
 /-- The register width, as the modulus of every register write. -/
 abbrev regMod : Nat := 2^64
@@ -39,24 +28,11 @@ def umulh (a b : Nat) : Nat := a * b / regMod
 carry-in `0`; `adc` discards the carry-out. -/
 def addc (a b c : Nat) : Nat × Nat := ((a + b + c) % regMod, (a + b + c) / regMod)
 
-/-- `subs` and `sbcs`: the low 64 bits of `a - b - (1 - c)` and the carry-out, where a carry of
-`1` means that no borrow occurred. `subs` passes carry-in `1`. The difference is formed as
-`a + 2^64 - b - (1 - c)`, which is nonnegative for in-range operands, so the quotient by `2^64`
-is `1` exactly when `a ≥ b + (1 - c)`. -/
-def subc (a b c : Nat) : Nat × Nat :=
-  ((a + regMod - b - (1 - c)) % regMod, (a + regMod - b - (1 - c)) / regMod)
-
 /-- `lsl` by an immediate. -/
 def lsl (a k : Nat) : Nat := a * 2^k % regMod
 
 /-- `lsr` by an immediate. -/
 def lsr (a k : Nat) : Nat := a / 2^k
-
-/-- `csel d, x, y, lo`: `x` when the carry is clear, else `y`. -/
-def cselLo (c x y : Nat) : Nat := if c = 0 then x else y
-
-/-- `csel d, x, y, cs`: `x` when the carry is set, else `y`. -/
-def cselCs (c x y : Nat) : Nat := if c = 0 then y else x
 
 /-- Four little-endian 64-bit limbs, the shape of every operand of the routines. -/
 structure Limbs where
@@ -84,4 +60,4 @@ def Bounded (x : Limbs) : Prop := x.l0 < 2^64 ∧ x.l1 < 2^64 ∧ x.l2 < 2^64 �
 
 end Limbs
 
-end PastaAArch64Asm
+end PastaAsm
