@@ -1,8 +1,9 @@
 # Verifying the crate's Pasta assembly routines
 
 The `PastaAsm` library separates shared arithmetic definitions and lemmas from
-architecture-specific models. Currently only the AArch64 backend is formalized;
-the x86-64 backend does not yet have a Lean model or correctness proof.
+architecture-specific models. The AArch64 backend has transcriptions and correctness proofs.
+`PastaAsm/X86_64/Semantics.lean` adds the x86-64 word operations and borrow convention;
+x86-64 block transcriptions and correctness proofs are not yet present.
 
 Both architectures use `scripts/gen.py`, with shared Rust `asm!` parsing and
 architecture-specific instruction emitters; `--check` compares generated output without

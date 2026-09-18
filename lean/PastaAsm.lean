@@ -7,6 +7,7 @@ import PastaAsm.Fields
 import PastaAsm.Compositions
 import PastaAsm.Spec
 import PastaAsm.AArch64
+import PastaAsm.X86_64
 
 /-!
 # The pasta-asm routines, formalized
