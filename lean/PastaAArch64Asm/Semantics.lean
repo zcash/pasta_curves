@@ -7,9 +7,10 @@ Released under the Apache License, Version 2.0, as described in the file LICENSE
 # AArch64 instruction semantics for the Pasta Montgomery routines
 
 The subset of AArch64 that the crate's routines and inline blocks use: `mul`, `umulh`,
-`adds`/`adcs`/`adc`, `subs`/`sbcs`, `lsl`/`lsr` by an immediate, `csel` on the `lo` condition,
-and `mov`. Loads and stores are not modelled as memory operations: the generated programs read
-their operand limbs where the assembly loads them and return the limbs the assembly stores.
+`adds`/`adcs`/`adc`, `subs`/`sbcs`, `lsl`/`lsr` by an immediate, `csel` on the `lo` and `cs`
+conditions, and `mov`. Loads and stores are not modelled as memory operations: the generated
+programs read their operand limbs where the assembly loads them and return the limbs the assembly
+stores.
 
 A register value is a natural number below `2^64`. The bound is maintained by construction:
 every instruction reduces its result modulo `2^64`, and the carry flag is the quotient of the
@@ -19,7 +20,8 @@ literals) and lets the reference vectors be checked by the kernel with `decide`.
 
 AArch64's carry convention for subtraction is the one modelled here: after `subs`/`sbcs` the
 carry is set exactly when no borrow occurred, so `sbcs` subtracts `1 - carry` and `subs`
-behaves as `sbcs` with the carry set. The `lo` condition of `csel` is "carry clear".
+behaves as `sbcs` with the carry set. The `lo` condition of `csel` (also written `cc`) is
+"carry clear", and `cs` is "carry set".
 -/
 
 namespace PastaAArch64Asm
@@ -52,6 +54,9 @@ def lsr (a k : Nat) : Nat := a / 2^k
 
 /-- `csel d, x, y, lo`: `x` when the carry is clear, else `y`. -/
 def cselLo (c x y : Nat) : Nat := if c = 0 then x else y
+
+/-- `csel d, x, y, cs`: `x` when the carry is set, else `y`. -/
+def cselCs (c x y : Nat) : Nat := if c = 0 then y else x
 
 /-- Four little-endian 64-bit limbs, the shape of every operand of the routines. -/
 structure Limbs where
