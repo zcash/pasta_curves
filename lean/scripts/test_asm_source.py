@@ -15,12 +15,14 @@ sys.dont_write_bytecode = True
 
 import asm_source
 import gen_aarch64
+import gen_x86_64
 
 
 class SurroundingCodeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.aarch64_source = gen_aarch64.INLINE.read_text()
+        cls.x86_64_source = gen_x86_64.SOURCE.read_text()
 
     @staticmethod
     def mutate_function(source, name, old, new):
@@ -56,10 +58,15 @@ class SurroundingCodeTests(unittest.TestCase):
             self.generate_aarch64(self.aarch64_source),
             gen_aarch64.OUT_PROGRAM.read_text(),
         )
+        self.assertEqual(
+            gen_x86_64.gen_program(self.x86_64_source),
+            gen_x86_64.OUTPUT.read_text(),
+        )
 
     def test_inv_shadowing_is_rejected_by_both_backends(self):
         for architecture, source, generate in (
             ("aarch64", self.aarch64_source, self.generate_aarch64),
+            ("x86_64", self.x86_64_source, gen_x86_64.gen_program),
         ):
             with self.subTest(architecture=architecture):
                 mutated = self.mutate_function(
@@ -78,6 +85,7 @@ class SurroundingCodeTests(unittest.TestCase):
     def test_postasm_output_mutation_is_rejected_by_both_backends(self):
         for architecture, source, generate in (
             ("aarch64", self.aarch64_source, self.generate_aarch64),
+            ("x86_64", self.x86_64_source, gen_x86_64.gen_program),
         ):
             with self.subTest(architecture=architecture):
                 mutated = self.mutate_function(
@@ -99,6 +107,12 @@ class SurroundingCodeTests(unittest.TestCase):
                 self.aarch64_source,
                 self.generate_aarch64,
                 gen_aarch64.OUT_PROGRAM.read_text(),
+            ),
+            (
+                "x86_64",
+                self.x86_64_source,
+                gen_x86_64.gen_program,
+                gen_x86_64.OUTPUT.read_text(),
             ),
         ):
             with self.subTest(architecture=architecture):

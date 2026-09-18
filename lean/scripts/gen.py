@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the Lean transcription of the crate's inline Pasta Montgomery blocks.
 
-Reads the inline `asm!` blocks in `src/asm/aarch64.rs`, and writes
+Reads the inline `asm!` blocks in `src/asm/aarch64.rs` and `src/asm/x86_64.rs`, and writes
 
 - `lean/PastaAsm/<Architecture>/Transcription.lean`: each block as a Lean definition over
   its instruction semantics, one `let` per instruction result, in the block's order,
@@ -19,6 +19,8 @@ register the block reads was written by the block or bound by an operand.
 
 AArch64 omits bindings that nothing later reads: unused operands are left as comments,
 unused carry writes are dropped, and unused computed registers are reported as errors.
+x86-64 retains architectural results, including dead flag writes; proof skeletons account
+for Lean's sharing of equal let values when extracting that stream.
 
 Run from the repository root:
 
@@ -622,14 +624,15 @@ def check_spec(path, routines):
 # while this common CLI imports them only when orchestration needs them.
 def _backends():
     import gen_aarch64
+    import gen_x86_64
 
-    return gen_aarch64
+    return gen_aarch64, gen_x86_64
 
 
 def generated_outputs():
     """Return every generated path and its expected contents without writing files."""
-    gen_aarch64 = _backends()
-    return gen_aarch64.generated_outputs()
+    gen_aarch64, gen_x86_64 = _backends()
+    return gen_aarch64.generated_outputs() + gen_x86_64.generated_outputs()
 
 
 # Existing proof files only. None selects every generated routine of that architecture.
@@ -642,13 +645,14 @@ SPEC_MANIFEST = {
 
 # Missing proofs are tracked by routine, not by hypothetical files.
 UNPROVED_ROUTINES = {
+    "X86_64": ("addMod", "subMod", "mulMont", "squareLo", "squareHi", "fromMont"),
 }
 
 
 def architecture_routines():
     """Return the proof-capable routine manifest for each assembly architecture."""
-    gen_aarch64 = _backends()
-    return {"AArch64": gen_aarch64.all_routines()}
+    gen_aarch64, gen_x86_64 = _backends()
+    return {"AArch64": gen_aarch64.all_routines(), "X86_64": gen_x86_64.all_routines()}
 
 
 def find_routine(specification):

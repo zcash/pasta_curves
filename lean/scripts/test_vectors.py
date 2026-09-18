@@ -12,6 +12,7 @@ sys.dont_write_bytecode = True
 
 import gen
 import gen_aarch64
+import gen_x86_64
 
 
 def contract_counts(vectors, in_contract):
@@ -50,6 +51,68 @@ class SharedVectorTests(unittest.TestCase):
         included, omitted = contract_counts(self.vectors, gen.in_public_contract)
         self.assertEqual(included, Counter({"MUL": 806, "FROM": 34, "SQR": 34}))
         self.assertEqual(omitted, Counter({"MUL": 180}))
+
+
+class X86VectorTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.lines = gen.VECTORS.read_text().splitlines()
+        cls.vectors = gen.parse_vectors(cls.lines)
+        cls.generated = gen_x86_64.gen_vectors(cls.lines)
+
+    def test_counts_and_backend_only_filter(self):
+        included, omitted = contract_counts(self.vectors, gen_x86_64.in_contract)
+        self.assertEqual(included, Counter({"MUL": 674, "FROM": 34, "SQR": 34}))
+        self.assertEqual(omitted, Counter({"MUL": 312}))
+        self.assertEqual(sum(included.values()), 742)
+
+        backend_only_omissions = []
+        for op, key, vals in self.vectors:
+            operands = [int(value, 16) for value in vals[:-1]]
+            if (gen.in_public_contract(op, key, operands)
+                    and not gen_x86_64.in_contract(op, key, operands)):
+                backend_only_omissions.append((op, key, operands))
+        self.assertEqual(len(backend_only_omissions), 132)
+        self.assertTrue(all(op == "MUL" for op, _, _ in backend_only_omissions))
+        self.assertTrue(all(
+            gen.is_canonical(key, operands[0]) and not gen.is_canonical(key, operands[1])
+            for _, key, operands in backend_only_omissions
+        ))
+
+    def test_accepted_counts_are_symmetric_across_fields(self):
+        accepted = Counter(
+            (key, op)
+            for op, key, vals in self.vectors
+            if gen_x86_64.in_contract(op, key, [int(value, 16) for value in vals[:-1]])
+        )
+        self.assertEqual(accepted, Counter({
+            ("Fp", "MUL"): 337,
+            ("Fq", "MUL"): 337,
+            ("Fp", "SQR"): 17,
+            ("Fq", "SQR"): 17,
+            ("Fp", "FROM"): 17,
+            ("Fq", "FROM"): 17,
+        }))
+
+    def test_generated_file_records_cross_backend_provenance_and_compositions(self):
+        self.assertIn("produced by the real AArch64 assembly", self.generated)
+        self.assertIn("cross-backend checks", self.generated)
+        self.assertIn("not captures from x86-64 hardware", self.generated)
+        self.assertIn("`sqrMont`, the Rust composition `squareHi (squareLo value)`", self.generated)
+        self.assertIn("x86-64's standalone `fromMont` assembly block", self.generated)
+        self.assertIn("import PastaAsm.X86_64.Compositions", self.generated)
+        self.assertEqual(self.generated.count("example :"), 742)
+        self.assertIn(
+            "-- 742 vectors; omitted as outside the combined public and x86-64 backend "
+            "contracts: 312 MUL.",
+            self.generated,
+        )
+
+    def test_backend_registers_current_generated_vector_file(self):
+        outputs = dict(gen_x86_64.generated_outputs())
+        self.assertIn(gen_x86_64.OUTPUT_VECTORS, outputs)
+        self.assertEqual(outputs[gen_x86_64.OUTPUT_VECTORS], self.generated)
+        self.assertEqual(gen_x86_64.OUTPUT_VECTORS.read_text(), self.generated)
 
 
 if __name__ == "__main__":

@@ -180,7 +180,7 @@ cd .. && lean/scripts/check.sh   # regenerate the transcription and check the sk
   the existing implementation; a separate general-purpose module needs a substantial,
   self-contained responsibility. Extend shared components rather than duplicating them.
   Reject unsupported syntax, uninitialized register/flag reads, and unmodeled memory accesses;
-  test those rejection paths.
+  test those rejection paths. For x86, CF and OF are independent and must not be conflated.
 
 ### Adding or extending an architecture
 

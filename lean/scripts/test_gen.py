@@ -20,6 +20,181 @@ sys.dont_write_bytecode = True
 import asm_source
 import gen
 import gen_aarch64 as gen_aarch64
+import gen_x86_64
+
+
+class DeclarationTests(unittest.TestCase):
+    def test_inout_discard_and_named_outputs_are_parsed(self):
+        discarded = gen_x86_64.parse_declaration(
+            "z3 = inout(reg) product[3] => _,"
+        )
+        named = gen_x86_64.parse_declaration(
+            "z0 = inout(reg) product[0] => o1,"
+        )
+        self.assertEqual(
+            discarded,
+            gen_x86_64.Declaration("z3", "inout", "product[3]", "_"),
+        )
+        self.assertEqual(
+            named,
+            gen_x86_64.Declaration("z0", "inout", "product[0]", "o1"),
+        )
+
+    def test_unsupported_constraint_is_rejected(self):
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "constraint"):
+            gen_x86_64.parse_declaration("x = in(xmm_reg) value,")
+
+    def test_unsupported_fixed_register_is_rejected(self):
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "fixed-register"):
+            gen_x86_64.parse_declaration('in("rax") value,')
+
+    def test_unsupported_const_is_rejected(self):
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "const operand"):
+            gen_x86_64.parse_declaration("p3 = const OTHER_CONSTANT,")
+
+    def test_named_rdx_and_internal_names_are_reserved(self):
+        for name in ("rdx", "cf", "ofl", "s", "d", "m", "n"):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(gen_x86_64.GenerationError, "reserved operand name"):
+                    gen_x86_64.parse_declaration(f"{name} = out(reg) _,")
+
+    def test_high_limb_value_is_validated(self):
+        source = gen_x86_64.SOURCE.read_text().replace(
+            "const PASTA_HIGH_LIMB: u64 = 1 << 62;",
+            "const PASTA_HIGH_LIMB: u64 = 1 << 61;",
+        )
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "1 << 62"):
+            gen_x86_64.validate_high_limb(source)
+
+
+class EmitterTests(unittest.TestCase):
+    @staticmethod
+    def emitter(*registers):
+        directions = {register: "inout" for register in registers}
+        emitter = gen_x86_64.Emitter(directions, {})
+        for register in registers:
+            if register != "rdx":
+                emitter.bind_argument(register, "0", "test input")
+        return emitter
+
+    def test_unsupported_instruction_is_rejected(self):
+        emitter = self.emitter("a")
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "unsupported instruction or"):
+            emitter.emit_instruction("or {a}, 1")
+
+    def test_input_only_register_cannot_be_written(self):
+        emitter = gen_x86_64.Emitter({"a": "in", "b": "in"}, {})
+        emitter.bind_argument("a", "1", "test input")
+        emitter.bind_argument("b", "2", "test input")
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "input-only register a"):
+            emitter.emit_instruction("add {a}, {b}")
+
+    def test_input_only_register_cannot_be_xor_zeroed(self):
+        emitter = gen_x86_64.Emitter({"z": "in"}, {})
+        emitter.bind_argument("z", "1", "test input")
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "input-only register z"):
+            emitter.emit_instruction("xor {z:e}, {z:e}")
+
+    def test_register_read_before_write_is_rejected(self):
+        emitter = gen_x86_64.Emitter({"a": "inout", "b": "in"}, {})
+        emitter.bind_argument("a", "0", "test input")
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "b read before"):
+            emitter.emit_instruction("add {a}, {b}")
+
+    def test_memory_write_is_rejected(self):
+        emitter = gen_x86_64.Emitter({"a": "inout", "p": "in"}, {"p": "value"})
+        emitter.bind_argument("a", "0", "test input")
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "memory write"):
+            emitter.emit_instruction("mov qword ptr [{p}], {a}")
+
+    def test_non_limb_memory_offset_is_rejected(self):
+        emitter = gen_x86_64.Emitter({"a": "inout", "p": "in"}, {"p": "value"})
+        emitter.bind_argument("a", "0", "test input")
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "offset 32"):
+            emitter.emit_instruction("mov {a}, qword ptr [{p} + 32]")
+
+    def test_undeclared_address_base_is_rejected(self):
+        emitter = gen_x86_64.Emitter({"a": "inout"}, {})
+        emitter.bind_argument("a", "0", "test input")
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "undeclared register p"):
+            emitter.emit_instruction("mov {a}, qword ptr [{p}]")
+
+    def test_register_is_not_an_address_base_without_pointer_binding(self):
+        emitter = self.emitter("a", "p")
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "not a read-only pointer"):
+            emitter.emit_instruction("mov {a}, qword ptr [{p}]")
+
+    def test_adc_rejects_invalid_cf(self):
+        emitter = self.emitter("a", "b")
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "CF read while invalid"):
+            emitter.emit_instruction("adc {a}, {b}")
+
+    def test_cmovnc_rejects_invalid_cf(self):
+        emitter = self.emitter("a", "b")
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "CF read while invalid"):
+            emitter.emit_instruction("cmovnc {a}, {b}")
+
+    def test_add_invalidates_of(self):
+        emitter = self.emitter("a", "b", "z")
+        emitter.emit_instruction("xor {z:e}, {z:e}")
+        emitter.emit_instruction("add {a}, {b}")
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "OF read while invalid"):
+            emitter.emit_instruction("adox {a}, {b}")
+
+    def test_neg_invalidates_of(self):
+        emitter = self.emitter("a", "b", "z")
+        emitter.emit_instruction("xor {z:e}, {z:e}")
+        emitter.emit_instruction("neg {a}")
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "OF read while invalid"):
+            emitter.emit_instruction("adox {a}, {b}")
+
+    def test_imul_invalidates_flags(self):
+        emitter = self.emitter("a", "b", "z")
+        emitter.emit_instruction("xor {z:e}, {z:e}")
+        emitter.emit_instruction("imul {a}, {b}")
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "CF read while invalid"):
+            emitter.emit_instruction("adc {a}, {b}")
+
+    def test_masked_or_zero_shift_counts_are_rejected(self):
+        for amount in (0, 64, 65, 256):
+            with self.subTest(amount=amount):
+                emitter = self.emitter("a")
+                with self.assertRaisesRegex(gen_x86_64.GenerationError, "shift counts"):
+                    emitter.emit_instruction(f"shl {{a}}, {amount}")
+
+    def test_shift_invalidates_flags(self):
+        emitter = self.emitter("a", "b", "z")
+        emitter.emit_instruction("xor {z:e}, {z:e}")
+        emitter.emit_instruction("shl {a}, 62")
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "CF read while invalid"):
+            emitter.emit_instruction("adcx {a}, {b}")
+
+    def test_xor_self_allows_uninitialized_output_and_clears_both_flags(self):
+        emitter = gen_x86_64.Emitter({"a": "inout", "b": "in", "z": "out"}, {})
+        emitter.bind_argument("a", "1", "test input")
+        emitter.bind_argument("b", "2", "test input")
+        emitter.emit_instruction("xor {z:e}, {z:e}")
+        emitter.emit_instruction("adcx {a}, {b}")
+        emitter.emit_instruction("adox {a}, {b}")
+
+    def test_adcx_and_adox_preserve_the_other_flag(self):
+        emitter = self.emitter("a", "b", "z")
+        emitter.emit_instruction("xor {z:e}, {z:e}")
+        emitter.emit_instruction("adcx {a}, {b}")
+        emitter.emit_instruction("adox {a}, {b}")
+        # OF from ADOX and CF from ADCX are both still valid.
+        emitter.emit_instruction("adox {a}, {b}")
+        emitter.emit_instruction("adcx {a}, {b}")
+
+    def test_mov_mulx_and_cmov_preserve_flags(self):
+        emitter = self.emitter("a", "b", "z", "rdx", "hi", "lo")
+        emitter.bind_argument("rdx", "3", "fixed register test input")
+        emitter.emit_instruction("xor {z:e}, {z:e}")
+        emitter.emit_instruction("mov {a}, {b}")
+        emitter.emit_instruction("mulx {hi}, {lo}, {a}")
+        emitter.emit_instruction("cmovnc {a}, {b}")
+        emitter.emit_instruction("adox {a}, {b}")
+        emitter.emit_instruction("adcx {a}, {b}")
 
 
 class AArch64WriteDirectionTests(unittest.TestCase):
@@ -111,11 +286,172 @@ class SharedAArch64ParserTests(unittest.TestCase):
         )
 
 
+class X86RealSourceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = gen_x86_64.SOURCE.read_text()
+
+    def mutate(self, old, new):
+        self.assertEqual(self.source.count(old), 1, old)
+        return self.source.replace(old, new)
+
+    def assert_mutation_rejected(self, old, new, message):
+        source = self.mutate(old, new)
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, message):
+            gen_x86_64.gen_program(source)
+
+    def mutate_function(self, name, old, new):
+        marker = f"pub(super) fn {name}("
+        start = self.source.index(marker)
+        next_function = self.source.find("pub(super) fn ", start + len(marker))
+        end = len(self.source) if next_function < 0 else next_function
+        function = self.source[start:end]
+        self.assertEqual(function.count(old), 1, old)
+        return self.source[:start] + function.replace(old, new) + self.source[end:]
+
+    def assert_function_mutation_rejected(self, name, old, new, message):
+        source = self.mutate_function(name, old, new)
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, message):
+            gen_x86_64.gen_program(source)
+
+    def test_all_six_blocks_generate(self):
+        generated = gen_x86_64.gen_program(self.source)
+        for config in gen_x86_64.ROUTINES:
+            self.assertIn(f"def {config.lean_name} ", generated)
+
+    def test_source_output_tuple_order_is_used(self):
+        mul = gen_x86_64.transcribe(self.source, gen_x86_64.ROUTINES[2])
+        square_hi = gen_x86_64.transcribe(self.source, gen_x86_64.ROUTINES[4])
+        self.assertTrue(mul.rstrip().endswith("⟨ee, ae, be, ce⟩"))
+        self.assertTrue(square_hi.rstrip().endswith("⟨a, z0, z1, z2⟩"))
+
+    def test_each_source_instruction_has_one_generated_comment(self):
+        for config in gen_x86_64.ROUTINES:
+            with self.subTest(routine=config.lean_name):
+                parsed = gen_x86_64.parse_function(self.source, config)
+                generated = gen_x86_64.transcribe(self.source, config)
+                comments = Counter(re.findall(r"-- (.+)$", generated, re.MULTILINE))
+                self.assertEqual(Counter(parsed.instructions), Counter({
+                    instruction: comments[instruction]
+                    for instruction in parsed.instructions
+                }))
+
+    def test_declared_pointer_blocks_are_readonly(self):
+        for config in (gen_x86_64.ROUTINES[2], gen_x86_64.ROUTINES[4]):
+            with self.subTest(routine=config.lean_name):
+                parsed = gen_x86_64.parse_function(self.source, config)
+                self.assertIn("readonly", parsed.options)
+                self.assertNotIn("nomem", parsed.options)
+
+    def test_raw_template_is_rejected(self):
+        self.assert_mutation_rejected(
+            '            "add {r0}, {b0}",',
+            '            r"add {r0}, {b0}",',
+            "raw asm template",
+        )
+
+    def test_escaped_template_is_rejected(self):
+        self.assert_mutation_rejected(
+            '            "add {r0}, {b0}",',
+            '            "add {r0}, {b0}\\n",',
+            "escaped asm template",
+        )
+
+    def test_instruction_string_in_block_comment_is_ignored(self):
+        source = self.mutate(
+            '            "add {r0}, {b0}",',
+            '            /* "sub {r0}, {b0}", */\n            "add {r0}, {b0}",',
+        )
+        self.assertEqual(gen_x86_64.gen_program(source), gen_x86_64.gen_program(self.source))
+
+    def test_junk_between_templates_is_rejected(self):
+        self.assert_mutation_rejected(
+            '            "add {r0}, {b0}",',
+            '            "add {r0}, {b0}",\n            unsupported_token,',
+            "unsupported operand binding",
+        )
+
+    def test_junk_after_options_is_rejected(self):
+        old = """            p3 = inout(reg) modulus[3] => _,
+            z = out(reg) _,
+            options(pure, nomem, nostack),
+        );"""
+        new = old.replace(
+            "            options(pure, nomem, nostack),",
+            "            options(pure, nomem, nostack),\n            junk,",
+        )
+        self.assert_function_mutation_rejected(
+            "add", old, new, "operand after options"
+        )
+
+    def test_second_asm_block_is_rejected(self):
+        old = """            z = out(reg) _,
+            options(pure, nomem, nostack),
+        );
+    }
+    [r0, r1, r2, r3]
+}"""
+        new = old.replace(
+            "        );\n    }",
+            '        );\n        asm!("mov rax, rax");\n    }',
+        )
+        self.assert_function_mutation_rejected(
+            "add", old, new, "exactly one asm! block"
+        )
+
+    def test_input_only_operand_write_is_rejected_in_real_source(self):
+        self.assert_mutation_rejected(
+            '            "add {r0}, {b0}",',
+            '            "add {b0}, {r0}",',
+            "input-only register b0",
+        )
+
+    def test_input_only_operand_xor_is_rejected_in_real_source(self):
+        self.assert_mutation_rejected(
+            '            "add {r0}, {b0}",',
+            '            "xor {b0:e}, {b0:e}",',
+            "input-only register b0",
+        )
+
+    def test_literal_rdx_without_fixed_operand_is_rejected(self):
+        old = """            t1 = out(reg) _,
+            t2 = out(reg) _,
+            out("rdx") _,
+            options(pure, nomem, nostack),"""
+        new = old.replace('            out("rdx") _,\n', "")
+        self.assert_mutation_rejected(
+            old, new, "literal rdx requires exactly one fixed"
+        )
+
+    def test_named_rdx_cannot_spoof_fixed_operand(self):
+        old = """            t1 = out(reg) _,
+            t2 = out(reg) _,
+            out("rdx") _,
+            options(pure, nomem, nostack),"""
+        new = old.replace(
+            '            out("rdx") _,',
+            "            rdx = out(reg) _,",
+        )
+        self.assert_mutation_rejected(old, new, "reserved operand name rdx")
+
+    def test_bound_local_use_before_asm_is_rejected(self):
+        self.assert_function_mutation_rejected(
+            "add",
+            "    let [mut r0, mut r1, mut r2, mut r3] = *lhs;\n",
+            "    let [mut r0, mut r1, mut r2, mut r3] = *lhs;\n    r0 = 0;\n",
+            "unsupported use of bound local r0",
+        )
+
+
 class SharedGeneratorTests(unittest.TestCase):
     def test_skeleton_hooks_are_backend_owned(self):
         aarch_routines = gen_aarch64.all_routines()
+        x86_routines = gen_x86_64.all_routines()
         self.assertTrue(all(routine.skeleton_backend is gen_aarch64.SKELETON_BACKEND
                             for routine in aarch_routines))
+        self.assertTrue(all(routine.skeleton_backend is gen_x86_64.SKELETON_BACKEND
+                            for routine in x86_routines))
+        self.assertIsNot(gen_aarch64.SKELETON_BACKEND, gen_x86_64.SKELETON_BACKEND)
 
         aarch_add = next(routine for routine in aarch_routines if routine.name == "addMod")
         aarch_live = [entry for entry, keep in zip(
@@ -128,12 +464,21 @@ class SharedGeneratorTests(unittest.TestCase):
                             and len(entry.get("group", ())) == 3
                             for entry in aarch_prepared.entries))
 
+        x86_square = next(routine for routine in x86_routines if routine.name == "squareLo")
+        x86_prepared = gen_x86_64.SKELETON_BACKEND.prepare(
+            x86_square.emitter, x86_square.emitter.entries
+        )
+        self.assertTrue(any(entry.get("group_fact", entry["fact"])[0] == "x86_mulx"
+                            for entry in x86_prepared.entries))
+        self.assertTrue(any(x86_prepared.history))
+
     def test_shared_skeleton_has_no_architecture_dispatch_or_isa_fact_rules(self):
         source = gen.Path(gen.__file__).read_text()
         skeleton_source = source[source.index("def skeleton(routine):"):
                                  source.index("def _strip_annotations")]
         self.assertNotIn("routine.architecture", skeleton_source)
         for isa_fact in (
+            "x86_adds", "x86_subs", "x86_mulx", "x86_neg", "x86_xor",
             "subs_carry", "subc_carry_cases", "sbb_borrow_le_one",
         ):
             with self.subTest(fact=isa_fact):
@@ -142,17 +487,75 @@ class SharedGeneratorTests(unittest.TestCase):
         self.assertIn('elif kind == "mul":', skeleton_source)
         self.assertIn('elif kind == "lsr":', skeleton_source)
 
+    def test_backward_liveness_and_backend_retention_share_the_same_ir(self):
+        emitter = gen.Emitter()
+        emitter.bind("input", "lhs.l0", reads=set(), fact=("param", "lhs", "l0"))
+        emitter.bind("dead", "input + 1", reads={"input"}, fact=("call", "{} + 1", ["input"]))
+        emitter.bind("result", "input", reads={"input"}, fact=("call", "{}", ["input"]))
+        self.assertEqual(
+            [entry["name"] for entry, keep in zip(emitter.entries, emitter.liveness(["result"]))
+             if keep],
+            ["input", "result"],
+        )
+
+        retained = gen_x86_64.Emitter({}, {})
+        retained.entries = list(emitter.entries)
+        self.assertEqual(
+            [entry["name"] for entry, keep in zip(retained.entries, retained.liveness(["result"]))
+             if keep],
+            ["input", "result"],
+        )
+        self.assertIn(
+            ("  let dead := input + 1", None),
+            retained.render(["result"]),
+        )
+
+    def test_x86_skeleton_matches_lift_lets_cse_and_retained_instruction_lets(self):
+        routines = {routine.name: routine for routine in gen_x86_64.all_routines()}
+        square_lo = "\n".join(gen.skeleton(routines["squareLo"]))
+        self.assertEqual(square_lo.count("extract_lets +onlyGivenNames z5 at hr"), 1)
+        self.assertNotIn("extract_lets +onlyGivenNames z6 at hr", square_lo)
+        self.assertNotIn("extract_lets +onlyGivenNames z7 at hr", square_lo)
+        self.assertNotIn("have e_cf : cf = 0 := rfl", square_lo)
+        self.assertNotIn("have e_ofl : ofl = 0 := rfl", square_lo)
+        self.assertIn("extract_lets +onlyGivenNames s_2 z4_1 cf_5 at hr", square_lo)
+        self.assertNotIn("obtain ⟨cf_5, b_cf_5, l_z4_1⟩", square_lo)
+
+        from_mont = "\n".join(gen.skeleton(routines["fromMont"]))
+        self.assertIn("extract_lets +onlyGivenNames n z0_1 cf at hr", from_mont)
+        self.assertIn("have e_z0_1 : z0_1 = (neg z0).1 := rfl", from_mont)
+        self.assertIn("have e_cf : cf = (neg z0).2 := rfl", from_mont)
+
     def test_transcription_snapshots_match_committed_files(self):
         self.assertEqual(gen_aarch64.gen_program(), gen_aarch64.OUT_PROGRAM.read_text())
+        self.assertEqual(gen_x86_64.gen_program(), gen_x86_64.OUTPUT.read_text())
+
+    def test_all_six_x86_routines_generate_shared_skeletons(self):
+        routines = gen_x86_64.all_routines()
+        self.assertEqual(
+            [routine.name for routine in routines],
+            ["addMod", "subMod", "mulMont", "squareLo", "squareHi", "fromMont"],
+        )
+        for routine in routines:
+            with self.subTest(routine=routine.name):
+                generated = gen.skeleton(routine)
+                self.assertEqual(
+                    generated[0],
+                    f"  -- generated skeleton for `{routine.name}`: do not edit between the annotations",
+                )
+                self.assertEqual(generated[-1], "  subst hr")
+                self.assertIs(gen.find_routine(f"X86_64:{routine.name}").emitter.__class__,
+                              routine.emitter.__class__)
 
     def test_bare_skeleton_lookup_retains_aarch64_legacy(self):
         self.assertEqual(gen.find_routine("addMod").architecture, "AArch64")
+        self.assertEqual(gen.find_routine("X86_64:addMod").architecture, "X86_64")
 
 
 class SkeletonCheckerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.routine = gen_aarch64.all_routines()[3]
+        cls.routine = gen_x86_64.all_routines()[0]
         cls.skeleton = "\n".join(gen.skeleton(cls.routine)) + "\n"
 
     def check_text(self, text):
@@ -204,6 +607,21 @@ class SkeletonCheckerTests(unittest.TestCase):
             with contextlib.redirect_stderr(diagnostics):
                 self.assertFalse(gen.check_spec(Path(directory) / "missing.lean", []))
             self.assertIn("cannot read proof file", diagnostics.getvalue())
+
+    def test_manifest_selects_existing_files_and_rejects_mismatched(self):
+        available = gen.architecture_routines()
+        for name, (arch, expected_names) in gen.SPEC_MANIFEST.items():
+            with self.subTest(path=name):
+                manifest_path = gen.ROOT / name
+                if Path(manifest_path).exists:
+                    path, routines = gen.parse_spec_manifest(str(manifest_path))
+                    self.assertEqual(path, manifest_path)
+                    expected = (expected_names if expected_names is not None else
+                                tuple(routine.name for routine in available[arch]))
+                    self.assertEqual([routine.name for routine in routines], list(expected))
+                else:
+                    with self.assertRaisesRegex(ValueError, "pending migration"):
+                        gen.parse_spec_manifest(str(manifest_path))
 
 
 if __name__ == "__main__":

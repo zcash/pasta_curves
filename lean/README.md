@@ -3,11 +3,21 @@
 The `PastaAsm` library separates shared arithmetic definitions and lemmas from
 architecture-specific models. The AArch64 backend has transcriptions and correctness proofs.
 `PastaAsm/X86_64/Semantics.lean` adds the x86-64 word operations and borrow convention;
-x86-64 block transcriptions and correctness proofs are not yet present.
+`X86_64/Transcription.lean` mechanically transcribes all six assembly blocks from
+`src/asm/x86_64.rs`. x86-64 correctness proofs are not yet present.
 
 Both architectures use `scripts/gen.py`, with shared Rust `asm!` parsing and
 architecture-specific instruction emitters; `--check` compares generated output without
-rewriting it.
+rewriting it. The x86-64 emitter checks operand bindings and output order, read-only input-limb addresses,
+register initialization, and CF/OF availability. Ordinary arithmetic models CF but invalidates
+unmodeled OF; `imul` and shifts invalidate unmodeled flags. Any subsequent read of an invalid
+flag is rejected. `adcx` and `adox` carry chains are tracked independently. The instruction
+rules follow Intel's SDM (see the readable entries for
+[ADCX](https://www.felixcloutier.com/x86/adcx),
+[ADOX](https://www.felixcloutier.com/x86/adox),
+[MULX](https://www.felixcloutier.com/x86/mulx), and
+[shifts](https://www.felixcloutier.com/x86/sal:sar:shl:shr)).
+These are straight-line value models, not proofs of pointer validity or register allocation.
 Generator validation tests run as part of `scripts/check.sh`.
 
 ## Goal
