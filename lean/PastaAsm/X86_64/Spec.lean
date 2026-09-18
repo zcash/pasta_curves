@@ -4,6 +4,7 @@ Released under the Apache License, Version 2.0, as described in the file LICENSE
 -/
 import PastaAsm.X86_64.Spec.Arithmetic
 import PastaAsm.X86_64.Spec.Add
+import PastaAsm.X86_64.Spec.Sub
 
 /-!
 # Correctness proofs for the x86-64 blocks

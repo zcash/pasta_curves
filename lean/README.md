@@ -4,8 +4,9 @@ The `PastaAsm` library separates shared arithmetic definitions and lemmas from
 architecture-specific models. The AArch64 backend has transcriptions and correctness proofs.
 `PastaAsm/X86_64/Semantics.lean` adds the x86-64 word operations and borrow convention;
 `X86_64/Transcription.lean` mechanically transcribes all six assembly blocks from
-`src/asm/x86_64.rs`. The x86-64 addition block has a correctness proof in `X86_64/Spec/Add.lean`,
-with its field-specialized `add_entry_spec` theorem in `X86_64/Entry.lean`. The remaining
+`src/asm/x86_64.rs`. The x86-64 addition and subtraction blocks have correctness proofs in
+`X86_64/Spec/Add.lean` and `X86_64/Spec/Sub.lean`, with field-specialized `add_entry_spec`
+and `sub_entry_spec` theorems in `X86_64/Entry.lean`. The remaining
 block proofs are added separately. `X86_64/Spec.lean` exposes the completed block proofs;
 `Compositions.lean` mirrors the Rust compositions and `Checks.lean` supplies kernel-checked
 arithmetic regressions, not hardware vectors.

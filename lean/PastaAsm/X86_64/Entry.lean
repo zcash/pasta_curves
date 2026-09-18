@@ -37,4 +37,16 @@ theorem add_entry_spec (F : PastaField) (lhs rhs : Limbs) (hlhs : lhs.Bounded)
     ((isCanonical_iff lhs F.modulus hlhs F.bounded).1 hl)
     ((isCanonical_iff rhs F.modulus hrhs F.bounded).1 hr) _ rfl
 
+/-- The crate's `sub` at a Pasta field: for canonical operands, as it asserts, the result is the
+canonical difference. -/
+theorem sub_entry_spec (F : PastaField) (lhs rhs : Limbs) (hlhs : lhs.Bounded)
+    (hrhs : rhs.Bounded) (hl : isCanonical lhs F.modulus = true)
+    (hr : isCanonical rhs F.modulus = true) :
+    (subMod lhs rhs F.modulus).Bounded ∧
+      (subMod lhs rhs F.modulus).toNat < F.modulus.toNat ∧
+      (subMod lhs rhs F.modulus).toNat + rhs.toNat ≡ lhs.toNat [MOD F.modulus.toNat] :=
+  subMod_spec_of_lt lhs rhs F.modulus hlhs hrhs F.bounded F.shape
+    ((isCanonical_iff lhs F.modulus hlhs F.bounded).1 hl)
+    ((isCanonical_iff rhs F.modulus hrhs F.bounded).1 hr) _ rfl
+
 end PastaAsm.X86_64
