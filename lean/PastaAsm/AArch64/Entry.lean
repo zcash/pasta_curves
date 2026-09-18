@@ -16,6 +16,11 @@ discharge the hypotheses on the modulus), and under the condition that the entry
 in a debug build (`mulContract` for `mul`, `isCanonical` for `square` and for the squarings of
 `sqr_n_mul`). The conversion out of Montgomery form checks nothing and holds for every input.
 The results are stated against the Montgomery radix `R = 2^256` of `Fields.lean`.
+
+These theorems are intentionally identical to those in `PastaAsm.X86_64.Entry` (other than
+calling the AArch64 assembly transcription), because all architecture-specific assembly is
+exposed through the same crate API. This ensures that the architecture-specific proofs apply
+to the architecture-agnostic interface.
 -/
 
 namespace PastaAsm.AArch64

@@ -622,6 +622,7 @@ class SkeletonCheckerTests(unittest.TestCase):
             self.assertIn("cannot read proof file", diagnostics.getvalue())
 
     def test_manifest_selects_existing_files_and_rejects_mismatched(self):
+        add_path = gen.ROOT / "lean/PastaAsm/X86_64/Spec/Add.lean"
         available = gen.architecture_routines()
         for name, (arch, expected_names) in gen.SPEC_MANIFEST.items():
             with self.subTest(path=name):
@@ -635,6 +636,8 @@ class SkeletonCheckerTests(unittest.TestCase):
                 else:
                     with self.assertRaisesRegex(ValueError, "pending migration"):
                         gen.parse_spec_manifest(str(manifest_path))
+        with self.assertRaisesRegex(ValueError, "belongs to X86_64, not AArch64"):
+            gen.parse_spec_manifest(f"AArch64:{add_path}")
 
 
 if __name__ == "__main__":
