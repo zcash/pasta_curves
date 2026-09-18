@@ -164,6 +164,9 @@ step "lake build --wfail"
 step "the transcription and the proof skeletons are current"
 lean/scripts/check.sh
 
+step "the export-axiom checker's own tests"
+(cd lean && python3 -m unittest discover -s scripts -p 'test_check_export_axioms.py')
+
 step "nanoda re-check"
 lean4export=lean/work/lean4export/.lake/build/bin/lean4export
 nanoda=lean/work/nanoda_lib/target/release/nanoda_bin

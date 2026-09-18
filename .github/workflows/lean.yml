@@ -40,6 +40,21 @@ jobs:
       - name: Regenerate and compare
         run: lean/scripts/check.sh
 
+  checker-tests:
+    name: The export-axiom checker's own tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The checker the nanoda job runs is what makes "no `sorry` and no `native_decide`"
+      # a machine-checked claim, so it gets its own tests: a checker that silently stops
+      # detecting something turns a green job into evidence of nothing. Stdlib only, so
+      # there is nothing to install and this reports without building the library.
+      - name: Run the checker's tests
+        working-directory: lean
+        run: python3 -m unittest discover -s scripts -p 'test_check_export_axioms.py' -v
+
   # Re-checks the library with nanoda, an independent reimplementation of the Lean kernel
   # (see lean/scripts/check_nanoda.sh). A separate job so `build` reports quickly; this one
   # starts only after a green build, and its `lake build` restores the build cache that job
