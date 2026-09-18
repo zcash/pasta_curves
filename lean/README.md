@@ -3,13 +3,15 @@
 ## Goal
 
 A machine-checked proof that the crate's routines compute Montgomery multiplication, squaring,
-and conversion out of Montgomery form on the Pasta fields, under the operand contracts they
-actually have. The proof is about the instruction streams of the crate's own inline `asm!`
-blocks, `mul` and `square` in `src/asm/aarch64.rs`, not about a re-derivation of the algorithm; the
-crate's other two entry points, `sqr_n_mul` and `from_mont`, are Rust compositions of those
-blocks and are modelled as such. The blocks are transcriptions of Semolina v0.1.4's
-`mul_mont_pasta` and of the squaring loop body of its `sqr_n_mul_mont_pasta` (see the crate
-README for the history).
+and conversion out of Montgomery form, and modular addition and subtraction, on the Pasta
+fields, under the operand contracts they actually have. The proof is about the instruction
+streams of the crate's own inline `asm!` blocks, `mul`, `square`, `add`, and `sub` in
+`src/asm/aarch64.rs`, not about a re-derivation of the algorithms; the crate's other two entry
+points, `sqr_n_mul` and `from_mont`, are Rust compositions of the first two blocks and are
+modelled as such. The multiplication and squaring blocks are transcriptions of Semolina v0.1.4's
+`mul_mont_pasta` and of the squaring loop body of its `sqr_n_mul_mont_pasta`, and the addition
+and subtraction blocks were imported from zakura-pasta-curves (see the crate README for the
+history).
 
 ## Trust story
 
@@ -164,22 +166,42 @@ code assumes) and `inv · p0 ≡ −1 (mod 2^64)`:
   below `p`, with `output · 2^(256 (2^count − 1)) ≡ a^(2^count) (mod p)` after the squarings,
   so the multiplication is under its first contract; the composition's output is below `p`
   with `output · 2^(256 · 2^count) ≡ a^(2^count) · rhs (mod p)` for any four-limb `rhs`.
+* `addMod_spec` (proved): for operands whose sum fits in four limbs (`lhs + rhs < 2^256`, so
+  the carry that the block drops is `0`), the addition block returns the sum when that is
+  below `p` and the sum minus `p` otherwise. Its corollaries: `addMod_spec_of_rhs_lt`, for
+  `lhs < 2^255` and `rhs < p`, keeps the result below `2^255`, so a left operand can
+  accumulate additions without reduction and still enter the multiplication under
+  `mulMont_spec_of_rhs_lt`; `addMod_spec_of_lt`, for canonical operands, gives a canonical
+  result. Both have `output ≡ lhs + rhs (mod p)`.
+* `subMod_spec` (proved): for `rhs ≤ lhs + p` (so the add-back of `p` does not wrap), the
+  subtraction block returns `lhs − rhs` when `lhs ≥ rhs` and `lhs − rhs + p` otherwise. Its
+  corollaries `subMod_spec_of_rhs_lt` (for `lhs < 2^255` and `rhs < p`, a result below
+  `2^255`) and `subMod_spec_of_lt` (canonical operands, a canonical result) both have
+  `output + rhs ≡ lhs (mod p)`.
 
 The crate's entry points, in `Entry.lean`: `mul_entry_spec`, `square_entry_spec`,
-`sqrNMul_entry_spec`, and `fromMont_entry_spec` (all proved) restate the above for the entry
-points as `src/asm/mod.rs` exposes them, at either of the crate's fields (a `PastaField`, that is
-`pallasBase` or `vestaBase`, whose facts discharge the hypotheses on the modulus) and under the
-condition that the entry point checks in a debug build: `mulContract` for `mul`, and
-`isCanonical` for `square` and for the squarings of `sqr_n_mul`. `isCanonical_iff` and
-`mulContract_iff` relate those Boolean checks, which mirror the Rust, to the arithmetic
-conditions of the theorems above. `from_mont` checks nothing and holds for every input.
+`sqrNMul_entry_spec`, `fromMont_entry_spec`, `add_entry_spec`, and `sub_entry_spec` (all
+proved) restate the above for the entry points as `src/asm/mod.rs` exposes them, at either of the
+crate's fields (a `PastaField`, that is `pallasBase` or `vestaBase`, whose facts discharge the
+hypotheses on the modulus) and under the condition that the entry point checks in a debug
+build: `mulContract` for `mul`, and `isCanonical` for `square`, for the squarings of
+`sqr_n_mul`, and for both operands of `add` and `sub`. `isCanonical_iff` and `mulContract_iff`
+relate those Boolean checks, which mirror the Rust, to the arithmetic conditions of the
+theorems above. `from_mont` checks nothing and holds for every input.
 
 ## Status
 
-Present: the semantics, the generator, the generated transcription of the two inline blocks,
-the compositions and the asserted conditions, the fields, the vectors, the CI checks
-(regeneration, skeletons, and the nanoda re-check), and the proofs: the multiplication block
-with its two operand contracts, the conversion as that block at `1`, the squaring block for a
-canonical input, the repeated-squaring chain with its final multiplication, and from those the
-four entry points at either field under the conditions they assert. This covers the crate's
-current code, up to the aspects that the trust story lists as reviewed by hand.
+Present: the semantics, the generator, the generated transcription of the four inline blocks,
+the compositions and the asserted conditions, the fields, the vectors, and the CI checks
+(regeneration, skeletons, and the nanoda re-check). The proofs cover:
+
+* the multiplication block with its two operand contracts, and the conversion as that block
+  at `1`;
+* the squaring block for a canonical input, and the repeated-squaring chain with its final
+  multiplication;
+* the addition and subtraction blocks for every pair of operands on which they are exact, with
+  their corollaries for a lazily reduced left operand and for canonical operands;
+* from those, the six entry points at either field under the conditions they assert.
+
+This covers the crate's current code, up to the aspects that the trust story lists as reviewed
+by hand.

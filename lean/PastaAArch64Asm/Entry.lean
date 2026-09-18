@@ -84,4 +84,28 @@ theorem fromMont_entry_spec (F : PastaField) (value : Limbs) (hv : value.Bounded
       2^256 * (fromMont value F.modulus F.inv).toNat ≡ value.toNat [MOD F.modulus.toNat] :=
   fromMont_spec value F.modulus F.inv hv F.bounded F.shape F.inv_lt F.inv_spec _ rfl
 
+/-- The crate's `add` at a Pasta field: for canonical operands, as it asserts, the result is the
+canonical sum. -/
+theorem add_entry_spec (F : PastaField) (lhs rhs : Limbs) (hlhs : lhs.Bounded)
+    (hrhs : rhs.Bounded) (hl : isCanonical lhs F.modulus = true)
+    (hr : isCanonical rhs F.modulus = true) :
+    (addMod lhs rhs F.modulus).Bounded ∧
+      (addMod lhs rhs F.modulus).toNat < F.modulus.toNat ∧
+      (addMod lhs rhs F.modulus).toNat ≡ lhs.toNat + rhs.toNat [MOD F.modulus.toNat] :=
+  addMod_spec_of_lt lhs rhs F.modulus hlhs hrhs F.bounded F.shape
+    ((isCanonical_iff lhs F.modulus hlhs F.bounded).1 hl)
+    ((isCanonical_iff rhs F.modulus hrhs F.bounded).1 hr) _ rfl
+
+/-- The crate's `sub` at a Pasta field: for canonical operands, as it asserts, the result is the
+canonical difference. -/
+theorem sub_entry_spec (F : PastaField) (lhs rhs : Limbs) (hlhs : lhs.Bounded)
+    (hrhs : rhs.Bounded) (hl : isCanonical lhs F.modulus = true)
+    (hr : isCanonical rhs F.modulus = true) :
+    (subMod lhs rhs F.modulus).Bounded ∧
+      (subMod lhs rhs F.modulus).toNat < F.modulus.toNat ∧
+      (subMod lhs rhs F.modulus).toNat + rhs.toNat ≡ lhs.toNat [MOD F.modulus.toNat] :=
+  subMod_spec_of_lt lhs rhs F.modulus hlhs hrhs F.bounded F.shape
+    ((isCanonical_iff lhs F.modulus hlhs F.bounded).1 hl)
+    ((isCanonical_iff rhs F.modulus hrhs F.bounded).1 hr) _ rfl
+
 end PastaAArch64Asm
