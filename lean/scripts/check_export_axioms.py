@@ -63,16 +63,33 @@ RESTRICTED = {"Lean.trustCompiler": {"Lean.reduceBool", "Lean.reduceNat"}}
 TARGETS = UNREFERENCED | set(RESTRICTED)
 TARGET_COMPONENTS = {t.rsplit(".", 1)[-1] for t in TARGETS}
 
-EXPR_KINDS = {"app", "bvar", "const", "forallE", "lam", "letE", "natVal", "proj", "sort", "strVal"}
+EXPR_KINDS = {
+    "app",
+    "bvar",
+    "const",
+    "forallE",
+    "lam",
+    "letE",
+    "mdata",
+    "natVal",
+    "proj",
+    "sort",
+    "strVal",
+}
 LEVEL_KINDS = {"imax", "max", "param", "succ"}
 DECL_KINDS = {"axiom", "def", "inductive", "opaque", "quot", "thm"}
 # Expression sub-ids per expression kind (everything else in the payload is a name id,
-# a level id, or plain data).
+# a level id, or plain data). A kind added to EXPR_KINDS MUST be given its expression-valued
+# fields here in the SAME change: the citation propagation descends only through these, so a
+# kind accepted with no entry would let a citation hide in an unvisited subterm. `mdata`'s
+# `data` holds `Lean.DataValue`s (string, bool, name, nat, int, syntax), none of which is an
+# expression, so `expr` is its only expression-valued field.
 EXPR_SUBFIELDS = {
     "app": ("fn", "arg"),
     "forallE": ("type", "body"),
     "lam": ("type", "body"),
     "letE": ("type", "value", "body"),
+    "mdata": ("expr",),
     "proj": ("struct",),
 }
 # Keys holding expression ids inside declaration payloads (at any nesting depth).
