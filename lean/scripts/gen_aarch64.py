@@ -124,9 +124,10 @@ def imm(tok):
 class Emitter(gen.Emitter):
     """AArch64 instruction decoder backed by the shared binding and liveness IR."""
 
-    def __init__(self, ins):
+    def __init__(self, ins, directions=None):
         super().__init__()
         self.ins = ins
+        self.directions = directions or {}
 
     def read(self, tok):
         if tok == "xzr":
@@ -149,6 +150,11 @@ class Emitter(gen.Emitter):
             raise ValueError(f"unhandled instruction: {text}")
         if len(t) != arity[op]:
             raise ValueError(f"{op} expects {arity[op]} operands, got {len(t)}: {text}")
+        if t[0] != "xzr":
+            if self.directions.get(t[0]) == "in":
+                raise ValueError(f"input-only register {t[0]} cannot be written: {text}")
+            if t[0] not in self.directions:
+                raise ValueError(f"undeclared destination {t[0]}: {text}")
         self.cur_reads = set()
         if op == "mov":
             a = self.read(t[1])
@@ -377,7 +383,7 @@ def parse_inline(path, fn, args):
 
 def emit_inline(fn, name, doc, args):
     ins, decls, lets, named_outputs, returned = parse_inline(INLINE, fn, args)
-    e = Emitter(ins)
+    e = Emitter(ins, {n: kind for n, kind, _ in decls})
     outs = []
     for n, kind, v in decls:
         if kind in ("in", "inout"):

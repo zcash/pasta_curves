@@ -22,6 +22,28 @@ import gen
 import gen_aarch64 as gen_aarch64
 
 
+class AArch64WriteDirectionTests(unittest.TestCase):
+    def test_input_only_destination_is_rejected(self):
+        emitter = gen_aarch64.Emitter([], {"b0": "in", "r0": "inout"})
+        emitter.bind("r0", "0", "argument", reads=())
+        with self.assertRaisesRegex(ValueError, "input-only register b0"):
+            emitter.step("mov", ["b0", "r0"], "mov b0, r0")
+
+    def test_undeclared_destination_is_rejected(self):
+        emitter = gen_aarch64.Emitter([], {"r0": "inout"})
+        with self.assertRaisesRegex(ValueError, "undeclared destination"):
+            emitter.step("mov", ["bad", "r0"], "mov bad, r0")
+
+    def test_output_and_inout_writes_are_allowed(self):
+        for direction in ("out", "inout"):
+            emitter = gen_aarch64.Emitter([], {"r0": direction})
+            emitter.step("mov", ["r0", "xzr"], "mov r0, xzr")
+            self.assertIn("r0", emitter.known)
+
+    def test_zero_register_write_is_allowed(self):
+        gen_aarch64.Emitter([]).step("mov", ["xzr", "xzr"], "mov xzr, xzr")
+
+
 class AArch64OperandCountTests(unittest.TestCase):
     def test_shifted_add_is_rejected(self):
         emitter = gen_aarch64.Emitter([])
