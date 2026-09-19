@@ -348,14 +348,17 @@ fn parse_vector(line: &str) -> (&str, &'static Field, Limbs, Option<Limbs>, Limb
 /// Whether a vector's operands are inside its routine's contract: for the multiplication, a
 /// canonical left operand, or a canonical right operand whose limbs 1 to 3 are at most
 /// `2^64 - 3` (the contract that the proofs establish); for the squaring, a canonical input;
-/// for the conversion, any input.
+/// for the conversion, any input. On x86-64, multiplication also requires canonical rhs,
+/// as asserted by the backend even when the public wrapper permits the operands.
 fn in_contract(op: &str, f: &Field, first: &Limbs, second: Option<&Limbs>) -> bool {
     match op {
         "MUL" => {
             let rhs = second.unwrap();
-            super::is_canonical(first, &f.modulus)
+            let public = super::is_canonical(first, &f.modulus)
                 || (super::is_canonical(rhs, &f.modulus)
-                    && rhs[1..].iter().all(|&limb| limb <= u64::MAX - 2))
+                    && rhs[1..].iter().all(|&limb| limb <= u64::MAX - 2));
+            // The x86 backend additionally asserts a canonical right operand.
+            public && (!cfg!(target_arch = "x86_64") || super::is_canonical(rhs, &f.modulus))
         }
         "SQR" => super::is_canonical(first, &f.modulus),
         _ => true,
@@ -367,7 +370,8 @@ fn in_contract(op: &str, f: &Field, first: &Limbs, second: Option<&Limbs>) -> bo
 /// vectors outside the contracts, multiplications with unreduced operands, are not run: the
 /// block drops the fifth limb of its final candidate, which can change the result there (it
 /// agrees with the routine on 136 of them and differs on 44, all with both operands
-/// unreduced). In a debug build the test checks instead that the block's assertion of its
+/// unreduced). On x86-64, another 132 multiplication vectors are excluded by the backend's
+/// canonical-rhs assertion. In a debug build the test checks instead that the assertion of its
 /// contract fires on each of them. Where a panic cannot be caught, it skips them, with one
 /// warning.
 #[test]
@@ -389,10 +393,15 @@ fn hardware_vectors_match() {
                 let message = panic
                     .downcast_ref::<&str>()
                     .expect("the assertion's message is a string literal");
-                assert!(
-                    message.contains("requires a canonical lhs"),
-                    "{line}: {message}"
-                );
+                let backend_only = cfg!(target_arch = "x86_64")
+                    && super::is_canonical(&first, &f.modulus)
+                    && !super::is_canonical(&rhs, &f.modulus);
+                let expected_message = if backend_only {
+                    "pasta_curves::asm::mul requires a canonical rhs"
+                } else {
+                    "requires a canonical lhs"
+                };
+                assert!(message.contains(expected_message), "{line}: {message}");
             }
             continue;
         }
@@ -409,8 +418,13 @@ fn hardware_vectors_match() {
             _ => 2,
         }] += 1;
     }
-    assert_eq!(checked, [806, 32, 34]);
-    assert_eq!(outside, 180);
+    if cfg!(target_arch = "x86_64") {
+        assert_eq!(checked, [674, 32, 34]);
+        assert_eq!(outside, 312);
+    } else {
+        assert_eq!(checked, [806, 32, 34]);
+        assert_eq!(outside, 180);
+    }
     #[cfg(all(debug_assertions, not(panic = "unwind")))]
     std::eprintln!(
         "warning: the block's assertion of its contract was not checked to fire on the \
