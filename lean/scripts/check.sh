@@ -12,4 +12,5 @@ python3 lean/scripts/gen.py --check
 python3 lean/scripts/gen.py --check-specs
 PYTHONDONTWRITEBYTECODE=1 python3 lean/scripts/test_gen.py
 PYTHONDONTWRITEBYTECODE=1 python3 lean/scripts/test_vectors.py
+PYTHONDONTWRITEBYTECODE=1 python3 lean/scripts/test_asm_source.py
 echo "Lean transcription: current."

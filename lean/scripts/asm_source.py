@@ -366,6 +366,148 @@ def _parse_asm(
     return tuple(instructions), tuple(declarations), options
 
 
+_IDENTIFIER = r"[A-Za-z_]\w*"
+_INDEX_BINDING = re.compile(
+    rf"let\s+mut\s+({_IDENTIFIER})\s*=\s*({_IDENTIFIER})\s*\[\s*([0-9]+)\s*\]\s*;"
+)
+_DESTRUCTURING_BINDING = re.compile(
+    rf"let\s*\[\s*([^\]]+)\s*\]\s*=\s*(?:\*\s*)?({_IDENTIFIER})\s*;"
+)
+_OUTPUT_DECLARATION = re.compile(
+    r"let\s*\(\s*([^()]*)\s*\)\s*:\s*\(\s*([^()]*)\s*\)\s*;"
+)
+_DEBUG_ASSERT = re.compile(r"debug_assert\s*!\s*\(")
+_UNSAFE_BLOCK = re.compile(r"unsafe\s*\{")
+_DIRECT_BINDING = re.compile(rf"let\s+(?:mut\s+)?({_IDENTIFIER})\b")
+_RETURN_ARRAY = re.compile(
+    rf"\[\s*({_IDENTIFIER}(?:\s*,\s*{_IDENTIFIER})*)\s*\]"
+)
+
+
+def _parse_function_prefix(
+    body: str,
+    masked_body: str,
+    asm_start: int,
+    function: str,
+    expected: Set[str],
+) -> Dict[str, Tuple[str, int]]:
+    """Consume the supported statements before an inline-assembly block."""
+    locals_map: Dict[str, Tuple[str, int]] = {}
+    bound_names: Set[str] = set()
+
+    def bind(name: str, binding: Optional[Tuple[str, int]] = None) -> None:
+        if name in expected:
+            raise GenerationError(f"{function}: local {name} shadows a function argument")
+        if name in bound_names:
+            raise GenerationError(f"{function}: duplicate local {name}")
+        bound_names.add(name)
+        if binding is not None:
+            locals_map[name] = binding
+
+    pos = _skip_trivia(body, 0)
+    while pos < asm_start:
+        debug_assert = _DEBUG_ASSERT.match(masked_body, pos, asm_start)
+        if debug_assert:
+            opening = debug_assert.end() - 1
+            closing = matching_delimiter(body, opening, "(", ")")
+            if closing >= asm_start:
+                raise GenerationError(f"{function}: debug_assert! overlaps asm!")
+            pos = _skip_trivia(body, closing + 1)
+            if pos >= asm_start or body[pos] != ";":
+                raise GenerationError(f"{function}: debug_assert! must end with `;`")
+            pos = _skip_trivia(body, pos + 1)
+            continue
+
+        local_match = _INDEX_BINDING.match(masked_body, pos, asm_start)
+        if local_match:
+            local, argument, index = local_match.groups()
+            if argument not in expected:
+                raise GenerationError(f"{function}: local reads non-argument {argument}")
+            bind(local, (argument, int(index)))
+            pos = _skip_trivia(body, local_match.end())
+            continue
+
+        destructuring = _DESTRUCTURING_BINDING.match(masked_body, pos, asm_start)
+        if destructuring:
+            names, argument = destructuring.groups()
+            if argument not in expected:
+                raise GenerationError(f"{function}: destructures non-argument {argument}")
+            for index, item in enumerate(names.split(",")):
+                local_match = re.fullmatch(rf"\s*(?:mut\s+)?({_IDENTIFIER})\s*", item)
+                if not local_match:
+                    raise GenerationError(f"{function}: unsupported local binding {item}")
+                bind(local_match.group(1), (argument, index))
+            pos = _skip_trivia(body, destructuring.end())
+            continue
+
+        output_declaration = _OUTPUT_DECLARATION.match(masked_body, pos, asm_start)
+        if output_declaration:
+            names = tuple(part.strip() for part in output_declaration.group(1).split(","))
+            types = tuple(part.strip() for part in output_declaration.group(2).split(","))
+            if (not names or len(names) != len(types)
+                    or any(not re.fullmatch(_IDENTIFIER, name) for name in names)
+                    or any(type_name != "u64" for type_name in types)):
+                raise GenerationError(f"{function}: unsupported output declaration")
+            for name in names:
+                bind(name)
+            pos = _skip_trivia(body, output_declaration.end())
+            continue
+
+        unsafe_block = _UNSAFE_BLOCK.match(masked_body, pos, asm_start)
+        if unsafe_block:
+            pos = _skip_trivia(body, unsafe_block.end())
+            if pos != asm_start:
+                raise GenerationError(f"{function}: unsupported code before asm!")
+            return locals_map
+
+        direct_binding = _DIRECT_BINDING.match(masked_body, pos, asm_start)
+        if direct_binding and direct_binding.group(1) in expected:
+            name = direct_binding.group(1)
+            raise GenerationError(f"{function}: local {name} shadows a function argument")
+        local_use = next(
+            (name for name in locals_map
+             if re.match(rf"\b{re.escape(name)}\b", masked_body[pos:asm_start])),
+            None,
+        )
+        if local_use is not None:
+            raise GenerationError(
+                f"{function}: unsupported use of bound local {local_use} before asm!"
+            )
+        raise GenerationError(f"{function}: unsupported code before asm!")
+
+    raise GenerationError(f"{function}: asm! must be the sole statement in an unsafe block")
+
+
+def _parse_function_suffix(
+    body: str,
+    masked_body: str,
+    asm_close: int,
+    function: str,
+    result_count: int,
+) -> Tuple[str, ...]:
+    """Consume the unsafe-block close and the function's exact result expression."""
+    pos = _skip_trivia(body, asm_close + 1)
+    if pos >= len(body) or body[pos] != ";":
+        raise GenerationError(f"{function}: asm! invocation must end with `;`")
+    pos = _skip_trivia(body, pos + 1)
+    if pos >= len(body) or body[pos] != "}":
+        raise GenerationError(f"{function}: unsupported code after asm!")
+    pos = _skip_trivia(body, pos + 1)
+
+    returned = _RETURN_ARRAY.match(masked_body, pos)
+    if not returned:
+        raise GenerationError(f"{function}: unsupported code after asm!")
+    returns = tuple(part.strip() for part in returned.group(1).split(","))
+    pos = _skip_trivia(body, returned.end())
+    if pos != len(body):
+        raise GenerationError(f"{function}: unsupported code after asm!")
+    if len(returns) != result_count:
+        raise GenerationError(
+            f"{function}: source output tuple has {len(returns)} values, expected {result_count}"
+        )
+    return returns
+
+
 def parse_function(
     source: str,
     function: str,
@@ -425,52 +567,12 @@ def parse_function(
         required_options=required_options,
     )
 
-    locals_map: Dict[str, Tuple[str, int]] = {}
-    prefix = masked_body[:asm.start()]
-    local_patterns = (
-        r"let\s+mut\s+([A-Za-z_]\w*)\s*=\s*([A-Za-z_]\w*)\[([0-9]+)\]\s*;",
-        r"let\s+\[([^\]]+)\]\s*=\s*(?:\*)?([A-Za-z_]\w*)\s*;",
+    locals_map = _parse_function_prefix(
+        body, masked_body, asm.start(), function, expected
     )
-    for local_match in re.finditer(local_patterns[0], prefix):
-        local, argument, index = local_match.groups()
-        if argument not in expected:
-            raise GenerationError(f"{function}: local reads non-argument {argument}")
-        locals_map[local] = (argument, int(index))
-    for local_match in re.finditer(local_patterns[1], prefix):
-        names, argument = local_match.groups()
-        if argument not in expected:
-            raise GenerationError(f"{function}: destructures non-argument {argument}")
-        for index, item in enumerate(names.split(",")):
-            local = re.sub(r"^\s*mut\s+", "", item).strip()
-            if not re.fullmatch(r"[A-Za-z_]\w*", local):
-                raise GenerationError(f"{function}: unsupported local binding {item}")
-            if local in locals_map:
-                raise GenerationError(f"{function}: duplicate local {local}")
-            locals_map[local] = (argument, index)
-
-    prefix_without_bindings = prefix
-    for local_pattern in local_patterns:
-        prefix_without_bindings = re.sub(local_pattern, " ", prefix_without_bindings)
-    for local in locals_map:
-        if re.search(rf"\b{re.escape(local)}\b", prefix_without_bindings):
-            raise GenerationError(
-                f"{function}: unsupported use of bound local {local} before asm!"
-            )
-
-    suffix = masked_body[asm_close + 1:]
-    return_matches = re.findall(
-        r"(?m)^\s*\[\s*([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)\s*\]\s*$",
-        suffix,
+    returns = _parse_function_suffix(
+        body, masked_body, asm_close, function, result_count
     )
-    if len(return_matches) != 1:
-        raise GenerationError(
-            f"{function}: expected one source output tuple, found {len(return_matches)}"
-        )
-    returns = tuple(part.strip() for part in return_matches[0].split(","))
-    if len(returns) != result_count:
-        raise GenerationError(
-            f"{function}: source output tuple has {len(returns)} values, expected {result_count}"
-        )
     return ParsedFunction(instructions, declarations, locals_map, returns, options)
 
 
