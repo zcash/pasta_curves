@@ -143,6 +143,12 @@ class Emitter(gen.Emitter):
             super().bind(name, expr, comment, reads=reads, load=load, fact=fact, note=note)
 
     def step(self, op, t, text):
+        arity = {"mov": 2, "mul": 3, "umulh": 3, "lsl": 3, "lsr": 3,
+                 "adds": 3, "adcs": 3, "adc": 3, "subs": 3, "sbcs": 3, "csel": 4}
+        if op not in arity:
+            raise ValueError(f"unhandled instruction: {text}")
+        if len(t) != arity[op]:
+            raise ValueError(f"{op} expects {arity[op]} operands, got {len(t)}: {text}")
         self.cur_reads = set()
         if op == "mov":
             a = self.read(t[1])

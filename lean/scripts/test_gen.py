@@ -22,6 +22,23 @@ import gen
 import gen_aarch64 as gen_aarch64
 
 
+class AArch64OperandCountTests(unittest.TestCase):
+    def test_shifted_add_is_rejected(self):
+        emitter = gen_aarch64.Emitter([])
+        with self.assertRaisesRegex(ValueError, "adds expects 3 operands"):
+            emitter.step("adds", gen_aarch64.tokenize("r0, r0, b0, lsl #1"),
+                         "adds r0, r0, b0, lsl #1")
+
+    def test_missing_and_extra_operands_are_rejected_before_reads(self):
+        arities = {"mov": 2, "mul": 3, "umulh": 3, "lsl": 3, "lsr": 3,
+                   "adds": 3, "adcs": 3, "adc": 3, "subs": 3, "sbcs": 3, "csel": 4}
+        for op, count in arities.items():
+            for actual in (count - 1, count + 1):
+                with self.subTest(op=op, actual=actual):
+                    with self.assertRaisesRegex(ValueError, "expects .* operands"):
+                        gen_aarch64.Emitter([]).step(op, ["r0"] * actual, op)
+
+
 class SharedAArch64ParserTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
