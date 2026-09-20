@@ -1,0 +1,94 @@
+diff --git a/src/fields/fp.rs b/src/fields/fp.rs
+index aba3773..b2923dd 100644
+--- a/src/fields/fp.rs
++++ b/src/fields/fp.rs
+@@ -1133,3 +1133,42 @@ fn test_from_u512() {
+         ])
+     );
+ }
++
++#[cfg(all(
++    test,
++    feature = "aarch64-asm",
++    target_arch = "aarch64",
++    target_vendor = "apple"
++))]
++#[test]
++fn dump_asm_vectors() {
++    use rand::SeedableRng;
++    let m = u64::MAX;
++    let p = MODULUS.0;
++    let pm1 = [p[0] - 1, p[1], p[2], p[3]];
++    let mut rng = rand_xorshift::XorShiftRng::from_seed([0x3c; 16]);
++    let mut singles = [[0u64; 4]; 17];
++    let fixed: [[u64; 4]; 11] = [
++        [0, 0, 0, 0], [1, 0, 0, 0], R.0, R2.0, R3.0, pm1, [m, 0, 0, 0], [0, 0, 0, 1 << 62],
++        [m, m, 0, 0], [m, m, m, (1 << 62) - 1], [p[0], p[1], 0, 0],
++    ];
++    singles[..11].copy_from_slice(&fixed);
++    for s in singles[11..].iter_mut() {
++        *s = [rng.next_u64(), rng.next_u64(), rng.next_u64(), rng.next_u64() & ((1u64 << 62) - 1)];
++    }
++    let unreduced: [[u64; 4]; 6] = [[m; 4], [0, m, m, m], [m, m, m, m - 1], [0, 0, 0, m], p, [p[0] + 1, p[1], p[2], p[3]]];
++    let pr = |x: &[u64; 4]| print!("{:016x}{:016x}{:016x}{:016x}", x[3], x[2], x[1], x[0]);
++    for a in singles.iter() {
++        print!("SQR Fp "); pr(a); print!(" "); pr(&super::aarch64_asm::square(a, &MODULUS.0, INV)); println!();
++        print!("FROM Fp "); pr(a); print!(" "); pr(&super::aarch64_asm::from_mont(a, &MODULUS.0, INV)); println!();
++        for b in singles.iter() {
++            print!("MUL Fp "); pr(a); print!(" "); pr(b); print!(" "); pr(&super::aarch64_asm::mul(a, b, &MODULUS.0, INV)); println!();
++        }
++    }
++    for a in unreduced.iter() {
++        for b in singles.iter().take(11).chain(unreduced.iter()) {
++            print!("MUL Fp "); pr(a); print!(" "); pr(b); print!(" "); pr(&super::aarch64_asm::mul(a, b, &MODULUS.0, INV)); println!();
++            print!("MUL Fp "); pr(b); print!(" "); pr(a); print!(" "); pr(&super::aarch64_asm::mul(b, a, &MODULUS.0, INV)); println!();
++        }
++    }
++}
+diff --git a/src/fields/fq.rs b/src/fields/fq.rs
+index 07e2bed..b345c8e 100644
+--- a/src/fields/fq.rs
++++ b/src/fields/fq.rs
+@@ -1131,3 +1131,42 @@ fn test_from_u512() {
+         ])
+     );
+ }
++
++#[cfg(all(
++    test,
++    feature = "aarch64-asm",
++    target_arch = "aarch64",
++    target_vendor = "apple"
++))]
++#[test]
++fn dump_asm_vectors() {
++    use rand::SeedableRng;
++    let m = u64::MAX;
++    let p = MODULUS.0;
++    let pm1 = [p[0] - 1, p[1], p[2], p[3]];
++    let mut rng = rand_xorshift::XorShiftRng::from_seed([0x3c; 16]);
++    let mut singles = [[0u64; 4]; 17];
++    let fixed: [[u64; 4]; 11] = [
++        [0, 0, 0, 0], [1, 0, 0, 0], R.0, R2.0, R3.0, pm1, [m, 0, 0, 0], [0, 0, 0, 1 << 62],
++        [m, m, 0, 0], [m, m, m, (1 << 62) - 1], [p[0], p[1], 0, 0],
++    ];
++    singles[..11].copy_from_slice(&fixed);
++    for s in singles[11..].iter_mut() {
++        *s = [rng.next_u64(), rng.next_u64(), rng.next_u64(), rng.next_u64() & ((1u64 << 62) - 1)];
++    }
++    let unreduced: [[u64; 4]; 6] = [[m; 4], [0, m, m, m], [m, m, m, m - 1], [0, 0, 0, m], p, [p[0] + 1, p[1], p[2], p[3]]];
++    let pr = |x: &[u64; 4]| print!("{:016x}{:016x}{:016x}{:016x}", x[3], x[2], x[1], x[0]);
++    for a in singles.iter() {
++        print!("SQR Fq "); pr(a); print!(" "); pr(&super::aarch64_asm::square(a, &MODULUS.0, INV)); println!();
++        print!("FROM Fq "); pr(a); print!(" "); pr(&super::aarch64_asm::from_mont(a, &MODULUS.0, INV)); println!();
++        for b in singles.iter() {
++            print!("MUL Fq "); pr(a); print!(" "); pr(b); print!(" "); pr(&super::aarch64_asm::mul(a, b, &MODULUS.0, INV)); println!();
++        }
++    }
++    for a in unreduced.iter() {
++        for b in singles.iter().take(11).chain(unreduced.iter()) {
++            print!("MUL Fq "); pr(a); print!(" "); pr(b); print!(" "); pr(&super::aarch64_asm::mul(a, b, &MODULUS.0, INV)); println!();
++            print!("MUL Fq "); pr(b); print!(" "); pr(a); print!(" "); pr(&super::aarch64_asm::mul(b, a, &MODULUS.0, INV)); println!();
++        }
++    }
++}
