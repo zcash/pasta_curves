@@ -40,8 +40,8 @@ theorem mulContract_iff (lhs rhs modulus : Limbs) (hlhs : lhs.Bounded) (hrhs : r
     isCanonical_iff lhs modulus hlhs hm, isCanonical_iff rhs modulus hrhs hm]
   omega
 
-/-- The crate's `mul` at a Pasta field: when the condition it asserts holds, the result is the
-canonical Montgomery product of its operands. -/
+/-- The crate's `mul` at a Pasta field: when the condition it asserts holds, the result is
+canonical, with `R * result ≡ lhs * rhs (mod p)`. -/
 theorem mul_entry_spec (F : PastaField) (lhs rhs : Limbs) (hlhs : lhs.Bounded)
     (hrhs : rhs.Bounded) (h : mulContract lhs rhs F.modulus = true) :
     (mulMont lhs rhs F.modulus F.inv).Bounded ∧
@@ -55,7 +55,7 @@ theorem mul_entry_spec (F : PastaField) (lhs rhs : Limbs) (hlhs : lhs.Bounded)
       F.inv_spec hlt hlimbs _ rfl
 
 /-- The crate's `square` at a Pasta field: for a canonical input, as it asserts, the result is
-the canonical Montgomery square. -/
+canonical, with `R * result ≡ value² (mod p)`. -/
 theorem square_entry_spec (F : PastaField) (value : Limbs) (hv : value.Bounded)
     (h : isCanonical value F.modulus = true) :
     (sqrMont value F.modulus F.inv).Bounded ∧
