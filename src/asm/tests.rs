@@ -313,9 +313,10 @@ fn from_mont_known_answers() {
 
 /// The reference vectors: outputs of Semolina's `mul_mont_pasta`, `sqr_mont_pasta`, and
 /// `from_mont_pasta` as vendored by pasta_curves at `8ad85e9fab7929f6236960e472f432a4bd9ccd74`,
-/// recorded on an Apple M-series machine. One vector per line: the routine (`MUL`, `SQR`,
-/// `FROM`), the field (`Fp`, `Fq`), the operands, and the output, each 256-bit value as 64
-/// big-endian hex digits.
+/// recorded on an Apple M-series machine by the test in `test-vectors/dump-asm-vectors.patch`
+/// (`test-vectors/README.md` describes the sampling). One vector per line: the routine (`MUL`,
+/// `SQR`, `FROM`), the field (`Fp`, `Fq`), the operands, and the output, each 256-bit value as
+/// 64 big-endian hex digits.
 const VECTORS: &str = include_str!("../../test-vectors/pasta_mul-armv8-vectors.txt");
 
 /// A 256-bit value written as 64 big-endian hex digits, as little-endian limbs.
@@ -347,9 +348,10 @@ fn parse_vector(line: &str) -> (&str, &'static Field, Limbs, Option<Limbs>, Limb
 
 /// Whether a vector's operands are inside its routine's contract: for the multiplication, a
 /// canonical left operand, or a canonical right operand whose limbs 1 to 3 are at most
-/// `2^64 - 3` (the contract that the proofs establish); for the squaring, a canonical input;
-/// for the conversion, any input. On x86-64, multiplication also requires canonical rhs,
-/// as asserted by the backend even when the public wrapper permits the operands.
+/// `2^64 - 3` (the contract that the proofs establish); for the squaring, the addition, and
+/// the subtraction, canonical inputs; for the conversion, any input. On x86-64, multiplication
+/// also requires a canonical rhs, as asserted by the backend even when the public wrapper
+/// permits the operands.
 fn in_contract(op: &str, f: &Field, first: &Limbs, second: Option<&Limbs>) -> bool {
     match op {
         "MUL" => {
@@ -361,7 +363,24 @@ fn in_contract(op: &str, f: &Field, first: &Limbs, second: Option<&Limbs>) -> bo
             public && (!cfg!(target_arch = "x86_64") || super::is_canonical(rhs, &f.modulus))
         }
         "SQR" => super::is_canonical(first, &f.modulus),
-        _ => true,
+        "ADD" | "SUB" => {
+            super::is_canonical(first, &f.modulus)
+                && super::is_canonical(second.unwrap(), &f.modulus)
+        }
+        "FROM" => true,
+        _ => panic!("unknown routine {op}"),
+    }
+}
+
+/// Runs the routine that a vector names on its operands.
+fn run(op: &str, f: &Field, first: &Limbs, second: Option<&Limbs>) -> Limbs {
+    match op {
+        "MUL" => mul(first, second.unwrap(), &f.modulus, f.inv),
+        "SQR" => square(first, &f.modulus, f.inv),
+        "FROM" => from_mont(first, &f.modulus, f.inv),
+        "ADD" => add(first, second.unwrap(), &f.modulus),
+        "SUB" => sub(first, second.unwrap(), &f.modulus),
+        _ => panic!("unknown routine {op}"),
     }
 }
 
@@ -371,63 +390,67 @@ fn in_contract(op: &str, f: &Field, first: &Limbs, second: Option<&Limbs>) -> bo
 /// block drops the fifth limb of its final candidate, which can change the result there (it
 /// agrees with the routine on 136 of them and differs on 44, all with both operands
 /// unreduced). On x86-64, another 132 multiplication vectors are excluded by the backend's
-/// canonical-rhs assertion. In a debug build the test checks instead that the assertion of its
-/// contract fires on each of them. Where a panic cannot be caught, it skips them, with one
-/// warning.
+/// canonical-rhs assertion. In a debug build the test checks instead that the assertion of the
+/// routine's contract fires on each of them. Where a panic cannot be caught, it skips them, with
+/// one warning. The file holds no addition or subtraction vectors; the counts below say so, and
+/// the code handles them so that a file that gains some needs no other change.
 #[test]
 fn hardware_vectors_match() {
-    let mut checked = [0usize; 3];
-    let mut outside = 0usize;
+    // Indexed by routine: MUL, SQR, FROM, ADD, SUB.
+    let mut checked = [0usize; 5];
+    let mut outside = [0usize; 5];
     for line in VECTORS.lines().filter(|line| !line.is_empty()) {
         let (op, f, first, second, expected) = parse_vector(line);
+        let index = match op {
+            "MUL" => 0,
+            "SQR" => 1,
+            "FROM" => 2,
+            "ADD" => 3,
+            "SUB" => 4,
+            _ => panic!("unknown routine {op}"),
+        };
         if !in_contract(op, f, &first, second.as_ref()) {
-            assert_eq!(op, "MUL", "{line}");
-            outside += 1;
+            outside[index] += 1;
             // The assertion itself needs no std. Catching its panic needs both std and a
             // panic strategy that unwinds.
             #[cfg(all(debug_assertions, panic = "unwind"))]
             {
-                let rhs = second.unwrap();
-                let panic = std::panic::catch_unwind(|| mul(&first, &rhs, &f.modulus, f.inv))
-                    .expect_err("the debug assertion of mul's contract did not fire");
+                let panic = std::panic::catch_unwind(|| run(op, f, &first, second.as_ref()))
+                    .expect_err("the debug assertion of the routine's contract did not fire");
                 let message = panic
                     .downcast_ref::<&str>()
                     .expect("the assertion's message is a string literal");
-                let backend_only = cfg!(target_arch = "x86_64")
-                    && super::is_canonical(&first, &f.modulus)
-                    && !super::is_canonical(&rhs, &f.modulus);
-                let expected_message = if backend_only {
-                    "pasta_curves::asm::mul requires a canonical rhs"
-                } else {
-                    "requires a canonical lhs"
+                // A multiplication that the public contract admits is outside only on x86-64,
+                // by the backend's own assertion.
+                let expected_message = match op {
+                    "MUL"
+                        if cfg!(target_arch = "x86_64")
+                            && super::is_canonical(&first, &f.modulus) =>
+                    {
+                        "pasta_curves::asm::mul requires a canonical rhs"
+                    }
+                    "MUL" => "requires a canonical lhs",
+                    "SQR" => "requires a canonical input",
+                    _ => "requires a canonical",
                 };
                 assert!(message.contains(expected_message), "{line}: {message}");
             }
             continue;
         }
-        let actual = match op {
-            "MUL" => mul(&first, &second.unwrap(), &f.modulus, f.inv),
-            "SQR" => square(&first, &f.modulus, f.inv),
-            "FROM" => from_mont(&first, &f.modulus, f.inv),
-            _ => panic!("unknown routine {op}"),
-        };
-        assert_eq!(actual, expected, "{line}");
-        checked[match op {
-            "MUL" => 0,
-            "SQR" => 1,
-            _ => 2,
-        }] += 1;
+        assert_eq!(run(op, f, &first, second.as_ref()), expected, "{line}");
+        checked[index] += 1;
     }
     if cfg!(target_arch = "x86_64") {
-        assert_eq!(checked, [674, 32, 34]);
-        assert_eq!(outside, 312);
+        assert_eq!(checked, [674, 32, 34, 0, 0]);
+        assert_eq!(outside, [312, 0, 0, 0, 0]);
     } else {
-        assert_eq!(checked, [806, 32, 34]);
-        assert_eq!(outside, 180);
+        assert_eq!(checked, [806, 32, 34, 0, 0]);
+        assert_eq!(outside, [180, 0, 0, 0, 0]);
     }
     #[cfg(all(debug_assertions, not(panic = "unwind")))]
     std::eprintln!(
-        "warning: the block's assertion of its contract was not checked to fire on the \
-         {outside} vectors outside it, since panics cannot be caught here"
+        "warning: the assertions of the routines' contracts were not checked to fire on the \
+         {} vectors outside them, since panics cannot be caught here",
+        outside.iter().sum::<usize>()
     );
 }
