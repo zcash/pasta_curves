@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Check the axiom census of a lean4export ndjson export against the nanoda config.
 
+The export format is lean4export's ndjson format, described in its `format_ndjson.md`;
+the link is to the tag that CI builds lean4export from, matching `lean-toolchain`:
+https://github.com/leanprover/lean4export/blob/v4.30.0/format_ndjson.md
+
 nanoda's strict mode (`unpermitted_axiom_hard_error: true`) rejects any axiom *declared*
 outside the permitted list, but must permit axioms Lean core declares whether or not
 anything uses them (`sorryAx` and the legacy compiler-trust axioms). Permitting a
@@ -15,7 +19,7 @@ itself:
     from their propositional bridge axioms `Lean.ofReduceBool`/`Lean.ofReduceNat`
     above — and nothing in this repository consumes them.
 
-Failures come in two kinds, mirroring `check_native_optin.py`:
+Failures come in two kinds, mirroring CompElliptic's `check_native_optin.py`:
 
   * VIOLATION (exit 1) — an undesired outcome in structurally well-formed data: a
     declared axiom outside the permitted list, a stale permitted entry, or a citation
