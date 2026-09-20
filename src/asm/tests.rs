@@ -441,10 +441,10 @@ fn hardware_vectors_match() {
         checked[index] += 1;
     }
     if cfg!(target_arch = "x86_64") {
-        assert_eq!(checked, [674, 32, 34, 0, 0]);
+        assert_eq!(checked, [674, 34, 34, 0, 0]);
         assert_eq!(outside, [312, 0, 0, 0, 0]);
     } else {
-        assert_eq!(checked, [806, 32, 34, 0, 0]);
+        assert_eq!(checked, [806, 34, 34, 0, 0]);
         assert_eq!(outside, [180, 0, 0, 0, 0]);
     }
     #[cfg(all(debug_assertions, not(panic = "unwind")))]
