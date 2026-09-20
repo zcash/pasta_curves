@@ -634,7 +634,10 @@ def generated_outputs():
 
 # Existing proof files only. None selects every generated routine of that architecture.
 SPEC_MANIFEST = {
-    "lean/PastaAsm/AArch64/Spec.lean": ("AArch64", None),
+    "lean/PastaAsm/AArch64/Spec/Add.lean": ("AArch64", ("addMod",)),
+    "lean/PastaAsm/AArch64/Spec/Sub.lean": ("AArch64", ("subMod",)),
+    "lean/PastaAsm/AArch64/Spec/Mul.lean": ("AArch64", ("mulMont", "mulMontRound")),
+    "lean/PastaAsm/AArch64/Spec/Square.lean": ("AArch64", ("sqrMont",)),
 }
 
 # Missing proofs are tracked by routine, not by hypothetical files.

@@ -145,15 +145,6 @@ class SharedGeneratorTests(unittest.TestCase):
     def test_transcription_snapshots_match_committed_files(self):
         self.assertEqual(gen_aarch64.gen_program(), gen_aarch64.OUT_PROGRAM.read_text())
 
-    def test_committed_aarch64_skeletons_match_shared_generation(self):
-        diagnostics = io.StringIO()
-        with contextlib.redirect_stderr(diagnostics):
-            current = gen.check_spec(
-                gen.ROOT / "lean/PastaAsm/AArch64/Spec.lean",
-                gen_aarch64.all_routines(),
-            )
-        self.assertTrue(current, diagnostics.getvalue())
-
     def test_bare_skeleton_lookup_retains_aarch64_legacy(self):
         self.assertEqual(gen.find_routine("addMod").architecture, "AArch64")
 
