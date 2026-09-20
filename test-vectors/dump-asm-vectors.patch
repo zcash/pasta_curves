@@ -2,7 +2,7 @@ diff --git a/src/fields/fp.rs b/src/fields/fp.rs
 index aba3773..b2923dd 100644
 --- a/src/fields/fp.rs
 +++ b/src/fields/fp.rs
-@@ -1133,3 +1133,42 @@ fn test_from_u512() {
+@@ -1133,3 +1133,43 @@ fn test_from_u512() {
          ])
      );
  }
@@ -15,6 +15,8 @@ index aba3773..b2923dd 100644
 +))]
 +#[test]
 +fn dump_asm_vectors() {
++    // The test harness prints its "test ... " line without a newline under --nocapture.
++    println!();
 +    use rand::SeedableRng;
 +    let m = u64::MAX;
 +    let p = MODULUS.0;
@@ -49,7 +51,7 @@ diff --git a/src/fields/fq.rs b/src/fields/fq.rs
 index 07e2bed..b345c8e 100644
 --- a/src/fields/fq.rs
 +++ b/src/fields/fq.rs
-@@ -1131,3 +1131,42 @@ fn test_from_u512() {
+@@ -1131,3 +1131,43 @@ fn test_from_u512() {
          ])
      );
  }
@@ -62,6 +64,8 @@ index 07e2bed..b345c8e 100644
 +))]
 +#[test]
 +fn dump_asm_vectors() {
++    // The test harness prints its "test ... " line without a newline under --nocapture.
++    println!();
 +    use rand::SeedableRng;
 +    let m = u64::MAX;
 +    let p = MODULUS.0;

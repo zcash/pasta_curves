@@ -27,6 +27,13 @@ constants for its `Fp` (the Pallas base field) and `Fq` (the Vesta base field).
 namespace PastaAArch64Asm
 
 example :
+    sqrMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
     fromMont
       (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000)
       pallasBase.modulus pallasBase.inv =
@@ -3479,6 +3486,13 @@ example :
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000002)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x100000000000000000000000000000000891a63f02533e46e64b4c3b40000000) := by
+  decide +kernel
+
+example :
+    sqrMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
   decide +kernel
 
 example :
@@ -6937,6 +6951,6 @@ example :
   decide +kernel
 
 
--- 872 vectors; omitted as outside the proved contracts: 180 MUL.
+-- 874 vectors; omitted as outside the proved contracts: 180 MUL.
 
 end PastaAArch64Asm
