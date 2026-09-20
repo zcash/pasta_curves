@@ -17,6 +17,10 @@ outputs.
 
 namespace PastaAArch64Asm
 
+/-- The Montgomery radix, one more than the largest four-limb value: the crate holds a residue
+`x` as `x * R mod p`, and the entry-point theorems state their results against it. -/
+abbrev R : Nat := 2^256
+
 /-- A Pasta base field as the crate takes it: the modulus limbs and `inv`, with the facts about
 them that the proofs assume. -/
 structure PastaField where
