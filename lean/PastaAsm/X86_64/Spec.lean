@@ -6,6 +6,7 @@ import PastaAsm.X86_64.Spec.Arithmetic
 import PastaAsm.X86_64.Spec.Add
 import PastaAsm.X86_64.Spec.Sub
 import PastaAsm.X86_64.Spec.Square
+import PastaAsm.X86_64.Spec.FromMont
 
 /-!
 # Correctness proofs for the x86-64 blocks
