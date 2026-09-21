@@ -5,6 +5,7 @@ Released under the Apache License, Version 2.0, as described in the file LICENSE
 import PastaAsm.Spec
 import PastaAsm.X86_64.Compositions
 import PastaAsm.X86_64.Spec.Arithmetic
+import PastaAsm.X86_64.Spec.Mul
 import PastaAsm.X86_64.Transcription
 
 /-!
@@ -1714,6 +1715,37 @@ theorem sqrN_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
       _ = (2^(256 * (2^n - 1)) * (sqrN value modulus inv n).toNat) *
             (2^(256 * (2^n - 1)) * (sqrN value modulus inv n).toNat) := by ring
       _ ≡ value.toNat^(2^n) * value.toNat^(2^n) [MOD modulus.toNat] := Nat.ModEq.mul hc hc
+
+/-- The crate's `sqr_n_mul`: the squaring pair `count` times, then the multiplication block by
+any four-limb `rhs`. For a canonical `value` the output is below `p` and
+`2^(256 * 2^count) * output ≡ value^(2^count) * rhs (mod p)`. The chain keeps its value
+canonical, so the multiplication is under its first contract. -/
+theorem sqrNMul_spec (value : Limbs) (count : Nat) (rhs modulus : Limbs) (inv : Nat)
+    (hv : value.Bounded) (hrhs : rhs.Bounded) (hm : modulus.Bounded)
+    (hshape : modulus.l2 = 0 ∧ modulus.l3 = 2^62)
+    (hinv_lt : inv < 2^64) (hinv : (inv * modulus.l0 + 1) % 2^64 = 0)
+    (hlt : value.toNat < modulus.toNat) :
+    ∀ r, r = sqrNMul value count rhs modulus inv →
+      r.Bounded ∧ r.toNat < modulus.toNat ∧
+        2^(256 * 2^count) * r.toNat ≡ value.toNat^(2^count) * rhs.toNat [MOD modulus.toNat] := by
+  intro r hr
+  obtain ⟨hb, hl, hc⟩ := sqrN_spec value modulus inv hv hm hshape hinv_lt hinv hlt count _ rfl
+  obtain ⟨hb', hl', hc'⟩ := mulMont_spec_of_lhs_lt (sqrN value modulus inv count) rhs modulus
+    inv hb hrhs hm hshape hinv_lt hinv hl r (hr.trans rfl)
+  refine ⟨hb', hl', ?_⟩
+  have hpos := Nat.two_pow_pos count
+  have e : 2^(256 * 2^count) = 2^(256 * (2^count - 1)) * 2^256 := by
+    rw [← pow_add]
+    congr 1
+    generalize 2^count = m at hpos ⊢
+    omega
+  rw [e]
+  calc 2^(256 * (2^count - 1)) * 2^256 * r.toNat
+      = 2^(256 * (2^count - 1)) * (2^256 * r.toNat) := by ring
+    _ ≡ 2^(256 * (2^count - 1)) * ((sqrN value modulus inv count).toNat * rhs.toNat)
+          [MOD modulus.toNat] := Nat.ModEq.mul_left _ hc'
+    _ = (2^(256 * (2^count - 1)) * (sqrN value modulus inv count).toNat) * rhs.toNat := by ring
+    _ ≡ value.toNat^(2^count) * rhs.toNat [MOD modulus.toNat] := Nat.ModEq.mul_right _ hc
 -- END sqrMont_spec corollaries
 
 end PastaAsm.X86_64

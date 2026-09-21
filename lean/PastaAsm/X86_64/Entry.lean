@@ -49,6 +49,20 @@ theorem sub_entry_spec (F : PastaField) (lhs rhs : Limbs) (hlhs : lhs.Bounded)
     ((isCanonical_iff lhs F.modulus hlhs F.bounded).1 hl)
     ((isCanonical_iff rhs F.modulus hrhs F.bounded).1 hr) _ rfl
 
+/-- The crate's `mul` at a Pasta field: when the condition it asserts holds, the result is
+canonical, with `R * result ≡ lhs * rhs (mod p)`. -/
+theorem mul_entry_spec (F : PastaField) (lhs rhs : Limbs) (hlhs : lhs.Bounded)
+    (hrhs : rhs.Bounded) (h : mulContract lhs rhs F.modulus = true) :
+    (mulMont lhs rhs F.modulus F.inv).Bounded ∧
+      (mulMont lhs rhs F.modulus F.inv).toNat < F.modulus.toNat ∧
+      R * (mulMont lhs rhs F.modulus F.inv).toNat ≡ lhs.toNat * rhs.toNat
+        [MOD F.modulus.toNat] := by
+  rcases (mulContract_iff lhs rhs F.modulus hlhs hrhs F.bounded).1 h with hlt | ⟨hlt, hlimbs⟩
+  · exact mulMont_spec_of_lhs_lt lhs rhs F.modulus F.inv hlhs hrhs F.bounded F.shape F.inv_lt
+      F.inv_spec hlt _ rfl
+  · exact mulMont_spec_of_rhs_lt lhs rhs F.modulus F.inv hlhs hrhs F.bounded F.shape F.inv_lt
+      F.inv_spec hlt hlimbs _ rfl
+
 /-- The crate's `square` at a Pasta field: for a canonical input, as it asserts, the result is
 canonical, with `R * result ≡ value² (mod p)`. -/
 theorem square_entry_spec (F : PastaField) (value : Limbs) (hv : value.Bounded)
@@ -59,6 +73,19 @@ theorem square_entry_spec (F : PastaField) (value : Limbs) (hv : value.Bounded)
         [MOD F.modulus.toNat] :=
   sqrMont_spec value F.modulus F.inv hv F.bounded F.shape F.inv_lt F.inv_spec
     ((isCanonical_iff value F.modulus hv F.bounded).1 h) _ rfl
+
+/-- The crate's `sqr_n_mul` at a Pasta field: for a canonical `value`, which its squarings
+assert, and any four-limb `rhs`, the result is canonical with
+`R^(2^count) * result ≡ value^(2^count) * rhs (mod p)`. -/
+theorem sqrNMul_entry_spec (F : PastaField) (value : Limbs) (count : Nat) (rhs : Limbs)
+    (hv : value.Bounded) (hrhs : rhs.Bounded) (h : isCanonical value F.modulus = true) :
+    (sqrNMul value count rhs F.modulus F.inv).Bounded ∧
+      (sqrNMul value count rhs F.modulus F.inv).toNat < F.modulus.toNat ∧
+      R^(2^count) * (sqrNMul value count rhs F.modulus F.inv).toNat ≡
+        value.toNat^(2^count) * rhs.toNat [MOD F.modulus.toNat] := by
+  have hspec := sqrNMul_spec value count rhs F.modulus F.inv hv hrhs F.bounded F.shape F.inv_lt
+    F.inv_spec ((isCanonical_iff value F.modulus hv F.bounded).1 h) _ rfl
+  rwa [Nat.pow_mul] at hspec
 
 /-- The crate's `from_mont` at a Pasta field: for every four-limb `value`, the result is
 canonical with `R * result ≡ value (mod p)`. -/
