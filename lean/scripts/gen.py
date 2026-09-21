@@ -116,10 +116,14 @@ class Routine:
     emitter and result names for the proof skeleton, and for a round definition the text of its
     state structure."""
 
-    def __init__(self, doc, signature, lines, result, name, emitter, result_names, struct=None):
+    def __init__(self, doc, signature, lines, result, name, emitter, result_names, struct=None,
+                 arg_fields=None):
         self.doc, self.signature, self.lines, self.result = doc, signature, lines, result
         self.name, self.emitter, self.result_names = name, emitter, result_names
         self.struct = struct
+        self.arg_fields = {arg: list(fields) for arg, fields in ARG_FIELDS.items()}
+        if arg_fields:
+            self.arg_fields.update({arg: list(fields) for arg, fields in arg_fields.items()})
 
     def text(self, column):
         """The definition, with the instruction comments aligned at `column`; a line whose code
@@ -268,9 +272,10 @@ class SkeletonBackend:
 class SkeletonPreparation:
     """The entries and backend-selected grouping metadata consumed by the shared traversal."""
 
-    def __init__(self, entries, names):
+    def __init__(self, entries, names, *, clear_values=True):
         self.entries = entries
         self.names = names
+        self.clear_values = clear_values
 
 
 class SkeletonFactContext:
@@ -301,9 +306,9 @@ def wrap_tactic(head, words, tail, indent="  "):
     return lines
 
 
-def proj(arg, field):
+def proj(arg, field, arg_fields=ARG_FIELDS):
     """The projection of the `Bounded` conjunction of argument `arg` that bounds `field`."""
-    fields = ARG_FIELDS[arg]
+    fields = arg_fields[arg]
     i = fields.index(field)
     return ".".join(["2"] * i + (["1"] if i < len(fields) - 1 else []))
 
@@ -312,7 +317,8 @@ def skeleton(routine):
     """The generated part of the correctness proof of `routine`: unfold the routine in `hr` and
     lift its lets to the top; then, instruction by instruction, extract that instruction's lets
     from `hr` under SSA names, record their defining equations (by `rfl`, in `%`/`/` form), make
-    the locals opaque, and derive the linear facts from the equations, clearing the equations
+    the locals opaque when requested by the backend, and derive the linear facts from the equations,
+    clearing the equations
     the later steps do not need. Each derived fact is an instance of one lemma
     (`Nat.mod_add_div`, `Nat.mod_lt`, `Nat.div_lt_of_lt_mul`, or a carry lemma from the spec
     file's preamble), so a step costs nothing wherever it sits and names the facts it rests on;
@@ -346,7 +352,7 @@ def skeleton(routine):
         field = re.fullmatch(r"(\w+)\.(l[0-7])", op)
         if field and field.group(1) in BOUND_HYPS:
             arg, limb = field.groups()
-            return f"{BOUND_HYPS[arg]}.{proj(arg, limb)}"
+            return f"{BOUND_HYPS[arg]}.{proj(arg, limb, routine.arg_fields)}"
         return None
 
     def lt64(op):  # a proof that the operand is below 2^64
@@ -402,7 +408,7 @@ def skeleton(routine):
             arg, field = ops
             hyp = BOUND_HYPS[arg]
             eq(nm, f"{arg}.{field}")
-            lines.append(f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact {hyp}.{proj(arg, field)}")
+            lines.append(f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact {hyp}.{proj(arg, field, routine.arg_fields)}")
             bnd[nm] = f"b_{nm}"
         elif kind == "inv":
             eq(nm, "inv")
@@ -493,9 +499,11 @@ def skeleton(routine):
         if not group_entries:
             ren[en["name"]] = nm
         out.append(f"  -- {label}: {group_entries[0][0]['comment'] if group_entries else en['comment']}")
-        out += wrap_tactic("extract_lets -merge +onlyGivenNames", group, " at hr")
+        extract_group = en.get("extract_group", group)
+        out += wrap_tactic("extract_lets -merge +onlyGivenNames", extract_group, " at hr")
         out += eqs
-        out.append(f"  clear_value {' '.join(group)}")
+        if prepared.clear_values:
+            out.append(f"  clear_value {' '.join(extract_group)}")
         out += lines
         i += fact_context.consumed
     out.append("  subst hr")
@@ -612,7 +620,7 @@ SPEC_MANIFEST = {
 
 # Missing proofs are tracked by routine, not by hypothetical files.
 UNPROVED_ROUTINES = {
-    "X86_64": ("mulMont",),
+    "X86_64": ("mulMont", "mulMontRound"),
 }
 
 

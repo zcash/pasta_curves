@@ -291,7 +291,6 @@ def loop_routines(e, ins, name, doc, args, result, cfg):
                                             for _, d in invariant)]
     uses_inv = any(d["fact"][0] == "inv" for _, d in invariant)
     param, sarg = cfg["param"], cfg["arg"]
-    gen.ARG_FIELDS[sarg] = fields
     # The round: its inputs bound as arguments, then the body.
     re_ = Emitter(ins)
     order = {arg: i for i, arg in enumerate(limb_args)}
@@ -336,7 +335,8 @@ def loop_routines(e, ins, name, doc, args, result, cfg):
         lines += ["", f"end {cfg['state']}", ""]
         struct = "\n".join(lines)
     rnd = Routine(round_doc, sig, re_.render(round_result), f"  ⟨{', '.join(round_result)}⟩",
-                  cfg["round"], re_, round_result, struct=struct)
+                  cfg["round"], re_, round_result, struct=struct,
+                  arg_fields={sarg: fields})
     # The block: prologue, then per round the call and the outputs.
     me = Emitter(ins)
     me.entries = [dict(en) for en in prologue]
