@@ -49,6 +49,17 @@ theorem sub_entry_spec (F : PastaField) (lhs rhs : Limbs) (hlhs : lhs.Bounded)
     ((isCanonical_iff lhs F.modulus hlhs F.bounded).1 hl)
     ((isCanonical_iff rhs F.modulus hrhs F.bounded).1 hr) _ rfl
 
+/-- The crate's `square` at a Pasta field: for a canonical input, as it asserts, the result is
+canonical, with `R * result ≡ value² (mod p)`. -/
+theorem square_entry_spec (F : PastaField) (value : Limbs) (hv : value.Bounded)
+    (h : isCanonical value F.modulus = true) :
+    (sqrMont value F.modulus F.inv).Bounded ∧
+      (sqrMont value F.modulus F.inv).toNat < F.modulus.toNat ∧
+      R * (sqrMont value F.modulus F.inv).toNat ≡ value.toNat * value.toNat
+        [MOD F.modulus.toNat] :=
+  sqrMont_spec value F.modulus F.inv hv F.bounded F.shape F.inv_lt F.inv_spec
+    ((isCanonical_iff value F.modulus hv F.bounded).1 h) _ rfl
+
 /-- The crate's `from_mont` at a Pasta field: for every four-limb `value`, the result is
 canonical with `R * result ≡ value (mod p)`. -/
 theorem fromMont_entry_spec (F : PastaField) (value : Limbs) (hv : value.Bounded) :
