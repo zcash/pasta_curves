@@ -35,8 +35,7 @@
 //! This inversion is **variable-time in the value being inverted**: its
 //! trailing-zero counts, divstep branches, batch count, and active limb length
 //! all depend on the input. It must only reach values whose timing is
-//! acceptable to leak. See the crate changelog entry for the posture of this
-//! crate's inversion call sites.
+//! acceptable to leak.
 //!
 //! # References
 //!

@@ -15,6 +15,18 @@ use subtle::Choice;
 
 const_assert!(size_of::<usize>() >= 4);
 
+/// Extension trait for [`ff::Field`] that exposes variable-time operations.
+pub trait VartimeField: ff::Field {
+    /// Computes the multiplicative inverse of this element, failing if the element is
+    /// zero.
+    ///
+    /// Unlike [`ff::Field::invert`], this computes the inverse in variable time.
+    fn invert_vartime(&self) -> Option<Self> {
+        // Default implementation falls back to constant-time inversion.
+        self.invert().into()
+    }
+}
+
 /// An internal trait that exposes additional operations related to calculating square roots of
 /// prime-order finite fields.
 pub(crate) trait SqrtTableHelpers: ff::PrimeField {

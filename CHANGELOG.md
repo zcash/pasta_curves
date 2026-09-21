@@ -15,6 +15,12 @@ and this project adheres to Rust's notion of
   that it lies on the curve. It is intended for protocol constants and
   precomputed tables, which can now be written as `const` or `static` items
   instead of paying for `CurveAffine::from_xy` on every use.
+- `pasta_curves::arithmetic`:
+  - `VartimeField`, an extension trait for `ff::Field` that exposes
+    variable-time operations. All trait methods have default impls that fall
+    back on the constant-time implementations, but can be overriden for
+    additional performance.
+  - `impl VartimeField for pasta_curves::{Fp, Fq}`.
 
 ### Changed
 - MSRV is now 1.85.0.
