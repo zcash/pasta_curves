@@ -200,13 +200,11 @@ mod checks {
         let m = Signed62(P::MODULUS);
         assert!(
             mul_cmp_62(x, 5, &m, -2) == Ordering::Greater,
-            "{} must exceed -2m",
-            what
+            "{what} must exceed -2m",
         );
         assert!(
             mul_cmp_62(x, 5, &m, 1) == Ordering::Less,
-            "{} must be below m",
-            what
+            "{what} must be below m",
         );
     }
 
@@ -792,8 +790,8 @@ fn shrink_len(f: &mut Signed62, g: &mut Signed62, len: &mut usize) {
     cond |= fn_ ^ (fn_ >> 63);
     cond |= gn ^ (gn >> 63);
     if cond == 0 {
-        f.0[l - 2] = (f.0[l - 2] as u64 | (fn_ as u64) << 62) as i64;
-        g.0[l - 2] = (g.0[l - 2] as u64 | (gn as u64) << 62) as i64;
+        f.0[l - 2] = (f.0[l - 2] as u64 | ((fn_ as u64) << 62)) as i64;
+        g.0[l - 2] = (g.0[l - 2] as u64 | ((gn as u64) << 62)) as i64;
         *len = l - 1;
     }
 }
