@@ -28,7 +28,8 @@ use crate::arithmetic::{Coordinates, CurveAffine, CurveExt};
 
 macro_rules! new_curve_impl {
     (($($privacy:tt)*), $name:ident, $name_affine:ident, $iso:ident, $base:ident, $scalar:ident,
-     $curve_id:literal, $a_raw:expr, $b_raw:expr, $curve_type:ident) => {
+     $curve_id:literal, $a_raw:expr, $b_raw:expr, $curve_type:ident,
+     $unchecked_ctor:ident) => {
         /// Represents a point in the projective coordinate space.
         #[derive(Copy, Clone, Debug)]
         #[cfg_attr(feature = "repr-c", repr(C))]
@@ -56,6 +57,8 @@ macro_rules! new_curve_impl {
             x: $base,
             y: $base,
         }
+
+        impl_affine_unchecked_ctor!($name_affine, $base, $unchecked_ctor);
 
         impl fmt::Debug for $name_affine {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
@@ -908,6 +911,36 @@ macro_rules! impl_projective_curve_ext {
     };
 }
 
+macro_rules! impl_affine_unchecked_ctor {
+    // Only the public curves get the constructor: on the crate-private
+    // isogenous curves nothing would call it, and it would be dead code.
+    ($name_affine:ident, $base:ident, with_unchecked_ctor) => {
+        impl $name_affine {
+            /// Constructs an affine point from coordinates without checking that
+            /// it lies on the curve.
+            ///
+            /// This is intended for protocol constants and precomputed tables
+            /// whose coordinates were validated when they were generated, where
+            /// the check performed by `arithmetic::CurveAffine::from_xy` is pure
+            /// overhead, and where a `const` context is needed. For untrusted
+            /// input, use `from_xy` instead.
+            ///
+            /// `(0, 0)` is the representation of the identity, exactly as for
+            /// `from_xy` and [`group::CurveAffine::identity`].
+            ///
+            /// Passing coordinates that are not on the curve does not cause
+            /// memory unsafety, but every operation on the result is then
+            /// meaningless, and so are the security properties of any protocol
+            /// built on it. Callers should test their constants with
+            /// `arithmetic::CurveAffine::is_on_curve`.
+            pub const fn from_xy_unchecked(x: $base, y: $base) -> Self {
+                $name_affine { x, y }
+            }
+        }
+    };
+    ($name_affine:ident, $base:ident, without_unchecked_ctor) => {};
+}
+
 macro_rules! impl_affine_curve_specific {
     ($name:ident, $base:ident, special_a0_b5) => {
         fn generator() -> Self {
@@ -940,7 +973,8 @@ new_curve_impl!(
     "pallas",
     [0, 0, 0, 0],
     [5, 0, 0, 0],
-    special_a0_b5
+    special_a0_b5,
+    with_unchecked_ctor
 );
 new_curve_impl!(
     (pub),
@@ -952,7 +986,8 @@ new_curve_impl!(
     "vesta",
     [0, 0, 0, 0],
     [5, 0, 0, 0],
-    special_a0_b5
+    special_a0_b5,
+    with_unchecked_ctor
 );
 new_curve_impl!(
     (pub(crate)),
@@ -969,7 +1004,8 @@ new_curve_impl!(
         0x18354a2eb0ea8c9c,
     ],
     [1265, 0, 0, 0],
-    general
+    general,
+    without_unchecked_ctor
 );
 new_curve_impl!(
     (pub(crate)),
@@ -986,7 +1022,8 @@ new_curve_impl!(
         0x267f9b2ee592271a,
     ],
     [1265, 0, 0, 0],
-    general
+    general,
+    without_unchecked_ctor
 );
 
 impl Ep {
@@ -1216,5 +1253,83 @@ mod zeroize_tests {
         let mut q = EqAffine::generator();
         q.zeroize();
         assert!(bool::from(q.is_identity()));
+    }
+}
+
+#[cfg(all(test, feature = "alloc"))]
+mod tests {
+    use super::{Ep, EpAffine, Eq, EqAffine, Fp, Fq};
+    use crate::arithmetic::CurveAffine;
+    use group::{Curve, CurveAffine as _, Group};
+    use rand::SeedableRng;
+    use rand_xorshift::XorShiftRng;
+
+    // Built in a `const` context, so that `from_xy_unchecked` staying `const` is
+    // pinned by the build rather than by its signature.
+    const PALLAS_GENERATOR: EpAffine = EpAffine::from_xy_unchecked(
+        Fp::neg(&Fp::from_raw([1, 0, 0, 0])),
+        Fp::from_raw([2, 0, 0, 0]),
+    );
+    const VESTA_GENERATOR: EqAffine = EqAffine::from_xy_unchecked(
+        Fq::neg(&Fq::from_raw([1, 0, 0, 0])),
+        Fq::from_raw([2, 0, 0, 0]),
+    );
+
+    /// Rebuilds `p` from its coordinates through `unchecked`, and checks that
+    /// the result is on the curve and equal to what `from_xy` produces.
+    fn assert_agrees_with_from_xy<C: CurveAffine>(p: C, unchecked: impl Fn(C::Base, C::Base) -> C) {
+        let coords = p.coordinates().unwrap();
+        let (x, y) = (*coords.x(), *coords.y());
+        let q = unchecked(x, y);
+        assert!(bool::from(q.is_on_curve()));
+        assert!(q == C::from_xy(x, y).unwrap());
+        assert!(q == p);
+    }
+
+    #[test]
+    fn from_xy_unchecked_generator() {
+        assert!(bool::from(PALLAS_GENERATOR.is_on_curve()));
+        assert!(bool::from(VESTA_GENERATOR.is_on_curve()));
+        assert!(PALLAS_GENERATOR == <EpAffine as group::CurveAffine>::generator());
+        assert!(VESTA_GENERATOR == <EqAffine as group::CurveAffine>::generator());
+        assert_agrees_with_from_xy(PALLAS_GENERATOR, EpAffine::from_xy_unchecked);
+        assert_agrees_with_from_xy(VESTA_GENERATOR, EqAffine::from_xy_unchecked);
+    }
+
+    #[test]
+    fn from_xy_unchecked_random_points() {
+        let mut rng = XorShiftRng::from_seed([
+            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
+            0xbc, 0xe5,
+        ]);
+        for _ in 0..100 {
+            let p = Ep::try_random(&mut rng).unwrap().to_affine();
+            assert_agrees_with_from_xy(p, EpAffine::from_xy_unchecked);
+            let q = Eq::try_random(&mut rng).unwrap().to_affine();
+            assert_agrees_with_from_xy(q, EqAffine::from_xy_unchecked);
+        }
+    }
+
+    #[test]
+    fn from_xy_unchecked_zero_is_identity() {
+        let p = EpAffine::from_xy_unchecked(Fp::zero(), Fp::zero());
+        assert!(bool::from(p.is_identity()));
+        assert!(bool::from(p.is_on_curve()));
+        assert!(p == EpAffine::from_xy(Fp::zero(), Fp::zero()).unwrap());
+        let q = EqAffine::from_xy_unchecked(Fq::zero(), Fq::zero());
+        assert!(bool::from(q.is_identity()));
+        assert!(bool::from(q.is_on_curve()));
+        assert!(q == EqAffine::from_xy(Fq::zero(), Fq::zero()).unwrap());
+    }
+
+    #[test]
+    fn from_xy_unchecked_does_not_check() {
+        // (1, 1) is not on y^2 = x^3 + 5: the unchecked constructor accepts it,
+        // and the checked one rejects it.
+        let p = EpAffine::from_xy_unchecked(Fp::one(), Fp::one());
+        assert!(!bool::from(p.is_on_curve()));
+        assert!(bool::from(
+            EpAffine::from_xy(Fp::one(), Fp::one()).is_none()
+        ));
     }
 }
