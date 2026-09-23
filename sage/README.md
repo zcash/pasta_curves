@@ -10,6 +10,13 @@ them in the exact shape of the Rust code so the two can be diffed:
 - `glv_boundary_scalars.sage` — the `*_BOUNDARY_SCALAR` witnesses used
   by the `babai_boundary_*` and `native_vs_glv_boundary_*` regression
   tests in `src/glv.rs`.
+- `glv_eisenstein.sage`: the Eisenstein-integer recoding in
+  `src/glv_eisenstein.rs`: the ring facts it rests on (2 inert in
+  `Z[w]`, unit group `mu_6`), the free action of `mu_6` on the 48 odd
+  residue classes of `Z[w]/8` that reduces the table to 8 orbit
+  representatives, the `REPS` constant, the seven-addition chain that
+  builds them, the `MAX_DIGITS` bound, and the recoder itself, checked
+  end to end by running the resulting ladder on Pallas and Vesta.
 
 The scripts use exact integer/rational arithmetic and hand-rolled
 lattice reduction only, so their output is deterministic and does not
@@ -25,6 +32,7 @@ pip-installable distribution of SageMath (see `pyproject.toml` /
 ```console
 $ uv run sage glv_constants.sage
 $ uv run sage glv_boundary_scalars.sage
+$ uv run sage glv_eisenstein.sage
 ```
 
 Any reasonably recent standalone SageMath installation works too:
