@@ -10,6 +10,31 @@ and this project adheres to Rust's notion of
 - `zeroize` feature flag, which enables `impl zeroize::DefaultIsZeroes` for
   `Fp`, `Fq`, `Ep`, `EpAffine`, `Eq` and `EqAffine`. Zeroizing a field element
   sets it to zero; zeroizing a point sets it to the identity.
+- `pasta_curves::glv_eisenstein` module, behind the new `glv-eisenstein`
+  feature flag. This is an alternative recoding for the GLV split that
+  `pasta_curves::glv` performs: instead of two independent width-4 wNAF digit
+  strings it recodes the pair `(k1, k2)` as a single width-3 NAF over the
+  Eisenstein integers `Z[w] = Z[X]/(X^2 + X + 1)`, whose unit group `mu_6` is
+  exactly the six automorphisms of a `j`-invariant-0 curve. The 48 odd residue
+  classes mod 8 fall into 8 free `mu_6`-orbits, so eight stored points reach
+  every digit. That cuts the ladder from ~51.2 point additions to ~38.4, with a
+  table costing 7 additions instead of 4, and guarantees at most one addition
+  per ladder column. Like `glv`, it is variable-time in the scalar and so is
+  for use where scalars are not secret. Verified against the curves by
+  `sage/glv_eisenstein.sage`.
+
+  The module also provides `batch_mul`, which multiplies many points by one
+  shared scalar. Because the scalar is shared, every lane executes the same
+  ladder column at the same time, so the accumulators can be kept in affine
+  coordinates with a single field inversion shared across the whole batch per
+  column, and a column's doubling and addition fuse into one
+  Eisentrager-Lauter-Montgomery step. Results come back affine, which is what
+  a key-agreement KDF needs anyway. Whether that beats the projective ladder
+  depends on the cost of a field inversion relative to a multiplication: with
+  the Pasta fields' current Fermat exponentiation the measured crossover is a
+  batch of about 420, which is what `BATCH_AFFINE_THRESHOLD` records and what
+  `batch_mul` dispatches on. Below it `batch_mul` uses the projective ladder,
+  so it is never slower.
 - `pasta_curves::{EpAffine, EqAffine}::from_xy_unchecked`, a `const`
   constructor that builds an affine point from coordinates without checking
   that it lies on the curve. It is intended for protocol constants and
