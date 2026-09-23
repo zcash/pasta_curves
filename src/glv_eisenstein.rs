@@ -62,8 +62,15 @@
 //!
 //! | recoding | table build | ladder adds | total | stored |
 //! |---|---|---|---|---|
-//! | split wNAF-4 ([`crate::glv`]) | 4 | ~51.2 | ~55.2 | 8 points |
-//! | joint Eisenstein NAF (this module) | 7 | **~38.4** | **~45.4** | 8 points |
+//! | split wNAF-4 ([`crate::glv`]) | 4 adds | ~51.2 | ~55.2 | 8 x + 8 y |
+//! | joint Eisenstein NAF (this module) | 7 adds | **~38.4** | **~45.4** | 24 x + 8 y |
+//!
+//! The table is larger in field elements but not in points: the eight orbit
+//! representatives are what the chain builds, and the other sixteen entries
+//! are their rotations, which share a $y$ and cost one multiplication each.
+//! Over a batch, [`Table::batch`] runs the seven additions in affine
+//! coordinates with a shared inversion, which makes that column cheaper than
+//! the wNAF one rather than dearer.
 //!
 //! Doublings are unchanged at $\approx 125$. The `digit_statistics` test
 //! measures the ladder figure over random scalars and pins it.
@@ -240,13 +247,150 @@ impl<C: GlvParams> Table<C> {
         Self::from_window(&affine)
     }
 
-    /// Builds [`Table`]s for a batch of points with one shared normalization
-    /// across all `8 * n` orbit representatives: a single field inversion for
-    /// the whole batch.
+    /// Builds [`Table`]s for a batch of points, running the whole
+    /// seven-addition chain in *affine* coordinates with one field inversion
+    /// shared across the batch per step.
+    ///
+    /// A projective chain pays about 16 field multiplications per addition and
+    /// then a normalization of all `8 * n` representatives. Batched affine
+    /// pays about 6 per addition, counting the roughly three multiplications
+    /// Montgomery's trick costs each lane, and normalizes only the `n` base
+    /// points. The extra seven inversions are shared by the whole batch, so
+    /// they vanish against even a modest `n`.
     ///
     /// Identity inputs produce identity tables and may be mixed with
     /// non-identity points in the same batch.
+    ///
+    /// # Exceptional cases
+    ///
+    /// An affine addition fails when the operands share an `x`. Every step of
+    /// this chain adds two multiples `u P` and `v P` with `u, v` Eisenstein
+    /// integers of norm at most 19, so failure needs `(u -+ v) P = O` with
+    /// `u -+ v` a nonzero element of norm well below the group order, which
+    /// forces `P = O`. The first step is the sharp case: `P - \varphi(P)` has
+    /// denominator `(\zeta - 1) x`, so it fails exactly when `x = 0`, and a
+    /// curve point with `x = 0` would satisfy `\varphi(P) = P`, hence
+    /// `(1 - \omega) P = O`, hence be 3-torsion; both Pasta groups have prime
+    /// order not divisible by 3, so no such point exists (equivalently, 5 is a
+    /// non-residue in both base fields, which `no_point_has_zero_x` checks).
+    ///
+    /// Lanes that do fail, which is to say identity inputs, fall back to the
+    /// projective chain.
     pub fn batch(points: &[C]) -> Vec<Table<C>> {
+        let n = points.len();
+        if n == 0 {
+            return Vec::new();
+        }
+        if n < AFFINE_CHAIN_THRESHOLD {
+            return Self::batch_projective(points);
+        }
+
+        // One inversion brings the base points affine; the chain then stays
+        // there.
+        let mut base = alloc::vec![C::AffineExt::identity(); n];
+        C::batch_normalize(points, &mut base);
+
+        let zero = C::Base::ZERO;
+        let buf = || alloc::vec![zero; n];
+        let (mut px, mut py) = (buf(), buf());
+        let mut live = alloc::vec![true; n];
+        for (i, a) in base.iter().enumerate() {
+            let (x, y) = C::affine_xy(a);
+            px[i] = x;
+            py[i] = y;
+            live[i] = !bool::from(a.is_identity());
+        }
+
+        let mut adder = LaneAdder {
+            den: buf(),
+            scratch: buf(),
+            live: &mut live,
+        };
+        // phi fixes y, so a rotation is one multiplication on x alone.
+        let mut phix = buf();
+        for (o, x) in phix.iter_mut().zip(px.iter()) {
+            *o = *x * C::Base::ZETA;
+        }
+
+        // d1 = P - phi(P)
+        let (mut d1x, mut d1y) = (buf(), buf());
+        adder.add((&px, &py), (&phix, &py), true, (&mut d1x, &mut d1y));
+
+        // b = d1 - phi(d1)
+        let mut phid1x = buf();
+        for (o, x) in phid1x.iter_mut().zip(d1x.iter()) {
+            *o = *x * C::Base::ZETA;
+        }
+        let (mut bx, mut by) = (buf(), buf());
+        adder.add((&d1x, &d1y), (&phid1x, &d1y), true, (&mut bx, &mut by));
+
+        // r3 = -phi(b) = (zeta bx, -by) and m3 = phi(phi(b)) = (zeta^2 bx, by)
+        let (mut r3x, mut m3x) = (buf(), buf());
+        for i in 0..n {
+            r3x[i] = bx[i] * C::Base::ZETA;
+            m3x[i] = r3x[i] * C::Base::ZETA;
+        }
+
+        // The four additions against phi(P).
+        let (mut t3ax, mut t3ay) = (buf(), buf());
+        adder.add((&m3x, &by), (&phix, &py), false, (&mut t3ax, &mut t3ay));
+        let (mut t3bx, mut t3by) = (buf(), buf());
+        adder.add((&phix, &py), (&m3x, &by), true, (&mut t3bx, &mut t3by));
+        let (mut t4ax, mut t4ay) = (buf(), buf());
+        adder.add((&phix, &py), (&r3x, &by), true, (&mut t4ax, &mut t4ay));
+        let (mut t4bx, mut t4by) = (buf(), buf());
+        adder.add((&phix, &py), (&r3x, &by), false, (&mut t4bx, &mut t4by));
+
+        // t19 = t4b + phi(P)
+        let (mut t19x, mut t19y) = (buf(), buf());
+        adder.add((&t4bx, &t4by), (&phix, &py), false, (&mut t19x, &mut t19y));
+
+        // The representatives, read off exactly as `window_proj` does.
+        let mut tables = alloc::vec![
+            Table {
+                xs: [zero; REP_COUNT * ROTATIONS],
+                ys: [zero; REP_COUNT],
+            };
+            n
+        ];
+        let mut exceptional = Vec::new();
+        for (i, t) in tables.iter_mut().enumerate() {
+            if !live[i] {
+                exceptional.push(i);
+                continue;
+            }
+            let z = C::Base::ZETA;
+            let reps = [
+                (px[i], py[i]),             // 1
+                (d1x[i], d1y[i]),           // 1 - w
+                (t4ax[i] * z, t4ay[i]),     // 2 - w   = phi(t4a)
+                (t3bx[i] * z, -t3by[i]),    // 1 - 2w  = -phi(t3b)
+                (m3x[i], -by[i]),           // 3       = -m3
+                (t3ax[i], -t3ay[i]),        // 3 - w   = -t3a
+                (t4bx[i] * z * z, t4by[i]), // 1 - 3w  = phi^2(t4b)
+                (t19x[i] * z * z, t19y[i]), // 2 - 3w  = phi^2(t19)
+            ];
+            for (j, (x, y)) in reps.into_iter().enumerate() {
+                t.ys[j] = y;
+                t.xs[j * ROTATIONS] = x;
+                for r in 1..ROTATIONS {
+                    t.xs[j * ROTATIONS + r] = t.xs[j * ROTATIONS + r - 1] * z;
+                }
+            }
+        }
+        if !exceptional.is_empty() {
+            let fallback: Vec<C> = exceptional.iter().map(|&i| points[i]).collect();
+            for (&i, t) in exceptional.iter().zip(Self::batch_projective(&fallback)) {
+                tables[i] = t;
+            }
+        }
+        tables
+    }
+
+    /// The projective chain, one shared normalization of all `8 * n`
+    /// representatives. Used for batches too small to amortize the affine
+    /// chain's seven inversions, and for the exceptional lanes above.
+    fn batch_projective(points: &[C]) -> Vec<Table<C>> {
         let n = points.len();
         if n == 0 {
             return Vec::new();
@@ -418,8 +562,10 @@ impl<C: GlvParams> Table<C> {
     /// about 420.
     ///
     /// Measured end to end against the split-wNAF GLV ladder on Pallas
-    /// (recode, one table per point, ladder, affine out): 5% faster at a
-    /// batch of 64, 7% at 128, 10% at 256, 10% at 512.
+    /// (recode, one table per point, ladder, affine out), taking whichever
+    /// arm this function dispatches to: 9% faster at a batch of 16, 11% at
+    /// 64, 13% at 128, 15% at 256 and 16% at 512. The affine arm is the one
+    /// winning from 128 up.
     ///
     /// [`BATCH_AFFINE_THRESHOLD`] records the measured crossover, and
     /// [`Table::batch_mul_affine`] forces the affine ladder regardless.
@@ -664,6 +810,54 @@ fn recode(mut a: i128, mut b: i128) -> ([u8; MAX_DIGITS], usize) {
         n += 1;
     }
     (digits, n)
+}
+
+/// A batch of affine points held as parallel `(x, y)` coordinate arrays.
+type Lanes<'a, F> = (&'a [F], &'a [F]);
+
+/// The same, writable.
+type LanesMut<'a, F> = (&'a mut [F], &'a mut [F]);
+
+/// Batch size from which [`Table::batch`] builds its window with the affine
+/// chain rather than the projective one.
+///
+/// The affine chain spends seven field inversions per batch whatever its size,
+/// against the projective chain's one, and saves roughly ten multiplications
+/// per addition per lane. With the safegcd inversion that pays from a handful
+/// of points; the value is set well clear of the break-even.
+const AFFINE_CHAIN_THRESHOLD: usize = 8;
+
+/// Lane-wise affine point addition sharing one field inversion per step.
+struct LaneAdder<'a, F> {
+    den: Vec<F>,
+    scratch: Vec<F>,
+    /// Cleared for a lane whose addition is exceptional; see [`Table::batch`].
+    live: &'a mut [bool],
+}
+
+impl<F: Field + VartimeField> LaneAdder<'_, F> {
+    /// `out = p + q` lane-wise, or `p - q` when `neg_q` is set, with one
+    /// inversion for the whole batch.
+    fn add(&mut self, p: Lanes<'_, F>, q: Lanes<'_, F>, neg_q: bool, out: LanesMut<'_, F>) {
+        let (px, py) = p;
+        let (qx, qy) = q;
+        let (ox, oy) = out;
+        for (i, d) in self.den.iter_mut().enumerate() {
+            *d = if self.live[i] { qx[i] - px[i] } else { F::ZERO };
+        }
+        batch_invert(&mut self.den, &mut self.scratch);
+        for i in 0..px.len() {
+            if !self.live[i] || bool::from(self.den[i].is_zero()) {
+                self.live[i] = false;
+                continue;
+            }
+            let qyi = if neg_q { -qy[i] } else { qy[i] };
+            let l = (qyi - py[i]) * self.den[i];
+            let x = l.square() - px[i] - qx[i];
+            oy[i] = l * (px[i] - x) - py[i];
+            ox[i] = x;
+        }
+    }
 }
 
 /// Inverts every nonzero element of `v` in place with a single field
@@ -1082,6 +1276,62 @@ mod tests {
         assert!(mean_adds < 45.0);
     }
 
+    /// No curve point has `x = 0`, which is what makes the first step of the
+    /// affine table chain (`P - phi(P)`, denominator `(zeta - 1) x`) safe for
+    /// every point but the identity.
+    ///
+    /// Such a point would satisfy `y^2 = b` and `phi(P) = P`, so `(1 - w)P =
+    /// O` and `P` would be 3-torsion; the group has prime order not divisible
+    /// by 3. Equivalently `b` is a non-residue, which is what is checked here.
+    fn no_point_has_zero_x<C: GlvParams>() {
+        assert!(
+            bool::from(C::b().sqrt().is_none()),
+            "a point with x = 0 would exist"
+        );
+        // And the order really is prime to 3, the other half of the argument.
+        assert_ne!(C::ScalarExt::ZETA, C::ScalarExt::ONE);
+    }
+
+    /// The batched affine window chain agrees with the projective one, point
+    /// for point, including identity lanes that take the fallback.
+    ///
+    /// This is the invariant the seven fused affine additions have to keep;
+    /// the batch must be at least [`AFFINE_CHAIN_THRESHOLD`] for the affine
+    /// chain to be the one under test.
+    fn affine_chain_matches_projective<C: GlvParams>() {
+        let g = C::generator();
+        let mut points: Vec<C> = scalars::<C::ScalarExt>(20)
+            .map(|k| g * (k + C::ScalarExt::from(3)))
+            .collect();
+        // Identity lanes, at the ends and in the middle, must take the
+        // exceptional path and still come out right.
+        points[0] = C::identity();
+        points[9] = C::identity();
+        points[19] = C::identity();
+        assert!(points.len() >= AFFINE_CHAIN_THRESHOLD);
+
+        let affine = Table::batch(&points);
+        let projective = Table::<C>::batch_projective(&points);
+        assert_eq!(affine.len(), points.len());
+        let k = C::ScalarExt::from(0x5EED_5EEDu64);
+        for ((p, a), q) in points.iter().zip(affine.iter()).zip(projective.iter()) {
+            assert_eq!(a.point(), q.point(), "chains disagree on the base point");
+            for rep in 0..REP_COUNT {
+                for rot in 0..ROTATIONS {
+                    for neg in [false, true] {
+                        let d = (rep as u8) | ((rot as u8) << 3) | (u8::from(neg) << 5);
+                        assert_eq!(
+                            a.digit_xy(d),
+                            q.digit_xy(d),
+                            "chains disagree on digit (rep {rep}, rot {rot}, neg {neg})"
+                        );
+                    }
+                }
+            }
+            assert_eq!(a.mul(&k), *p * k, "affine-chain table must multiply right");
+        }
+    }
+
     /// The batch affine ladder agrees with the group operator on every lane,
     /// across batch sizes, scalar shapes and identity inputs.
     fn batch_mul_matches_operator<C: GlvParams>() {
@@ -1246,6 +1496,14 @@ mod tests {
                 #[test]
                 fn batch_build() {
                     batch_tables_equal_solo::<$curve>();
+                }
+                #[test]
+                fn zero_x() {
+                    no_point_has_zero_x::<$curve>();
+                }
+                #[test]
+                fn affine_chain() {
+                    affine_chain_matches_projective::<$curve>();
                 }
                 #[test]
                 fn identity_table() {

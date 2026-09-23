@@ -15,7 +15,8 @@ them in the exact shape of the Rust code so the two can be diffed:
   `Z[w]`, unit group `mu_6`), the free action of `mu_6` on the 48 odd
   residue classes of `Z[w]/8` that reduces the table to 8 orbit
   representatives, the `REPS` constant, the seven-addition chain that
-  builds them, the `MAX_DIGITS` bound, and the recoder itself, checked
+  builds them and the proof that it has no exceptional case in affine
+  coordinates, the `MAX_DIGITS` bound, and the recoder itself, checked
   end to end by running the resulting ladder on Pallas and Vesta.
 
 The scripts use exact integer/rational arithmetic and hand-rolled

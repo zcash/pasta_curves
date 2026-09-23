@@ -217,6 +217,54 @@ print("[4b] the same chain reaches the same multiples on Pallas and Vesta,")
 print("     with phi(P) = lambda*P for lambda = ZETA and the base-field zeta")
 
 
+# --- 4c. why the chain is safe in AFFINE coordinates --------------------------
+#
+# Table::batch runs that chain with affine additions, which fail when the two
+# operands share an x. Every step adds u*P to v*P for Eisenstein u, v of norm at
+# most 19, so a failure needs (u -+ v)P = O with u -+ v a nonzero element of tiny
+# norm, which forces P = O. The sharp case is the first step, P - phi(P), whose
+# denominator is (zeta - 1)x: it fails exactly at x = 0. A curve point with
+# x = 0 would have phi(P) = P, hence (1 - w)P = O, hence be 3-torsion, and both
+# groups have prime order prime to 3. So no such point exists, which is to say
+# the curve constant b = 5 is a non-residue. Check all of that directly.
+
+def check_affine_chain_safety(name, E, n, F):
+    assert n % 3 != 0, "%s: group order must be prime to 3" % name
+    assert not F(5).is_square(), "%s: a point with x = 0 would exist" % name
+    assert E.count_points() == n
+
+    # The differences u -+ v that each step's denominator is built from. A
+    # failure would need one of them to annihilate P.
+    w = (0, 1)
+    phi_p, m3, r3 = w, (-3, 0), emul((3, 0), (-1, -1))
+    steps = [
+        ("d1 = P - phi(P)", (1, 0), phi_p),
+        ("b  = d1 - phi(d1)", (1, -1), emul(w, (1, -1))),
+        ("t3a = m3 + phi(P)", m3, phi_p),
+        ("t3b = phi(P) - m3", phi_p, m3),
+        ("t4a = phi(P) + r3", phi_p, r3),
+        ("t4b = phi(P) - r3", phi_p, r3),
+        ("t19 = t4b + phi(P)", (3, 4), phi_p),
+    ]
+    worst = 0
+    for label, u, v in steps:
+        for d in [(u[0] - v[0], u[1] - v[1]), (u[0] + v[0], u[1] + v[1])]:
+            assert d != (0, 0), "%s: %s degenerates identically" % (name, label)
+            worst = max(worst, enorm(d))
+            # A nonzero Eisenstein integer of norm far below n cannot map to 0
+            # in Z/n: its norm would have to be divisible by the prime n.
+            assert enorm(d) % n != 0, "%s: %s can annihilate P" % (name, label)
+    return worst
+
+
+worst_p = check_affine_chain_safety("Pallas", Pallas, q, Fp)
+worst_v = check_affine_chain_safety("Vesta", Vesta, p, Fq)
+print("[4c] the affine chain has no exceptional case but P = O: b is a")
+print("     non-residue (so no point has x = 0), the order is prime to 3,")
+print("     and every step's operand difference has norm at most %d"
+      % max(worst_p, worst_v))
+
+
 # ---------------------------------------------------------------------------
 # 5. MAX_DIGITS = 130
 # ---------------------------------------------------------------------------
