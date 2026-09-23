@@ -23,6 +23,13 @@ and this project adheres to Rust's notion of
   for use where scalars are not secret. Verified against the curves by
   `sage/glv_eisenstein.sage`.
 
+  Over a batch, `Table::batch` runs the seven-addition chain that builds the
+  eight orbit representatives in affine coordinates too, with one field
+  inversion shared across the batch per step, rather than projectively
+  followed by a normalization of all `8 * n` entries. That makes the
+  Eisenstein table build cheaper than the split-wNAF one (76us against 85us
+  for 50 Pallas points) despite needing three more additions.
+
   The module also provides `batch_mul`, which multiplies many points by one
   shared scalar. Because the scalar is shared, every lane executes the same
   ladder column at the same time, so the accumulators can be kept in affine
@@ -35,10 +42,10 @@ and this project adheres to Rust's notion of
   With it the measured crossover is a batch of about 96, which is what
   `BATCH_AFFINE_THRESHOLD` records and what `batch_mul` dispatches on; below
   it `batch_mul` uses the projective ladder, so it is never slower. Measured
-  against the split-wNAF GLV ladder on Pallas, end to end, the batch path is
-  5% faster at a batch of 64, 7% at 128 and 10% at 256. Against the
-  constant-time Fermat inversion the same code would not break even until a
-  batch of about 420.
+  against the split-wNAF GLV ladder on Pallas, end to end, `batch_mul` is 9%
+  faster at a batch of 16, 11% at 64, 13% at 128, 15% at 256 and 16% at 512.
+  Against the constant-time Fermat inversion the affine ladder would not
+  break even until a batch of about 420.
 - `pasta_curves::{EpAffine, EqAffine}::from_xy_unchecked`, a `const`
   constructor that builds an affine point from coordinates without checking
   that it lies on the curve. It is intended for protocol constants and
