@@ -203,9 +203,9 @@ pub fn map_to_curve_simple_swu<
 mod tests {
     use super::{iso_map, map_to_curve_simple_swu};
     use crate::{
+        Ep, Eq, Fp, Fq,
         arithmetic::CurveExt,
         curves::{IsoEp, IsoEq},
-        Ep, Eq, Fp, Fq,
     };
     use ff::Field;
     use group::Group;
