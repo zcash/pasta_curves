@@ -69,7 +69,7 @@ fn bench<C: GlvParams>(c: &mut Criterion, name: &str) {
     // secrets out, against one fixed viewing key. Affine is what the KDF
     // consumes, so the baseline pays the final normalization too (batched).
     let mut group = c.benchmark_group(format!("{name} batch key agreement"));
-    for size in [64usize, 128, 256, 512, 1024] {
+    for size in [16usize, 64, 128, 256, 512] {
         let batch: Vec<C> = (1..=size as u64)
             .map(|i| C::generator() * (k + C::ScalarExt::from(i)))
             .collect();

@@ -87,6 +87,8 @@ use group::CurveAffine as _;
 
 use ff::{Field, WithSmallOrderMulGroup};
 
+use crate::arithmetic::VartimeField;
+
 use crate::glv::{GlvParams, decompose};
 
 /// The orbit representatives $r_0, \dots, r_7$, as coefficient pairs
@@ -202,11 +204,12 @@ const MAX_DIGITS: usize = 130;
 /// spends 164 field inversions however few points share them. See
 /// [`Table::batch_mul`] for the cost model.
 ///
-/// The value tracks the Pasta fields' current inversion, which is a Fermat
-/// exponentiation costing about 417 multiplications. A variable-time safegcd
-/// inversion would be several times cheaper and would pull the crossover down
-/// roughly in proportion, so this constant is expected to fall if one lands.
-pub const BATCH_AFFINE_THRESHOLD: usize = 448;
+/// The value tracks the cost of [`VartimeField::invert_vartime`], the safegcd
+/// inversion, at about 63 multiplications on the Pasta fields. The two ladders
+/// measure level at a batch of 64 and the affine one is clearly ahead by 96,
+/// which is the value taken here. Against the constant-time Fermat inversion,
+/// at about 417 multiplications, the crossover would instead be near 420.
+pub const BATCH_AFFINE_THRESHOLD: usize = 96;
 
 /// The Eisenstein window for one base point: the eight orbit representatives
 /// $r_j P$, each in its three rotations $\omega^i r_j P$, in affine
@@ -402,17 +405,21 @@ impl<C: GlvParams> Table<C> {
     ///   inversion, since the 164 inversions of a ladder are shared.
     ///
     /// So on ladder work alone the affine form wins once $n > 164 I / 262
-    /// \approx 0.63\,I$. The Pasta fields currently invert by Fermat
-    /// exponentiation at $I \approx 417$ multiplications, putting that near
-    /// 260; the measured end-to-end crossover is higher, around 420, because
+    /// \approx 0.63\,I$. The inversion used is
+    /// [`VartimeField::invert_vartime`], the safegcd one, at $I \approx 63$
+    /// multiplications, which puts that near 40; the measured end-to-end
+    /// crossover is a little higher, level at 64 and clear by 96, because
     /// building a table is 7 projective additions either way and the affine
-    /// ladder does nothing for it. Past the crossover the gain grows slowly
-    /// with $n$ (about 2% at 1024, where the inversions still cost 3% of the
-    /// total), so this is a large-batch optimization, not a general one.
+    /// ladder does nothing for it.
     ///
-    /// Because $I$ is what sets the crossover, a variable-time safegcd
-    /// inversion would be the single change that makes the affine ladder pay
-    /// at ordinary scanning batch sizes.
+    /// $I$ is what sets the crossover, and it is the whole reason this path
+    /// is worth having: against the constant-time Fermat inversion, at
+    /// $I \approx 417$, the same code does not break even until a batch of
+    /// about 420.
+    ///
+    /// Measured end to end against the split-wNAF GLV ladder on Pallas
+    /// (recode, one table per point, ladder, affine out): 5% faster at a
+    /// batch of 64, 7% at 128, 10% at 256, 10% at 512.
     ///
     /// [`BATCH_AFFINE_THRESHOLD`] records the measured crossover, and
     /// [`Table::batch_mul_affine`] forces the affine ladder regardless.
@@ -665,7 +672,14 @@ fn recode(mut a: i128, mut b: i128) -> ([u8; MAX_DIGITS], usize) {
 /// Skipping zeros rather than letting one poison the running product is what
 /// lets the batch ladder detect an exceptional lane: after the call, a zero is
 /// exactly a denominator that was zero going in.
-fn batch_invert<F: Field>(v: &mut [F], scratch: &mut [F]) {
+///
+/// The one inversion is [`VartimeField::invert_vartime`], the safegcd path,
+/// which is about six times faster than the constant-time Fermat
+/// exponentiation and is what makes the batch-affine ladder pay off at
+/// ordinary batch sizes. It leaks nothing this module does not already leak:
+/// the recoding's digit pattern is what drives the branch structure, and it
+/// is a function of the same scalar.
+fn batch_invert<F: Field + VartimeField>(v: &mut [F], scratch: &mut [F]) {
     debug_assert!(scratch.len() >= v.len());
     let mut acc = F::ONE;
     for (e, s) in v.iter().zip(scratch.iter_mut()) {
@@ -675,7 +689,9 @@ fn batch_invert<F: Field>(v: &mut [F], scratch: &mut [F]) {
         }
     }
     // A product of nonzero field elements (or the empty product), so nonzero.
-    acc = acc.invert().unwrap();
+    acc = acc
+        .invert_vartime()
+        .expect("product of nonzero field elements");
     for (e, s) in v.iter_mut().zip(scratch.iter()).rev() {
         if !bool::from(e.is_zero()) {
             let inv = acc * s;

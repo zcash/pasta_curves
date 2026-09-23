@@ -40,7 +40,7 @@ use ff::WithSmallOrderMulGroup;
 use ff::{Field, PrimeField};
 use group::CurveAffine as _;
 
-use crate::arithmetic::{CurveAffine as _, CurveExt, mac, sbb};
+use crate::arithmetic::{CurveAffine as _, CurveExt, VartimeField, mac, sbb};
 use crate::{pallas, vesta};
 
 mod private {
@@ -56,9 +56,14 @@ mod private {
 /// group (equivalently the scalar field modulus) and $\lambda$ = `Scalar::ZETA`
 /// — together with the Babai rounding coefficients derived from that basis.
 ///
+/// The base field is required to implement [`VartimeField`], so that
+/// [`crate::glv_eisenstein`]'s batch-affine ladder can reach the safegcd
+/// inversion. That costs nothing here: these paths are already variable-time
+/// in the scalar, and both Pasta base fields implement it.
+///
 /// This trait is sealed; it is implemented for [`pallas::Point`] and
 /// [`vesta::Point`].
-pub trait GlvParams: CurveExt + private::Sealed {
+pub trait GlvParams: CurveExt<Base: VartimeField> + private::Sealed {
     /// First short lattice vector `v1 = (V1A, -V1B_NEG)`.
     const V1A: u128;
     /// Magnitude of `v1`'s (negative) second component.
