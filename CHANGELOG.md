@@ -30,11 +30,15 @@ and this project adheres to Rust's notion of
   column, and a column's doubling and addition fuse into one
   Eisentrager-Lauter-Montgomery step. Results come back affine, which is what
   a key-agreement KDF needs anyway. Whether that beats the projective ladder
-  depends on the cost of a field inversion relative to a multiplication: with
-  the Pasta fields' current Fermat exponentiation the measured crossover is a
-  batch of about 420, which is what `BATCH_AFFINE_THRESHOLD` records and what
-  `batch_mul` dispatches on. Below it `batch_mul` uses the projective ladder,
-  so it is never slower.
+  depends on the cost of a field inversion relative to a multiplication, so
+  the shared inversion is `VartimeField::invert_vartime`, the safegcd one.
+  With it the measured crossover is a batch of about 96, which is what
+  `BATCH_AFFINE_THRESHOLD` records and what `batch_mul` dispatches on; below
+  it `batch_mul` uses the projective ladder, so it is never slower. Measured
+  against the split-wNAF GLV ladder on Pallas, end to end, the batch path is
+  5% faster at a batch of 64, 7% at 128 and 10% at 256. Against the
+  constant-time Fermat inversion the same code would not break even until a
+  batch of about 420.
 - `pasta_curves::{EpAffine, EqAffine}::from_xy_unchecked`, a `const`
   constructor that builds an affine point from coordinates without checking
   that it lies on the curve. It is intended for protocol constants and
