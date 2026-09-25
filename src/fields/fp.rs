@@ -538,6 +538,12 @@ impl ff::Field for Fp {
         ]))
     }
 
+    fn is_zero_vartime(&self) -> bool {
+        // Field element limbs are always kept fully reduced, so zero is uniquely
+        // represented and a direct limb comparison is exact.
+        self.0 == Self::ZERO.0
+    }
+
     fn double(&self) -> Self {
         self.double()
     }
