@@ -269,8 +269,8 @@ specifics:
 
 ## CI Checks (all must pass)
 
-The required aggregate check gates on: `test`, `test-32-bit`, `no-std`, and `bitrot`.
-The individual jobs are:
+The required aggregate check gates on: `test`, `test-32-bit`, `no-std`, `bitrot`,
+and `sage`. The individual jobs are:
 
 - **`test`** — `cargo test --release` with `--all-features` and `--no-default-features`,
   on Ubuntu, Windows, and macOS; verifies the working directory is clean afterward.
@@ -278,6 +278,16 @@ The individual jobs are:
 - **`no-std`** — builds `--no-default-features` for `thumbv6m-none-eabi`,
   `wasm32-unknown-unknown`, and `wasm32-wasi`.
 - **`bitrot`** — builds the benchmarks (`--benches --all-features`).
+- **`sage`**: runs the three derivations in `sage/` under the pinned SageMath
+  (`uv run --locked`), one step each: `glv_constants.sage` (the GLV short basis
+  and Babai rounding constants), `glv_boundary_scalars.sage` (the
+  `*_BOUNDARY_SCALAR` witnesses, re-verifying every property the Rust tests
+  assert), and `glv_eisenstein.sage` (the Eisenstein recoding: the ring facts,
+  the free `mu_6` action giving the eight `REPS`, the seven-addition chain, the
+  `MAX_DIGITS` bound, and the ladder run on both curves). The scripts assert
+  their own derivations and print the constants in the shape of the Rust
+  source; CI does not diff that output against `src/`, which the in-crate
+  `constants` test covers instead.
 - **`book`** — `mdbook test` against the built crate.
 - **`doc-links`** — `cargo doc --all-features --document-private-items` (intra-doc links).
 - **`fmt`** — `cargo fmt -- --check`.

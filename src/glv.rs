@@ -35,12 +35,12 @@
 
 use alloc::vec::Vec;
 
-use ff::PrimeField;
 #[cfg(test)]
 use ff::WithSmallOrderMulGroup;
+use ff::{Field, PrimeField};
 use group::CurveAffine as _;
 
-use crate::arithmetic::{CurveExt, mac, sbb};
+use crate::arithmetic::{CurveAffine as _, CurveExt, VartimeField, mac, sbb};
 use crate::{pallas, vesta};
 
 mod private {
@@ -56,9 +56,14 @@ mod private {
 /// group (equivalently the scalar field modulus) and $\lambda$ = `Scalar::ZETA`
 /// — together with the Babai rounding coefficients derived from that basis.
 ///
+/// The base field is required to implement [`VartimeField`], so that
+/// [`crate::glv_eisenstein`]'s batch-affine ladder can reach the safegcd
+/// inversion. That costs nothing here: these paths are already variable-time
+/// in the scalar, and both Pasta base fields implement it.
+///
 /// This trait is sealed; it is implemented for [`pallas::Point`] and
 /// [`vesta::Point`].
-pub trait GlvParams: CurveExt + private::Sealed {
+pub trait GlvParams: CurveExt<Base: VartimeField> + private::Sealed {
     /// First short lattice vector `v1 = (V1A, -V1B_NEG)`.
     const V1A: u128;
     /// Magnitude of `v1`'s (negative) second component.
@@ -71,6 +76,24 @@ pub trait GlvParams: CurveExt + private::Sealed {
     const G1: [u64; 5];
     /// Babai coefficient `round(2^384 * V1B_NEG / n)`, little-endian limbs.
     const G2: [u64; 5];
+
+    /// The affine coordinates of a point, with the identity reported as
+    /// $(0, 0)$ (the representation `from_xy_unchecked` round-trips).
+    ///
+    /// Hidden: an implementation detail of this sealed trait. These two
+    /// accessors live here rather than in the caller because only a concrete
+    /// curve knows that its affine and projective base fields coincide.
+    #[doc(hidden)]
+    fn affine_xy(p: &Self::AffineExt) -> (Self::Base, Self::Base);
+
+    /// Builds an affine point from coordinates, skipping the on-curve check.
+    ///
+    /// [`crate::glv_eisenstein`] uses this to apply an automorphism, and to
+    /// land a batch-affine ladder's output, without paying a normalization it
+    /// has already done. The caller is responsible for the point being on the
+    /// curve; passing $(0, 0)$ yields the identity.
+    #[doc(hidden)]
+    fn affine_from_xy_unchecked(x: Self::Base, y: Self::Base) -> Self::AffineExt;
 
     /// One-shot `k * self` via the GLV split — variable-time in `k` (see the
     /// module docs), identical in value to `self * k` (including `self` =
@@ -98,6 +121,18 @@ pub trait GlvParams: CurveExt + private::Sealed {
 /// defining rounding using limb arithmetic alone; the `decompose` tests prove
 /// that the decomposition reconstructs `k`. A wrong constant cannot pass them.
 impl GlvParams for pallas::Point {
+    fn affine_xy(p: &Self::AffineExt) -> (Self::Base, Self::Base) {
+        let c = p.coordinates();
+        (
+            c.map(|c| *c.x()).unwrap_or(pallas::Base::ZERO),
+            c.map(|c| *c.y()).unwrap_or(pallas::Base::ZERO),
+        )
+    }
+
+    fn affine_from_xy_unchecked(x: Self::Base, y: Self::Base) -> Self::AffineExt {
+        pallas::Affine::from_xy_unchecked(x, y)
+    }
+
     const V1A: u128 = 0x49e69d1640f049157fcae1c700000001;
     const V1B_NEG: u128 = 0x49e69d1640a899538cb1279300000000;
     const V2A: u128 = 0x49e69d1640a899538cb1279300000000;
@@ -123,6 +158,18 @@ impl GlvParams for pallas::Point {
 /// own $\lambda$ = `Scalar::ZETA` and the Babai coefficients' defining
 /// rounding.
 impl GlvParams for vesta::Point {
+    fn affine_xy(p: &Self::AffineExt) -> (Self::Base, Self::Base) {
+        let c = p.coordinates();
+        (
+            c.map(|c| *c.x()).unwrap_or(vesta::Base::ZERO),
+            c.map(|c| *c.y()).unwrap_or(vesta::Base::ZERO),
+        )
+    }
+
+    fn affine_from_xy_unchecked(x: Self::Base, y: Self::Base) -> Self::AffineExt {
+        vesta::Affine::from_xy_unchecked(x, y)
+    }
+
     const V1A: u128 = 0x49e69d1640f049157fcae1c700000000;
     const V1B_NEG: u128 = 0x49e69d1640a899538cb1279300000001;
     const V2A: u128 = 0x49e69d1640a899538cb1279300000001;
@@ -232,7 +279,7 @@ fn scalar_limbs<F: PrimeField>(k: &F) -> [u64; 4] {
 
 /// GLV split: `k = k1 + k2 * lambda (mod n)` with `|k1|`, `|k2|` strictly
 /// below `2^127`, each half returned as `(is_negative, magnitude)`.
-fn decompose<C: GlvParams>(k: &C::ScalarExt) -> ((bool, u128), (bool, u128)) {
+pub(crate) fn decompose<C: GlvParams>(k: &C::ScalarExt) -> ((bool, u128), (bool, u128)) {
     let kl = scalar_limbs(k);
     let c1 = round_mul_shift(&C::G1, &kl);
     let c2 = round_mul_shift(&C::G2, &kl);
@@ -640,6 +687,46 @@ mod tests {
         assert_eq!(batched[1].mul(&k), generator * k);
     }
 
+    /// The `(0, 0)` convention the two hidden accessors are documented to
+    /// share: the identity reads back as `(0, 0)`, `(0, 0)` rebuilds the
+    /// identity, and the pair round-trips on ordinary points too.
+    /// `glv_eisenstein`'s batch-affine chain reads coordinates out and
+    /// rebuilds points through these, so a disagreement here would turn an
+    /// identity lane into a point that is not on the curve.
+    fn affine_identity_round_trips<C>()
+    where
+        C: GlvParams,
+    {
+        let zero = <C::Base as Field>::ZERO;
+        let identity = C::identity().to_affine();
+
+        // The identity reports (0, 0).
+        assert_eq!(
+            C::affine_xy(&identity),
+            (zero, zero),
+            "the identity must report (0, 0)"
+        );
+
+        // (0, 0) rebuilds the identity.
+        let rebuilt = C::affine_from_xy_unchecked(zero, zero);
+        assert!(
+            bool::from(rebuilt.is_identity()),
+            "(0, 0) must build the identity"
+        );
+        assert_eq!(rebuilt, identity);
+
+        // The round trip holds on ordinary points as well.
+        for k in scalars::<C::ScalarExt>(16) {
+            let p = (C::generator() * k).to_affine();
+            let (x, y) = C::affine_xy(&p);
+            assert_eq!(
+                C::affine_from_xy_unchecked(x, y),
+                p,
+                "affine_xy and affine_from_xy_unchecked must round-trip"
+            );
+        }
+    }
+
     /// A reused [`Decomposed`] gives the same products as decomposing
     /// per-multiplication.
     fn decomposed_reuse_matches_fresh<C: GlvParams>() {
@@ -689,6 +776,10 @@ mod tests {
                 #[test]
                 fn identity_table() {
                     identity_tables::<$curve>();
+                }
+                #[test]
+                fn affine_identity() {
+                    affine_identity_round_trips::<$curve>();
                 }
                 #[test]
                 fn decomposed_reuse() {

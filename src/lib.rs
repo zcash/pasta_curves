@@ -32,6 +32,10 @@ pub mod vesta;
 #[cfg_attr(docsrs, doc(cfg(feature = "glv")))]
 pub mod glv;
 
+#[cfg(feature = "glv-eisenstein")]
+#[cfg_attr(docsrs, doc(cfg(feature = "glv-eisenstein")))]
+pub mod glv_eisenstein;
+
 #[cfg(feature = "alloc")]
 mod hashtocurve;
 
