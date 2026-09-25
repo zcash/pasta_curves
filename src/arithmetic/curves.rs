@@ -83,6 +83,23 @@ pub trait CurveExt:
     /// Obtains a point given Jacobian coordinates $X : Y : Z$, failing
     /// if the coordinates are not on the curve.
     fn new_jacobian(x: Self::Base, y: Self::Base, z: Self::Base) -> CtOption<Self>;
+
+    /// Converts this element into its affine representation.
+    ///
+    /// Unlike [`group::Curve::to_affine`], this will use variable-time operations.
+    fn to_affine_vartime(&self) -> Self::Affine;
+
+    /// Converts a batch of projective elements into affine elements. This function will
+    /// panic if `p.len() != q.len()`.
+    ///
+    /// Unlike [`group::Curve::batch_normalize`], this will use variable-time operations.
+    fn batch_normalize_vartime(p: &[Self], q: &mut [Self::Affine]) {
+        assert_eq!(p.len(), q.len());
+
+        for (p, q) in p.iter().zip(q.iter_mut()) {
+            *q = p.to_affine_vartime();
+        }
+    }
 }
 
 /// This trait is the affine counterpart to `Curve` and is used for

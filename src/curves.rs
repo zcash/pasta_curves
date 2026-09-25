@@ -24,7 +24,7 @@ use ff::WithSmallOrderMulGroup;
 use super::{Fp, Fq};
 
 #[cfg(feature = "alloc")]
-use crate::arithmetic::{Coordinates, CurveAffine, CurveExt};
+use crate::arithmetic::{Coordinates, CurveAffine, CurveExt, VartimeField};
 
 macro_rules! new_curve_impl {
     (($($privacy:tt)*), $name:ident, $name_affine:ident, $iso:ident, $base:ident, $scalar:ident,
@@ -46,6 +46,10 @@ macro_rules! new_curve_impl {
 
             const fn curve_constant_b() -> $base {
                 $base::from_raw($b_raw)
+            }
+
+            fn is_identity_vartime(&self) -> bool {
+                self.z.is_zero_vartime()
             }
         }
 
@@ -167,6 +171,62 @@ macro_rules! new_curve_impl {
                 (self.y.square() - (self.x.square() + $name::curve_constant_a() * z4) * self.x)
                     .ct_eq(&(z6 * $name::curve_constant_b()))
                     | self.z.is_zero()
+            }
+
+            fn to_affine_vartime(&self) -> Self::Affine {
+                let zinv = self.z.invert_vartime().unwrap_or($base::zero());
+                if zinv.is_zero_vartime() {
+                    $name_affine::identity()
+                } else {
+                    let zinv2 = zinv.square();
+                    let x = self.x * zinv2;
+                    let zinv3 = zinv2 * zinv;
+                    let y = self.y * zinv3;
+
+                    $name_affine {
+                        x,
+                        y,
+                    }
+                }
+            }
+
+            fn batch_normalize_vartime(p: &[Self], q: &mut [Self::Affine]) {
+                assert_eq!(p.len(), q.len());
+
+                let mut acc = $base::one();
+                for (p, q) in p.iter().zip(q.iter_mut()) {
+                    // We use the `x` field of $name_affine to store the product
+                    // of previous z-coordinates seen.
+                    q.x = acc;
+
+                    // We will end up skipping all identities in p
+                    if !p.is_identity_vartime() {
+                        acc *= p.z;
+                    }
+                }
+
+                // This is the inverse, as all z-coordinates are nonzero and the ones
+                // that are not are skipped.
+                acc = acc.invert_vartime().unwrap();
+
+                for (p, q) in p.iter().rev().zip(q.iter_mut().rev()) {
+                    if p.is_identity_vartime() {
+                        *q = $name_affine::identity();
+                    } else {
+                        // Compute tmp = 1/z
+                        let tmp = q.x * acc;
+
+                        // Cancel out z-coordinate in denominator of `acc`
+                        acc *= p.z;
+
+                        // Set the coordinates to the correct value
+                        let tmp2 = tmp.square();
+                        let tmp3 = tmp2 * tmp;
+
+                        q.x = p.x * tmp2;
+                        q.y = p.y * tmp3;
+                    }
+                }
             }
         }
 

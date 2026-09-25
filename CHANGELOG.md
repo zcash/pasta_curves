@@ -30,6 +30,9 @@ and this project adheres to Rust's notion of
   - The `Base` and `ScalarExt` associated types of `CurveExt` and `CurveAffine`
     now have an additional `VartimeField` bound, enabling downstream generic
     code to use variable-time operations.
+  - Changes to `CurveExt` trait:
+    - Added `CurveExt::to_affine_vartime`
+    - Added `CurveExt::batch_normalize_vartime`
 
 ## [0.5.2] - 2026-07-23
 ### Added
