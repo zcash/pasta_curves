@@ -20,6 +20,7 @@ and this project adheres to Rust's notion of
     variable-time operations. All trait methods have default impls that fall
     back on the constant-time implementations, but can be overriden for
     additional performance.
+  - `VartimeBatchInvert`, a variable-time equivalent of `ff::BatchInvert`.
   - `impl VartimeField for pasta_curves::{Fp, Fq}`.
 
 ### Changed

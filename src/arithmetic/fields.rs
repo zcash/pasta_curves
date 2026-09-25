@@ -27,6 +27,58 @@ pub trait VartimeField: ff::Field {
     }
 }
 
+/// Extension trait for iterators over mutable field elements which allows those field
+/// elements to be inverted in a batch.
+///
+/// This is the variable-time version of `ff::BatchInvert`.
+///
+/// `I: IntoIterator<Item = &'a mut F: VartimeField>` implements this trait when
+/// the `alloc` feature flag is enabled.
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+pub trait VartimeBatchInvert<F: VartimeField> {
+    /// Consumes this iterator and inverts each field element (when nonzero). Zero-valued
+    /// elements are left as zero.
+    ///
+    /// Returns the inverse of the product of all nonzero field elements.
+    ///
+    /// Unlike `ff::BatchInvert::batch_invert`, this computes the inverse in variable time.
+    fn batch_invert_vartime(self) -> F;
+}
+
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+impl<'a, F, I> VartimeBatchInvert<F> for I
+where
+    F: VartimeField,
+    I: IntoIterator<Item = &'a mut F>,
+{
+    fn batch_invert_vartime(self) -> F {
+        let mut acc = F::ONE;
+        let iter = self.into_iter();
+        let mut tmp = alloc::vec::Vec::with_capacity(iter.size_hint().0);
+        for p in iter {
+            let q = *p;
+            tmp.push((acc, p));
+            if !q.is_zero_vartime() {
+                acc *= q;
+            }
+        }
+        acc = acc.invert_vartime().unwrap();
+        let allinv = acc;
+
+        for (tmp, p) in tmp.into_iter().rev() {
+            let tmp = tmp * acc;
+            if !p.is_zero_vartime() {
+                acc *= *p;
+                *p = tmp;
+            }
+        }
+
+        allinv
+    }
+}
+
 /// An internal trait that exposes additional operations related to calculating square roots of
 /// prime-order finite fields.
 pub(crate) trait SqrtTableHelpers: ff::PrimeField {
