@@ -6,6 +6,8 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.6.0] - 2026-09-25
 ### Added
 - `zeroize` feature flag, which enables `impl zeroize::DefaultIsZeroes` for
   `Fp`, `Fq`, `Ep`, `EpAffine`, `Eq` and `EqAffine`. Zeroizing a field element
