@@ -31,6 +31,8 @@
 //!    $j$-invariant-0 curve: $(x, y) \mapsto (\zeta^i x, \pm y)$. Each costs at
 //!    most one base-field multiplication.
 //!
+//! Both facts are verified in `sage/glv_eisenstein.sage` by step `[1]`.
+//!
 //! # Why the table is small
 //!
 //! Taking $w = 3$, the digits are the odd residue classes of
@@ -73,7 +75,9 @@
 //! the wNAF one rather than dearer.
 //!
 //! Doublings are unchanged at $\approx 125$. The `digit_statistics` test
-//! measures the ladder figure over random scalars and pins it.
+//! measures the ladder figure over random scalars and pins it, and step
+//! `[7]` of `sage/glv_eisenstein.sage` (`check_recoder`) measures the same
+//! density against the real curves.
 //!
 //! # References
 //!
@@ -86,7 +90,9 @@
 //!   freeness of the action on the 48 odd classes, and the identification of
 //!   $\mu_6$ with the six automorphisms of a $j = 0$ curve.
 //! - `sage/glv_eisenstein.sage` regenerates and re-verifies every constant in
-//!   this module against the real curves.
+//!   this module against the real curves. Its checks are numbered `[1]` to
+//!   `[7]`, and each item below whose correctness rests on one names the step
+//!   and the function that establishes it.
 
 use alloc::vec::Vec;
 
@@ -106,6 +112,9 @@ use crate::glv::{GlvParams, decompose};
 /// classes, checked by the `lut_covers_exactly_the_odd_classes` test. They are
 /// what [`Table::window_proj`]'s addition chain produces, checked by
 /// the `window_matches_representatives` test.
+///
+/// Verified in `sage/glv_eisenstein.sage` by step `[3]`, which rebuilds the
+/// orbits from the ring helpers `red` and `rotate`.
 const REPS: [(i8, i8); REP_COUNT] = [
     (1, 0),
     (1, -1),
@@ -159,6 +168,8 @@ struct Lut {
 /// [`ZERO_DIGIT`]. That the 48 writes land in 48 *distinct* slots is the
 /// freeness of the action, asserted by the
 /// `orbit_action_is_free` test.
+///
+/// Verified in `sage/glv_eisenstein.sage` by step `[2]`.
 const LUT: [Lut; 64] = build_lut();
 
 const fn build_lut() -> [Lut; 64] {
@@ -199,9 +210,12 @@ const fn build_lut() -> [Lut; 64] {
 /// maps a residual coordinate $x$ to $(x - d)/2$ with $|(x - d)/2| \le
 /// \lfloor (|x| + 5)/2 \rfloor$. Iterating that bound from the $2^{127}$ that
 /// [`decompose`] guarantees reaches the box $\max(|a|, |b|) \le 12$ in 124
-/// columns, and every state in that box is exhaustively verified (in
-/// `sage/glv_eisenstein.sage`) to terminate within 6 more. The
-/// `digit_statistics` test also observes the realised maximum.
+/// columns, and every state in that box is exhaustively verified to
+/// terminate within 6 more. The `digit_statistics` test also observes the
+/// realised maximum.
+///
+/// Verified in `sage/glv_eisenstein.sage` by step `[5]`, whose `step` and
+/// `drain` functions iterate that bound and exhaust the box.
 const MAX_DIGITS: usize = 130;
 
 /// Batch size from which [`Table::batch_mul`] switches to the batch-affine
@@ -276,6 +290,10 @@ impl<C: GlvParams> Table<C> {
     ///
     /// Lanes that do fail, which is to say identity inputs, fall back to the
     /// projective chain.
+    ///
+    /// Verified in `sage/glv_eisenstein.sage` by step `[4c]`
+    /// (`check_affine_chain_safety`), which checks the non-residue argument
+    /// and bounds every step's operand difference by norm 19.
     pub fn batch(points: &[C]) -> Vec<Table<C>> {
         let n = points.len();
         if n == 0 {
@@ -453,6 +471,11 @@ impl<C: GlvParams> Table<C> {
     /// `-phi(t3b)`, `-m3`, `-t3a`, `phi^2(t4b)`, `phi^2(t19)`. Every identity
     /// in that chain is re-derived symbolically in
     /// the `window_matches_representatives` test.
+    ///
+    /// Verified in `sage/glv_eisenstein.sage` by step `[4a]`
+    /// (`window_chain`, symbolically in $\mathbb{Z}[\omega]$) and step
+    /// `[4b]` (`check_curve`, the same chain as point arithmetic on Pallas
+    /// and Vesta).
     fn window_proj(p: &C) -> [C; REP_COUNT] {
         let phi_p = p.endo();
         let d1 = *p - phi_p;
@@ -787,6 +810,10 @@ fn signed(negative: bool, magnitude: u128) -> i128 {
 /// is inert) and emits [`ZERO_DIGIT`], or subtracts the orbit-canonical
 /// representative of the residual's class mod 8, which makes the difference
 /// divisible by 8, and then halves.
+///
+/// Verified in `sage/glv_eisenstein.sage` by step `[6]`: `recode` is the
+/// same recoding, and `check_recoder` runs the resulting ladder on both
+/// curves and checks it against `k * P`.
 fn recode(mut a: i128, mut b: i128) -> ([u8; MAX_DIGITS], usize) {
     let mut digits = [ZERO_DIGIT; MAX_DIGITS];
     let mut n = 0;
