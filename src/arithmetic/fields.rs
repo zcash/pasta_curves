@@ -15,6 +15,70 @@ use subtle::Choice;
 
 const_assert!(size_of::<usize>() >= 4);
 
+/// Extension trait for [`ff::Field`] that exposes variable-time operations.
+pub trait VartimeField: ff::Field {
+    /// Computes the multiplicative inverse of this element, failing if the element is
+    /// zero.
+    ///
+    /// Unlike [`ff::Field::invert`], this computes the inverse in variable time.
+    fn invert_vartime(&self) -> Option<Self> {
+        // Default implementation falls back to constant-time inversion.
+        self.invert().into()
+    }
+}
+
+/// Extension trait for iterators over mutable field elements which allows those field
+/// elements to be inverted in a batch.
+///
+/// This is the variable-time version of `ff::BatchInvert`.
+///
+/// `I: IntoIterator<Item = &'a mut F: VartimeField>` implements this trait when
+/// the `alloc` feature flag is enabled.
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+pub trait VartimeBatchInvert<F: VartimeField> {
+    /// Consumes this iterator and inverts each field element (when nonzero). Zero-valued
+    /// elements are left as zero.
+    ///
+    /// Returns the inverse of the product of all nonzero field elements.
+    ///
+    /// Unlike `ff::BatchInvert::batch_invert`, this computes the inverse in variable time.
+    fn batch_invert_vartime(self) -> F;
+}
+
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+impl<'a, F, I> VartimeBatchInvert<F> for I
+where
+    F: VartimeField,
+    I: IntoIterator<Item = &'a mut F>,
+{
+    fn batch_invert_vartime(self) -> F {
+        let mut acc = F::ONE;
+        let iter = self.into_iter();
+        let mut tmp = alloc::vec::Vec::with_capacity(iter.size_hint().0);
+        for p in iter {
+            let q = *p;
+            tmp.push((acc, p));
+            if !q.is_zero_vartime() {
+                acc *= q;
+            }
+        }
+        acc = acc.invert_vartime().unwrap();
+        let allinv = acc;
+
+        for (tmp, p) in tmp.into_iter().rev() {
+            let tmp = tmp * acc;
+            if !p.is_zero_vartime() {
+                acc *= *p;
+                *p = tmp;
+            }
+        }
+
+        allinv
+    }
+}
+
 /// An internal trait that exposes additional operations related to calculating square roots of
 /// prime-order finite fields.
 pub(crate) trait SqrtTableHelpers: ff::PrimeField {
@@ -255,4 +319,87 @@ pub(crate) const fn sbb(a: u64, b: u64, borrow: u64) -> (u64, u64) {
 pub(crate) const fn mac(a: u64, b: u64, c: u64, carry: u64) -> (u64, u64) {
     let ret = (a as u128) + ((b as u128) * (c as u128)) + (carry as u128);
     (ret as u64, (ret >> 64) as u64)
+}
+
+#[cfg(all(test, feature = "alloc"))]
+mod batch_invert_tests {
+    use std::vec::Vec;
+
+    use group::ff::{BatchInvert, Field, FromUniformBytes};
+    use proptest::prelude::*;
+
+    use super::{VartimeBatchInvert, VartimeField};
+
+    fn check_batch<F: VartimeField + core::fmt::Debug + Eq>(inputs: &[F]) {
+        let expected: Vec<F> = inputs
+            .iter()
+            .map(|x| Option::<F>::from(x.invert()).unwrap_or(F::ZERO))
+            .collect();
+        let product = inputs
+            .iter()
+            .filter(|x| !x.is_zero_vartime())
+            .fold(F::ONE, |acc, x| acc * x);
+        let expected_product_inverse = product.invert().unwrap();
+
+        let mut vartime = inputs.to_vec();
+        let mut constant_time = inputs.to_vec();
+        let vartime_product_inverse = vartime.iter_mut().batch_invert_vartime();
+        let constant_time_product_inverse = constant_time.iter_mut().batch_invert();
+
+        assert_eq!(vartime, expected);
+        assert_eq!(vartime, constant_time);
+        assert_eq!(vartime_product_inverse, expected_product_inverse);
+        assert_eq!(vartime_product_inverse, constant_time_product_inverse);
+    }
+
+    fn check_both_fields(values: &[u64]) {
+        let fp: Vec<_> = values.iter().copied().map(crate::Fp::from).collect();
+        let fq: Vec<_> = values.iter().copied().map(crate::Fq::from).collect();
+        check_batch(&fp);
+        check_batch(&fq);
+    }
+
+    #[test]
+    fn batch_invert_edge_cases() {
+        for values in [
+            &[][..],
+            &[0][..],
+            &[1][..],
+            &[7][..],
+            &[0, 0, 0][..],
+            &[0, 1, 0, 2, 0, 3, 0][..],
+            &[2, 3, 5, 7][..],
+            &[9, 9, 0, 9][..],
+        ] {
+            check_both_fields(values);
+        }
+    }
+
+    fn from_limbs<F: FromUniformBytes<64>>(limbs: [u64; 4]) -> F {
+        let mut bytes = [0u8; 64];
+        for (chunk, limb) in bytes.chunks_exact_mut(8).zip(limbs) {
+            chunk.copy_from_slice(&limb.to_le_bytes());
+        }
+        F::from_uniform_bytes(&bytes)
+    }
+
+    proptest! {
+        #[test]
+        fn batch_invert_matches_individual_inversion(
+            values in proptest::collection::vec(
+                proptest::option::of(proptest::array::uniform4(any::<u64>())), 0..32
+            )
+        ) {
+            let fp: Vec<_> = values.iter().map(|value| match value {
+                Some(limbs) => from_limbs::<crate::Fp>(*limbs),
+                None => crate::Fp::ZERO,
+            }).collect();
+            let fq: Vec<_> = values.iter().map(|value| match value {
+                Some(limbs) => from_limbs::<crate::Fq>(*limbs),
+                None => crate::Fq::ZERO,
+            }).collect();
+            check_batch(&fp);
+            check_batch(&fq);
+        }
+    }
 }

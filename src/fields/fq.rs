@@ -11,7 +11,7 @@ use lazy_static::lazy_static;
 #[cfg(feature = "bits")]
 use ff::{FieldBits, PrimeFieldBits};
 
-use crate::arithmetic::{SqrtTableHelpers, adc, mac, sbb};
+use crate::arithmetic::{SqrtTableHelpers, VartimeField, adc, mac, sbb};
 #[cfg(feature = "deferred")]
 use crate::deferred::{DeferredField, Product};
 
@@ -538,6 +538,12 @@ impl ff::Field for Fq {
         ]))
     }
 
+    fn is_zero_vartime(&self) -> bool {
+        // Field element limbs are always kept fully reduced, so zero is uniquely
+        // represented and a direct limb comparison is exact.
+        self.0 == Self::ZERO.0
+    }
+
     fn double(&self) -> Self {
         self.double()
     }
@@ -603,6 +609,12 @@ impl ff::Field for Fq {
             }
         }
         res
+    }
+}
+
+impl VartimeField for Fq {
+    fn invert_vartime(&self) -> Option<Self> {
+        super::modinv62::invert::<super::modinv62::FqParams>(&self.0).map(Self)
     }
 }
 
@@ -926,11 +938,16 @@ fn test_root_of_unity() {
 #[test]
 fn test_inv_root_of_unity() {
     assert_eq!(Fq::ROOT_OF_UNITY_INV, Fq::ROOT_OF_UNITY.invert().unwrap());
+    assert_eq!(
+        Fq::ROOT_OF_UNITY_INV,
+        Fq::ROOT_OF_UNITY.invert_vartime().unwrap()
+    );
 }
 
 #[test]
 fn test_inv_2() {
     assert_eq!(Fq::TWO_INV, Fq::from(2).invert().unwrap());
+    assert_eq!(Fq::TWO_INV, Fq::from(2).invert_vartime().unwrap());
 }
 
 #[test]

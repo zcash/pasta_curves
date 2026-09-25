@@ -8,4 +8,4 @@ mod curves;
 mod fields;
 
 pub use curves::*;
-pub(crate) use fields::*;
+pub use fields::*;

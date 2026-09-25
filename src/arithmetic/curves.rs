@@ -11,6 +11,9 @@ use alloc::boxed::Box;
 #[cfg(feature = "alloc")]
 use core::ops::{Add, Mul, Sub};
 
+#[cfg(feature = "alloc")]
+use crate::arithmetic::VartimeField;
+
 /// This trait is a common interface for dealing with elements of an elliptic
 /// curve group in a "projective" form, where that arithmetic is usually more
 /// efficient.
@@ -27,9 +30,9 @@ pub trait CurveExt:
     + From<<Self as group::Curve>::Affine>
 {
     /// The scalar field of this elliptic curve.
-    type ScalarExt: ff::WithSmallOrderMulGroup<3>;
+    type ScalarExt: ff::WithSmallOrderMulGroup<3> + VartimeField;
     /// The base field over which this elliptic curve is constructed.
-    type Base: ff::WithSmallOrderMulGroup<3>;
+    type Base: ff::WithSmallOrderMulGroup<3> + VartimeField;
     /// The affine version of the curve
     type AffineExt: CurveAffine<CurveExt = Self, ScalarExt = <Self as CurveExt>::ScalarExt>
         + Mul<Self::ScalarExt, Output = Self>
@@ -80,6 +83,23 @@ pub trait CurveExt:
     /// Obtains a point given Jacobian coordinates $X : Y : Z$, failing
     /// if the coordinates are not on the curve.
     fn new_jacobian(x: Self::Base, y: Self::Base, z: Self::Base) -> CtOption<Self>;
+
+    /// Converts this element into its affine representation.
+    ///
+    /// Unlike [`group::Curve::to_affine`], this will use variable-time operations.
+    fn to_affine_vartime(&self) -> Self::Affine;
+
+    /// Converts a batch of projective elements into affine elements. This function will
+    /// panic if `p.len() != q.len()`.
+    ///
+    /// Unlike [`group::Curve::batch_normalize`], this will use variable-time operations.
+    fn batch_normalize_vartime(p: &[Self], q: &mut [Self::Affine]) {
+        assert_eq!(p.len(), q.len());
+
+        for (p, q) in p.iter().zip(q.iter_mut()) {
+            *q = p.to_affine_vartime();
+        }
+    }
 }
 
 /// This trait is the affine counterpart to `Curve` and is used for
@@ -100,9 +120,9 @@ pub trait CurveAffine:
     + From<<Self as group::CurveAffine>::Curve>
 {
     /// The scalar field of this elliptic curve.
-    type ScalarExt: ff::WithSmallOrderMulGroup<3> + Ord;
+    type ScalarExt: ff::WithSmallOrderMulGroup<3> + VartimeField + Ord;
     /// The base field over which this elliptic curve is constructed.
-    type Base: ff::WithSmallOrderMulGroup<3> + Ord;
+    type Base: ff::WithSmallOrderMulGroup<3> + VartimeField + Ord;
     /// The projective form of the curve
     type CurveExt: CurveExt<AffineExt = Self, ScalarExt = <Self as CurveAffine>::ScalarExt>;
 

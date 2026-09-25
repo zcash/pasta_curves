@@ -22,6 +22,7 @@ rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
 [dev-dependencies]
 bincode = "1.3"
 criterion = "0.4"
+ff = { version = "0.14", default-features = false, features = ["alloc"] }
 # Minimal features, and held in Cargo.lock at a release that builds on the
 # pinned MSRV toolchain.
 proptest = { version = "1", default-features = false, features = ["std"] }

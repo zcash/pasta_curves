@@ -30,12 +30,18 @@ fn point_bench<C: CurveExt>(c: &mut Criterion, name: &str) {
     });
 
     group.bench_function("point to_affine", |bencher| bencher.iter(|| a.to_affine()));
+    group.bench_function("point to_affine_vartime", |bencher| {
+        bencher.iter(|| a.to_affine_vartime())
+    });
 
     for &n in [100, 1000, 10000].iter() {
         let input = vec![a; n];
         let mut output = vec![C::Affine::default(); n];
         group.bench_function(format!("point batch_normalize/{n}"), |bencher| {
             bencher.iter(|| C::batch_normalize(input.as_slice(), output.as_mut_slice()));
+        });
+        group.bench_function(format!("point batch_normalize_vartime/{n}"), |bencher| {
+            bencher.iter(|| C::batch_normalize_vartime(input.as_slice(), output.as_mut_slice()));
         });
     }
 }

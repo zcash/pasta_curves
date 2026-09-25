@@ -15,10 +15,24 @@ and this project adheres to Rust's notion of
   that it lies on the curve. It is intended for protocol constants and
   precomputed tables, which can now be written as `const` or `static` items
   instead of paying for `CurveAffine::from_xy` on every use.
+- `pasta_curves::arithmetic`:
+  - `VartimeField`, an extension trait for `ff::Field` that exposes
+    variable-time operations. All trait methods have default impls that fall
+    back on the constant-time implementations, but can be overriden for
+    additional performance.
+  - `VartimeBatchInvert`, a variable-time equivalent of `ff::BatchInvert`.
+  - `impl VartimeField for pasta_curves::{Fp, Fq}`.
 
 ### Changed
 - MSRV is now 1.85.0.
 - Migrated to `ff 0.14`, `group 0.14`, `rand 0.10`.
+- `pasta_curves::arithmetic`:
+  - The `Base` and `ScalarExt` associated types of `CurveExt` and `CurveAffine`
+    now have an additional `VartimeField` bound, enabling downstream generic
+    code to use variable-time operations.
+  - Changes to `CurveExt` trait:
+    - Added `CurveExt::to_affine_vartime`
+    - Added `CurveExt::batch_normalize_vartime`
 
 ## [0.5.2] - 2026-07-23
 ### Added

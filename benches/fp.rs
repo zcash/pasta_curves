@@ -6,7 +6,14 @@ use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 
 use ff::{Field, PrimeField};
-use pasta_curves::Fp;
+use pasta_curves::{Fp, arithmetic::VartimeField};
+
+#[cfg(feature = "alloc")]
+use {
+    criterion::{BatchSize, BenchmarkGroup, measurement::Measurement},
+    ff::BatchInvert,
+    pasta_curves::arithmetic::VartimeBatchInvert,
+};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("Fp");
@@ -17,6 +24,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.bench_function("mul_assign", bench_fp_mul_assign);
     group.bench_function("square", bench_fp_square);
     group.bench_function("invert", bench_fp_invert);
+    group.bench_function("invert_vartime", bench_fp_invert_vartime);
+    #[cfg(feature = "alloc")]
+    bench_fp_batch_invert(&mut group);
     group.bench_function("neg", bench_fp_neg);
     group.bench_function("sqrt", bench_fp_sqrt);
     group.bench_function("to_repr", bench_fp_to_repr);
@@ -139,6 +149,50 @@ fn bench_fp_invert(b: &mut Bencher) {
         count = (count + 1) % SAMPLES;
         v[count].invert()
     });
+}
+
+fn bench_fp_invert_vartime(b: &mut Bencher) {
+    const SAMPLES: usize = 1000;
+
+    let mut rng = XorShiftRng::from_seed([
+        0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc,
+        0xe5,
+    ]);
+
+    let v: Vec<Fp> = (0..SAMPLES).map(|_| Fp::random(&mut rng)).collect();
+
+    let mut count = 0;
+    b.iter(|| {
+        count = (count + 1) % SAMPLES;
+        v[count].invert_vartime()
+    });
+}
+
+#[cfg(feature = "alloc")]
+fn bench_fp_batch_invert<M: Measurement>(group: &mut BenchmarkGroup<'_, M>) {
+    let mut rng = XorShiftRng::from_seed([
+        0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc,
+        0xe5,
+    ]);
+
+    let v: Vec<Fp> = (0..10000).map(|_| Fp::random(&mut rng)).collect();
+
+    for &n in [100, 1000, 10000].iter() {
+        group.bench_with_input(format!("batch_invert/{n}"), &v[..n], move |b, v| {
+            b.iter_batched_ref(
+                || v.to_vec(),
+                |e| e.iter_mut().batch_invert(),
+                BatchSize::LargeInput,
+            );
+        });
+        group.bench_with_input(format!("batch_invert_vartime/{n}"), &v[..n], move |b, v| {
+            b.iter_batched_ref(
+                || v.to_vec(),
+                |e| e.iter_mut().batch_invert_vartime(),
+                BatchSize::LargeInput,
+            );
+        });
+    }
 }
 
 fn bench_fp_neg(b: &mut Bencher) {
