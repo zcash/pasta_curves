@@ -26,9 +26,7 @@ and this project adheres to Rust's notion of
   Over a batch, `Table::batch` runs the seven-addition chain that builds the
   eight orbit representatives in affine coordinates too, with one field
   inversion shared across the batch per step, rather than projectively
-  followed by a normalization of all `8 * n` entries. That makes the
-  Eisenstein table build cheaper than the split-wNAF one (76us against 85us
-  for 50 Pallas points) despite needing three more additions.
+  followed by a normalization of all `8 * n` entries.
 
   The module also provides `batch_mul`, which multiplies many points by one
   shared scalar. Because the scalar is shared, every lane executes the same
@@ -38,14 +36,9 @@ and this project adheres to Rust's notion of
   Eisentrager-Lauter-Montgomery step. Results come back affine, which is what
   a key-agreement KDF needs anyway. Whether that beats the projective ladder
   depends on the cost of a field inversion relative to a multiplication, so
-  the shared inversion is `VartimeField::invert_vartime`, the safegcd one.
-  With it the measured crossover is a batch of about 96, which is what
-  `BATCH_AFFINE_THRESHOLD` records and what `batch_mul` dispatches on; below
-  it `batch_mul` uses the projective ladder, so it is never slower. Measured
-  against the split-wNAF GLV ladder on Pallas, end to end, `batch_mul` is 9%
-  faster at a batch of 16, 11% at 64, 13% at 128, 15% at 256 and 16% at 512.
-  Against the constant-time Fermat inversion the affine ladder would not
-  break even until a batch of about 420.
+  the shared inversion is `VartimeField::invert_vartime`, the safegcd one, and
+  `batch_mul` dispatches on `BATCH_AFFINE_THRESHOLD`; below that size it uses
+  the projective ladder, so it is never slower.
 - `pasta_curves::{EpAffine, EqAffine}::from_xy_unchecked`, a `const`
   constructor that builds an affine point from coordinates without checking
   that it lies on the curve. It is intended for protocol constants and
