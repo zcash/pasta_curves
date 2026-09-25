@@ -25,6 +25,10 @@ and this project adheres to Rust's notion of
 ### Changed
 - MSRV is now 1.85.0.
 - Migrated to `ff 0.14`, `group 0.14`, `rand 0.10`.
+- `pasta_curves::arithmetic`:
+  - The `Base` and `ScalarExt` associated types of `CurveExt` and `CurveAffine`
+    now have an additional `VartimeField` bound, enabling downstream generic
+    code to use variable-time operations.
 
 ## [0.5.2] - 2026-07-23
 ### Added
