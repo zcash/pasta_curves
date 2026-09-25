@@ -687,6 +687,46 @@ mod tests {
         assert_eq!(batched[1].mul(&k), generator * k);
     }
 
+    /// The `(0, 0)` convention the two hidden accessors are documented to
+    /// share: the identity reads back as `(0, 0)`, `(0, 0)` rebuilds the
+    /// identity, and the pair round-trips on ordinary points too.
+    /// `glv_eisenstein`'s batch-affine chain reads coordinates out and
+    /// rebuilds points through these, so a disagreement here would turn an
+    /// identity lane into a point that is not on the curve.
+    fn affine_identity_round_trips<C>()
+    where
+        C: GlvParams,
+    {
+        let zero = <C::Base as Field>::ZERO;
+        let identity = C::identity().to_affine();
+
+        // The identity reports (0, 0).
+        assert_eq!(
+            C::affine_xy(&identity),
+            (zero, zero),
+            "the identity must report (0, 0)"
+        );
+
+        // (0, 0) rebuilds the identity.
+        let rebuilt = C::affine_from_xy_unchecked(zero, zero);
+        assert!(
+            bool::from(rebuilt.is_identity()),
+            "(0, 0) must build the identity"
+        );
+        assert_eq!(rebuilt, identity);
+
+        // The round trip holds on ordinary points as well.
+        for k in scalars::<C::ScalarExt>(16) {
+            let p = (C::generator() * k).to_affine();
+            let (x, y) = C::affine_xy(&p);
+            assert_eq!(
+                C::affine_from_xy_unchecked(x, y),
+                p,
+                "affine_xy and affine_from_xy_unchecked must round-trip"
+            );
+        }
+    }
+
     /// A reused [`Decomposed`] gives the same products as decomposing
     /// per-multiplication.
     fn decomposed_reuse_matches_fresh<C: GlvParams>() {
@@ -736,6 +776,10 @@ mod tests {
                 #[test]
                 fn identity_table() {
                     identity_tables::<$curve>();
+                }
+                #[test]
+                fn affine_identity() {
+                    affine_identity_round_trips::<$curve>();
                 }
                 #[test]
                 fn decomposed_reuse() {
