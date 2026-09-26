@@ -412,7 +412,8 @@ def emit_inline(fn, name, doc, args):
     ordered_outputs = tuple(reg for _, reg in sorted(outs))
     if ordered_outputs != returned:
         raise ValueError(
-            f"{name}: source output order {returned} differs from legacy order {ordered_outputs}"
+            f"{name}: source output order {returned} differs from the order of the output "
+            f"names {ordered_outputs}"
         )
     e.run(0)
     e.cur_reads = set()

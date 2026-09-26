@@ -190,7 +190,7 @@ compositions/contracts, generated vectors, generated proof skeletons, `check_spe
 composition proofs, field-specialized entry theorems, root imports, and CI/export checks.
 For each item identify the existing implementation, what can be shared, any genuine ISA-specific
 difference, and the command that verifies it. A missing feature is unfinished work, not an
-implicit exception. Obtain explicit operator agreement before omitting or weakening a feature;
+implicit exception. Obtain explicit maintainer agreement before omitting or weakening a feature;
 do not change these instructions or coverage documentation to legitimize an omission.
 
 - Cover every actual assembly block, including helper blocks, and every public composition.

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Check that the Lean transcriptions of the crate's inline Pasta Montgomery blocks
 # are current: regenerating the Lean files from the crate's `asm!` blocks reproduces the
-# committed files exactly, and the generated parts of the proofs in Spec.lean are the ones
-# the generator produces.
+# committed files exactly, and the generated parts of the proofs in the `Spec/` files are
+# the ones the generator produces.
 #
 # Run from the repository root; exits non-zero on violation.
 set -euo pipefail

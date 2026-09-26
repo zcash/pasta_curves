@@ -101,6 +101,7 @@ PastaAsm/AArch64/Transcription.lean   GENERATED: the blocks and the round
 PastaAsm/AArch64/Compositions.lean    compositions of the AArch64 blocks
 PastaAsm/AArch64/Vectors.lean         GENERATED: reference vectors, kernel-checked
 PastaAsm/AArch64/Spec.lean            proofs about the AArch64 blocks and compositions
+PastaAsm/AArch64/Spec/*.lean          the block proofs, one file per block, imported by Spec.lean
 PastaAsm/AArch64/Entry.lean           proofs about the AArch64 entry points at the two fields
 ../test-vectors/pasta_mul-armv8-vectors.txt   the hardware outputs the examples are generated from
 PastaAsm/X86_64.lean                  x86-64 umbrella module
@@ -109,12 +110,17 @@ PastaAsm/X86_64/Transcription.lean    GENERATED: all six x86-64 assembly blocks
 PastaAsm/X86_64/Compositions.lean     split square, repeated squaring, backend contracts
 PastaAsm/X86_64/Vectors.lean          GENERATED: cross-backend reference checks
 PastaAsm/X86_64/Checks.lean           additional kernel-checked arithmetic examples
+PastaAsm/X86_64/Spec.lean             proofs about the x86-64 blocks and compositions
+PastaAsm/X86_64/Spec/*.lean           the block proofs, one file per block, and Arithmetic.lean
+PastaAsm/X86_64/Entry.lean            proofs about the x86-64 entry points at the two fields
 scripts/gen.py                        shared bindings, vectors, skeletons, checks, and CLI
 scripts/asm_source.py                 shared Rust inline-assembly parser and validation
 scripts/gen_aarch64.py                AArch64 decoding, round factoring, and proof-fact hooks
 scripts/gen_x86_64.py                 x86-64 decoding, flag validation, and proof-fact hooks
-scripts/check.sh                      regenerate and diff, skeleton check (CI)
+scripts/test_*.py                     the generator's tests, run by check.sh
+scripts/check.sh                      regenerate and diff, skeleton check, generator tests (CI)
 scripts/check_nanoda.sh               re-check the build with an independent kernel (CI)
+scripts/check_export_axioms.py        the axiom census of that export, run by check_nanoda.sh
 ```
 
 Shared declarations use namespace `PastaAsm`; architecture declarations use
