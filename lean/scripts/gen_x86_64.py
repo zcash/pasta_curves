@@ -603,14 +603,21 @@ class Routine(gen.Routine):
                     f"{code.ljust(column) if len(code) + 2 <= column else code + '  '}-- {comment}"
                 )
         head = f"{self.struct}\n" if self.struct else ""
-        return head + f"/-- {self.doc} -/\n{self.signature}\n" + "\n".join(body) + f"\n{self.result}\n"
+        return (head + f"{gen.docstring(self.doc)}\n{self.signature}\n" + "\n".join(body)
+                + f"\n{self.result}\n")
+
+
+# Code longer than this does not set the instruction-comment column.
+COMMENT_COLUMN_MAX = 40
 
 
 def comment_column(routines):
-    """Two spaces past the widest instruction binding in these routines."""
+    """Two spaces past the widest instruction binding in these routines. Longer bindings, the
+    factored round calls, are outliers: they keep their comment two spaces away instead of
+    pushing every other comment to the right."""
     return 2 + max(
         len(code) for routine in routines for code, comment in routine.lines
-        if code is not None and comment is not None
+        if code is not None and comment is not None and len(code) <= COMMENT_COLUMN_MAX
     )
 
 

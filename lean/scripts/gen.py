@@ -312,7 +312,7 @@ class SkeletonBackend:
 class SkeletonPreparation:
     """The entries and backend-selected grouping metadata consumed by the shared traversal."""
 
-    def __init__(self, entries, names, *, clear_values=True):
+    def __init__(self, entries, names, clear_values=True):
         self.entries = entries
         self.names = names
         self.clear_values = clear_values
