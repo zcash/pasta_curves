@@ -366,6 +366,35 @@ class X86RealSourceTests(unittest.TestCase):
         ):
             gen_x86_64.gen_program(source)
 
+    def test_factored_round_flattens_back_to_each_source_round(self):
+        routine = gen_x86_64.emit_routine(self.source, gen_x86_64.ROUTINES[2])
+        source_load, body = gen_x86_64._factored_round_body(routine.emitter)
+        registers = ["be", "ce", "de", "ee", "ae", "rdx"]
+        for round_number, (first, last) in enumerate(gen_x86_64.MUL_ROUND_RANGES, start=1):
+            source = [
+                entry for entry in routine.emitter.entries
+                if entry["pc"] is not None and first <= entry["pc"] <= last
+            ]
+            flattened = gen_x86_64._flattened_round_call(
+                source_load, body, registers, f"rhs.l{round_number}", first
+            )
+            self.assertEqual(
+                gen_x86_64._round_fingerprint(flattened), gen_x86_64._round_fingerprint(source)
+            )
+            self.assertEqual({entry["pc"] for entry in flattened}, set(range(first, last + 1)))
+            registers = registers[1:5] + registers[:1] + ["rdx"]
+
+    def test_factored_round_call_with_misordered_registers_is_rejected(self):
+        routine = gen_x86_64.emit_routine(self.source, gen_x86_64.ROUTINES[2])
+        source_load, body = gen_x86_64._factored_round_body(routine.emitter)
+        with self.assertRaisesRegex(
+            gen_x86_64.GenerationError, "does not flatten to the source's round 1"
+        ):
+            gen_x86_64._check_round_call(
+                routine.emitter, source_load, body, ["ce", "be", "de", "ee", "ae", "rdx"],
+                "rhs.l1", gen_x86_64.MUL_ROUND_RANGES[0], 1,
+            )
+
     def test_factored_mul_comments_cover_one_validated_full_round(self):
         generated = gen_x86_64.transcribe(self.source, gen_x86_64.ROUTINES[2])
         comments = Counter(re.findall(r"-- (.+)$", generated, re.MULTILINE))

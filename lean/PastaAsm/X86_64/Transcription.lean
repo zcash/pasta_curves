@@ -159,7 +159,8 @@ end MulMontAcc
 /-- One full internal round of `mulMont`: add `lhs * b` to the rotating five-limb accumulator,
 cancel its low limb with the Montgomery quotient, and shift by one limb. The source's flattened
 rounds 1 and 2 are checked to have this same binding IR modulo their accumulator-register rotation
-and RHS limb. -/
+and RHS limb, and this round, instantiated at each of its two calls, is checked to flatten back to
+the source's round. -/
 def mulMontRound (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc) : MulMontAcc :=
   let inv := inv                -- scalar argument
   let b := b                    -- mov rdx, qword ptr [{b} + 8]

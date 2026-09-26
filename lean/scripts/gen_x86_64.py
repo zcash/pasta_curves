@@ -793,10 +793,12 @@ end MulMontAcc
 """
 
 
-def factor_mul_rounds(routine: Routine):
-    """Mechanically validate and factor the two full flattened rounds of ``mulMont``."""
+def _factored_round_body(emitter):
+    """The round's RHS load and its body under canonical names, taken from the source's round 1
+    once round 2 is checked to be the same round under its rotation. The body reads the RHS limb
+    as the parameter ``b`` where the source read the RDX that the load had filled."""
     rounds = [
-        _normalized_mul_round_entries(routine.emitter, pc_range, rotation, f"rhs.l{index}")
+        _normalized_mul_round_entries(emitter, pc_range, rotation, f"rhs.l{index}")
         for index, (pc_range, rotation) in enumerate(
             zip(MUL_ROUND_RANGES, MUL_ROUND_ROTATIONS), start=1
         )
@@ -814,20 +816,10 @@ def factor_mul_rounds(routine: Routine):
     if source_load is None or source_load["expr"] != "b":
         raise GenerationError("mul: factored round does not begin by loading its RHS limb into RDX")
 
-    round_emitter = Emitter({}, {}, clear_values=False)
-    round_emitter.bind("inv", "inv", "scalar argument", reads=(), fact=("inv",))
-    round_emitter.bind("b", "b", source_load["comment"], reads=(), fact=("param", "b"))
-    for field in MUL_ACC_FIELDS:
-        if field == "q":
-            continue
-        round_emitter.bind(
-            field, f"acc.{field}", "accumulator argument", reads=(), load=True,
-            fact=("load", "acc", field),
-        )
     # The first source instruction loads the round's scalar RHS limb into RDX. The helper
     # receives that scalar as its parameter ``b``, so the load is not part of the round's body:
     # substitute ``b`` into the remaining validated IR.
-    helper_entries = []
+    body = []
     aliases = {"rdx": "b"}
     for entry in rounds[0]:
         if entry["pc"] == first_pc:
@@ -838,10 +830,63 @@ def factor_mul_rounds(routine: Routine):
             _rename_round_value(read, aliases, "") for read in entry["reads"]
         }
         normalized["fact"] = _rename_round_value(entry["fact"], aliases, "")
-        helper_entries.append(normalized)
+        body.append(normalized)
         # The omitted entry load creates the initial alias only. Once the source writes RDX,
         # subsequent reads must see that new quotient/register value rather than the helper's b.
         aliases.pop(entry["name"], None)
+    return source_load, body
+
+
+def _flattened_round_call(source_load, body, registers, rhs_limb, first_pc):
+    """The factored round instantiated at one call: the RHS load, then the body with the call's
+    registers for the accumulator fields and RDX for ``b``, at the source's positions."""
+    inverse = dict(zip(MUL_ACC_FIELDS, registers))
+    inverse["b"] = "rdx"
+    load = dict(source_load)
+    load["expr"] = rhs_limb
+    load["fact"] = _rename_round_value(source_load["fact"], {"b": rhs_limb}, None)
+    load["pc"] = first_pc
+    flattened = [load]
+    for entry in body:
+        instance = dict(entry)
+        for key in ("name", "expr", "fact"):
+            instance[key] = _rename_round_value(entry[key], inverse, None)
+        instance["reads"] = {_rename_round_value(read, inverse, None) for read in entry["reads"]}
+        instance["pc"] = entry["pc"] + first_pc
+        flattened.append(instance)
+    return flattened
+
+
+def _check_round_call(emitter, source_load, body, registers, rhs_limb, pc_range, round_number):
+    """Require the factored round, instantiated at a call, to be the source's round exactly, so
+    that the call's registers and the round's rotation cannot disagree."""
+    first, last = pc_range
+    source = [
+        entry for entry in emitter.entries
+        if entry["pc"] is not None and first <= entry["pc"] <= last
+    ]
+    flattened = _flattened_round_call(source_load, body, registers, rhs_limb, first)
+    if _round_fingerprint(flattened) != _round_fingerprint(source):
+        raise GenerationError(
+            f"mul: the factored round at call {round_number} does not flatten to the source's "
+            f"round {round_number}"
+        )
+
+
+def factor_mul_rounds(routine: Routine):
+    """Mechanically validate and factor the two full flattened rounds of ``mulMont``."""
+    source_load, helper_entries = _factored_round_body(routine.emitter)
+
+    round_emitter = Emitter({}, {}, clear_values=False)
+    round_emitter.bind("inv", "inv", "scalar argument", reads=(), fact=("inv",))
+    round_emitter.bind("b", "b", source_load["comment"], reads=(), fact=("param", "b"))
+    for field in MUL_ACC_FIELDS:
+        if field == "q":
+            continue
+        round_emitter.bind(
+            field, f"acc.{field}", "accumulator argument", reads=(), load=True,
+            fact=("load", "acc", field),
+        )
     round_emitter.entries.extend(dict(entry) for entry in helper_entries)
     round_result = ["r1", "r2", "r3", "r4", "r0", "rdx"]
     round_lines = round_emitter.render(round_result)
@@ -849,7 +894,8 @@ def factor_mul_rounds(routine: Routine):
         "One full internal round of `mulMont`: add `lhs * b` to the rotating five-limb "
         "accumulator, cancel its low limb with the Montgomery quotient, and shift by one limb. "
         "The source's flattened rounds 1 and 2 are checked to have this same binding IR modulo "
-        "their accumulator-register rotation and RHS limb.",
+        "their accumulator-register rotation and RHS limb, and this round, instantiated at each "
+        "of its two calls, is checked to flatten back to the source's round.",
         "def mulMontRound (lhs modulus : Limbs) (inv b : Nat) "
         "(acc : MulMontAcc) : MulMontAcc :=",
         round_lines,
@@ -868,6 +914,10 @@ def factor_mul_rounds(routine: Routine):
     current = ["be", "ce", "de", "ee", "ae"]
     inv_register = "inv"
     for round_number, rhs_index in ((1, 1), (2, 2)):
+        _check_round_call(
+            routine.emitter, source_load, helper_entries, current + ["rdx"], f"rhs.l{rhs_index}",
+            MUL_ROUND_RANGES[round_number - 1], round_number,
+        )
         call_args = [inv_register, f"rhs.l{rhs_index}"] + current + ["rdx"]
         fmt = "mulMontRound lhs modulus {0} {1} ⟨" + ", ".join(
             "{%d}" % index for index in range(2, 8)
