@@ -39,11 +39,11 @@
 //! twenty simultaneously-live 64-bit registers, and an all-registers
 //! transcription of exactly that operand set makes the compiler refuse with
 //! "inline assembly requires more registers than available". The memory
-//! operands are also why `mul` and `square` — and the public routines
-//! composed from them — gate on 64-bit pointers: their blocks bind pointers
-//! to registers and use them as full-width addresses, which the x32 ABI's
-//! 32-bit pointers would break. `add`, `sub`, and `from_mont` are
-//! register-only and are available on every x86-64 target. The pointers reference the caller's own
+//! operands are also why the backend requires 64-bit pointers: the
+//! multiplication and squaring blocks bind pointers to registers and use
+//! them as full-width addresses, which the x32 ABI's 32-bit pointers would
+//! break, so the module has no backend on that target although `add`, `sub`,
+//! and `from_mont` are register-only. The pointers reference the caller's own
 //! arrays: there is no packed parameter block to build and no spill stores,
 //! only loads that are expected to hit L1. The modulus and inverse travel as
 //! separate arguments, as on AArch64: `inv` is bound to a register of its own
@@ -216,7 +216,6 @@ pub(super) fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 // Keep the assembly behind a call boundary. It consumes nearly every x86-64
 // register; forcing it into a register-heavy caller can make allocation
 // impossible instead of merely causing spills.
-#[cfg(target_pointer_width = "64")]
 #[inline(never)]
 pub(super) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     let (o0, o1, o2, o3): (u64, u64, u64, u64);
@@ -454,7 +453,6 @@ pub(super) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs 
 ///
 /// Kept behind a call boundary for the register-allocation reason documented
 /// on [`mul`].
-#[cfg(target_pointer_width = "64")]
 #[inline(never)]
 pub(super) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     debug_assert!(
@@ -475,7 +473,6 @@ pub(super) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
 ///
 /// The block is straight-line register-only arithmetic with declared
 /// inputs and outputs; no memory or stack access.
-#[cfg(target_pointer_width = "64")]
 #[inline(always)]
 fn square_lo(value: Limbs) -> [u64; 8] {
     let (z0, z1, z2, z3, z4, z5, z6, z7): (u64, u64, u64, u64, u64, u64, u64, u64);
@@ -569,7 +566,6 @@ fn square_lo(value: Limbs) -> [u64; 8] {
 ///
 /// `product` must be the square of a canonical value. The memory operand
 /// reads the four modulus limbs.
-#[cfg(target_pointer_width = "64")]
 #[inline(always)]
 fn square_hi(product: [u64; 8], modulus: &Limbs, inv: u64) -> Limbs {
     let (o0, o1, o2, o3): (u64, u64, u64, u64);
@@ -717,7 +713,6 @@ fn square_hi(product: [u64; 8], modulus: &Limbs, inv: u64) -> Limbs {
 /// accepted: the accumulator stays canonical, so the final multiplication is
 /// inside [`mul`]'s first contract. The memory operands read the four modulus
 /// limbs.
-#[cfg(target_pointer_width = "64")]
 #[inline(never)]
 pub(super) fn sqr_n_mul(
     value: &Limbs,

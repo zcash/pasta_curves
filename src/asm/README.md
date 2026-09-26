@@ -20,20 +20,21 @@ reaches the chain and the conversion through assembled routines instead.
 
 ## Usage
 
-The module provides a backend for `target_arch = "aarch64"` and, in part, for
-`target_arch = "x86_64"`. On x86-64, `add`, `sub`, and `from_mont` are register-only (MULX
-needs BMI2 for `from_mont`). `mul`, `square`, and the routines built on them read limbs through
-pointers and so require 64-bit pointers, plus MULX and ADCX/ADOX (BMI2 and ADX: Intel Broadwell
-/ AMD Zen or newer). Apple x86-64 targets are excluded altogether: they reserve `rbp`, and so
-have fewer available registers than the squaring blocks need.
+The module provides a backend for `target_arch = "aarch64"`, and for `target_arch = "x86_64"`
+with 64-bit pointers. On x86-64, `add`, `sub`, and `from_mont` are register-only (MULX needs
+BMI2 for `from_mont`). `mul`, `square`, and the routines built on them read limbs through
+pointers, which the x32 ABI's 32-bit pointers would break, so the module has no backend on that
+target; they also need MULX and ADCX/ADOX (BMI2 and ADX: Intel Broadwell / AMD Zen or newer).
+Apple x86-64 targets are excluded altogether: they reserve `rbp`, and so have fewer available
+registers than the squaring blocks need.
 
-On every other target the module has no backend. The same holds on any target when the compiler
-is passed `--cfg pasta_curves_noasm` (through `RUSTFLAGS`, or `rustflags` in
-`.cargo/config.toml`), which is how to build for old x86-64 CPUs without BMI2 and ADX. Code that
-uses the backend declares its uses under `if_asm_supported!` and its portable fallback under
-`if_asm_unsupported!`; the first expands to its items exactly where the module has a backend,
-and the second exactly where it does not. `pasta_curves::BACKEND` names the result, for
-diagnostics.
+On every other target, that is any target other than AArch64 and non-Apple x86-64 with 64-bit
+pointers, the module has no backend. The same holds on any target when the compiler is passed
+`--cfg pasta_curves_noasm` (through `RUSTFLAGS`, or `rustflags` in `.cargo/config.toml`), which
+is how to build for old x86-64 CPUs without BMI2 and ADX. Code that uses the backend declares
+its uses under `if_asm_supported!` and its portable fallback under `if_asm_unsupported!`; the
+first expands to its items exactly where the module has a backend, and the second exactly where
+it does not. `pasta_curves::BACKEND` names the result, for diagnostics.
 
 Nothing is assembled at build time: the blocks are compiled by the Rust toolchain, so no C
 toolchain is needed, and the module adds no dependency.

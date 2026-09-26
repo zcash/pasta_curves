@@ -96,10 +96,6 @@ pub fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
 /// correctly derived from it. Any other values will cause undefined results.
-#[cfg(any(
-    target_arch = "aarch64",
-    all(target_arch = "x86_64", target_pointer_width = "64")
-))]
 #[inline(always)]
 pub fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     debug_assert!(
@@ -114,7 +110,7 @@ pub fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
         super::aarch64::mul(lhs, rhs, modulus, inv)
     }
 
-    #[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
+    #[cfg(target_arch = "x86_64")]
     {
         super::x86_64::mul(lhs, rhs, modulus, inv)
     }
@@ -131,10 +127,6 @@ pub fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
 /// correctly derived from it. Any other values will cause undefined results.
-#[cfg(any(
-    target_arch = "aarch64",
-    all(target_arch = "x86_64", target_pointer_width = "64")
-))]
 #[inline(always)]
 pub fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     debug_assert!(
@@ -147,7 +139,7 @@ pub fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
         super::aarch64::square(value, modulus, inv)
     }
 
-    #[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
+    #[cfg(target_arch = "x86_64")]
     {
         super::x86_64::square(value, modulus, inv)
     }
@@ -166,10 +158,6 @@ pub fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
 /// correctly derived from it. Any other values will cause undefined results.
-#[cfg(any(
-    target_arch = "aarch64",
-    all(target_arch = "x86_64", target_pointer_width = "64")
-))]
 #[inline]
 pub fn sqr_n_mul(value: &Limbs, count: usize, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     // On aarch64, `square` and `mul` can be inlined and optimised by Rust.
@@ -184,7 +172,7 @@ pub fn sqr_n_mul(value: &Limbs, count: usize, rhs: &Limbs, modulus: &Limbs, inv:
 
     // On x86_64, `square` and `mul` can't be inlined due to register pressure, so we need
     // a separate fused assembly implementation.
-    #[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
+    #[cfg(target_arch = "x86_64")]
     {
         super::x86_64::sqr_n_mul(value, count, rhs, modulus, inv)
     }

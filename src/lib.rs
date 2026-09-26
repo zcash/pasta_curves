@@ -68,7 +68,11 @@ fn backend_name() {
         not(pasta_curves_noasm),
         any(
             target_arch = "aarch64",
-            all(target_arch = "x86_64", not(target_vendor = "apple"))
+            all(
+                target_arch = "x86_64",
+                target_pointer_width = "64",
+                not(target_vendor = "apple")
+            )
         )
     ));
     let expected = if !supported {
