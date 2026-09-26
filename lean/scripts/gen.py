@@ -380,17 +380,15 @@ def skeleton(routine):
         if kind not in ("call", "callout", "load", "param"):
             ops = [r(o) if isinstance(o, str) else o for o in ops]
         # The group's marker: the register it writes, then the instruction. Annotation blocks
-        # are placed after the group they name. Backend metadata groups ISA instructions that
-        # produce several bindings; a member not marked as kept (a proof-only wrapper) has a
-        # name and facts but no `let` to extract.
+        # are placed after the group they name. Backend metadata groups the bindings of an
+        # instruction that produces several.
         group_entries = en.get("group")
         if group_entries:
-            group = [group_name for _, group_name, keep in group_entries if keep]
-            group_names = [group_name for _, group_name, _ in group_entries]
-            nm = group_names[0]
+            group = [group_name for _, group_name in group_entries]
+            nm = group[0]
         else:
             group = [nm]
-            group_names = group
+        group_names = group
         label = en.get("group_label", nm)
         eqs, lines = [], []
         # Every step records only facts `omega` handles cheaply later: linear equations, bounds,
@@ -398,7 +396,7 @@ def skeleton(routine):
         # those facts, and cleared.
         fact_context = SkeletonFactContext(
             entries, names, i, en, nm,
-            group_entries or [(en, nm, True)], group_names,
+            group_entries or [(en, nm)], group_names,
             lines, eq, lt64, le1, ren, bnd, unit_bound, len(group),
         )
 
@@ -499,11 +497,10 @@ def skeleton(routine):
         if not group_entries:
             ren[en["name"]] = nm
         out.append(f"  -- {label}: {group_entries[0][0]['comment'] if group_entries else en['comment']}")
-        extract_group = en.get("extract_group", group)
-        out += wrap_tactic("extract_lets -merge +onlyGivenNames", extract_group, " at hr")
+        out += wrap_tactic("extract_lets -merge +onlyGivenNames", group, " at hr")
         out += eqs
         if prepared.clear_values:
-            out.append(f"  clear_value {' '.join(extract_group)}")
+            out.append(f"  clear_value {' '.join(group)}")
         out += lines
         i += fact_context.consumed
     out.append("  subst hr")

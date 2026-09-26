@@ -597,18 +597,20 @@ class SharedGeneratorTests(unittest.TestCase):
 
         mul_round_routine = routines["mulMontRound"]
         mul_round = "\n".join(gen.skeleton(mul_round_routine))
-        self.assertNotIn("extract_lets -merge +onlyGivenNames m ", mul_round)
-        self.assertNotIn("extract_lets -merge +onlyGivenNames s at hr", mul_round)
-        # The flags zeroed by `xor` are read under their own names, not the data register's.
+        # The factored round is rendered like every other block: an instruction's pair wrapper
+        # and its two projections, extracted together, and read under their own names.
+        self.assertIn("extract_lets -merge +onlyGivenNames m s2 s1_1 at hr", mul_round)
+        self.assertIn("extract_lets -merge +onlyGivenNames s r0_1 cf_1 at hr", mul_round)
         self.assertIn("have e_r0_1 : r0_1 = (addc r0 s1_1 cf).1 := rfl", mul_round)
         self.assertIn("have e_cf_1 : cf_1 = (addc r0 s1_1 cf).2 := rfl", mul_round)
+        # The round's and the calling block's local definitions stay transparent.
         self.assertNotIn("clear_value", mul_round)
+        self.assertNotIn("clear_value", "\n".join(gen.skeleton(routines["mulMont"])))
         helper_text = "\n".join(code for code, _ in mul_round_routine.lines)
-        self.assertNotIn("let m :=", helper_text)
-        self.assertNotIn("let s :=", helper_text)
-        self.assertIn("let r0_1 := (addc r0 s1_1 cf).1", helper_text)
-        self.assertIn("let cf_1 := (addc r0 s1_1 cf).2", helper_text)
-        self.assertIn("let r1_1 := (addc r1 s2 ofl).1", helper_text)
+        self.assertIn("let m := mulx b lhs.l0", helper_text)
+        self.assertIn("let s := addc r0 s1 cf", helper_text)
+        self.assertIn("let r0 := s.1", helper_text)
+        self.assertIn("let cf := s.2", helper_text)
         # The omitted entry load aliases RDX to b only until the source writes RDX again.
         # Reduction products must use the rebound Montgomery quotient, never b.
         expressions = [entry["expr"] for entry in mul_round_routine.emitter.entries]

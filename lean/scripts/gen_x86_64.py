@@ -169,13 +169,16 @@ class RegisterToken:
 class Emitter(gen.Emitter):
     """Validate x86-64 instructions and record them in the shared binding IR."""
 
-    def __init__(self, directions: Dict[str, str], pointers: Dict[str, str]):
+    def __init__(self, directions: Dict[str, str], pointers: Dict[str, str],
+                 clear_values: bool = True):
         super().__init__()
         self.directions = dict(directions)
         self.pointers = dict(pointers)
         self.cf_valid = False
         self.of_valid = False
         self.used_memory = False
+        # Whether the skeleton clears each extracted value's definition (see `prepare`).
+        self.clear_values = clear_values
 
     @staticmethod
     def _fact_for_input(register: str, expression: str):
@@ -313,54 +316,6 @@ class Emitter(gen.Emitter):
     def render(self, result_names):
         """Retain every architectural result in the mechanical x86 transcription."""
         return [(f"  let {e['name']} := {e['expr']}", e.get("note") or e["comment"]) for e in self.entries]
-
-    def render_ssa(self, result_names):
-        """Render unique Lean binders while preserving the architectural instruction IR.
-
-        This is used by factored helpers, which render an instruction's two projections directly,
-        without the pair wrapper: unique binders ensure that both projections reference the same
-        pre-instruction operands instead of one projection seeing the other's shadowing write.
-        """
-        names = gen.ssa_names(self.entries)
-        current = {}
-        lines = []
-        pending_instruction_comment = None
-        pending_first_projection = None
-        for entry, name in zip(self.entries, names):
-            expression = entry["expr"]
-            for read in sorted(entry["reads"], key=len, reverse=True):
-                if read in current:
-                    expression = re.sub(
-                        rf"(?<![A-Za-z0-9_']){re.escape(read)}(?![A-Za-z0-9_'])",
-                        current[read],
-                        expression,
-                    )
-            if entry.get("helper_wrapper"):
-                # The architectural IR keeps this pair so its two projections are mechanically
-                # tied to one instruction. Render the projections directly, without the wrapper;
-                # the SSA operands above make both direct expressions refer to the same
-                # pre-instruction values.
-                current[entry["name"]] = f"({expression})"
-                pending_instruction_comment = entry["comment"]
-                continue
-            line = f"  let {name} := {expression}"
-            if pending_instruction_comment is not None:
-                if pending_first_projection is None:
-                    # Emit the second projection first. Its expression is thereby elaborated before
-                    # the value-result binder can shadow an in-place instruction operand.
-                    pending_first_projection = (line, entry.get("note") or entry["comment"])
-                    current[entry["name"]] = name
-                    continue
-                lines.append((line, pending_instruction_comment))
-                lines.append(pending_first_projection)
-                pending_instruction_comment = None
-                pending_first_projection = None
-            else:
-                lines.append((line, entry.get("note") or entry["comment"]))
-            current[entry["name"]] = name
-        if pending_instruction_comment is not None or pending_first_projection is not None:
-            raise GenerationError("incomplete helper instruction projection pair")
-        return lines, [current[name] for name in result_names]
 
     def binary_add(self, op: str, operands: Sequence[str], text: str) -> None:
         self.require_count(op, operands, 2)
@@ -524,40 +479,19 @@ class SkeletonBackend(gen.SkeletonBackend):
     def prepare(self, emitter, live_entries):
         # x86 renders every instruction binding, and the skeleton extracts every one of them:
         # `lift_lets` and `extract_lets` run with merging off, so equal values stay separate.
-        full_entries = emitter.entries
-        names = gen.ssa_names(full_entries)
-        helper = getattr(emitter, "helper_proof_mode", False)
-        # The helper renderer emits pair projections directly while retaining wrappers in this
-        # validated architectural IR. Those proof-only wrappers have no `let` to extract.
-        keep = [not (helper and entry.get("helper_wrapper")) for entry in full_entries]
-        entries = [dict(entry) for entry, kept in zip(full_entries, keep) if kept]
-        kept_indices = [index for index, kept in enumerate(keep) if kept]
-        # An instruction's result bindings share its source PC.
-        group_for_index = {}
-        for index, entry in enumerate(full_entries):
+        entries = [dict(entry) for entry in emitter.entries]
+        names = gen.ssa_names(entries)
+        for index, entry in enumerate(entries):
             if entry["fact"][0] in TRIPLE_FACTS:
-                member_indices = [
-                    j for j, member in enumerate(full_entries) if member["pc"] == entry["pc"]
-                ]
-                group = [(full_entries[j], names[j], keep[j]) for j in member_indices]
-                for member_index in member_indices:
-                    group_for_index[member_index] = group
-        for entry, index in zip(entries, kept_indices):
-            if group := group_for_index.get(index):
-                entry["group"] = group
-                entry["group_fact"] = group[0][0]["fact"]
-                # Helper projection lets are emitted second-before-first to keep in-place operands
-                # unshadowed. Facts retain wrapper/value/flag order; only extraction follows source.
-                if group[0][0].get("helper_wrapper") and len(group) == 3:
-                    entry["extract_group"] = [group[2][1], group[1][1]]
-                if entry["group_fact"][0] in ("x86_adds", "x86_subs"):
-                    entry["group_label"] = group[1][1]
-        # Clearing each extracted helper value repeatedly rechecks the remaining dependent `hr`
-        # tail. Keep its local definitions transparent; generated facts still record every step.
-        clear_values = not (helper or getattr(emitter, "phase_clear_values", False))
-        return gen.SkeletonPreparation(
-            entries, [names[index] for index in kept_indices], clear_values=clear_values,
-        )
+                # An instruction's three result bindings are consecutive.
+                entry["group"] = [(entries[j], names[j]) for j in range(index, index + 3)]
+                entry["group_fact"] = entry["fact"]
+                if entry["fact"][0] in ("x86_adds", "x86_subs"):
+                    entry["group_label"] = names[index + 1]
+        # For the factored round and the block that calls it, clearing each extracted value
+        # would recheck the remaining dependent `hr` tail every time; their local definitions
+        # stay transparent, and the generated facts still record every step.
+        return gen.SkeletonPreparation(entries, names, clear_values=emitter.clear_values)
 
     def fact(self, kind, ops, context):
         group = context.group_entries
@@ -875,8 +809,7 @@ def factor_mul_rounds(routine: Routine):
     if source_load is None or source_load["expr"] != "b":
         raise GenerationError("mul: factored round does not begin by loading its RHS limb into RDX")
 
-    round_emitter = Emitter({}, {})
-    round_emitter.helper_proof_mode = True
+    round_emitter = Emitter({}, {}, clear_values=False)
     round_emitter.bind("inv", "inv", "scalar argument", reads=(), fact=("inv",))
     round_emitter.bind("b", "b", source_load["comment"], reads=(), fact=("param", "b"))
     for field in MUL_ACC_FIELDS:
@@ -904,16 +837,9 @@ def factor_mul_rounds(routine: Routine):
         # The omitted entry load creates the initial alias only. Once the source writes RDX,
         # subsequent reads must see that new quotient/register value rather than the helper's b.
         aliases.pop(entry["name"], None)
-    for entry in helper_entries:
-        normalized = dict(entry)
-        if normalized["fact"][0] in {"x86_mulx", "x86_adds", "x86_subs", "x86_neg"}:
-            # The wrapper is kept in the IR so that both projections are tied to one instruction
-            # and read the same old operands. The helper's rendering emits only the projections,
-            # so skeleton preparation treats the wrapper as non-extractable.
-            normalized["helper_wrapper"] = True
-        round_emitter.entries.append(normalized)
+    round_emitter.entries.extend(dict(entry) for entry in helper_entries)
     round_result = ["r1", "r2", "r3", "r4", "r0", "rdx"]
-    round_lines, round_result_ssa = round_emitter.render_ssa(round_result)
+    round_lines = round_emitter.render(round_result)
     round_routine = Routine(
         "One full internal round of `mulMont`: add `lhs * b` to the rotating five-limb "
         "accumulator, cancel its low limb with the Montgomery quotient, and shift by one limb. "
@@ -922,15 +848,14 @@ def factor_mul_rounds(routine: Routine):
         "def mulMontRound (lhs modulus : Limbs) (inv b : Nat) "
         "(acc : MulMontAcc) : MulMontAcc :=",
         round_lines,
-        f"  ⟨{', '.join(round_result_ssa)}⟩",
+        f"  ⟨{', '.join(round_result)}⟩",
         "mulMontRound", round_emitter, round_result,
         struct=_mul_acc_struct(), arg_fields={"acc": MUL_ACC_FIELDS},
     )
 
-    main_emitter = Emitter(routine.emitter.directions, {})
-    # The multiplication proof clears values at arithmetic phase boundaries, avoiding
-    # repeated rechecking of its large dependent instruction tail.
-    main_emitter.phase_clear_values = True
+    # The multiplication proof clears values itself, at its arithmetic phase boundaries, rather
+    # than after each extraction, which would recheck its large dependent tail every time.
+    main_emitter = Emitter(routine.emitter.directions, {}, clear_values=False)
     main_emitter.entries = [
         dict(entry) for entry in routine.emitter.entries
         if entry["pc"] is None or entry["pc"] < MUL_ROUND_RANGES[0][0]

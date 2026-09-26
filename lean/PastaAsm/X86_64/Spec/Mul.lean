@@ -70,7 +70,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have b_cf : cf ≤ 1 := by rw [e_cf]; decide
   have b_ofl : ofl ≤ 1 := by rw [e_ofl]; decide
   -- m: mulx {s2}, {s1}, qword ptr [{a}]
-  extract_lets -merge +onlyGivenNames s1_1 s2 at hr
+  extract_lets -merge +onlyGivenNames m s2 s1_1 at hr
   have e_s2 : s2 = (mulx b' lhs.l0).1 := rfl
   have e_s1_1 : s1_1 = (mulx b' lhs.l0).2 := rfl
   have b_s2 : s2 < 2^64 := by rw [e_s2]; exact Nat.div_lt_of_lt_mul (Nat.mul_lt_mul'' b_b' hlhs.1)
@@ -78,7 +78,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have d_s2 : s1_1 + 2^64 * s2 = b' * lhs.l0 := by
     rw [e_s1_1, e_s2]; exact Nat.mod_add_div _ _
   -- r0_1: adcx {be}, {s1}
-  extract_lets -merge +onlyGivenNames cf_1 r0_1 at hr
+  extract_lets -merge +onlyGivenNames s r0_1 cf_1 at hr
   have e_r0_1 : r0_1 = (addc r0 s1_1 cf).1 := rfl
   have e_cf_1 : cf_1 = (addc r0 s1_1 cf).2 := rfl
   have l_r0_1 : r0_1 + 2^64 * cf_1 = r0 + s1_1 + cf := by
@@ -87,7 +87,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have b_cf_1 : cf_1 ≤ 1 := by rw [e_cf_1]; exact addc_carry_le_one r0 s1_1 cf b_r0 b_s1_1 b_cf
   clear e_r0_1 e_cf_1
   -- r1_1: adox {ce}, {s2}
-  extract_lets -merge +onlyGivenNames ofl_1 r1_1 at hr
+  extract_lets -merge +onlyGivenNames s_1 r1_1 ofl_1 at hr
   have e_r1_1 : r1_1 = (addc r1 s2 ofl).1 := rfl
   have e_ofl_1 : ofl_1 = (addc r1 s2 ofl).2 := rfl
   have l_r1_1 : r1_1 + 2^64 * ofl_1 = r1 + s2 + ofl := by
@@ -96,7 +96,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have b_ofl_1 : ofl_1 ≤ 1 := by rw [e_ofl_1]; exact addc_carry_le_one r1 s2 ofl b_r1 b_s2 b_ofl
   clear e_r1_1 e_ofl_1
   -- m_1: mulx {s2}, {s1}, qword ptr [{a} + 8]
-  extract_lets -merge +onlyGivenNames s1_2 s2_1 at hr
+  extract_lets -merge +onlyGivenNames m_1 s2_1 s1_2 at hr
   have e_s2_1 : s2_1 = (mulx b' lhs.l1).1 := rfl
   have e_s1_2 : s1_2 = (mulx b' lhs.l1).2 := rfl
   have b_s2_1 : s2_1 < 2^64 := by rw [e_s2_1]; exact Nat.div_lt_of_lt_mul (Nat.mul_lt_mul'' b_b' hlhs.2.1)
@@ -104,7 +104,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have d_s2_1 : s1_2 + 2^64 * s2_1 = b' * lhs.l1 := by
     rw [e_s1_2, e_s2_1]; exact Nat.mod_add_div _ _
   -- r1_2: adcx {ce}, {s1}
-  extract_lets -merge +onlyGivenNames cf_2 r1_2 at hr
+  extract_lets -merge +onlyGivenNames s_2 r1_2 cf_2 at hr
   have e_r1_2 : r1_2 = (addc r1_1 s1_2 cf_1).1 := rfl
   have e_cf_2 : cf_2 = (addc r1_1 s1_2 cf_1).2 := rfl
   have l_r1_2 : r1_2 + 2^64 * cf_2 = r1_1 + s1_2 + cf_1 := by
@@ -113,7 +113,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have b_cf_2 : cf_2 ≤ 1 := by rw [e_cf_2]; exact addc_carry_le_one r1_1 s1_2 cf_1 b_r1_1 b_s1_2 b_cf_1
   clear e_r1_2 e_cf_2
   -- r2_1: adox {de}, {s2}
-  extract_lets -merge +onlyGivenNames ofl_2 r2_1 at hr
+  extract_lets -merge +onlyGivenNames s_3 r2_1 ofl_2 at hr
   have e_r2_1 : r2_1 = (addc r2 s2_1 ofl_1).1 := rfl
   have e_ofl_2 : ofl_2 = (addc r2 s2_1 ofl_1).2 := rfl
   have l_r2_1 : r2_1 + 2^64 * ofl_2 = r2 + s2_1 + ofl_1 := by
@@ -122,7 +122,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have b_ofl_2 : ofl_2 ≤ 1 := by rw [e_ofl_2]; exact addc_carry_le_one r2 s2_1 ofl_1 b_r2 b_s2_1 b_ofl_1
   clear e_r2_1 e_ofl_2
   -- m_2: mulx {s2}, {s1}, qword ptr [{a} + 16]
-  extract_lets -merge +onlyGivenNames s1_3 s2_2 at hr
+  extract_lets -merge +onlyGivenNames m_2 s2_2 s1_3 at hr
   have e_s2_2 : s2_2 = (mulx b' lhs.l2).1 := rfl
   have e_s1_3 : s1_3 = (mulx b' lhs.l2).2 := rfl
   have b_s2_2 : s2_2 < 2^64 := by rw [e_s2_2]; exact Nat.div_lt_of_lt_mul (Nat.mul_lt_mul'' b_b' hlhs.2.2.1)
@@ -130,7 +130,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have d_s2_2 : s1_3 + 2^64 * s2_2 = b' * lhs.l2 := by
     rw [e_s1_3, e_s2_2]; exact Nat.mod_add_div _ _
   -- r2_2: adcx {de}, {s1}
-  extract_lets -merge +onlyGivenNames cf_3 r2_2 at hr
+  extract_lets -merge +onlyGivenNames s_4 r2_2 cf_3 at hr
   have e_r2_2 : r2_2 = (addc r2_1 s1_3 cf_2).1 := rfl
   have e_cf_3 : cf_3 = (addc r2_1 s1_3 cf_2).2 := rfl
   have l_r2_2 : r2_2 + 2^64 * cf_3 = r2_1 + s1_3 + cf_2 := by
@@ -139,7 +139,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have b_cf_3 : cf_3 ≤ 1 := by rw [e_cf_3]; exact addc_carry_le_one r2_1 s1_3 cf_2 b_r2_1 b_s1_3 b_cf_2
   clear e_r2_2 e_cf_3
   -- r3_1: adox {ee}, {s2}
-  extract_lets -merge +onlyGivenNames ofl_3 r3_1 at hr
+  extract_lets -merge +onlyGivenNames s_5 r3_1 ofl_3 at hr
   have e_r3_1 : r3_1 = (addc r3 s2_2 ofl_2).1 := rfl
   have e_ofl_3 : ofl_3 = (addc r3 s2_2 ofl_2).2 := rfl
   have l_r3_1 : r3_1 + 2^64 * ofl_3 = r3 + s2_2 + ofl_2 := by
@@ -148,7 +148,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have b_ofl_3 : ofl_3 ≤ 1 := by rw [e_ofl_3]; exact addc_carry_le_one r3 s2_2 ofl_2 b_r3 b_s2_2 b_ofl_2
   clear e_r3_1 e_ofl_3
   -- m_3: mulx {s2}, {s1}, qword ptr [{a} + 24]
-  extract_lets -merge +onlyGivenNames s1_4 s2_3 at hr
+  extract_lets -merge +onlyGivenNames m_3 s2_3 s1_4 at hr
   have e_s2_3 : s2_3 = (mulx b' lhs.l3).1 := rfl
   have e_s1_4 : s1_4 = (mulx b' lhs.l3).2 := rfl
   have b_s2_3 : s2_3 < 2^64 := by rw [e_s2_3]; exact Nat.div_lt_of_lt_mul (Nat.mul_lt_mul'' b_b' hlhs.2.2.2)
@@ -156,7 +156,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have d_s2_3 : s1_4 + 2^64 * s2_3 = b' * lhs.l3 := by
     rw [e_s1_4, e_s2_3]; exact Nat.mod_add_div _ _
   -- r3_2: adcx {ee}, {s1}
-  extract_lets -merge +onlyGivenNames cf_4 r3_2 at hr
+  extract_lets -merge +onlyGivenNames s_6 r3_2 cf_4 at hr
   have e_r3_2 : r3_2 = (addc r3_1 s1_4 cf_3).1 := rfl
   have e_cf_4 : cf_4 = (addc r3_1 s1_4 cf_3).2 := rfl
   have l_r3_2 : r3_2 + 2^64 * cf_4 = r3_1 + s1_4 + cf_3 := by
@@ -165,7 +165,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have b_cf_4 : cf_4 ≤ 1 := by rw [e_cf_4]; exact addc_carry_le_one r3_1 s1_4 cf_3 b_r3_1 b_s1_4 b_cf_3
   clear e_r3_2 e_cf_4
   -- r4_1: adox {ae}, {s2}
-  extract_lets -merge +onlyGivenNames ofl_4 r4_1 at hr
+  extract_lets -merge +onlyGivenNames s_7 r4_1 ofl_4 at hr
   have e_r4_1 : r4_1 = (addc r4 s2_3 ofl_3).1 := rfl
   have e_ofl_4 : ofl_4 = (addc r4 s2_3 ofl_3).2 := rfl
   have l_r4_1 : r4_1 + 2^64 * ofl_4 = r4 + s2_3 + ofl_3 := by
@@ -178,7 +178,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have e_s1_5 : s1_5 = 0 := rfl
   have b_s1_5 : s1_5 < 2^64 := by rw [e_s1_5]; decide
   -- r4_2: adcx {ae}, {s1}
-  extract_lets -merge +onlyGivenNames cf_5 r4_2 at hr
+  extract_lets -merge +onlyGivenNames s_8 r4_2 cf_5 at hr
   have e_r4_2 : r4_2 = (addc r4_1 s1_5 cf_4).1 := rfl
   have e_cf_5 : cf_5 = (addc r4_1 s1_5 cf_4).2 := rfl
   have l_r4_2 : r4_2 + 2^64 * cf_5 = r4_1 + s1_5 + cf_4 := by
@@ -187,7 +187,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have b_cf_5 : cf_5 ≤ 1 := by rw [e_cf_5]; exact addc_carry_le_one r4_1 s1_5 cf_4 b_r4_1 b_s1_5 b_cf_4
   clear e_r4_2 e_cf_5
   -- r4_3: adox {ae}, {s1}
-  extract_lets -merge +onlyGivenNames ofl_5 r4_3 at hr
+  extract_lets -merge +onlyGivenNames s_9 r4_3 ofl_5 at hr
   have e_r4_3 : r4_3 = (addc r4_2 s1_5 ofl_4).1 := rfl
   have e_ofl_5 : ofl_5 = (addc r4_2 s1_5 ofl_4).2 := rfl
   have l_r4_3 : r4_3 + 2^64 * ofl_5 = r4_2 + s1_5 + ofl_4 := by
@@ -245,7 +245,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have hq : rdx_1 = inv * r0_1 % 2^64 := by rw [e_rdx_1, e_rdx, e_inv']; ring_nf
   -- END round cancellation quotient
   -- m_4: mulx {s2}, {s1}, qword ptr [{p} + 8]
-  extract_lets -merge +onlyGivenNames s1_6 s2_4 at hr
+  extract_lets -merge +onlyGivenNames m_4 s2_4 s1_6 at hr
   have e_s2_4 : s2_4 = (mulx rdx_1 modulus.l1).1 := rfl
   have e_s1_6 : s1_6 = (mulx rdx_1 modulus.l1).2 := rfl
   have b_s2_4 : s2_4 < 2^64 := by rw [e_s2_4]; exact Nat.div_lt_of_lt_mul (Nat.mul_lt_mul'' b_rdx_1 hm.2.1)
@@ -263,14 +263,14 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have sh_s3_1 : s3_1 + 2^64 * (s3 / 2^2) = s3 * 2^62 := by
     rw [e_s3_1]; exact lsl62_lsr2_split _
   -- n: neg {be}
-  extract_lets -merge +onlyGivenNames cf_6 r0_2 at hr
+  extract_lets -merge +onlyGivenNames n r0_2 cf_6 at hr
   have e_r0_2 : r0_2 = (neg r0_1).1 := rfl
   have e_cf_6 : cf_6 = (neg r0_1).2 := rfl
   have b_r0_2 : r0_2 < 2^64 := by rw [e_r0_2]; exact sbb_value_lt 0 r0_1 0
   have b_cf_6 : cf_6 ≤ 1 := by
     rw [e_cf_6]; simp only [neg]; split <;> omega
   -- r1_3: adc {ce}, {s1}
-  extract_lets -merge +onlyGivenNames cf_7 r1_3 at hr
+  extract_lets -merge +onlyGivenNames s_10 r1_3 cf_7 at hr
   have e_r1_3 : r1_3 = (addc r1_2 s1_6 cf_6).1 := rfl
   have e_cf_7 : cf_7 = (addc r1_2 s1_6 cf_6).2 := rfl
   have l_r1_3 : r1_3 + 2^64 * cf_7 = r1_2 + s1_6 + cf_6 := by
@@ -279,7 +279,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have b_cf_7 : cf_7 ≤ 1 := by rw [e_cf_7]; exact addc_carry_le_one r1_2 s1_6 cf_6 b_r1_2 b_s1_6 b_cf_6
   clear e_r1_3 e_cf_7
   -- r2_3: adc {de}, 0
-  extract_lets -merge +onlyGivenNames cf_8 r2_3 at hr
+  extract_lets -merge +onlyGivenNames s_11 r2_3 cf_8 at hr
   have e_r2_3 : r2_3 = (addc r2_2 0 cf_7).1 := rfl
   have e_cf_8 : cf_8 = (addc r2_2 0 cf_7).2 := rfl
   have l_r2_3 : r2_3 + 2^64 * cf_8 = r2_2 + 0 + cf_7 := by
@@ -288,7 +288,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have b_cf_8 : cf_8 ≤ 1 := by rw [e_cf_8]; exact addc_carry_le_one r2_2 0 cf_7 b_r2_2 (by decide) b_cf_7
   clear e_r2_3 e_cf_8
   -- r3_3: adc {ee}, {s3}
-  extract_lets -merge +onlyGivenNames cf_9 r3_3 at hr
+  extract_lets -merge +onlyGivenNames s_12 r3_3 cf_9 at hr
   have e_r3_3 : r3_3 = (addc r3_2 s3_1 cf_8).1 := rfl
   have e_cf_9 : cf_9 = (addc r3_2 s3_1 cf_8).2 := rfl
   have l_r3_3 : r3_3 + 2^64 * cf_9 = r3_2 + s3_1 + cf_8 := by
@@ -297,7 +297,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have b_cf_9 : cf_9 ≤ 1 := by rw [e_cf_9]; exact addc_carry_le_one r3_2 s3_1 cf_8 b_r3_2 b_s3_1 b_cf_8
   clear e_r3_3 e_cf_9
   -- r4_4: adc {ae}, 0
-  extract_lets -merge +onlyGivenNames cf_10 r4_4 at hr
+  extract_lets -merge +onlyGivenNames s_13 r4_4 cf_10 at hr
   have e_r4_4 : r4_4 = (addc r4_3 0 cf_9).1 := rfl
   have e_cf_10 : cf_10 = (addc r4_3 0 cf_9).2 := rfl
   have l_r4_4 : r4_4 + 2^64 * cf_10 = r4_3 + 0 + cf_9 := by
@@ -306,7 +306,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have b_cf_10 : cf_10 ≤ 1 := by rw [e_cf_10]; exact addc_carry_le_one r4_3 0 cf_9 b_r4_3 (by decide) b_cf_9
   clear e_r4_4 e_cf_10
   -- m_5: mulx {s1}, {s3}, qword ptr [{p}]
-  extract_lets -merge +onlyGivenNames s3_2 s1_7 at hr
+  extract_lets -merge +onlyGivenNames m_5 s1_7 s3_2 at hr
   have e_s1_7 : s1_7 = (mulx rdx_1 modulus.l0).1 := rfl
   have e_s3_2 : s3_2 = (mulx rdx_1 modulus.l0).2 := rfl
   have b_s1_7 : s1_7 < 2^64 := by rw [e_s1_7]; exact Nat.div_lt_of_lt_mul (Nat.mul_lt_mul'' b_rdx_1 hm.1)
@@ -327,7 +327,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have e_r0_3 : r0_3 = 0 := rfl
   have b_r0_3 : r0_3 < 2^64 := by rw [e_r0_3]; decide
   -- r1_4: add {ce}, {s1}
-  extract_lets -merge +onlyGivenNames cf_11 r1_4 at hr
+  extract_lets -merge +onlyGivenNames s_14 r1_4 cf_11 at hr
   have e_r1_4 : r1_4 = (addc r1_3 s1_7 0).1 := rfl
   have e_cf_11 : cf_11 = (addc r1_3 s1_7 0).2 := rfl
   have l_r1_4 : r1_4 + 2^64 * cf_11 = r1_3 + s1_7 + 0 := by
@@ -336,7 +336,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have b_cf_11 : cf_11 ≤ 1 := by rw [e_cf_11]; exact addc_carry_le_one r1_3 s1_7 0 b_r1_3 b_s1_7 (by decide)
   clear e_r1_4 e_cf_11
   -- r2_4: adc {de}, {s2}
-  extract_lets -merge +onlyGivenNames cf_12 r2_4 at hr
+  extract_lets -merge +onlyGivenNames s_15 r2_4 cf_12 at hr
   have e_r2_4 : r2_4 = (addc r2_3 s2_4 cf_11).1 := rfl
   have e_cf_12 : cf_12 = (addc r2_3 s2_4 cf_11).2 := rfl
   have l_r2_4 : r2_4 + 2^64 * cf_12 = r2_3 + s2_4 + cf_11 := by
@@ -345,7 +345,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have b_cf_12 : cf_12 ≤ 1 := by rw [e_cf_12]; exact addc_carry_le_one r2_3 s2_4 cf_11 b_r2_3 b_s2_4 b_cf_11
   clear e_r2_4 e_cf_12
   -- r3_4: adc {ee}, 0
-  extract_lets -merge +onlyGivenNames cf_13 r3_4 at hr
+  extract_lets -merge +onlyGivenNames s_16 r3_4 cf_13 at hr
   have e_r3_4 : r3_4 = (addc r3_3 0 cf_12).1 := rfl
   have e_cf_13 : cf_13 = (addc r3_3 0 cf_12).2 := rfl
   have l_r3_4 : r3_4 + 2^64 * cf_13 = r3_3 + 0 + cf_12 := by
@@ -354,7 +354,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have b_cf_13 : cf_13 ≤ 1 := by rw [e_cf_13]; exact addc_carry_le_one r3_3 0 cf_12 b_r3_3 (by decide) b_cf_12
   clear e_r3_4 e_cf_13
   -- r4_5: adc {ae}, {s3}
-  extract_lets -merge +onlyGivenNames cf_14 r4_5 at hr
+  extract_lets -merge +onlyGivenNames s_17 r4_5 cf_14 at hr
   have e_r4_5 : r4_5 = (addc r4_4 s3_4 cf_13).1 := rfl
   have e_cf_14 : cf_14 = (addc r4_4 s3_4 cf_13).2 := rfl
   have l_r4_5 : r4_5 + 2^64 * cf_14 = r4_4 + s3_4 + cf_13 := by
@@ -363,7 +363,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have b_cf_14 : cf_14 ≤ 1 := by rw [e_cf_14]; exact addc_carry_le_one r4_4 s3_4 cf_13 b_r4_4 (lt_of_lt_of_le b_s3_4 (by norm_num)) b_cf_13
   clear e_r4_5 e_cf_14
   -- r0_4: adc {be}, 0
-  extract_lets -merge +onlyGivenNames cf_15 r0_4 at hr
+  extract_lets -merge +onlyGivenNames s_18 r0_4 cf_15 at hr
   have e_r0_4 : r0_4 = (addc r0_3 0 cf_14).1 := rfl
   have e_cf_15 : cf_15 = (addc r0_3 0 cf_14).2 := rfl
   have l_r0_4 : r0_4 + 2^64 * cf_15 = r0_3 + 0 + cf_14 := by

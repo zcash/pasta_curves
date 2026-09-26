@@ -444,10 +444,7 @@ class SkeletonBackend(gen.SkeletonBackend):
             # `adc`.
             dead_carry = (i + 2 >= len(entries) or entries[i + 2]["fact"] != ("snd",))
             group_count = 2 if dead_carry else 3
-            entries[i]["group"] = [
-                (entry, name, True)
-                for entry, name in zip(entries[i:i + group_count], names[i:i + group_count])
-            ]
+            entries[i]["group"] = list(zip(entries[i:i + group_count], names[i:i + group_count]))
             entries[i]["group_label"] = names[i + 1]
             entries[i]["dead_carry"] = dead_carry
             i += group_count
