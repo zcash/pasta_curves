@@ -20,8 +20,9 @@
 //! implementation serves both fields.
 //!
 //! There are no branches and no memory accesses inside the blocks, and the
-//! repeated-squaring loop branches only on its public count, so the code is
-//! constant-time.
+//! repeated-squaring loop branches only on its public count, so the code
+//! should be constant-time, unless behaviour of the Rust toolchain or
+//! platform introduces an unexpected obstacle to that.
 
 use core::arch::asm;
 
@@ -33,10 +34,10 @@ use super::{Limbs, is_canonical, mul_contract};
 /// (`modulus[2] == 0`). Both inputs must be canonical (debug-asserted; a
 /// violation yields an incorrect residue): the top carry of the addition is
 /// dropped and only one subtraction is attempted, both justified by
-/// `2p < 2^256`. This contract is narrower than the inherent portable `add`,
-/// which carries into a fifth limb; unreduced values (such as `mul`'s lazy
-/// `lhs`) must be reduced before reaching this path. Keeping both carry
-/// chains in one block avoids materializing carries between Rust operations.
+/// `2p < 2^256`. Unreduced values, such as an unreduced `lhs` that `mul`
+/// accepts when `rhs` is canonical, must be reduced before reaching this
+/// path. Keeping both carry chains in one block avoids materializing carries
+/// between Rust operations.
 #[inline(always)]
 pub(super) fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
     debug_assert!(
@@ -92,10 +93,7 @@ pub(super) fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 /// modulus shape (`modulus[2] == 0`). Canonical inputs (debug-asserted)
 /// guarantee a canonical result: the difference lies strictly between `-p`
 /// and `p`, so one conditional addition suffices, and the final carry is
-/// discarded after wrapping modulo `2^256`. Unlike [`add`], this computes
-/// the same function as the inherent portable `sub` on all inputs — both
-/// drop the top borrow and mask-add the modulus — so the contract is not
-/// narrower than the portable path.
+/// discarded after wrapping modulo `2^256`.
 #[inline(always)]
 pub(super) fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
     debug_assert!(
@@ -150,8 +148,9 @@ pub(super) fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 /// limbs 1 to 3 at most `2^64 - 3` and `lhs` is any four-limb value.
 ///
 /// Two things can go wrong outside the contract. First, `mul` keeps a
-/// five-limb accumulator (one word fewer than textbook CIOS), and the carry
-/// chain folding in the high cross-products can wrap: its tail computes
+/// five-limb accumulator (one word fewer than textbook CIOS; the module's
+/// README describes the form), and the carry chain folding in the high
+/// cross-products can wrap: its tail computes
 /// `acc4 + high(lhs[3] * rhs_limb) + carry` with `acc4 <= 2`, which reaches
 /// `2^64` only when `high(lhs[3] * rhs_limb) >= 2^64 - 3`. A canonical `lhs`
 /// has `lhs[3] <= 2^62`, and a `rhs` limb at most `2^64 - 3` caps the high
@@ -330,7 +329,7 @@ pub(crate) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs 
             "lsr {t3}, {q}, #2",                // t3 = high(q * p[3]).
             "adc {r4}, {r4}, xzr",              // Propagate carry to limb 4.
 
-            // Shift out the fourth cancelled limb. Canonical rhs gives
+            // Shift out the fourth cancelled limb. Either contract gives
             // lhs*rhs < R*p, and m < R gives m*p < R*p. Thus the candidate
             // (lhs*rhs + m*p)/R is below 2p < R, so no fifth limb exists.
             "adds {r0}, {r1}, {t0}",            // Final candidate limb 0.
@@ -379,7 +378,7 @@ pub(crate) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs 
 
 /// Squares a canonical Montgomery residue for a Pasta modulus.
 ///
-/// Ihe input's canonicity is debug-asserted.
+/// The input's canonicity is debug-asserted.
 #[inline(always)]
 pub(crate) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     debug_assert!(
@@ -395,8 +394,8 @@ pub(crate) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     unsafe {
         asm!(
             // 512-bit square: cross products, doubling, diagonals.
-            // Square a (in a0..a3) exactly as in sqr_mont above; the 512-bit
-            // product limbs A0..A7 map to z0,z1,z2,z3,z4,z5,z6,z7.
+            // Square a (in a0..a3); the 512-bit product limbs A0..A7 map to
+            // z0,z1,z2,z3,z4,z5,z6,z7.
 
             "mul {z1}, {a1}, {a0}",             // z1 = low(a[1] * a[0]).
             "umulh {w1}, {a1}, {a0}",           // w1 = high(a[1] * a[0]).
@@ -451,7 +450,7 @@ pub(crate) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
             "adcs {z6}, {z6}, {w3}",            // Add low(a[3]^2) to product limb 6.
             "adc {z7}, {z7}, {a3}",             // Add high(a[3]^2) to product limb 7.
 
-            // Montgomery cancellation 0 on the low half, as in the shared helper.
+            // Montgomery cancellation 0 on the low half.
             // low(q * p[0]) cancels z0 and is discarded by the limb shift.
             "mul {w1}, {p1}, {q}",              // w1 = low(q * p[1]).
             // q * p[2] is zero because p[2] = 0.
@@ -532,8 +531,9 @@ pub(crate) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
             "adcs {z1}, {z2}, {w1}",            // Reduced limb 1 includes high(q * p[1]).
             "adcs {z2}, {z3}, xzr",             // Reduced limb 2; p[2] contributes zero.
             "adc {z3}, {cy}, {w3}",             // Reduced limb 3 includes high(q * p[3]).
-            // Add the upper product half; the sum stays below 2p (see above), so no
-            // carry escapes and no conditional subtraction is needed mid-loop.
+            // Add the upper product half. A canonical input's square is below
+            // R*p, so, as for `mul`'s candidate, the sum stays below 2p: no carry
+            // escapes and no conditional subtraction is needed mid-loop.
             "adds {a0}, {z0}, {z4}",            // Next-iteration a[0].
             "adcs {a1}, {z1}, {z5}",            // Next-iteration a[1].
             "adcs {a2}, {z2}, {z6}",            // Next-iteration a[2].

@@ -38,14 +38,14 @@
 //! # Timing
 //!
 //! The blocks have no data-dependent branch or memory access, and a release
-//! build runs nothing else, so the routines' timing does not depend on
-//! their operands. A debug build also runs the assertions' checks, and
-//! debug mode carries no constant-time guarantee. The checks are written
+//! build runs nothing else. So the routines' timing should not depend on their
+//! operands, unless behaviour of the Rust toolchain or platform introduces an
+//! unexpected obstacle to that. A debug build also runs the assertions' checks,
+//! and debug mode carries no constant-time guarantee. The checks are written
 //! without data-dependent branches, and pass their words through
-//! `core::hint::black_box`, as `subtle` does. An inspection of the output
-//! of one toolchain (AArch64, Rust 1.96.1) found only the assertions' own
-//! branches left, but that is best effort, which the compiler owes nothing
-//! to.
+//! `core::hint::black_box`, as `subtle` does. An inspection of the output of
+//! one toolchain (AArch64, Rust 1.96.1) found only the assertions' own branches
+//! left, but that is best effort, which the compiler owes nothing to.
 //!
 //! # Provenance
 //!

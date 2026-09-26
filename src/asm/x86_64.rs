@@ -20,15 +20,17 @@
 //! chains) measured ~10% slower than the two short sequential sweeps
 //! (22.3 vs 20.2 ns) despite the shorter nominal dependency length.
 //!
-//! The round structure is a transcription of the AArch64 backend
-//! (`aarch64.rs`), which is itself the upstream Semolina
-//! `mul_mont_pasta`: a five-limb CIOS accumulator, one Montgomery
-//! cancellation per round, and the shared Pasta modulus shape —
-//! `modulus[2] = 0` and `modulus[3] = 2^62` — materialized as shifts, so
-//! only `modulus[0]`, `modulus[1]`, and `inv` distinguish Fp from Fq.
-//! Because the mathematical structure is identical, the AArch64 module's
-//! bounds analysis carries over verbatim; see its module docs for the
-//! five-limb no-wrap argument.
+//! The arithmetic is that of the AArch64 backend (`aarch64.rs`), which is
+//! itself Semolina's `mul_mont_pasta`. It keeps a five-limb CIOS
+//! accumulator (the module's README describes the form) and makes one
+//! Montgomery cancellation per round. It relies on the shared Pasta modulus
+//! shape, `modulus[2] = 0` and `modulus[3] = 2^62`, materialized as shifts,
+//! so only `modulus[0]`, `modulus[1]`, and `inv` distinguish Fp from Fq.
+//! The instruction schedule is x86-64's own: two carry chains, and a final
+//! round fused with the conditional subtraction. The bounds are the same,
+//! though. The AArch64 `mul`'s documentation gives the five-limb no-wrap
+//! argument, and the x86-64 proofs establish it for this transcription
+//! under the same hypotheses.
 //!
 //! Unlike the AArch64 blocks, `mul` and `square` address their operand limbs
 //! through pointers (`readonly` memory operands) rather than individual
@@ -62,16 +64,17 @@
 //! residue that still looks canonical. `square` needs a canonical input,
 //! which it debug-asserts. Outputs are canonical.
 //!
-//! The block is straight-line: no branches, no data-dependent memory
-//! addresses, and a CMOV-based final conditional subtraction, so the code is
-//! constant-time.
+//! The blocks are straight-line: no branches, no data-dependent memory
+//! addresses, and CMOV-based final conditional subtractions, so the code
+//! should be constant-time, unless behaviour of the Rust toolchain or
+//! platform introduces an unexpected obstacle to that.
 //!
 //! ISA requirement: `mul` and `square` use MULX (BMI2) and ADCX/ADOX (ADX:
 //! Intel Broadwell / AMD Zen or newer). `from_mont` uses MULX (BMI2) alone.
-//! None of these are runtime-checked: code built where they are available
-//! uses the instructions unconditionally, and running it on an older CPU
-//! faults with an illegal instruction. `add` and `sub` use baseline x86-64
-//! instructions only.
+//! None of these are runtime-checked: the backend uses the instructions
+//! unconditionally, and running it on an older CPU faults with an illegal
+//! instruction; build with `--cfg pasta_curves_noasm` for such CPUs. `add` and
+//! `sub` use baseline x86-64 instructions only.
 
 use core::arch::asm;
 
@@ -380,9 +383,9 @@ pub(super) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs 
             "adcx {ce}, {s1}",
             "adox {ce}, {s1}",
 
-            // Montgomery step 3. Canonical rhs bounds the candidate below
+            // Montgomery step 3. Either contract bounds the candidate below
             // 2p < R, so the final shift produces no fifth limb (see the
-            // AArch64 module docs); the shift's carry adc is omitted.
+            // AArch64 `mul`'s documentation); the shift's carry adc is omitted.
             "mov rdx, {de}",
             "imul rdx, {inv}",
             "mulx {s2}, {s1}, qword ptr [{p} + 8]",
@@ -445,11 +448,12 @@ pub(super) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs 
 /// square as cross products, one doubling pass, and the diagonals (ten MULX
 /// against the multiplication's sixteen), then four Montgomery
 /// cancellations on a rotating four-limb window with a carried fifth limb,
-/// the high product half folded in (the sum stays below `2p`, so no carry
-/// escapes — see the AArch64 module's bounds), and a CMOV conditional
-/// subtraction. Measured 2–5% ahead of squaring through [`mul`] on
-/// Skylake-X (20.0–20.7 vs 21.0 ns across runs), mirroring the AArch64
-/// backend's own square-over-mul margin.
+/// the high product half folded in, and a CMOV conditional subtraction. A
+/// canonical input's square is below `R * p`, so, as for [`mul`]'s
+/// candidate, the folded sum stays below `2p` and no carry escapes.
+/// Measured 2–5% ahead of squaring through [`mul`] on Skylake-X (20.0–20.7
+/// vs 21.0 ns across runs), mirroring the AArch64 backend's own
+/// square-over-mul margin.
 ///
 /// Kept behind a call boundary for the register-allocation reason documented
 /// on [`mul`].
@@ -558,9 +562,9 @@ fn square_lo(value: Limbs) -> [u64; 8] {
 
 /// Phase two of squaring: four Montgomery cancellations on the rotating
 /// four-limb window of the low product half, the high product half folded
-/// in (the sum stays below `2p`, so no carry escapes — see the AArch64
-/// module's bounds), and a CMOV conditional subtraction. Always inlined
-/// like [`square_lo`], for the same loop-accumulator reason.
+/// in (the sum stays below `2p`, so no carry escapes; see [`square`]), and a
+/// CMOV conditional subtraction. Always inlined like [`square_lo`], for the
+/// same loop-accumulator reason.
 ///
 /// # Safety
 ///
@@ -711,8 +715,8 @@ fn square_hi(product: [u64; 8], modulus: &Limbs, inv: u64) -> Limbs {
 ///
 /// `value` must be canonical (debug-asserted). Any four-limb `rhs` is
 /// accepted: the accumulator stays canonical, so the final multiplication is
-/// inside [`mul`]'s first contract. The memory operands read the four modulus
-/// limbs.
+/// inside [`mul`]'s contract with a canonical `lhs`. The memory operands read
+/// the four modulus limbs.
 #[inline(never)]
 pub(super) fn sqr_n_mul(
     value: &Limbs,

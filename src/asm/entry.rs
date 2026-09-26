@@ -49,8 +49,8 @@ pub(crate) fn mul_contract(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> bool {
 ///
 /// # Safety
 ///
-/// Both inputs must be canonical. This is debug-asserted, and under it the machine-checked
-/// proofs in `lean/` establish the result (`add_entry_spec`).
+/// Both inputs must be canonical. This is debug-asserted, and under that precondition the
+/// machine-checked proofs in `lean/` establish the result (`add_entry_spec`).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus. Any other values will
 /// cause undefined results.
@@ -82,8 +82,8 @@ pub fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 ///
 /// # Safety
 ///
-/// Both inputs must be canonical. This is debug-asserted, and under it the machine-checked
-/// proofs in `lean/` establish the result (`sub_entry_spec`).
+/// Both inputs must be canonical. This is debug-asserted, and under that precondition the
+/// machine-checked proofs in `lean/` establish the result (`sub_entry_spec`).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus. Any other values will
 /// cause undefined results.
@@ -115,9 +115,9 @@ pub fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 ///
 /// Either `lhs` is canonical (below the modulus) and `rhs` is any four-limb value, or
 /// `rhs` is canonical with each of its limbs 1 to 3 at most `2^64 - 3` and `lhs` is any
-/// four-limb value. This is debug-asserted, and under it the machine-checked proofs in
-/// `lean/` establish the result (`mul_entry_spec`, from `mulMont_spec_of_lhs_lt` and
-/// `mulMont_spec_of_rhs_lt`).
+/// four-limb value. This is debug-asserted, and under that precondition the machine-checked
+/// proofs in `lean/` establish the result (`mul_entry_spec`, from `mulMont_spec_of_lhs_lt`
+/// and `mulMont_spec_of_rhs_lt`).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
 /// correctly derived from it. Any other values will cause undefined results.
@@ -146,8 +146,9 @@ pub fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
 ///
 /// # Safety
 ///
-/// The input of `square` must be canonical. This is debug-asserted, and under it the
-/// machine-checked proofs in `lean/` establish the result (`square_entry_spec`).
+/// The input of `square` must be canonical. This is debug-asserted, and under that
+/// precondition the machine-checked proofs in `lean/` establish the result
+/// (`square_entry_spec`).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
 /// correctly derived from it. Any other values will cause undefined results.
@@ -170,15 +171,18 @@ pub fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
 }
 
 /// Squares a canonical Montgomery residue `count` times, then multiplies the
-/// result by the canonical Montgomery residue `rhs`.
+/// result by `rhs`.
 ///
-/// A `count` of zero is just the multiplication. For a canonical `value`, the machine-checked
-/// proofs in `lean/` establish the result (`sqrNMul_entry_spec`).
-///
-/// Each step is one of the inline blocks, which the compiler inlines, so the accumulator
-/// stays in registers throughout.
+/// A `count` of zero is just the multiplication. The squarings keep the value canonical, so the
+/// multiplication is under its contract with a canonical `lhs`, and any four-limb `rhs` is
+/// accepted. The accumulator stays in registers across the squarings: on AArch64 each step is
+/// an inline block that the compiler inlines, and on x86-64 the squaring blocks are always
+/// inlined into one loop, with the multiplication called once at the end.
 ///
 /// # Safety
+///
+/// `value` must be canonical. This is debug-asserted, and under that precondition the
+/// machine-checked proofs in `lean/` establish the result (`sqrNMul_entry_spec`).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
 /// correctly derived from it. Any other values will cause undefined results.
@@ -194,20 +198,21 @@ pub fn sqr_n_mul(value: &Limbs, count: usize, rhs: &Limbs, modulus: &Limbs, inv:
         mul(&acc, rhs, modulus, inv)
     }
 
-    // On x86_64, `square` and `mul` can't be inlined due to register pressure, so we need
-    // a separate fused assembly implementation.
+    // On x86_64, `square` and `mul` can't be inlined due to register pressure, so the backend
+    // has its own loop over the always-inlined squaring blocks.
     #[cfg(target_arch = "x86_64")]
     {
         super::x86_64::sqr_n_mul(value, count, rhs, modulus, inv)
     }
 }
 
-/// Converts a Montgomery residue into its canonical integer, `value * 2^-256 mod p`, as a
+/// Converts a Montgomery residue into its canonical integer, `value * 2^-256 mod p`: a
 /// Montgomery multiplication by one.
 ///
-/// Any four-limb `value` is accepted: `1` is canonical with limbs 1 to 3 zero, so it is a
-/// right operand inside the multiplication's contract for any left operand; the
-/// machine-checked proofs in `lean/` establish the result (`fromMont_entry_spec`).
+/// Any four-limb `value` is accepted, and the machine-checked proofs in `lean/` establish the
+/// result (`fromMont_entry_spec`). On AArch64 the conversion is the multiplication block with
+/// `1` as its right operand, which is canonical with limbs 1 to 3 zero and so inside the
+/// multiplication's contract for any left operand. On x86-64 it is a dedicated block.
 ///
 /// # Safety
 ///
