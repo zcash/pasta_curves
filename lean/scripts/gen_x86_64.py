@@ -454,87 +454,58 @@ def input_expression(
     return f"{argument}.l{index}", f"input {value}"
 
 
+TRIPLE_FACTS = {"x86_adds", "x86_subs", "x86_mulx", "x86_neg", "x86_xor"}
+
+
 class SkeletonBackend(gen.SkeletonBackend):
-    """x86-64 equal-let grouping and ISA proof facts for the shared traversal."""
+    """x86-64 instruction grouping and ISA proof facts for the shared traversal."""
 
     def prepare(self, emitter, live_entries):
-        full_entries = emitter.entries
-        full_names, keep, representatives, normalized_expressions = gen.normalize_equal_lets(
-            full_entries
-        )
-        # x86 intentionally renders every instruction binding. `lift_lets` preserves that stream,
-        # but shares definitionally equal values (for example all three results of `xor r, r` are
-        # zero). Mirror that common-subexpression pass using canonical SSA definitions for reads.
-        kept_indices = [index for index, retained in enumerate(keep) if retained]
-        entries = [dict(full_entries[index]) for index in kept_indices]
-        triple_facts = {"x86_adds", "x86_subs", "x86_mulx", "x86_neg", "x86_xor"}
-        groups = {}
-        for index, full_entry in enumerate(full_entries):
-            if full_entry["fact"][0] in triple_facts:
-                groups[index] = [
-                    (full_entries[j], full_names[j], keep[j])
-                    for j in range(index, min(index + 3, len(full_entries)))
+        # x86 renders every instruction binding, and the skeleton extracts every one of them:
+        # `lift_lets` and `extract_lets` run with merging off, so equal values stay separate.
+        entries = [dict(entry) for entry in emitter.entries]
+        names = gen.ssa_names(entries)
+        for index, entry in enumerate(entries):
+            if entry["fact"][0] in TRIPLE_FACTS:
+                # An instruction's three result bindings are consecutive.
+                entry["group"] = [
+                    (entries[j], names[j], True) for j in range(index, index + 3)
                 ]
-        history = []
-        previous_full_index = -1
-        for entry, index in zip(entries, kept_indices):
-            entry["proof_name"] = full_names[index]
-            history.append([
-                (full_entries[full_index]["name"], full_names[representatives[full_index]])
-                for full_index in range(previous_full_index + 1, index)
-            ])
-            previous_full_index = index
-            for start, group in groups.items():
-                if start <= index < start + len(group):
-                    entry["group"] = group
-                    entry["group_fact"] = group[0][0]["fact"]
-                    if entry["group_fact"][0] in ("x86_adds", "x86_subs"):
-                        entry["group_label"] = group[1][1]
-                    break
-        names = [entry["proof_name"] for entry in entries]
-        zero_names = {
-            full_names[index] for index in kept_indices
-            if normalized_expressions[index] == "0"
-        }
-        return gen.SkeletonPreparation(
-            entries, names, zero_names=zero_names, history=history,
-        )
+                entry["group_fact"] = entry["fact"]
+                if entry["fact"][0] in ("x86_adds", "x86_subs"):
+                    entry["group_label"] = names[index + 1]
+        return gen.SkeletonPreparation(entries, names)
 
     def fact(self, kind, ops, context):
         group = context.group_entries
-        group_names, group_live = context.group_names, context.group_live
+        group_names = context.group_names
         if kind == "x86_mulx":
             a, b = ops
             high, low = group_names[1:3]
-            if group_live[1]:
-                context.eq(high, f"(mulx {a} {b}).1")
-                context.lines.append(
-                    f"  have b_{high} : {high} < 2^64 := by rw [e_{high}]; "
-                    "exact Nat.div_lt_of_lt_mul (Nat.mul_lt_mul'' "
-                    f"{context.lt64(a)} {context.lt64(b)})"
-                )
-                context.bnd[high] = f"b_{high}"
-                context.ren[group[1][0]["name"]] = high
-            if group_live[2]:
-                context.eq(low, f"(mulx {a} {b}).2")
-                context.lines.append(
-                    f"  have b_{low} : {low} < 2^64 := by rw [e_{low}]; "
-                    "exact Nat.mod_lt _ (Nat.two_pow_pos _)"
-                )
-                context.bnd[low] = f"b_{low}"
-                context.ren[group[2][0]["name"]] = low
-            if group_live[1] and group_live[2]:
-                context.lines.append(f"  have d_{high} : {low} + 2^64 * {high} = {a} * {b} := by")
-                context.lines.append(f"    rw [e_{low}, e_{high}]; exact Nat.mod_add_div _ _")
-            context.consumed = sum(group_live)
+            context.eq(high, f"(mulx {a} {b}).1")
+            context.lines.append(
+                f"  have b_{high} : {high} < 2^64 := by rw [e_{high}]; "
+                "exact Nat.div_lt_of_lt_mul (Nat.mul_lt_mul'' "
+                f"{context.lt64(a)} {context.lt64(b)})"
+            )
+            context.bnd[high] = f"b_{high}"
+            context.ren[group[1][0]["name"]] = high
+            context.eq(low, f"(mulx {a} {b}).2")
+            context.lines.append(
+                f"  have b_{low} : {low} < 2^64 := by rw [e_{low}]; "
+                "exact Nat.mod_lt _ (Nat.two_pow_pos _)"
+            )
+            context.bnd[low] = f"b_{low}"
+            context.ren[group[2][0]["name"]] = low
+            context.lines.append(f"  have d_{high} : {low} + 2^64 * {high} = {a} * {b} := by")
+            context.lines.append(f"    rw [e_{low}, e_{high}]; exact Nat.mod_add_div _ _")
             return True
         if kind in ("x86_adds", "x86_subs"):
             a, b, carry = ops
             value_name, flag_name = group_names[1:3]
             semantic = "addc" if kind == "x86_adds" else "sbb"
             context.eq(value_name, f"({semantic} {a} {b} {carry}).1")
-            if group_live[2]:
-                context.eq(flag_name, f"({semantic} {a} {b} {carry}).2")
+            context.eq(flag_name, f"({semantic} {a} {b} {carry}).2")
             if kind == "x86_adds":
                 linear = f"{value_name} + 2^64 * {flag_name} = {a} + {b} + {carry}"
                 linear_proof = f"addc_lin {a} {b} {carry}"
@@ -547,77 +518,53 @@ class SkeletonBackend(gen.SkeletonBackend):
                 linear_proof = f"sbb_lin {a} {b} {carry} {context.lt64(a)} {context.lt64(b)} {context.le1(carry)}"
                 value_proof = f"sbb_value_lt {a} {b} {carry}"
                 flag_proof = f"sbb_borrow_le_one {a} {b} {carry}"
-            if group_live[2]:
-                context.lines.append(f"  have l_{value_name} : {linear} := by")
-                context.lines.append(f"    rw [e_{value_name}, e_{flag_name}]; exact {linear_proof}")
-                context.lines.append(
-                    f"  have b_{value_name} : {value_name} < 2^64 := by rw [e_{value_name}]; "
-                    f"exact {value_proof}"
-                )
-                context.lines.append(
-                    f"  have b_{flag_name} : {flag_name} ≤ 1 := by rw [e_{flag_name}]; "
-                    f"exact {flag_proof}"
-                )
-                context.lines.append(f"  clear e_{value_name} e_{flag_name}")
-                context.ren[group[2][0]["name"]] = flag_name
-            else:
-                context.lines.append(
-                    f"  have b_{value_name} : {value_name} < 2^64 := by rw [e_{value_name}]; "
-                    f"exact {value_proof}"
-                )
-                context.lines.append(f"  obtain ⟨{flag_name}, b_{flag_name}, l_{value_name}⟩ :")
-                context.lines.append(f"      ∃ flag, flag ≤ 1 ∧ {linear.replace(flag_name, 'flag')} :=")
-                context.lines.append(f"    ⟨({semantic} {a} {b} {carry}).2, {flag_proof}, by")
-                context.lines.append(f"      rw [e_{value_name}]; exact {linear_proof}⟩")
-                context.lines.append(f"  clear e_{value_name}")
+            context.lines.append(f"  have l_{value_name} : {linear} := by")
+            context.lines.append(f"    rw [e_{value_name}, e_{flag_name}]; exact {linear_proof}")
+            context.lines.append(
+                f"  have b_{value_name} : {value_name} < 2^64 := by rw [e_{value_name}]; "
+                f"exact {value_proof}"
+            )
+            context.lines.append(
+                f"  have b_{flag_name} : {flag_name} ≤ 1 := by rw [e_{flag_name}]; "
+                f"exact {flag_proof}"
+            )
+            context.lines.append(f"  clear e_{value_name} e_{flag_name}")
+            context.ren[group[2][0]["name"]] = flag_name
             context.ren[group[1][0]["name"]] = value_name
             context.bnd[value_name], context.bnd[flag_name] = f"b_{value_name}", f"b_{flag_name}"
             context.unit_bound.add(flag_name)
-            context.consumed = sum(group_live)
             return True
         if kind == "x86_neg":
             (operand,) = ops
             value_name, flag_name = group_names[1:3]
-            if group_live[1]:
-                context.eq(value_name, f"(neg {operand}).1")
-                context.lines.append(
-                    f"  have b_{value_name} : {value_name} < 2^64 := by rw [e_{value_name}]; "
-                    f"exact sbb_value_lt 0 {operand} 0"
-                )
-                context.ren[group[1][0]["name"]] = value_name
-                context.bnd[value_name] = f"b_{value_name}"
-            if group_live[2]:
-                context.eq(flag_name, f"(neg {operand}).2")
-                context.lines.append(f"  have b_{flag_name} : {flag_name} ≤ 1 := by")
-                context.lines.append(f"    rw [e_{flag_name}]; simp only [neg]; split <;> omega")
-                context.ren[group[2][0]["name"]] = flag_name
-                context.bnd[flag_name] = f"b_{flag_name}"
-                context.unit_bound.add(flag_name)
-            context.consumed = sum(group_live)
+            context.eq(value_name, f"(neg {operand}).1")
+            context.lines.append(
+                f"  have b_{value_name} : {value_name} < 2^64 := by rw [e_{value_name}]; "
+                f"exact sbb_value_lt 0 {operand} 0"
+            )
+            context.ren[group[1][0]["name"]] = value_name
+            context.bnd[value_name] = f"b_{value_name}"
+            context.eq(flag_name, f"(neg {operand}).2")
+            context.lines.append(f"  have b_{flag_name} : {flag_name} ≤ 1 := by")
+            context.lines.append(f"    rw [e_{flag_name}]; simp only [neg]; split <;> omega")
+            context.ren[group[2][0]["name"]] = flag_name
+            context.bnd[flag_name] = f"b_{flag_name}"
+            context.unit_bound.add(flag_name)
             return True
         if kind == "x86_xor":
             data_name, cf_name, of_name = group_names
-            if group_live[0]:
-                context.eq(data_name, "0")
-                context.lines.append(
-                    f"  have b_{data_name} : {data_name} < 2^64 := by rw [e_{data_name}]; decide"
-                )
-                context.bnd[data_name] = f"b_{data_name}"
-            if group_live[1]:
-                context.eq(cf_name, "0")
-                context.lines.append(f"  have b_{cf_name} : {cf_name} ≤ 1 := by rw [e_{cf_name}]; decide")
-                if group[1][0]["name"] not in context.ren:
-                    context.ren[group[1][0]["name"]] = cf_name
-                context.bnd[cf_name] = f"b_{cf_name}"
-                context.unit_bound.add(cf_name)
-            if group_live[2]:
-                context.eq(of_name, "0")
-                context.lines.append(f"  have b_{of_name} : {of_name} ≤ 1 := by rw [e_{of_name}]; decide")
-                if group[2][0]["name"] not in context.ren:
-                    context.ren[group[2][0]["name"]] = of_name
-                context.bnd[of_name] = f"b_{of_name}"
-                context.unit_bound.add(of_name)
-            context.consumed = sum(group_live)
+            context.eq(data_name, "0")
+            context.lines.append(
+                f"  have b_{data_name} : {data_name} < 2^64 := by rw [e_{data_name}]; decide"
+            )
+            context.ren[group[0][0]["name"]] = data_name
+            context.bnd[data_name] = f"b_{data_name}"
+            for flag, member in ((cf_name, group[1][0]), (of_name, group[2][0])):
+                context.eq(flag, "0")
+                context.lines.append(f"  have b_{flag} : {flag} ≤ 1 := by rw [e_{flag}]; decide")
+                context.ren[member["name"]] = flag
+                context.bnd[flag] = f"b_{flag}"
+                context.unit_bound.add(flag)
             return True
         return False
 

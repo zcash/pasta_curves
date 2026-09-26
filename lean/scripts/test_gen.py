@@ -470,7 +470,6 @@ class SharedGeneratorTests(unittest.TestCase):
         )
         self.assertTrue(any(entry.get("group_fact", entry["fact"])[0] == "x86_mulx"
                             for entry in x86_prepared.entries))
-        self.assertTrue(any(x86_prepared.history))
 
     def test_shared_skeleton_has_no_architecture_dispatch_or_isa_fact_rules(self):
         source = gen.Path(gen.__file__).read_text()
@@ -510,19 +509,33 @@ class SharedGeneratorTests(unittest.TestCase):
             retained.render(["result"]),
         )
 
-    def test_x86_skeleton_matches_lift_lets_cse_and_retained_instruction_lets(self):
+    def test_x86_skeleton_extracts_every_retained_instruction_let(self):
         routines = {routine.name: routine for routine in gen_x86_64.all_routines()}
+        # Every retained binding is extracted exactly once, equal values included (the three
+        # zeros of an `xor r, r`, a repeated `mov` from `rdx`), since merging is off.
+        for name in ("squareLo", "mulMont", "fromMont"):
+            with self.subTest(routine=name):
+                routine = routines[name]
+                prepared = gen_x86_64.SKELETON_BACKEND.prepare(
+                    routine.emitter, routine.emitter.entries
+                )
+                extracted, current = [], None
+                for line in gen.skeleton(routine):
+                    if line.startswith("  extract_lets -merge +onlyGivenNames "):
+                        current = line[len("  extract_lets -merge +onlyGivenNames "):]
+                    elif current is not None:
+                        current += " " + line.strip()
+                    if current is not None and current.endswith(" at hr"):
+                        extracted += current[:-len(" at hr")].split()
+                        current = None
+                self.assertEqual(sorted(extracted), sorted(prepared.names))
+                self.assertEqual(len(extracted), len(set(extracted)))
         square_lo = "\n".join(gen.skeleton(routines["squareLo"]))
-        self.assertEqual(square_lo.count("extract_lets +onlyGivenNames z5 at hr"), 1)
-        self.assertNotIn("extract_lets +onlyGivenNames z6 at hr", square_lo)
-        self.assertNotIn("extract_lets +onlyGivenNames z7 at hr", square_lo)
-        self.assertNotIn("have e_cf : cf = 0 := rfl", square_lo)
-        self.assertNotIn("have e_ofl : ofl = 0 := rfl", square_lo)
-        self.assertIn("extract_lets +onlyGivenNames s_2 z4_1 cf_5 at hr", square_lo)
+        self.assertIn("extract_lets -merge +onlyGivenNames s_2 z4_1 cf_5 at hr", square_lo)
         self.assertNotIn("obtain ⟨cf_5, b_cf_5, l_z4_1⟩", square_lo)
 
         from_mont = "\n".join(gen.skeleton(routines["fromMont"]))
-        self.assertIn("extract_lets +onlyGivenNames n z0_1 cf at hr", from_mont)
+        self.assertIn("extract_lets -merge +onlyGivenNames n z0_1 cf at hr", from_mont)
         self.assertIn("have e_z0_1 : z0_1 = (neg z0).1 := rfl", from_mont)
         self.assertIn("have e_cf : cf = (neg z0).2 := rfl", from_mont)
 

@@ -450,7 +450,7 @@ class SkeletonBackend(gen.SkeletonBackend):
             entries[i]["group_label"] = names[i + 1]
             entries[i]["dead_carry"] = dead_carry
             i += group_count
-        return gen.SkeletonPreparation(entries, names, history=[()] * len(entries))
+        return gen.SkeletonPreparation(entries, names)
 
     def fact(self, kind, ops, context):
         if kind in ("adds", "subs"):

@@ -19,8 +19,10 @@ register the block reads was written by the block or bound by an operand.
 
 AArch64 omits bindings that nothing later reads: unused operands are left as comments,
 unused carry writes are dropped, and unused computed registers are reported as errors.
-x86-64 retains architectural results, including dead flag writes; proof skeletons account
-for Lean's sharing of equal let values when extracting that stream.
+x86-64 retains architectural results, including dead flag writes.
+
+For both architectures, the proof skeletons lift and extract the `let`s with merging off, so
+every binding is its own `let`, equal values or not.
 
 Run from the repository root:
 
@@ -257,7 +259,7 @@ class SkeletonBackend:
     """Hooks for ISA-specific proof grouping and facts in the shared skeleton traversal."""
 
     def prepare(self, emitter, entries):
-        return SkeletonPreparation(entries, ssa_names(entries), history=[()] * len(entries))
+        return SkeletonPreparation(entries, ssa_names(entries))
 
     def fact(self, kind, ops, context):
         return False
@@ -266,54 +268,24 @@ class SkeletonBackend:
 class SkeletonPreparation:
     """The entries and backend-selected grouping metadata consumed by the shared traversal."""
 
-    def __init__(self, entries, names, *, zero_names=(), history=()):
+    def __init__(self, entries, names):
         self.entries = entries
         self.names = names
-        self.zero_names = set(zero_names)
-        self.history = list(history)
-
-
-def normalize_equal_lets(entries):
-    """Mirror ``lift_lets`` CSE by canonicalizing expressions through current definitions."""
-    names = ssa_names(entries)
-    keep = [True] * len(entries)
-    representatives = list(range(len(entries)))
-    normalized_expressions = [None] * len(entries)
-    current_definitions = {}
-    canonical_expressions = {}
-    for index, entry in enumerate(entries):
-        expression = entry["expr"]
-        for read in sorted(entry["reads"], key=len, reverse=True):
-            representative = current_definitions.get(read)
-            replacement = f"@{representative}" if representative is not None else f"${read}"
-            expression = re.sub(
-                rf"(?<![A-Za-z0-9_']){re.escape(read)}(?![A-Za-z0-9_'])",
-                replacement,
-                expression,
-            )
-        normalized_expressions[index] = expression
-        if expression in canonical_expressions:
-            keep[index] = False
-            representatives[index] = canonical_expressions[expression]
-        else:
-            canonical_expressions[expression] = index
-        current_definitions[entry["name"]] = representatives[index]
-    return names, keep, representatives, normalized_expressions
 
 
 class SkeletonFactContext:
     """Shared skeleton state exposed narrowly to an ISA backend's fact hook."""
 
     def __init__(self, entries, names, index, entry, name, group_entries, group_names,
-                 group_live, lines, eq, lt64, le1, ren, bnd, unit_bound):
+                 lines, eq, lt64, le1, ren, bnd, unit_bound, consumed):
         self.entries, self.names, self.index = entries, names, index
         self.entry, self.name = entry, name
         self.group_entries = group_entries
-        self.group_names, self.group_live = group_names, group_live
+        self.group_names = group_names
         self.lines, self.eq = lines, eq
         self.lt64, self.le1 = lt64, le1
         self.ren, self.bnd, self.unit_bound = ren, bnd, unit_bound
-        self.consumed = 1
+        self.consumed = consumed
 
 
 def wrap_tactic(head, words, tail, indent="  "):
@@ -362,10 +334,9 @@ def skeleton(routine):
     bnd = {}  # SSA name -> the fact bounding it below 2^64 (registers) or by 1 (carries)
     narrow = set()  # `lsr` results, whose bound is below 2^64 and needs weakening
     unit_bound = set()
-    zero_names = prepared.zero_names
     out = [f"  -- generated skeleton for `{routine.name}`: do not edit between the annotations",
-           f"  unfold {routine.name} at hr", "  lift_lets at hr"]
-    products, shifts = {}, {}
+           f"  unfold {routine.name} at hr", "  lift_lets -merge at hr"]
+    products = {}
     eqs = []      # the current group's `have e_... := rfl` lines
 
     def r(op):  # operand as written in the entry, renamed to its SSA name at that point
@@ -391,10 +362,6 @@ def skeleton(routine):
     def le1(op):  # a proof that the carry operand is at most 1
         if re.fullmatch(r"[0-9]+", op):
             return "(by decide)"
-        if op in unit_bound:
-            return bnd[op]
-        if op in zero_names:
-            return f"(by rw [e_{op}]; decide)"
         return bnd[op]
 
     def eq(nm, rhs):
@@ -403,24 +370,21 @@ def skeleton(routine):
     i = 0
     while i < len(entries):
         en, nm = entries[i], names[i]
-        for name, proof_name in prepared.history[i]:
-            ren[name] = proof_name
         kind, *ops = en.get("group_fact", en["fact"])
         if kind not in ("call", "callout", "load", "param"):
             ops = [r(o) if isinstance(o, str) else o for o in ops]
         # The group's marker: the register it writes, then the instruction. Annotation blocks
         # are placed after the group they name. Backend metadata groups ISA instructions that
-        # produce several bindings, including any ghost result omitted by equal-let sharing.
+        # produce several bindings; a member not marked as kept (a proof-only wrapper) has a
+        # name and facts but no `let` to extract.
         group_entries = en.get("group")
         if group_entries:
             group = [group_name for _, group_name, keep in group_entries if keep]
             group_names = [group_name for _, group_name, _ in group_entries]
-            group_live = [keep for _, _, keep in group_entries]
             nm = group_names[0]
         else:
             group = [nm]
             group_names = group
-            group_live = [True]
         label = en.get("group_label", nm)
         eqs, lines = [], []
         # Every step records only facts `omega` handles cheaply later: linear equations, bounds,
@@ -428,8 +392,8 @@ def skeleton(routine):
         # those facts, and cleared.
         fact_context = SkeletonFactContext(
             entries, names, i, en, nm,
-            group_entries or [(en, nm, True)], group_names, group_live,
-            lines, eq, lt64, le1, ren, bnd, unit_bound,
+            group_entries or [(en, nm, True)], group_names,
+            lines, eq, lt64, le1, ren, bnd, unit_bound, len(group),
         )
 
         if backend.fact(kind, ops, fact_context):
@@ -482,11 +446,17 @@ def skeleton(routine):
                 lines.append(f"      by rw [e_{nm}]; exact Nat.mod_add_div _ _⟩")
                 lines.append(f"  clear e_{nm}")
         elif kind == "lsl":
+            # No pairing with the matching `lsr`: the split fact is stated here, with the
+            # high part as `a / 2^(64 - k)`, and the `lsr`'s equation is kept, so that `omega`
+            # connects the two, through a `mov` copy's equation if there is one.
             a, k = ops
+            if k != 62:
+                raise ValueError(f"lsl by {k}: add a lemma to the spec preamble")
             eq(nm, f"{a} * 2^{k} % 2^64")
             lines.append(f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact Nat.mod_lt _ (Nat.two_pow_pos _)")
+            lines.append(f"  have sh_{nm} : {nm} + 2^64 * ({a} / 2^2) = {a} * 2^62 := by")
+            lines.append(f"    rw [e_{nm}]; exact lsl62_lsr2_split _")
             bnd[nm] = f"b_{nm}"
-            shifts[(a, k)] = nm
         elif kind == "lsr":
             a, k = ops
             eq(nm, f"{a} / 2^{k}")
@@ -494,13 +464,6 @@ def skeleton(routine):
             lines.append(f"    rw [e_{nm}]; exact Nat.div_lt_of_lt_mul (lt_of_lt_of_eq {lt64(a)} (by norm_num))")
             bnd[nm] = f"b_{nm}"
             narrow.add(nm)
-            if (a, 64 - k) in shifts:
-                lo = shifts.pop((a, 64 - k))
-                if k != 2:
-                    raise ValueError(f"lsl/lsr split by {64 - k}/{k}: add a lemma to the spec preamble")
-                lines.append(f"  have sh_{nm} : {lo} + 2^64 * {nm} = {a} * 2^{64 - k} := by")
-                lines.append(f"    rw [e_{lo}, e_{nm}]; exact lsl62_lsr2_split _")
-                lines.append(f"  clear e_{lo} e_{nm}")
         elif kind == "adc":
             a, b, cin = ops
             eq(nm, f"({a} + {b} + {cin}) % 2^64")
@@ -530,7 +493,7 @@ def skeleton(routine):
         if not group_entries:
             ren[en["name"]] = nm
         out.append(f"  -- {label}: {group_entries[0][0]['comment'] if group_entries else en['comment']}")
-        out += wrap_tactic("extract_lets +onlyGivenNames", group, " at hr")
+        out += wrap_tactic("extract_lets -merge +onlyGivenNames", group, " at hr")
         out += eqs
         out.append(f"  clear_value {' '.join(group)}")
         out += lines
