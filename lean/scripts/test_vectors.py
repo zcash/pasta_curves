@@ -54,17 +54,15 @@ class SharedVectorTests(unittest.TestCase):
         self.assertEqual(gen.OUT_VECTORS.read_text(), self.generated)
 
     def test_generated_file_holds_every_in_contract_vector_once(self):
-        # Each entry opens with its field, after its index comment.
+        # Each entry opens with its index and its field.
         lists = self.generated.split("\ndef ")[1:]
-        entries = {
-            block.split(" ", 1)[0]: block.count("\n  (pallasBase,") + block.count("\n  (vestaBase,")
-            for block in lists
-        }
-        self.assertEqual(entries, {"mulVectors": 806, "sqrVectors": 34, "fromVectors": 34})
+        entries = {}
         for block in lists:
-            indices = [int(line.split("-- ", 1)[1]) for line in block.splitlines()
-                       if line.startswith("  -- ")]
+            indices = [int(line[3:].split(",", 1)[0]) for line in block.splitlines()
+                       if line.startswith("  (") and line.endswith("Base,")]
             self.assertEqual(indices, list(range(len(indices))))
+            entries[block.split(" ", 1)[0]] = len(indices)
+        self.assertEqual(entries, {"mulVectors": 806, "sqrVectors": 34, "fromVectors": 34})
         self.assertIn(
             "-- 874 vectors; omitted as outside the public contracts: 180 MUL.",
             self.generated,

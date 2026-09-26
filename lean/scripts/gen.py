@@ -232,12 +232,11 @@ edit by hand. Each vector is the output of the real AArch64 assembly (Semolina's
 operands. Each backend's `Vectors.lean` checks its transcription against them through
 `VectorCheck.lean`. The vectors file also records the routines' outputs on operands outside the
 public contracts (multiplications with unreduced operands), where the block's dropped fifth limb
-can change the result; those are left out here, with their number recorded at the end. The
-entries are numbered, so that a reported failure is easy to find.
+can change the result; those are left out here, with their number recorded at the end.
 
-The fields are `pallasBase` and `vestaBase` from `Fields.lean`, the crate's constants for its
-`Fp` (the Pallas base field) and `Fq` (the Vesta base field); each entry gives its field, the
-operands, and the expected result.
+Each entry gives its index in its list, which a reported failure names, its field, the operands,
+and the expected result. The fields are `pallasBase` and `vestaBase` from `Fields.lean`, the
+crate's constants for its `Fp` (the Pallas base field) and `Fq` (the Vesta base field).
 -/
 
 namespace PastaAsm
@@ -246,14 +245,14 @@ namespace PastaAsm
 
 # The generated lists, by the corpus's routine key: the Lean name, its type, and its docstring.
 VECTOR_LISTS = {
-    "MUL": ("mulVectors", "List (PastaField × Limbs × Limbs × Limbs)",
-            "The multiplication vectors inside the public contract: the field, `lhs`, `rhs`, and "
-            "the expected result."),
-    "SQR": ("sqrVectors", "List (PastaField × Limbs × Limbs)",
-            "The squaring vectors, all of them canonical inputs: the field, the input, and the "
-            "expected result."),
-    "FROM": ("fromVectors", "List (PastaField × Limbs × Limbs)",
-             "The conversion vectors: the field, the input, and the expected result."),
+    "MUL": ("mulVectors", "List (Nat × PastaField × Limbs × Limbs × Limbs)",
+            "The multiplication vectors inside the public contract: the index, the field, `lhs`, "
+            "`rhs`, and the expected result."),
+    "SQR": ("sqrVectors", "List (Nat × PastaField × Limbs × Limbs)",
+            "The squaring vectors, all of them canonical inputs: the index, the field, the input, "
+            "and the expected result."),
+    "FROM": ("fromVectors", "List (Nat × PastaField × Limbs × Limbs)",
+             "The conversion vectors: the index, the field, the input, and the expected result."),
 }
 
 
@@ -272,7 +271,7 @@ def render_vector_data(lines):
         out.append(f"{docstring(doc)}\ndef {name} : {type_} := [\n")
         for i, (field, operands, r) in enumerate(rows[op]):
             # One value per line keeps every line within the repository's width.
-            out.append(f"  -- {i}\n  ({field},\n")
+            out.append(f"  ({i}, {field},\n")
             for v in operands:
                 out.append(f"    Limbs.ofNat 0x{v},\n")
             out.append(f"    Limbs.ofNat 0x{r}),\n")

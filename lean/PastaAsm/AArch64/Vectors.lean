@@ -9,8 +9,8 @@ import PastaAsm.VectorCheck
 # The AArch64 blocks on the reference vectors
 
 Each vector in `Vectors.lean` is the output of the real assembly (Semolina's `mul_mont_pasta`,
-`sqr_mont_pasta`, and `from_mont_pasta`) on its operands, and the check below asks the kernel
-to evaluate the transcription on the same operands. The multiplication and squaring vectors
+`sqr_mont_pasta`, and `from_mont_pasta`) on its operands, and the theorem below has the kernel
+evaluate the transcription on the same operands. The multiplication and squaring vectors
 exercise the inline blocks, which transcribe those routines; the conversion vectors exercise
 `fromMont`, the multiplication block with `1` as its right operand, as the crate composes it.
 -/
@@ -20,10 +20,13 @@ namespace PastaAsm.AArch64
 /-- The AArch64 routines that the vectors exercise. -/
 def vectorBackend : VectorBackend := ⟨mulMont, sqrMont, fromMont⟩
 
--- The kernel checks that every vector is reproduced; the evaluation under `#guard_msgs` names
--- the vectors that fail, should any.
-example : vectorBackend.failures = ([], [], []) := by decide +kernel
+/-- The AArch64 blocks reproduce every reference vector. -/
+theorem vectors_reproduced : vectorBackend.failures = ([], [], []) :=
+  vectorBackend.failures_eq_nil
+    (by intro k hk; unfold pieces at hk; interval_cases k <;> decide +kernel)
+    (by decide +kernel) (by decide +kernel)
 
+-- The evaluation names the vectors that fail, should any.
 /-- info: ([], [], []) -/
 #guard_msgs in
 #eval vectorBackend.failures
