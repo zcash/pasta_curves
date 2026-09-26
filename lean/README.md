@@ -64,8 +64,8 @@ What is trusted, beyond Lean's kernel and standard axioms:
    operand declarations; CI regenerates and diffs.
 3. The Rust mirrored in `PastaAsm/AArch64/Compositions.lean` and `PastaAsm/X86_64/Compositions.lean`:
    the compositions `sqr_n_mul` and `from_mont`; and in `PastaAsm/Compositions.lean`: the shared
-   limb comparison `is_canonical` and the condition that `mul` asserts. A few lines each, checked
-   by inspection.
+   canonicity check `is_canonical` and the condition `mul_contract` that `mul` asserts. A few
+   lines each, checked by inspection.
 4. The reference vectors: outputs of the real assembly on an Apple M-series machine, at
    pasta_curves commit `8ad85e9fab7929f6236960e472f432a4bd9ccd74`, embedded as kernel-checked
    examples (`decide +kernel`). These are concrete closed facts that any independent run of

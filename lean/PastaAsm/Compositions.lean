@@ -8,21 +8,21 @@ import Mathlib.Tactic.Ring
 /-!
 # The crate's Rust around the blocks
 
-`src/asm/mod.rs`, in a debug build, checks the operand contracts of `mul` and `square` before entering
-the blocks. These definitions mirror that Rust: the limb comparison `is_canonical`, and the
-condition that `mul` asserts.
+`src/asm/entry.rs`, in a debug build, checks the operand contracts of `mul` and `square` before
+entering the blocks. These definitions mirror that Rust: the canonicity check `is_canonical`,
+a borrow chain, and the condition `mul_contract` that `mul` asserts.
 -/
 
 namespace PastaAsm
 
-/-- The crate's `is_canonical`: whether `value < modulus`, comparing the limbs from the most
-significant down, as `src/asm/mod.rs` does. -/
+/-- The crate's `is_canonical`: whether `value < modulus`, as the borrow out of the four-limb
+subtraction `value - modulus`, limb by limb from the least significant, as `src/asm/entry.rs`
+computes it. A limb borrows when it is below the other limb plus the borrow in. -/
 def isCanonical (value modulus : Limbs) : Bool :=
-  if value.l3 ≠ modulus.l3 then decide (value.l3 < modulus.l3)
-  else if value.l2 ≠ modulus.l2 then decide (value.l2 < modulus.l2)
-  else if value.l1 ≠ modulus.l1 then decide (value.l1 < modulus.l1)
-  else if value.l0 ≠ modulus.l0 then decide (value.l0 < modulus.l0)
-  else false
+  let borrow0 := if value.l0 < modulus.l0 then 1 else 0
+  let borrow1 := if value.l1 < modulus.l1 + borrow0 then 1 else 0
+  let borrow2 := if value.l2 < modulus.l2 + borrow1 then 1 else 0
+  decide (value.l3 < modulus.l3 + borrow2)
 
 /-- `isCanonical` decides `value < modulus` on four-limb values. -/
 theorem isCanonical_iff (value modulus : Limbs) (hv : value.Bounded) (hm : modulus.Bounded) :
@@ -30,10 +30,11 @@ theorem isCanonical_iff (value modulus : Limbs) (hv : value.Bounded) (hm : modul
   obtain ⟨hv0, hv1, hv2, hv3⟩ := hv
   obtain ⟨hm0, hm1, hm2, hm3⟩ := hm
   unfold isCanonical Limbs.toNat
-  split_ifs <;> simp only [decide_eq_true_iff, false_iff, not_lt] <;> omega
+  simp only [decide_eq_true_iff]
+  split_ifs <;> omega
 
-/-- The condition that the crate's `mul` asserts in a debug build: a canonical `lhs`, or a
-canonical `rhs` whose limbs 1 to 3 are at most `2^64 - 3`. -/
+/-- The crate's `mul_contract`, the condition that `mul` asserts in a debug build: a canonical
+`lhs`, or a canonical `rhs` whose limbs 1 to 3 are at most `2^64 - 3`. -/
 def mulContract (lhs rhs modulus : Limbs) : Bool :=
   isCanonical lhs modulus ||
     (isCanonical rhs modulus &&

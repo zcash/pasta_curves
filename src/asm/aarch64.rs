@@ -25,7 +25,7 @@
 
 use core::arch::asm;
 
-use super::{Limbs, is_canonical};
+use super::{Limbs, is_canonical, mul_contract};
 
 /// Adds two residues for a Pasta modulus and conditionally subtracts the modulus.
 ///
@@ -167,8 +167,7 @@ pub(super) fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 #[inline(always)]
 pub(crate) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     debug_assert!(
-        is_canonical(lhs, modulus)
-            || (is_canonical(rhs, modulus) && rhs[1..].iter().all(|&limb| limb <= u64::MAX - 2)),
+        mul_contract(lhs, rhs, modulus),
         "pasta_curves::asm::mul requires a canonical lhs, or a canonical rhs with limbs 1 to 3 \
          at most 2^64 - 3"
     );

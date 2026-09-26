@@ -39,6 +39,14 @@ it does not. `pasta_curves::BACKEND` names the result, for diagnostics.
 Nothing is assembled at build time: the blocks are compiled by the Rust toolchain, so no C
 toolchain is needed, and the module adds no dependency.
 
+The blocks have no data-dependent branch or memory access, and a release build runs nothing
+else, so the routines' timing does not depend on their operands. A debug build also runs the
+assertions' checks, and debug mode carries no constant-time guarantee. The checks are written
+without data-dependent branches, and pass their words through `core::hint::black_box`, as
+`subtle` does. An inspection of the output of one toolchain (AArch64, Rust 1.96.1) found
+only the assertions' own branches left, but that is best effort, which the compiler owes
+nothing to.
+
 Field elements and moduli are `[u64; 4]`, least significant limb first, and `inv` is
 `-modulus[0]^-1 mod 2^64`. The routines take the modulus and `inv` as arguments, so one
 implementation serves both fields, but they rely on the shape the two Pasta moduli share:

@@ -3,19 +3,44 @@
 
 //! The module's entry points, re-exported at its root.
 
+use core::hint::black_box;
+
 /// Four little-endian 64-bit limbs, least significant first: a field element
 /// (in Montgomery form, or canonical after [`from_mont`]) or a modulus.
 pub type Limbs = [u64; 4];
 
-/// Whether `value < modulus` as little-endian 256-bit integers.
+/// `1` when `value < modulus` as little-endian 256-bit integers, else `0`: the borrow out of
+/// the four-limb subtraction `value - modulus`, computed limb by limb. The debug assertions
+/// must leave the routines' timing as it is, so the check has no data-dependent branch, and
+/// each borrow passes through [`black_box`], the barrier that `subtle` uses, which keeps the
+/// optimizer from turning the chain or its callers' combinations back into branches: an
+/// opaque word can only be combined arithmetically.
+#[inline(always)]
+fn is_canonical_word(value: &Limbs, modulus: &Limbs) -> u64 {
+    let mut borrow = 0;
+    for (v, m) in value.iter().zip(modulus) {
+        let (difference, underflow) = v.overflowing_sub(*m);
+        let (_, borrow_underflow) = difference.overflowing_sub(borrow);
+        borrow = black_box(u64::from(underflow | borrow_underflow));
+    }
+    borrow
+}
+
+/// Whether `value < modulus` as little-endian 256-bit integers; see [`is_canonical_word`].
 #[inline(always)]
 pub(crate) fn is_canonical(value: &Limbs, modulus: &Limbs) -> bool {
-    for i in (0..4).rev() {
-        if value[i] != modulus[i] {
-            return value[i] < modulus[i];
-        }
-    }
-    false
+    is_canonical_word(value, modulus) == 1
+}
+
+/// The condition that `mul` asserts: a canonical `lhs`, or a canonical `rhs` whose limbs 1 to 3
+/// are at most `2^64 - 3`, combined as opaque words (see [`is_canonical_word`]) so that the
+/// check runs the same instructions whatever the operands.
+#[inline(always)]
+pub(crate) fn mul_contract(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> bool {
+    let rhs_limbs_ok = black_box(u64::from(rhs[1] <= u64::MAX - 2))
+        & black_box(u64::from(rhs[2] <= u64::MAX - 2))
+        & black_box(u64::from(rhs[3] <= u64::MAX - 2));
+    (is_canonical_word(lhs, modulus) | (is_canonical_word(rhs, modulus) & rhs_limbs_ok)) == 1
 }
 
 /// Adds two residues for a Pasta modulus and conditionally subtracts the modulus.
@@ -99,8 +124,7 @@ pub fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 #[inline(always)]
 pub fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     debug_assert!(
-        is_canonical(lhs, modulus)
-            || (is_canonical(rhs, modulus) && rhs[1..].iter().all(|&limb| limb <= u64::MAX - 2)),
+        mul_contract(lhs, rhs, modulus),
         "pasta_curves::asm::mul requires a canonical lhs, or a canonical rhs with limbs 1 to 3 \
          at most 2^64 - 3"
     );

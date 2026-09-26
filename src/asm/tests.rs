@@ -12,6 +12,22 @@ use super::{Limbs, add, from_mont, sub};
 
 use super::{mul, sqr_n_mul, square};
 
+/// The borrow chain of `is_canonical` decides `value < modulus` at the limb boundaries.
+#[test]
+fn is_canonical_borrow_chain() {
+    let m = [5, 0, 0, 7];
+    assert!(super::is_canonical(&[4, 0, 0, 7], &m));
+    assert!(!super::is_canonical(&m, &m));
+    assert!(!super::is_canonical(&[6, 0, 0, 7], &m));
+    // A borrow out of the low limbs is absorbed by a larger top limb, and forced by a smaller one.
+    assert!(super::is_canonical(&[u64::MAX, u64::MAX, u64::MAX, 6], &m));
+    assert!(!super::is_canonical(&[0, 0, 0, 8], &m));
+    // A middle limb decides when the top limbs agree.
+    assert!(!super::is_canonical(&[0, 1, 0, 7], &m));
+    assert!(super::is_canonical(&[u64::MAX, 0, 0, 6], &m));
+    assert!(super::is_canonical(&[0, 0, 0, 0], &m));
+}
+
 /// One field's constants and known answers.
 struct Field {
     modulus: Limbs,
