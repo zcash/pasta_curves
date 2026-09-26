@@ -50,6 +50,17 @@ jobs:
             echo "$out"
             echo "$out" | grep -q "^test result: ok. $expected passed"
           done
+      - name: With the assembly disabled, the crate's tests pass and the backend has none to run
+        shell: bash
+        env:
+          RUSTFLAGS: --cfg pasta_curves_noasm
+        run: |
+          cargo build --verbose --all-features
+          for profile in "" --release; do
+            out=$(cargo test $profile --all-features 2>&1)
+            echo "$out"
+            ! printf '%s\n' "$out" | grep -E '^test asm::'
+          done
       - name: Verify working directory is clean
         run: git diff --exit-code
 

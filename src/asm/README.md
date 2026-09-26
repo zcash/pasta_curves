@@ -25,9 +25,18 @@ The module provides a backend for `target_arch = "aarch64"` and, in part, for
 needs BMI2 for `from_mont`). `mul`, `square`, and the routines built on them read limbs through
 pointers and so require 64-bit pointers, plus MULX and ADCX/ADOX (BMI2 and ADX: Intel Broadwell
 / AMD Zen or newer). Apple x86-64 targets are excluded altogether: they reserve `rbp`, and so
-have fewer available registers than the squaring blocks need. Elsewhere the `asm` module is
-absent. Nothing is assembled at build time: the blocks are compiled by the Rust toolchain, so no
-C toolchain is needed, and the module adds no dependency.
+have fewer available registers than the squaring blocks need.
+
+On every other target the module has no backend. The same holds on any target when the compiler
+is passed `--cfg pasta_curves_noasm` (through `RUSTFLAGS`, or `rustflags` in
+`.cargo/config.toml`), which is how to build for old x86-64 CPUs without BMI2 and ADX. Code that
+uses the backend declares its uses under `if_asm_supported!` and its portable fallback under
+`if_asm_unsupported!`; the first expands to its items exactly where the module has a backend,
+and the second exactly where it does not. `pasta_curves::BACKEND` names the result, for
+diagnostics.
+
+Nothing is assembled at build time: the blocks are compiled by the Rust toolchain, so no C
+toolchain is needed, and the module adds no dependency.
 
 Field elements and moduli are `[u64; 4]`, least significant limb first, and `inv` is
 `-modulus[0]^-1 mod 2^64`. The routines take the modulus and `inv` as arguments, so one

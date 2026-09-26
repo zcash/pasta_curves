@@ -31,6 +31,16 @@ for features in --all-features --no-default-features; do
   cargo test --release $features
 done
 
+step "with the assembly disabled, the tests pass and the backend has none to run"
+for profile in "" --release; do
+  out=$(RUSTFLAGS="--cfg pasta_curves_noasm" cargo test $profile --all-features 2>&1) ||
+    { echo "$out"; exit 1; }
+  if printf '%s\n' "$out" | grep -E '^test asm::'; then
+    echo "backend tests ran with the assembly disabled"
+    exit 1
+  fi
+done
+
 step "the build and the tests changed no tracked file"
 test "$before" = "$(git status --porcelain)"
 

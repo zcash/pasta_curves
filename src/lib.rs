@@ -16,20 +16,16 @@ extern crate alloc;
 #[macro_use]
 extern crate std;
 
+// The assembly backends, and the `if_asm_supported!` and `if_asm_unsupported!` macros that gate
+// code on them; declared first so that the macros are in scope in the modules below.
+#[macro_use]
+mod asm;
+pub use asm::BACKEND;
+
 #[macro_use]
 mod macros;
 mod curves;
 mod fields;
-
-// We cannot build the assembly on Apple x86-64 targets because they reserve `rbp`, and so have
-// fewer available registers than the squaring blocks need. So the module is absent on those
-// targets, as on every other target without a backend.
-#[cfg(any(
-    target_arch = "aarch64",
-    all(target_arch = "x86_64", not(target_vendor = "apple")),
-    doc
-))]
-mod asm;
 
 pub mod arithmetic;
 #[cfg(feature = "deferred")]
@@ -63,4 +59,24 @@ fn test_endo_consistency() {
     assert_eq!(a * pallas::Scalar::ZETA, a.endo());
     let a = vesta::Point::generator();
     assert_eq!(a * vesta::Scalar::ZETA, a.endo());
+}
+
+#[test]
+fn backend_name() {
+    // The backend's condition, restated: the target, and the absence of the opt-out flag.
+    let supported = cfg!(all(
+        not(pasta_curves_noasm),
+        any(
+            target_arch = "aarch64",
+            all(target_arch = "x86_64", not(target_vendor = "apple"))
+        )
+    ));
+    let expected = if !supported {
+        "portable"
+    } else if cfg!(target_arch = "aarch64") {
+        "aarch64"
+    } else {
+        "x86-64"
+    };
+    assert_eq!(BACKEND, expected);
 }
