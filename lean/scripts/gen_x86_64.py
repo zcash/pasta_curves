@@ -911,16 +911,6 @@ def gen_program(source: Optional[str] = None) -> str:
     ) + FOOTER
 
 
-def in_contract(op: str, field: str, operands: Sequence[int]) -> bool:
-    """Whether a row satisfies both the public and x86-64 backend assertions."""
-    if not gen.in_public_contract(op, field, operands):
-        return False
-    # Unlike AArch64, the x86-64 multiplication backend itself additionally
-    # debug-asserts a canonical rhs, even when the public contract accepted a
-    # canonical lhs with an arbitrary rhs.
-    return op != "MUL" or gen.is_canonical(field, operands[1])
-
-
 def gen_vectors(lines: Sequence[str]) -> str:
     """Generate x86-64 checks from the AArch64 hardware vector corpus."""
     return gen.render_vectors(
@@ -940,9 +930,9 @@ operands, not captures from x86-64 hardware.
 The multiplication examples exercise the standalone `mulMont` block. The squaring examples
 exercise `sqrMont`, the Rust composition `squareHi (squareLo value)`. The conversion examples
 exercise x86-64's standalone `fromMont` assembly block, rather than AArch64's multiplication
-by one composition. A row is retained only when it satisfies both the public entry point's
-contract and the backend called by that entry point. In particular, the x86-64 `mul` backend
-additionally requires a canonical right operand; omitted rows are counted at the end.
+by one composition. A row is retained only when it satisfies the public entry point's
+contract, which the x86-64 backends assert as the AArch64 ones do; omitted rows are counted
+at the end.
 
 The modulus limbs and `inv` are `pallasBase` and `vestaBase` from `Fields.lean`, the crate's
 constants for its `Fp` (the Pallas base field) and `Fq` (the Vesta base field).
@@ -952,8 +942,8 @@ namespace PastaAsm.X86_64
 
 """,
         namespace="PastaAsm.X86_64",
-        in_contract=in_contract,
-        omission_scope="the combined public and x86-64 backend contracts",
+        in_contract=gen.in_public_contract,
+        omission_scope="the public contracts",
     )
 
 

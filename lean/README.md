@@ -13,12 +13,10 @@ including all four cancellation steps and the final conditional subtraction.
 `X86_64/Spec/Mul.lean` proves Montgomery multiplication under both public operand contracts,
 using mechanically factored internal rounds. The repeated-squaring-and-multiplication and
 field-entry theorems are also proven. `X86_64/Spec.lean` exposes the completed block proofs;
-`Compositions.lean` mirrors Rust. `X86_64/Vectors.lean` contains 740 generated cross-backend
+`Compositions.lean` mirrors Rust. `X86_64/Vectors.lean` contains 874 generated cross-backend
 checks against the existing AArch64 hardware corpus, not x86 hardware captures. Both fields are
-covered. Of the 312 excluded multiplication vectors, 180 fail the public contract and another
-132 fail the x86 backend's additional canonical-rhs assertion. The Rust replay test excludes
-the same 132 vectors on x86-64 and checks, in a debug build, that the assertion fires on each
-of them. `Checks.lean` supplies additional kernel-checked arithmetic regressions.
+covered, and the 180 multiplication vectors outside the public contract are omitted, as in the
+AArch64 file. `Checks.lean` supplies additional kernel-checked arithmetic regressions.
 
 Both architectures use `scripts/gen.py`, with shared Rust `asm!` parsing and
 architecture-specific instruction emitters; `--check` compares generated output without

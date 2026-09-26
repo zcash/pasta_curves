@@ -18,9 +18,9 @@ operands, not captures from x86-64 hardware.
 The multiplication examples exercise the standalone `mulMont` block. The squaring examples
 exercise `sqrMont`, the Rust composition `squareHi (squareLo value)`. The conversion examples
 exercise x86-64's standalone `fromMont` assembly block, rather than AArch64's multiplication
-by one composition. A row is retained only when it satisfies both the public entry point's
-contract and the backend called by that entry point. In particular, the x86-64 `mul` backend
-additionally requires a canonical right operand; omitted rows are counted at the end.
+by one composition. A row is retained only when it satisfies the public entry point's
+contract, which the x86-64 backends assert as the AArch64 ones do; omitted rows are counted
+at the end.
 
 The modulus limbs and `inv` are `pallasBase` and `vestaBase` from `Fields.lean`, the crate's
 constants for its `Fp` (the Pallas base field) and `Fq` (the Vesta base field).
@@ -2588,6 +2588,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
       pallasBase.modulus pallasBase.inv =
@@ -2596,8 +2604,32 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x1e0e3b00e1dd872a8f34d6691037659a75a6de91c8d4fcc3c9eda265ac589659) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be41914ad34786d38fffffffd)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be41914ad34786d38fffffffc) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x096d41af7b9cb7147797a99bc3c95d18d7d30dbd8b0de0e78c78ecb30000000f)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x096d41af7b9cb7147797a99bc3c95d1960ed71adb041c555f12db06700000013) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x096d41af7b9cb7147797a99bc3c95d18d7d30dbd8b0de0e78c78ecb30000000f)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x096d41af7b9cb7147797a99bc3c95d1960ed71adb041c555f12db06700000013) := by
   decide +kernel
@@ -2612,8 +2644,24 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x2ae309222d2d9910df8d1014353fd42cf6a68f3b6ac5b1d1f185a5993a9e10f9)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x2175c772b190e1fc67f56678717677141ed3817ddfb7d0ea650cb8e63a9e10ea) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x21f1c4ff1e2278d570cb2996efc89a65ac9fba6a4077fc57cf3f8e8753a769a8) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000000)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x21f1c4ff1e2278d570cb2996efc89a65ac9fba6a4077fc57cf3f8e8753a769a8) := by
   decide +kernel
@@ -2628,6 +2676,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x000000000000000000000000000000000000000000000000ffffffffffffffff)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x31269b682e59de6fd65951678f204af90e79463ab37aa333256c3921cc314cfe) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
       pallasBase.modulus pallasBase.inv =
@@ -2636,8 +2692,40 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0fffffffffffffffffffffffffffffffe64b0d42f906452b4d1e1b4e3fffffff) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000ffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x077feccfbd7a2968ca7fdd5bafc89a66de7613d61bc1496d2e7214c112c9d33e) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x31f1c4ff1e2278d570cb2996efc89a6592eac7ad397e41831c5da9d593a769a7) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x00000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x300000000000000000000000000000003bfb8bb91046b3f04c0f159ec0000002) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x300000000000000000000000000000003bfb8bb91046b3f04c0f159ec0000002) := by
   decide +kernel
@@ -2652,6 +2740,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
       (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
       pallasBase.modulus pallasBase.inv =
@@ -2660,8 +2756,32 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0f34d6691037659a658e27d09f57b09361d98bd07302a6da562caa9a7889e357) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be41914ad34786d38fffffffd)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be41914ac34786d38fffffffd) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
       (Limbs.ofNat 0x096d41af7b9cb7147797a99bc3c95d18d7d30dbd8b0de0e78c78ecb30000000f)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x096d41af7b9cb71500b20d8be8fd41873c87d1718b0de0eb8c78ecb30000000f) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x096d41af7b9cb7147797a99bc3c95d18d7d30dbd8b0de0e78c78ecb30000000f)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x096d41af7b9cb71500b20d8be8fd41873c87d1718b0de0eb8c78ecb30000000f) := by
   decide +kernel
@@ -2676,8 +2796,24 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x2ae309222d2d9910df8d1014353fd42cf6a68f3b6ac5b1d1f185a5993a9e10f9)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x334b5f8669643bf80cc67344575e84274a76531d20471ad21d4a04412910ed4b) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x30cb2996efc89a659a71d82f60a84f6cc06d0d2b964a52414300865287761caa) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000000)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x30cb2996efc89a659a71d82f60a84f6cc06d0d2b964a52414300865287761caa) := by
   decide +kernel
@@ -2692,6 +2828,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x000000000000000000000000000000000000000000000000ffffffffffffffff)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x165951678f204af8f4268bf420a84f6cf243669771939f57a2330c8c46988640) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
       (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
       pallasBase.modulus pallasBase.inv =
@@ -2700,8 +2844,40 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x3fffffffffffffffffffffffffffffffffffffffffffffffc000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000ffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0a7fdd5bafc89a65da71d82f60a84f6dabeacec71862cbc511e964da0a175a5c) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x30cb2996efc89a659a71d82f60a84f6c9e26742f8cfd592569d3556587761ca9) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
       (Limbs.ofNat 0x00000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x00000000000000000000000000000000224698fc094cf91bd92d30ed00000001) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x00000000000000000000000000000000224698fc094cf91bd92d30ed00000001) := by
   decide +kernel
@@ -2716,6 +2892,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
       pallasBase.modulus pallasBase.inv =
@@ -2724,8 +2908,32 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x37c2eec5a1dd872acf34d6691037659a836b3929543a6f633203b1da2ef9d40c) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be41914ad34786d38fffffffd)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x3ffffffffffffffeffffffffffffffff992c350be41914ad34786d38fffffffc) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x096d41af7b9cb7147797a99bc3c95d18d7d30dbd8b0de0e78c78ecb30000000f)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x2e2205637b9cb7182e2a67ec482ca604fcfe4d7d773c0e0beec288616b306e5a) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x096d41af7b9cb7147797a99bc3c95d18d7d30dbd8b0de0e78c78ecb30000000f)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x2e2205637b9cb7182e2a67ec482ca604fcfe4d7d773c0e0beec288616b306e5a) := by
   decide +kernel
@@ -2740,8 +2948,24 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x2ae309222d2d9910df8d1014353fd42cf6a68f3b6ac5b1d1f185a5993a9e10f9)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x30c4d737c038663a7d125d564448de03477954dba8c4a49f5592d170b2235101) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x083d113a5e2278d530cb2996efc89a659edb5fd2b51289b867297f12d1062bf5) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000000)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x083d113a5e2278d530cb2996efc89a659edb5fd2b51289b867297f12d1062bf5) := by
   decide +kernel
@@ -2756,6 +2980,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x000000000000000000000000000000000000000000000000ffffffffffffffff)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x1771e7a36e59de6f965951678f204af900b4eba328153093bd5629ad49900f4a) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
       pallasBase.modulus pallasBase.inv =
@@ -2764,8 +2996,40 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0fffffffffffffffbfffffffffffffffe64b0d42f906452b4d1e1b4e3fffffff) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000ffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x2dcb390afd7a29688a7fdd5bafc89a66f2f8523a99a8cfe85f8936399028958c) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x183d113a5e2278d4f0cb2996efc89a6585266d15ae18cee3b4479a6111062bf4) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x00000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x300000000000000040000000000000003bfb8bb91046b3f04c0f159ec0000002) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x300000000000000040000000000000003bfb8bb91046b3f04c0f159ec0000002) := by
   decide +kernel
@@ -2780,6 +3044,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
       (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
       pallasBase.modulus pallasBase.inv =
@@ -2788,8 +3060,32 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x19b4b3c4c000000040000000000000000dc45a978b65729f68160f7482a13db4) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be41914ad34786d38fffffffd)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x3ffffffffffffffeffffffffffffffff992c350be41914ad34786d38fffffffd) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
       (Limbs.ofNat 0x096d41af7b9cb7147797a99bc3c95d18d7d30dbd8b0de0e78c78ecb30000000f)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x2e2205637b9cb7182e2a67ec482ca60473e3e98d5208299d8a0dc4ad6b306e56) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x096d41af7b9cb7147797a99bc3c95d18d7d30dbd8b0de0e78c78ecb30000000f)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x2e2205637b9cb7182e2a67ec482ca60473e3e98d5208299d8a0dc4ad6b306e56) := by
   decide +kernel
@@ -2804,8 +3100,24 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x2ae309222d2d9910df8d1014353fd42cf6a68f3b6ac5b1d1f185a5993a9e10f9)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x3a3218e73bd51d4ef4aa06f208123b1c1f4c629933d28586e20bbe23b2235110) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x264b4c3b3fffffffc00000000000000014823e647de7867c311721787d5ec24d) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000000)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x264b4c3b3fffffffc00000000000000014823e647de7867c311721787d5ec24d) := by
   decide +kernel
@@ -2820,6 +3132,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x000000000000000000000000000000000000000000000000ffffffffffffffff)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x264b4c3b3fffffffc00000000000000014823e647de7867d311721787d5ec24c) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
       (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
       pallasBase.modulus pallasBase.inv =
@@ -2828,8 +3148,40 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x3fffffffffffffffc00000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000ffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x264b4c3b3fffffffc00000000000000114823e647de7867b311721787d5ec24d) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x264b4c3b3fffffff7ffffffffffffffff23ba568749a8d6097e9f08b7d5ec24c) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
       (Limbs.ofNat 0x00000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x00000000000000004000000000000000224698fc094cf91b992d30ed00000001) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x00000000000000004000000000000000224698fc094cf91b992d30ed00000001) := by
   decide +kernel
@@ -2844,8 +3196,32 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001)
       (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be41914ad34786d38fffffffd)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
   decide +kernel
@@ -2860,8 +3236,24 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x096d41af7b9cb7147797a99bc3c95d18d7d30dbd8b0de0e78c78ecb30000000f)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001)
       (Limbs.ofNat 0x2ae309222d2d9910df8d1014353fd42cf6a68f3b6ac5b1d1f185a5993a9e10f9)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x2ae309222d2d9910df8d1014353fd42cf6a68f3b6ac5b1d1f185a5993a9e10f9)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
   decide +kernel
@@ -2876,8 +3268,24 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000000)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001)
       (Limbs.ofNat 0x000000000000000000000000000000000000000000000000ffffffffffffffff)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x000000000000000000000000000000000000000000000000ffffffffffffffff)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
   decide +kernel
@@ -2892,8 +3300,40 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000ffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001)
       (Limbs.ofNat 0x00000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
   decide +kernel
@@ -2908,6 +3348,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000002)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000002)
       (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
       pallasBase.modulus pallasBase.inv =
@@ -2916,8 +3364,32 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000002)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x21f1c4ff1e2278d570cb2996efc89a65ac9fba6a4077fc57cf3f8e8753a769a9) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be41914ad34786d38fffffffd)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000002)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000002)
       (Limbs.ofNat 0x096d41af7b9cb7147797a99bc3c95d18d7d30dbd8b0de0e78c78ecb30000000f)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be41914ad34786d38fffffffd) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x096d41af7b9cb7147797a99bc3c95d18d7d30dbd8b0de0e78c78ecb30000000f)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000002)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be41914ad34786d38fffffffd) := by
   decide +kernel
@@ -2932,8 +3404,24 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x2ae309222d2d9910df8d1014353fd42cf6a68f3b6ac5b1d1f185a5993a9e10f9)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000002)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x096d41af7b9cb7147797a99bc3c95d18d7d30dbd8b0de0e78c78ecb30000000f) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000002)
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000000)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x1e0e3b00e1dd872a8f34d6691037659a75a6de91c8d4fcc3c9eda265ac589658) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000000)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000002)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x1e0e3b00e1dd872a8f34d6691037659a75a6de91c8d4fcc3c9eda265ac589658) := by
   decide +kernel
@@ -2948,6 +3436,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x000000000000000000000000000000000000000000000000ffffffffffffffff)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000002)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0ed96497d1a6219029a6ae9870dfb50713cd52c155d255e973c0f7cb33ceb302) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000002)
       (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
       pallasBase.modulus pallasBase.inv =
@@ -2956,8 +3452,40 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000002)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x3000000000000000000000000000000019b4f2bd06f9bad4b2e1e4b1c0000001) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000ffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000002)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x388013304285d697358022a45037659a43d08525ed8bafae6abb1c2bed362cc2) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000002)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x0e0e3b00e1dd872a8f34d6691037659a6d153852c681be7ce3a2562a6c589658) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000002)
       (Limbs.ofNat 0x00000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      pallasBase.modulus pallasBase.inv =
+    (Limbs.ofNat 0x100000000000000000000000000000000891a63f02533e46e64b4c3b40000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000224698fc094cf91b992d30ed00000001)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000002)
       pallasBase.modulus pallasBase.inv =
     (Limbs.ofNat 0x100000000000000000000000000000000891a63f02533e46e64b4c3b40000000) := by
   decide +kernel
@@ -5522,6 +6050,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
       vestaBase.modulus vestaBase.inv =
@@ -5530,8 +6066,32 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x20857622e89b86aca86f41a73faf20ec5bb8b7d46bcea6f22b2d474371e59083) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be34205675b2b3e9cfffffffd)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be34205675b2b3e9cfffffffc) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x096d41af7ccfdaa97fae231004ccf59067bb433d891a16e3fc9678ff0000000f)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x096d41af7ccfdaa97fae231004ccf590f0d5a72daf6cba5a2db2258300000013) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x096d41af7ccfdaa97fae231004ccf59067bb433d891a16e3fc9678ff0000000f)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x096d41af7ccfdaa97fae231004ccf590f0d5a72daf6cba5a2db2258300000013) := by
   decide +kernel
@@ -5546,8 +6106,24 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x07dd97a06e6792c888fececb8e15cb63e13bda50dba41326008b421c249dae4c)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x3e7055f0f197b81f0950abbb8948d5d39bc7300f5c1ea51f903bb43e249dae3e) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x1f7a89dd176479535790be58c050df13c68de1279dc601eb6119a3dd8e1a6f7e) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000000)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x1f7a89dd176479535790be58c050df13c68de1279dc601eb6119a3dd8e1a6f7e) := by
   decide +kernel
@@ -5562,6 +6138,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x000000000000000000000000000000000000000000000000ffffffffffffffff)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x07e9cb8457139a3fa1deafb45f6c1b6c96dd429b75015516ab5e093eebac54cb) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
       vestaBase.modulus vestaBase.inv =
@@ -5570,8 +6154,40 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0fffffffffffffffffffffffffffffffe64b0d42f8d08159d6cacfa73fffffff) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000ffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x29c87b38b67fb5ac347f03908050df150c12a741f82d57c70dc6286f8f5debcd) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x2f7a89dd176479535790be58c050df13acd8ee6a9696834537e47384ce1a6f7d) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x00000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x300000000000000000000000000000003bfb8bb910c42783b57c1b79c0000002) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x300000000000000000000000000000003bfb8bb910c42783b57c1b79c0000002) := by
   decide +kernel
@@ -5586,6 +6202,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
       (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
       vestaBase.modulus vestaBase.inv =
@@ -5594,8 +6218,32 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x286f41a73faf20ec4a4df15b9f1b3c58f295fa6fe0cffc07d68b50825d91e54f) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be34205675b2b3e9cfffffffd)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be34205665b2b3e9cfffffffd) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
       (Limbs.ofNat 0x096d41af7ccfdaa97fae231004ccf59067bb433d891a16e3fc9678ff0000000f)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x096d41af7ccfdaaa08c887002b1f990698d6efc1891a16e7fc9678ff0000000f) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x096d41af7ccfdaa97fae231004ccf59067bb433d891a16e3fc9678ff0000000f)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x096d41af7ccfdaaa08c887002b1f990698d6efc1891a16e7fc9678ff0000000f) := by
   decide +kernel
@@ -5610,8 +6258,24 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x07dd97a06e6792c888fececb8e15cb63e13bda50dba41326008b421c249dae4c)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x082f7490699a9d38264ffc7bb2d7522e3583b391b7d582d6a9b76a4017dd18f2) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x1790be58c050df13b5b20ea460e4c3a72fb09e8c28c4acd5b5bb9a9ea26e1ab2) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000000)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x1790be58c050df13b5b20ea460e4c3a72fb09e8c28c4acd5b5bb9a9ea26e1ab2) := by
   decide +kernel
@@ -5626,6 +6290,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x000000000000000000000000000000000000000000000000ffffffffffffffff)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x21deafb45f6c1b6c92a053dc20e4c3a7753564a6832c02b262681f30a3b19701) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
       (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
       vestaBase.modulus vestaBase.inv =
@@ -5634,8 +6306,40 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x3fffffffffffffffffffffffffffffffffffffffffffffffc000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000ffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x347f03908050df13f5b20ea460e4c3a83f2f1d154ea8556b5bd0d66d2601294f) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x1790be58c050df13b5b20ea460e4c3a70d6a05901f3003f7e974af7da26e1ab1) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
       (Limbs.ofNat 0x00000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x00000000000000000000000000000000224698fc0994a8ddcc46eb2100000001) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
+      (Limbs.ofNat 0xffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x00000000000000000000000000000000224698fc0994a8ddcc46eb2100000001) := by
   decide +kernel
@@ -5650,6 +6354,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
       vestaBase.modulus vestaBase.inv =
@@ -5658,8 +6370,32 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x3d73bb5aa89b86ace86f41a73faf20ec6b37365d91b24f87d1428311f5789f20) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be34205675b2b3e9cfffffffd)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x3ffffffffffffffeffffffffffffffff992c350be34205675b2b3e9cfffffffc) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x096d41af7ccfdaa97fae231004ccf59067bb433d891a16e3fc9678ff0000000f)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x3a88ee337ccfdaad3640e16087fd1ae78b74636b990a825fed6704ea66b5723b) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x096d41af7ccfdaa97fae231004ccf59067bb433d891a16e3fc9678ff0000000f)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x3a88ee337ccfdaad3640e16087fd1ae78b74636b990a825fed6704ea66b5723b) := by
   decide +kernel
@@ -5674,8 +6410,24 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x07dd97a06e6792c888fececb8e15cb63e13bda50dba41326008b421c249dae4c)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x128c5784fabf23b20173141b1ae1430afb46d7d1d84397cf26c1ef1391979314) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x028c44a5576479531790be58c050df13b70f629e77e25955bb04680f0a8760e1) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000000)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x028c44a5576479531790be58c050df13b70f629e77e25955bb04680f0a8760e1) := by
   decide +kernel
@@ -5690,6 +6442,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x000000000000000000000000000000000000000000000000ffffffffffffffff)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x2afb864c97139a3f61deafb45f6c1b6ca9a55d0e58b2555e918fb8916819462e) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
       vestaBase.modulus vestaBase.inv =
@@ -5698,8 +6458,40 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0fffffffffffffffbfffffffffffffffe64b0d42f8d08159d6cacfa73fffffff) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000ffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0cda3600f67fb5abf47f03908050df14fc9428b8d249af3067b0eca10bcadd30) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x128c44a557647952d790be58c050df139d5a6fe170b2daaf91cf37b64a8760e0) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
       (Limbs.ofNat 0x00000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x300000000000000040000000000000003bfb8bb910c42783b57c1b79c0000002) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
+      (Limbs.ofNat 0xfffffffffffffffeffffffffffffffffffffffffffffffffffffffffffffffff)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x300000000000000040000000000000003bfb8bb910c42783b57c1b79c0000002) := by
   decide +kernel
@@ -5714,6 +6506,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
       (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
       vestaBase.modulus vestaBase.inv =
@@ -5722,8 +6522,32 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x1cee4537c000000040000000000000000f7e7e8925e3a895a6153bce83930e9e) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be34205675b2b3e9cfffffffd)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x3ffffffffffffffeffffffffffffffff992c350be34205675b2b3e9cfffffffd) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
       (Limbs.ofNat 0x096d41af7ccfdaa97fae231004ccf59067bb433d891a16e3fc9678ff0000000f)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x3a88ee337ccfdaad3640e16087fd1ae70259ff7b72b7dee9bc4b586666b57237) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x096d41af7ccfdaa97fae231004ccf59067bb433d891a16e3fc9678ff0000000f)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x3a88ee337ccfdaad3640e16087fd1ae70259ff7b72b7dee9bc4b586666b57237) := by
   decide +kernel
@@ -5738,8 +6562,24 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x07dd97a06e6792c888fececb8e15cb63e13bda50dba41326008b421c249dae4c)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x1bf99934778efe5b8121372b1fae389b63021b0f615daeb32358681291979323) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x2311bac83fffffffc00000000000000012c81a72e3b10047e631af527c6cf163) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000000)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x2311bac83fffffffc00000000000000012c81a72e3b10047e631af527c6cf163) := by
   decide +kernel
@@ -5754,6 +6594,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x000000000000000000000000000000000000000000000000ffffffffffffffff)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x2311bac83fffffffc00000000000000012c81a72e3b10048e631af527c6cf162) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
       (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
       vestaBase.modulus vestaBase.inv =
@@ -5762,8 +6610,40 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x3fffffffffffffffc00000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000ffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x2311bac83fffffffc00000000000000112c81a72e3b10046e631af527c6cf163) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x2311bac83fffffff7ffffffffffffffff0818176da1c576a59eac4317c6cf162) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
       (Limbs.ofNat 0x00000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x00000000000000004000000000000000224698fc0994a8dd8c46eb2100000001) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
+      (Limbs.ofNat 0xffffffffffffffff000000000000000000000000000000000000000000000000)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x00000000000000004000000000000000224698fc0994a8dd8c46eb2100000001) := by
   decide +kernel
@@ -5778,8 +6658,32 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
       (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be34205675b2b3e9cfffffffd)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
   decide +kernel
@@ -5794,8 +6698,24 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x096d41af7ccfdaa97fae231004ccf59067bb433d891a16e3fc9678ff0000000f)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
       (Limbs.ofNat 0x07dd97a06e6792c888fececb8e15cb63e13bda50dba41326008b421c249dae4c)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x07dd97a06e6792c888fececb8e15cb63e13bda50dba41326008b421c249dae4c)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
   decide +kernel
@@ -5810,8 +6730,24 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000000)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
       (Limbs.ofNat 0x000000000000000000000000000000000000000000000000ffffffffffffffff)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x000000000000000000000000000000000000000000000000ffffffffffffffff)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
   decide +kernel
@@ -5826,8 +6762,40 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000ffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
       (Limbs.ofNat 0x00000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
   decide +kernel
@@ -5842,6 +6810,14 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000002)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000000) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000002)
       (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
       vestaBase.modulus vestaBase.inv =
@@ -5850,8 +6826,32 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000002)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x1f7a89dd176479535790be58c050df13c68de1279dc601eb6119a3dd8e1a6f7f) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be34205675b2b3e9cfffffffd)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000002)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x0000000000000000000000000000000000000000000000000000000000000001) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000002)
       (Limbs.ofNat 0x096d41af7ccfdaa97fae231004ccf59067bb433d891a16e3fc9678ff0000000f)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be34205675b2b3e9cfffffffd) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x096d41af7ccfdaa97fae231004ccf59067bb433d891a16e3fc9678ff0000000f)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000002)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x3fffffffffffffffffffffffffffffff992c350be34205675b2b3e9cfffffffd) := by
   decide +kernel
@@ -5866,8 +6866,24 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x07dd97a06e6792c888fececb8e15cb63e13bda50dba41326008b421c249dae4c)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000002)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x096d41af7ccfdaa97fae231004ccf59067bb433d891a16e3fc9678ff0000000f) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000002)
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000000)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x20857622e89b86aca86f41a73faf20ec5bb8b7d46bcea6f22b2d474371e59082) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000000)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000002)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x20857622e89b86aca86f41a73faf20ec5bb8b7d46bcea6f22b2d474371e59082) := by
   decide +kernel
@@ -5882,10 +6898,42 @@ example :
 
 example :
     mulMont
+      (Limbs.ofNat 0x000000000000000000000000000000000000000000000000ffffffffffffffff)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000002)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x3816347ba8ec65c05e21504ba093e4938b695660949353c7e0e8e1e21453ab35) := by
+  decide +kernel
+
+example :
+    mulMont
       (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000002)
       (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
       vestaBase.modulus vestaBase.inv =
     (Limbs.ofNat 0x3000000000000000000000000000000019b4f2bd072f7ea629353058c0000001) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x4000000000000000000000000000000000000000000000000000000000000000)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000002)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x3000000000000000000000000000000019b4f2bd072f7ea629353058c0000001) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000ffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000002)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x163784c749804a53cb80fc6f7faf20ec1633f1ba116751167e80c2b170a21433) := by
+  decide +kernel
+
+example :
+    mulMont
+      (Limbs.ofNat 0x3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000002)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x10857622e89b86aca86f41a73faf20ec5327119569697cbac81b8c7b31e59082) := by
   decide +kernel
 
 example :
@@ -5896,7 +6944,15 @@ example :
     (Limbs.ofNat 0x100000000000000000000000000000000891a63f02652a376311bac840000000) := by
   decide +kernel
 
+example :
+    mulMont
+      (Limbs.ofNat 0x00000000000000000000000000000000224698fc0994a8dd8c46eb2100000001)
+      (Limbs.ofNat 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000002)
+      vestaBase.modulus vestaBase.inv =
+    (Limbs.ofNat 0x100000000000000000000000000000000891a63f02652a376311bac840000000) := by
+  decide +kernel
 
--- 742 vectors; omitted as outside the combined public and x86-64 backend contracts: 312 MUL.
+
+-- 874 vectors; omitted as outside the public contracts: 180 MUL.
 
 end PastaAsm.X86_64
