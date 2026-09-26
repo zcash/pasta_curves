@@ -152,8 +152,8 @@ lake build --wfail          # warnings fail the build, as in CI
 cd .. && lean/scripts/check.sh   # regenerate the transcription and check the skeletons
 ```
 
-- **Every architecture's `Transcription.lean` and `Vectors.lean` are generated** by
-  `lean/scripts/gen.py` from its Rust `asm!` blocks and the reference vectors. Never edit them
+- **Every architecture's `Transcription.lean` and the shared `Vectors.lean` are generated** by
+  `lean/scripts/gen.py` from the Rust `asm!` blocks and the reference vectors. Never edit them
   by hand; change the generator or its inputs and regenerate. Architecture-specific
   `Compositions.lean` mirrors the actual Rust compositions, not another backend's implementation.
   Shared `Compositions.lean` models common operand checks; `Fields.lean` states the two fields'
@@ -167,11 +167,12 @@ cd .. && lean/scripts/check.sh   # regenerate the transcription and check the sk
   or proof scripts are not a substitute for this synchronization check.
 - **Architecture modules have consistent roles.** `Semantics` defines instruction behavior;
   `Transcription` contains generated block models; `Compositions` models Rust around those
-  blocks; `Vectors` contains generated kernel-checked reference examples; `Spec` proves block
-  and composition correctness; `Entry` contains correctness **theorems** specializing those
-  results to `PastaField` and the actual asserted operand contracts, not redundant value wrappers.
-  Split per-block proof files belong under `<Architecture>/Spec/`, imported by its `Spec.lean`.
-  Shared arithmetic, constants, and architecture-independent lemmas stay outside ISA modules.
+  blocks; `Vectors` checks the backend's routines against the shared generated vectors by kernel
+  evaluation; `Spec` proves block and composition correctness; `Entry` contains correctness
+  **theorems** specializing those results to `PastaField` and the actual asserted operand
+  contracts, not redundant value wrappers. Split per-block proof files belong under
+  `<Architecture>/Spec/`, imported by its `Spec.lean`. Shared arithmetic, constants, and
+  architecture-independent lemmas stay outside ISA modules.
 - **Extend the shared generator pipeline.** `gen.py` owns CLI orchestration, binding storage,
   liveness, formatting, vector emission, SSA naming, and proof skeleton generation/checking.
   `asm_source.py` owns the self-contained Rust source parser and operand/output validation.
@@ -196,10 +197,10 @@ do not change these instructions or coverage documentation to legitimize an omis
 - Cover every actual assembly block, including helper blocks, and every public composition.
   Factor repeated rounds when appropriate, with mechanical validation of the factoring;
   do not force identical helper structures onto different instruction schedules.
-- Generate reference checks for both Pasta fields using the existing vector corpus and its
-  contract filtering, extended only where actual backend contracts require it. Preserve vector
-  provenance: AArch64 hardware outputs reused for x86 are cross-backend reference checks, not
-  x86 hardware captures. Small handwritten examples do not replace generated vector coverage.
+- Check the backend against the shared generated vectors for both Pasta fields, through
+  `VectorCheck.lean`. Preserve vector provenance: AArch64 hardware outputs reused for x86 are
+  cross-backend reference checks, not x86 hardware captures. Small handwritten examples do not
+  replace the vector coverage.
 - Match actual Rust assertions at both public and backend entry points. Report discrepancies
   rather than silently strengthening theorem assumptions or changing Rust to make a proof fit.
 - `gen.py --check` and `scripts/check.sh` must check all architectures' transcriptions, vectors,

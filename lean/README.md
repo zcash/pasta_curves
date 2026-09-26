@@ -13,10 +13,10 @@ including all four cancellation steps and the final conditional subtraction.
 `X86_64/Spec/Mul.lean` proves Montgomery multiplication under both public operand contracts,
 using mechanically factored internal rounds. The repeated-squaring-and-multiplication and
 field-entry theorems are also proven. `X86_64/Spec.lean` exposes the completed block proofs;
-`Compositions.lean` mirrors Rust. `X86_64/Vectors.lean` contains 874 generated cross-backend
-checks against the existing AArch64 hardware corpus, not x86 hardware captures. Both fields are
-covered, and the 180 multiplication vectors outside the public contract are omitted, as in the
-AArch64 file. `Checks.lean` supplies additional kernel-checked arithmetic regressions.
+`Compositions.lean` mirrors Rust. `X86_64/Vectors.lean` checks the x86-64 blocks against the 874
+in-contract vectors of the shared `Vectors.lean`, the existing AArch64 hardware corpus, so these
+are cross-backend checks rather than x86 hardware captures. `Checks.lean` supplies additional
+kernel-checked arithmetic regressions.
 
 Both architectures use `scripts/gen.py`, with shared Rust `asm!` parsing and
 architecture-specific instruction emitters; `--check` compares generated output without
@@ -93,20 +93,22 @@ PastaAsm/Semantics.lean               shared 64-bit arithmetic and limb represen
 PastaAsm/Compositions.lean            shared operand comparisons and contracts
 PastaAsm/Fields.lean                  the two fields and facts about their constants
 PastaAsm/Spec.lean                    shared arithmetic and limb lemmas
+PastaAsm/Vectors.lean                 GENERATED: the reference vectors inside the contracts
+../test-vectors/pasta_mul-armv8-vectors.txt   the hardware outputs the vectors are generated from
+PastaAsm/VectorCheck.lean             a backend's routines, and the vectors it fails
 PastaAsm/AArch64.lean                 AArch64 umbrella module
 PastaAsm/AArch64/Semantics.lean       AArch64 instruction semantics
 PastaAsm/AArch64/Transcription.lean   GENERATED: the blocks and the round
 PastaAsm/AArch64/Compositions.lean    compositions of the AArch64 blocks
-PastaAsm/AArch64/Vectors.lean         GENERATED: reference vectors, kernel-checked
+PastaAsm/AArch64/Vectors.lean         the AArch64 blocks on the vectors, kernel-checked
 PastaAsm/AArch64/Spec.lean            proofs about the AArch64 blocks and compositions
 PastaAsm/AArch64/Spec/*.lean          the block proofs, one file per block, imported by Spec.lean
 PastaAsm/AArch64/Entry.lean           proofs about the AArch64 entry points at the two fields
-../test-vectors/pasta_mul-armv8-vectors.txt   the hardware outputs the examples are generated from
 PastaAsm/X86_64.lean                  x86-64 umbrella module
 PastaAsm/X86_64/Semantics.lean        x86-64 instruction semantics and eight-word product
 PastaAsm/X86_64/Transcription.lean    GENERATED: all six x86-64 assembly blocks
 PastaAsm/X86_64/Compositions.lean     split square, repeated squaring, backend contracts
-PastaAsm/X86_64/Vectors.lean          GENERATED: cross-backend reference checks
+PastaAsm/X86_64/Vectors.lean          the x86-64 blocks on the vectors, kernel-checked
 PastaAsm/X86_64/Checks.lean           additional kernel-checked arithmetic examples
 PastaAsm/X86_64/Spec.lean             proofs about the x86-64 blocks and compositions
 PastaAsm/X86_64/Spec/*.lean           the block proofs, one file per block, and Arithmetic.lean
