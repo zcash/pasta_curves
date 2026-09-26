@@ -514,20 +514,38 @@ class SharedGeneratorTests(unittest.TestCase):
         self.assertTrue(any(entry.get("group_fact", entry["fact"])[0] == "x86_mulx"
                             for entry in x86_prepared.entries))
 
-    def test_shared_skeleton_has_no_architecture_dispatch_or_isa_fact_rules(self):
-        source = gen.Path(gen.__file__).read_text()
-        skeleton_source = source[source.index("def skeleton(routine):"):
-                                 source.index("def _strip_annotations")]
-        self.assertNotIn("routine.architecture", skeleton_source)
-        for isa_fact in (
-            "x86_adds", "x86_subs", "x86_mulx", "x86_neg", "x86_xor",
-            "subs_carry", "subc_carry_cases", "sbb_borrow_le_one",
-        ):
-            with self.subTest(fact=isa_fact):
-                self.assertNotIn(isa_fact, skeleton_source)
-        self.assertIn('elif kind == "select":', skeleton_source)
-        self.assertIn('elif kind == "mul":', skeleton_source)
-        self.assertIn('elif kind == "lsr":', skeleton_source)
+    def test_skeleton_facts_come_from_the_routine_backend(self):
+        # The shared traversal knows the common facts; an ISA-specific one reaches it only
+        # through the routine's backend hook, and one that no hook handles is an error.
+        class StubBackend(gen.SkeletonBackend):
+            def fact(self, kind, ops, context):
+                if kind != "stub":
+                    return False
+                (operand,) = ops
+                context.eq(context.name, f"stub {operand}")
+                context.lines.append(f"  have b_{context.name} : {context.name} < 2^64 := by sorry")
+                context.bnd[context.name] = f"b_{context.name}"
+                return True
+
+        def routine(backend):
+            emitter = gen.Emitter()
+            emitter.bind("x", "lhs.l0", "argument", reads=(), load=True,
+                         fact=("load", "lhs", "l0"))
+            emitter.bind("y", "stub x", "stub x", reads={"x"}, fact=("stub", "x"))
+
+            class StubRoutine(gen.Routine):
+                architecture = "Stub"
+                skeleton_backend = backend
+
+            return StubRoutine("doc", "def stub", emitter.render(["y"]), "  y", "stub",
+                               emitter, ["y"])
+
+        skeleton = "\n".join(gen.skeleton(routine(StubBackend())))
+        self.assertIn("have e_x : x = lhs.l0 := rfl", skeleton)
+        self.assertIn("have e_y : y = stub x := rfl", skeleton)
+        self.assertIn("have b_y : y < 2^64 := by sorry", skeleton)
+        with self.assertRaisesRegex(ValueError, "unsupported skeleton fact stub"):
+            gen.skeleton(routine(gen.SkeletonBackend()))
 
     def test_backward_liveness_and_backend_retention_share_the_same_ir(self):
         emitter = gen.Emitter()
