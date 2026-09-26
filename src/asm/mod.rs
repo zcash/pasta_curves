@@ -55,13 +55,15 @@
 //!
 //! [Semolina]: https://github.com/supranational/semolina
 
-/// Declares the items only where this module has a backend.
+/// Declares items, a local binding, or a block only where this module has a backend.
 ///
-/// The expansion carries the module's own condition, the target and the absence of
-/// `--cfg pasta_curves_noasm`, so code that uses the backend does not repeat it. The items are
-/// `use`s, functions, modules, or anything else in item position.
+/// The expansion carries the target and absence of `--cfg pasta_curves_noasm`,
+/// so code that uses the backend does not repeat the backend condition. Write an
+/// extra pair of braces to cfg-gate arbitrary statements in a block:
+/// `if_asm_supported! {{ ... }}`. A binding used after the macro must instead be
+/// written without the extra braces: `if_asm_supported! { let value = expression; }`.
 macro_rules! if_asm_supported {
-    ($($item:item)*) => { $(
+    (@cfg $($tokens:tt)+) => {
         // The x86-64 multiplication family addresses limbs through pointers, so the backend needs
         // 64-bit pointers; and Apple x86-64 targets reserve `rbp`, and so have fewer available
         // registers than the squaring blocks need.
@@ -72,18 +74,27 @@ macro_rules! if_asm_supported {
                 all(
                     target_arch = "x86_64",
                     target_pointer_width = "64",
-                    not(target_vendor = "apple")
+                    not(target_vendor = "apple"),
                 )
             )
         ))]
-        $item
+        $($tokens)+
+    };
+    ({ $($body:tt)* }) => {
+        if_asm_supported! { @cfg { $($body)* } }
+    };
+    (let $name:ident $(: $ty:ty)? = $value:expr;) => {
+        if_asm_supported! { @cfg let $name $(: $ty)? = $value; }
+    };
+    ($($item:item)*) => { $(
+        if_asm_supported! { @cfg $item }
     )* };
 }
 
-/// Declares the items only where this module has no backend: the complement of
-/// `if_asm_supported!`, for the portable fallback.
+/// Declares items, a local binding, or a block where this module has no backend.
+/// This is the complement of `if_asm_supported!` for portable fallbacks.
 macro_rules! if_asm_unsupported {
-    ($($item:item)*) => { $(
+    (@cfg $($tokens:tt)+) => {
         #[cfg(not(all(
             not(pasta_curves_noasm),
             any(
@@ -91,11 +102,20 @@ macro_rules! if_asm_unsupported {
                 all(
                     target_arch = "x86_64",
                     target_pointer_width = "64",
-                    not(target_vendor = "apple")
+                    not(target_vendor = "apple"),
                 )
             )
         )))]
-        $item
+        $($tokens)+
+    };
+    ({ $($body:tt)* }) => {
+        if_asm_unsupported! { @cfg { $($body)* } }
+    };
+    (let $name:ident $(: $ty:ty)? = $value:expr;) => {
+        if_asm_unsupported! { @cfg let $name $(: $ty)? = $value; }
+    };
+    ($($item:item)*) => { $(
+        if_asm_unsupported! { @cfg $item }
     )* };
 }
 
