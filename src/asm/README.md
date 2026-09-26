@@ -21,10 +21,11 @@ reaches the chain and the conversion through assembled routines instead.
 ## Usage
 
 The module provides a backend for `target_arch = "aarch64"` and, in part, for
-`target_arch = "x86_64"`: `add`, `sub`, and `from_mont` are register-only and available on
-every x86-64 target (MULX needs BMI2 for `from_mont`), while `mul`, `square`, and the routines
-built on them read limbs through pointers and so require 64-bit pointers, plus MULX and
-ADCX/ADOX (BMI2 and ADX: Intel Broadwell / AMD Zen or newer). Elsewhere the `asm` module is
+`target_arch = "x86_64"`. On x86-64, `add`, `sub`, and `from_mont` are register-only (MULX
+needs BMI2 for `from_mont`). `mul`, `square`, and the routines built on them read limbs through
+pointers and so require 64-bit pointers, plus MULX and ADCX/ADOX (BMI2 and ADX: Intel Broadwell
+/ AMD Zen or newer). Apple x86-64 targets are excluded altogether: they reserve `rbp`, and so
+have fewer available registers than the squaring blocks need. Elsewhere the `asm` module is
 absent. Nothing is assembled at build time: the blocks are compiled by the Rust toolchain, so no
 C toolchain is needed, and the module adds no dependency.
 

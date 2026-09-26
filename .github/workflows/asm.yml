@@ -69,3 +69,26 @@ jobs:
         run: |
           cargo +nightly build --verbose --release --no-default-features \
             -Z build-std=core,compiler_builtins --target aarch64-apple-darwin
+
+  intel-macos:
+    name: No backend on Intel macOS
+    # Apple x86-64 targets reserve `rbp`, and so have fewer available registers
+    # than the squaring blocks need; the `asm` module compiles out there instead
+    # of failing to build.
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Confirm the runner is Intel
+        run: test "$(uname -sm)" = "Darwin x86_64"
+      - name: Build
+        run: cargo build --verbose --all-features
+      - name: The backend has no tests to run (debug and release)
+        shell: bash
+        run: |
+          for profile in "" --release; do
+            out=$(cargo test $profile --all-features asm:: 2>&1)
+            echo "$out"
+            ! printf '%s\n' "$out" | grep -E '^running [1-9]'
+          done

@@ -12,16 +12,18 @@
 //! # Availability
 //!
 //! The module provides a backend for `target_arch = "aarch64"` and, in part,
-//! for `target_arch = "x86_64"`: `add`, `sub`, and `from_mont` are
-//! register-only and work on every x86-64 target, while `mul`, `square`, and
-//! the routines built on them read limbs through pointers, so they require
-//! 64-bit pointers (the x32 ABI's 32-bit pointers would break them; see the
-//! x86-64 module's docs for why registers alone cannot serve there) and a CPU
-//! with BMI2 and ADX (MULX, ADCX/ADOX: Intel Broadwell / AMD Zen or newer) at
-//! run time — neither is checked. `from_mont` uses MULX (BMI2) alone. Elsewhere
-//! the `asm` module is absent. Nothing is assembled at build time: the blocks
-//! are compiled by the Rust toolchain, so no C toolchain is needed, and the
-//! module adds no dependency.
+//! for `target_arch = "x86_64"`. On x86-64, `add`, `sub`, and `from_mont` are
+//! register-only. `mul`, `square`, and the routines built on them read limbs
+//! through pointers, so they require 64-bit pointers; the x32 ABI's 32-bit
+//! pointers would break them (see the x86-64 module's docs for why registers
+//! alone cannot serve there). They also need, at run time, a CPU with BMI2 and
+//! ADX (MULX, ADCX/ADOX: Intel Broadwell / AMD Zen or newer); neither is
+//! checked. `from_mont` uses MULX (BMI2) alone. Apple x86-64 targets are
+//! excluded altogether: they reserve `rbp`, and so have fewer available
+//! registers than the squaring blocks need. Elsewhere the `asm` module is
+//! absent. Nothing is assembled at build time: the blocks are compiled by the
+//! Rust toolchain, so no C toolchain is needed, and the module adds no
+//! dependency.
 //!
 //! # Provenance
 //!

@@ -21,7 +21,14 @@ mod macros;
 mod curves;
 mod fields;
 
-#[cfg(any(target_arch = "aarch64", target_arch = "x86_64", doc))]
+// We cannot build the assembly on Apple x86-64 targets because they reserve `rbp`, and so have
+// fewer available registers than the squaring blocks need. So the module is absent on those
+// targets, as on every other target without a backend.
+#[cfg(any(
+    target_arch = "aarch64",
+    all(target_arch = "x86_64", not(target_vendor = "apple")),
+    doc
+))]
 mod asm;
 
 pub mod arithmetic;
