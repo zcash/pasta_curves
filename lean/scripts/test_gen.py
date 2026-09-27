@@ -369,6 +369,52 @@ class SharedAArch64ParserTests(unittest.TestCase):
                 self.assertEqual(origins, parsed.origins)
                 self.assertEqual(len(origins), len(parsed.instructions))
 
+    def test_divstep_macro_expands_to_the_step_body_at_every_site(self):
+        macros = asm_source.parse_macros(self.source)
+        self.assertEqual(set(macros["divstep"]), {"core", "", "last"})
+        core = macros["divstep"]["core"]
+        self.assertEqual(len(core), 7)
+        self.assertEqual(macros["divstep"][""], core + ("tst {pg}, #2", "asr {pg}, {pg}, #1"))
+        self.assertEqual(macros["divstep"]["last"], core + ("asr {pg}, {pg}, #1",))
+        config = next(c for c in gen_aarch64.INLINE_ROUTINES if c.rust_name == "divstep59")
+        instructions, _, _, _, _, origins = gen_aarch64.parse_inline(gen_aarch64.INLINE, config)
+        sites = {}
+        for instruction, origin in zip(instructions, origins):
+            if origin is not None:
+                sites.setdefault(origin, []).append(instruction)
+        arms = [
+            (origin.arm, len(body))
+            for origin, body in sorted(sites.items(), key=lambda s: s[0].site)
+        ]
+        # Batches of 20, 20, and 19 steps, each of full steps and a last one, in invocation order.
+        expected = ([""] * 19 + ["last"]) * 2 + [""] * 18 + ["last"]
+        self.assertEqual([a for a, _ in arms], expected)
+        self.assertEqual({n for a, n in arms if a == ""}, {9})
+        self.assertEqual({n for a, n in arms if a == "last"}, {8})
+        self.assertEqual(
+            [origin.site for origin in sorted(sites, key=lambda o: o.site)], list(range(59))
+        )
+
+    def test_divstep_rounds_are_factored_from_the_macro(self):
+        routines = {routine.name: routine for routine in gen_aarch64.all_routines()}
+        block = routines["divstep59Block"]
+        calls = [entry for entry in block.emitter.entries if entry["fact"][0] == "call"]
+        self.assertEqual(
+            [entry["expr"].split(" ")[0] for entry in calls],
+            (["divstepRound"] * 19 + ["divstepLast"]) * 2 + ["divstepRound"] * 18 + ["divstepLast"],
+        )
+        for name in ("divstepRound", "divstepLast"):
+            body = [code for code, _ in routines[name].lines if code is not None]
+            self.assertEqual(
+                body[:4],
+                ["  let d := st.d", "  let pf := st.f", "  let pg := st.g", "  let fl := st.fl"],
+            )
+        self.assertEqual(len(routines["divstepRound"].lines), 4 + 9)
+        self.assertEqual(len(routines["divstepLast"].lines), 4 + 8)
+        # The last step's flags are carried but never read; the block leaves the binding as a comment.
+        comments = [comment for code, comment in block.lines if code is None]
+        self.assertEqual(len([c for c in comments if "fl = step" in c]), 3)
+
     def test_real_named_and_implicit_outputs_are_extracted(self):
         mul = asm_source.parse_function(
             self.source,
