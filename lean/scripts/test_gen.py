@@ -351,7 +351,7 @@ class SharedAArch64ParserTests(unittest.TestCase):
                     allowed_options={"pure", "nomem", "nostack"},
                     required_options={"pure", "nomem", "nostack"},
                 )
-                instructions, declarations, locals_map, outputs, returned = (
+                instructions, declarations, locals_map, outputs, returned, origins = (
                     gen_aarch64.parse_inline(gen_aarch64.INLINE, config)
                 )
                 self.assertIsInstance(parsed, asm_source.ParsedFunction)
@@ -366,6 +366,8 @@ class SharedAArch64ParserTests(unittest.TestCase):
                 self.assertEqual(locals_map, parsed.locals)
                 self.assertEqual(outputs, asm_source.output_bindings(parsed, rust_name))
                 self.assertEqual(returned, asm_source.returned_registers(parsed, rust_name))
+                self.assertEqual(origins, parsed.origins)
+                self.assertEqual(len(origins), len(parsed.instructions))
 
     def test_real_named_and_implicit_outputs_are_extracted(self):
         mul = asm_source.parse_function(
