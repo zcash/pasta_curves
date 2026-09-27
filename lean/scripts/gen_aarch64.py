@@ -177,6 +177,24 @@ INLINE_ROUTINES = [
         ),
         (("lhs", "Limbs"), ("rhs", "Limbs"), ("modulus", "Limbs")),
     ),
+    RoutineConfig(
+        "divstep59",
+        "divstep59Block",
+        (
+            "The inline `asm!` block of `divstep59`: 59 half-delta divsteps on the low words `f0` and "
+            "`g0` of `f` and `g` at `two_delta`, as three packed batches of 20, 20, and 19 steps in which "
+            "the matrix coefficients ride in the upper bits of the two words, with the two matrix "
+            "products between and after the batches. It is s2n-bignum's `divstep59` macro on named "
+            "registers. The result is the new `two_delta` and the 59-step matrix, as two's-complement words."
+        ),
+        (("two_delta", "Nat"), ("f0", "Nat"), ("g0", "Nat")),
+        result="Divstep59Result",
+        result_fields=("two_delta", "u", "v", "q", "r"),
+        result_doc=(
+            "The result of `divstep59Block`: the new `two_delta` and the entries of the 59-step matrix, each a "
+            "two's-complement word."
+        ),
+    ),
 ]
 
 # The macro arms (see `asm_source.parse_macros`) that are transcribed as round definitions,
@@ -184,7 +202,39 @@ INLINE_ROUTINES = [
 # and out, `roles` as (register, field, description) for that structure, and whether this arm's
 # transcription declares the structure. The field `fl` holds the flags; every other field is a
 # word. A round's body may read only carried registers.
-MACRO_ROUNDS = {}
+MACRO_ROUNDS = {
+    ("divstep", ""): {
+        "round": "divstepRound",
+        "doc": (
+            "one packed half-delta divstep on the words `f` and `g` at `two_delta`, from the flags of the "
+            "parity test of `g`, ending with the parity test of the new `g` for the next step"
+        ),
+        "state": "DivstepState",
+        "emit_struct": True,
+        "arg": "st",
+        "call": "step",
+        "roles": [
+            ("two_delta", "two_delta", "`two_delta = 2δ`, as a two's-complement word"),
+            ("pf", "f", "the packed `f` word"),
+            ("pg", "g", "the packed `g` word"),
+            ("fl", "fl", "the flags, set by the parity test of the packed `g` word"),
+        ],
+    },
+    ("divstep", "last"): {
+        "round": "divstepLast",
+        "doc": "the last divstep of a batch: `divstepRound` without the parity test at its end",
+        "state": "DivstepState",
+        "emit_struct": False,
+        "arg": "st",
+        "call": "step",
+        "roles": [
+            ("two_delta", "two_delta", None),
+            ("pf", "f", None),
+            ("pg", "g", None),
+            ("fl", "fl", None),
+        ],
+    },
+}
 
 
 def tokenize(rest):
@@ -691,12 +741,10 @@ def emit_inline(config):
                 outs.append((v, n))
         else:
             raise ValueError(f"{name}: unsupported operand direction {kind}")
-    ordered_outputs = tuple(reg for _, reg in sorted(outs))
-    if ordered_outputs != returned:
-        raise ValueError(
-            f"{name}: source output order {returned} differs from the order of the output "
-            f"names {ordered_outputs}"
-        )
+    # The result takes the outputs in the order that the Rust returns them.
+    if sorted(returned) != sorted(reg for _, reg in outs):
+        raise ValueError(f"{name}: the source returns {returned}, not each output operand once")
+    ordered_outputs = returned
     e.run(0)
     e.cur_reads = set()
     result = [e.read(reg) for reg in ordered_outputs]
