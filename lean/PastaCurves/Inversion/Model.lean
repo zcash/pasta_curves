@@ -1,8 +1,9 @@
+import Mathlib.Data.Nat.Prime.Basic
 import PastaCurves.Inversion.Round
 import PastaCurves.Inversion.Termination
 
 /-!
-# The composition and the round invariant
+# The composition and the correctness theorem
 
 `montInvModel` is the whole algorithm on words: nine full rounds of `divstep59`, `updateFG`,
 and `updateUV` from `(d, f, g, u, v) = (1, p, x, 0, 2^562 mod p)`, then the last round, which
@@ -10,7 +11,8 @@ computes only `u` with the sign of the final `f` folded in and reduces strictly.
 
 `rounds_invariant` is Lemma 11 at the word level: after `i` rounds the word state carries the
 true divstep state after `59 i` steps, and `f_i 2^562 ≡ x 2^(5 i) u_i`, `g_i 2^562 ≡ x 2^(5 i) v_i`
-modulo `p`.
+modulo `p`. `montInv_spec` is Theorem 12, with the termination bound and the primality of `p` as
+hypotheses.
 -/
 
 namespace PastaCurves
@@ -242,5 +244,141 @@ theorem rounds_invariant (F : PastaField) (x : Limbs) (hx : x.Bounded) (i : ℕ)
         _ = 2^59 * (st.u.toNat : ℤ) := by rw [hMt]; ring
         _ ≡ 2^59 * 0 [ZMOD F.modulus.toNat] := hu0'.mul_left _
         _ = 2^64 * 0 := by ring
+
+/-! ## The theorem -/
+
+/-- Theorem 12: for a canonical input, the model returns the canonical Montgomery residue `z`
+with `x z ≡ R^2 (mod p)`, and zero for zero. The termination bound and the primality of `p`
+are hypotheses. -/
+theorem montInv_spec (F : PastaField) (hbound : TerminationBound 256)
+    (hprime : Nat.Prime F.modulus.toNat) (x : Limbs) (hx : x.Bounded)
+    (hxlt : x.toNat < F.modulus.toNat) :
+    (montInvModel F x).Bounded ∧ (montInvModel F x).toNat < F.modulus.toNat ∧
+      (x.toNat = 0 → montInvModel F x = Limbs.ofNat 0) ∧
+      (x.toNat ≠ 0 → x.toNat * (montInvModel F x).toNat ≡ R^2 [MOD F.modulus.toNat]) := by
+  have hp_odd : (F.modulus.toNat : ℤ) % 2 = 1 := by exact_mod_cast F.modulus_odd
+  have hp255 : (F.modulus.toNat : ℤ) < 2^255 := by exact_mod_cast F.modulus_lt
+  obtain ⟨hd, hfb, hgb, hf, hg, hub, hvb, hcf, hcg, hu0⟩ := rounds_invariant F x hx 9
+  set st := rounds F x 9 with hst
+  set t := trueState F x 9 with ht
+  have hodd : t.f % 2 = 1 := divsteps_f_odd _ _ hp_odd
+  have hM := M_rowSum_le 59 t
+  have hfl0 : t.f % 2^64 = st.f.l0 := by
+    have h := Signed5.toInt_emod st.f hfb; rw [hf] at h; exact h
+  have hgl0 : t.g % 2^64 = st.g.l0 := by
+    have h := Signed5.toInt_emod st.g hgb; rw [hg] at h; exact h
+  have hfl : st.f.l0 = (t.f % 2^64).toNat := by rw [hfl0, Int.toNat_natCast]
+  have hgl : st.g.l0 = (t.g % 2^64).toNat := by rw [hgl0, Int.toNat_natCast]
+  have hdm := divstep59_spec t hodd
+  rw [← hd, ← hfl, ← hgl] at hdm
+  obtain ⟨hs1, -⟩ := M_spec 59 t hodd
+  set t10 := divsteps 59 t with ht10
+  have ht10' : t10 = divsteps 590 ⟨1, (F.modulus.toNat : ℤ), (x.toNat : ℤ)⟩ := by
+    rw [ht10, ht, trueState, ← divsteps_add]
+  have h590 : iterations 256 = 590 := by decide
+  have hg0 : t10.g = 0 := by
+    have hb := hbound (F.modulus.toNat : ℤ) (x.toNat : ℤ) hp_odd (Int.natCast_nonneg _)
+      (by exact_mod_cast hxlt.le) (by omega)
+    rw [h590] at hb
+    rw [ht10']
+    exact hb
+  -- The model's result is the last round on the state after nine.
+  set sw := signWordOf (M 59 t) st.f st.g with hsw
+  have hres : montInvModel F x = finalU (M 59 t) sw st.u st.v F.modulus F.inv := by
+    show finalU (divstep59 st.d st.f.l0 st.g.l0).2
+      (signWordOf (divstep59 st.d st.f.l0 st.g.l0).2 st.f st.g) st.u st.v F.modulus F.inv = _
+    rw [hdm.2]
+  obtain ⟨hrb, hrlt, hrc⟩ := finalU_spec F (M 59 t) sw st.u st.v hub hvb hM.1
+  rw [hres]
+  set r : ℤ := ((finalU (M 59 t) sw st.u st.v F.modulus F.inv).toNat : ℤ) with hr
+  set e : ℤ := if sw < 2^63 then (1 : ℤ) else -1 with he
+  -- The sign word is the low word of `2^59 f_10`.
+  have hsw' : (sw : ℤ) = (2^59 * t10.f) % 2^64 := by
+    rw [hsw, signWordOf, Int.toNat_of_nonneg (Int.emod_nonneg _ (by norm_num)), hs1]
+    have h1 : (st.f.l0 : ℤ) ≡ t.f [ZMOD 2^64] := by rw [← hfl0]; exact Int.mod_modEq _ _
+    have h2 : (st.g.l0 : ℤ) ≡ t.g [ZMOD 2^64] := by rw [← hgl0]; exact Int.mod_modEq _ _
+    exact (h1.mul_left _).add (h2.mul_left _)
+  refine ⟨hrb, hrlt, ?_, ?_⟩
+  · -- `x = 0`: the matrices are `[[2^59, 0], [0, 1]]`, `u ≡ 0`, and the result is canonical.
+    intro hx0
+    have hu0' := hu0 hx0
+    have htg : t.g = 0 := by
+      rw [ht, trueState]
+      exact (divsteps_of_g_zero _ _ (by simp [hx0])).2.1
+    have hMt : M 59 t = ⟨2^59, 0, 0, 1⟩ := (divsteps_of_g_zero 59 t htg).2.2
+    have hr0 : r ≡ 0 [ZMOD F.modulus.toNat] := by
+      apply F.modEq_cancel_two_pow 64
+      calc 2^64 * r = r * 2^64 := by ring
+        _ ≡ e * ((M 59 t).a * st.u.toNat + (M 59 t).b * st.v.toNat) [ZMOD F.modulus.toNat] :=
+            hrc
+        _ = e * 2^59 * st.u.toNat := by rw [hMt]; ring
+        _ ≡ e * 2^59 * 0 [ZMOD F.modulus.toNat] := hu0'.mul_left _
+        _ = 2^64 * 0 := by ring
+    have hdvd : F.modulus.toNat ∣ (finalU (M 59 t) sw st.u st.v F.modulus F.inv).toNat :=
+      Int.natCast_dvd_natCast.mp (Int.modEq_zero_iff_dvd.1 hr0)
+    exact Limbs.eq_ofNat_zero _ hrb (Nat.eq_zero_of_dvd_of_lt hdvd hrlt)
+  · -- `x ≠ 0`: `f_10 = ±1`, the sign word reads it, and the invariant gives `x z ≡ 2^512`.
+    intro hx0
+    obtain ⟨hdp, hdx⟩ := f_dvd_of_g_eq_zero 590 _ hp_odd (ht10' ▸ hg0)
+    rw [← ht10'] at hdp hdx
+    have hnat : t10.f.natAbs ∣ F.modulus.toNat := by
+      have h := Int.natAbs_dvd_natAbs.mpr hdp
+      rwa [Int.natAbs_natCast] at h
+    have hpm : t10.f = 1 ∨ t10.f = -1 := by
+      rcases Nat.Prime.eq_one_or_self_of_dvd hprime _ hnat with h1 | hp
+      · rcases Int.natAbs_eq_iff.mp h1 with h | h
+        · exact Or.inl (by rw [h]; rfl)
+        · exact Or.inr (by rw [h]; rfl)
+      · exfalso
+        have h : F.modulus.toNat ∣ x.toNat := by
+          have h' := Int.natAbs_dvd_natAbs.mpr hdx
+          rwa [hp, Int.natAbs_natCast] at h'
+        exact hx0 (Nat.eq_zero_of_dvd_of_lt h hxlt)
+    have he' : e = t10.f := by
+      rcases hpm with h | h
+      · rw [h] at hsw'
+        have : sw < 2^63 := by omega
+        rw [he, if_pos this, h]
+      · rw [h] at hsw'
+        have : ¬ sw < 2^63 := by omega
+        rw [he, if_neg this, h]
+    have hff : t10.f * t10.f = 1 := by rcases hpm with h | h <;> rw [h] <;> norm_num
+    have hee : e * e = 1 := by rw [he']; exact hff
+    rw [hf] at hcf
+    rw [hg] at hcg
+    have step1 : 2^59 * (t10.f * 2^562) ≡ x.toNat * 2^45
+        * ((M 59 t).a * st.u.toNat + (M 59 t).b * st.v.toNat) [ZMOD F.modulus.toNat] := by
+      calc 2^59 * (t10.f * 2^562)
+          = (M 59 t).a * (t.f * 2^562) + (M 59 t).b * (t.g * 2^562) := by
+            linear_combination 2^562 * hs1
+        _ ≡ (M 59 t).a * (x.toNat * 2^(5 * 9) * st.u.toNat)
+            + (M 59 t).b * (x.toNat * 2^(5 * 9) * st.v.toNat) [ZMOD F.modulus.toNat] :=
+            (hcf.mul_left _).add (hcg.mul_left _)
+        _ = x.toNat * 2^45 * ((M 59 t).a * st.u.toNat + (M 59 t).b * st.v.toNat) := by ring
+    have step2 : e * (r * 2^64) ≡ (M 59 t).a * st.u.toNat + (M 59 t).b * st.v.toNat
+        [ZMOD F.modulus.toNat] := by
+      calc e * (r * 2^64) ≡ e * (e * ((M 59 t).a * st.u.toNat + (M 59 t).b * st.v.toNat))
+            [ZMOD F.modulus.toNat] := hrc.mul_left e
+        _ = (e * e) * ((M 59 t).a * st.u.toNat + (M 59 t).b * st.v.toNat) := by ring
+        _ = (M 59 t).a * st.u.toNat + (M 59 t).b * st.v.toNat := by rw [hee]; ring
+    have step3 : 2^109 * (2^512 * t10.f) ≡ 2^109 * (x.toNat * (e * r)) [ZMOD F.modulus.toNat] := by
+      calc 2^109 * (2^512 * t10.f) = 2^59 * (t10.f * 2^562) := by ring
+        _ ≡ x.toNat * 2^45 * ((M 59 t).a * st.u.toNat + (M 59 t).b * st.v.toNat)
+            [ZMOD F.modulus.toNat] := step1
+        _ ≡ x.toNat * 2^45 * (e * (r * 2^64)) [ZMOD F.modulus.toNat] := step2.symm.mul_left _
+        _ = 2^109 * (x.toNat * (e * r)) := by ring
+    have step4 := F.modEq_cancel_two_pow 109 step3
+    have key : (x.toNat : ℤ) * r ≡ 2^512 [ZMOD F.modulus.toNat] := by
+      calc (x.toNat : ℤ) * r = t10.f * (x.toNat * (t10.f * r)) := by
+            linear_combination (-(x.toNat * r)) * hff
+        _ = t10.f * (x.toNat * (e * r)) := by rw [he']
+        _ ≡ t10.f * (2^512 * t10.f) [ZMOD F.modulus.toNat] := step4.symm.mul_left _
+        _ = 2^512 := by linear_combination 2^512 * hff
+    have hR : R^2 = 2^512 := by norm_num [R]
+    rw [hr] at key
+    rw [hR]
+    unfold Nat.ModEq
+    unfold Int.ModEq at key
+    exact_mod_cast key
 
 end PastaCurves.Inversion
