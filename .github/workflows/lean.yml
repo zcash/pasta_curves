@@ -81,7 +81,7 @@ jobs:
         working-directory: lean
         run: |
           git clone --depth 1 \
-            --revision=418320295890faed83a96fd97907b12a3b6728c2 \
+            --revision=3a2407216ee84a75f9e1aead6803d0578be06ae7 \
             https://github.com/ammkrn/nanoda_lib work/nanoda_lib
           cargo build --release --manifest-path work/nanoda_lib/Cargo.toml
       - name: Export the library and re-check it
