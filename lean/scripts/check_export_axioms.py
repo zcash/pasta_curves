@@ -47,6 +47,7 @@ Usage: scripts/check_export_axioms.py [nanoda-config.json]
 The export path is read from the config (single source of truth). Runs from the
 repository root.
 """
+
 import json
 import sys
 from pathlib import Path
@@ -62,15 +63,18 @@ RESTRICTED = {"Lean.trustCompiler": {"Lean.reduceBool", "Lean.reduceNat"}}
 TARGETS = UNREFERENCED | set(RESTRICTED)
 TARGET_COMPONENTS = {t.rsplit(".", 1)[-1] for t in TARGETS}
 
-EXPR_KINDS = {"app", "bvar", "const", "forallE", "lam", "letE", "natVal", "proj",
-              "sort", "strVal"}
+EXPR_KINDS = {"app", "bvar", "const", "forallE", "lam", "letE", "natVal", "proj", "sort", "strVal"}
 LEVEL_KINDS = {"imax", "max", "param", "succ"}
 DECL_KINDS = {"axiom", "def", "inductive", "opaque", "quot", "thm"}
 # Expression sub-ids per expression kind (everything else in the payload is a name id,
 # a level id, or plain data).
-EXPR_SUBFIELDS = {"app": ("fn", "arg"), "forallE": ("type", "body"),
-                  "lam": ("type", "body"), "letE": ("type", "value", "body"),
-                  "proj": ("struct",)}
+EXPR_SUBFIELDS = {
+    "app": ("fn", "arg"),
+    "forallE": ("type", "body"),
+    "lam": ("type", "body"),
+    "letE": ("type", "value", "body"),
+    "proj": ("struct",),
+}
 # Keys holding expression ids inside declaration payloads (at any nesting depth).
 DECL_EXPR_KEYS = {"type", "value", "rhs"}
 
@@ -82,9 +86,12 @@ def violation(msg):
 
 
 def error(msg) -> NoReturn:
-    print(f"ERROR: {msg} — the export's structure is not as this script assumes, so "
-          f"its conclusions would be unreliable; re-verify the assumptions and update "
-          f"this script", file=sys.stderr)
+    print(
+        f"ERROR: {msg} — the export's structure is not as this script assumes, so "
+        f"its conclusions would be unreliable; re-verify the assumptions and update "
+        f"this script",
+        file=sys.stderr,
+    )
     sys.exit(2)
 
 
@@ -238,8 +245,9 @@ def main():
         if unpermitted:
             violation(f"axiom(s) declared but not permitted: {unpermitted}")
         if undeclared:
-            violation(f"permitted axiom(s) not declared in the export (stale census "
-                      f"entry): {undeclared}")
+            violation(
+                f"permitted axiom(s) not declared in the export (stale census entry): {undeclared}"
+            )
 
     for t in sorted(UNREFERENCED):
         if const_cited[t] or citers.get(t):
@@ -247,15 +255,13 @@ def main():
     for t, allowed in RESTRICTED.items():
         extra = citers.get(t, set()) - allowed
         if extra:
-            violation(f"'{t}' is cited outside its allowance {sorted(allowed)}: "
-                      f"{sorted(extra)}")
+            violation(f"'{t}' is cited outside its allowance {sorted(allowed)}: {sorted(extra)}")
 
     # Print the full census whether or not anything was flagged: this is the actionable
     # state when a check above has flagged a stale or widened axiom list.
     print(f"export axiom census: {len(declared_axioms)} axiom(s) declared:")
     for a in sorted(declared_axioms):
-        cited = ([] if a not in TARGETS else
-                 sorted(citers.get(a, set())) or ["nothing"])
+        cited = [] if a not in TARGETS else sorted(citers.get(a, set())) or ["nothing"]
         note = f"  (cited by: {', '.join(cited)})" if cited else ""
         print(f"  {a}{note}")
 
@@ -263,8 +269,10 @@ def main():
         for msg in violations[:MAX_REPORTED_VIOLATIONS]:
             print(f"VIOLATION: {msg}", file=sys.stderr)
         if len(violations) > MAX_REPORTED_VIOLATIONS:
-            print(f"... and {len(violations) - MAX_REPORTED_VIOLATIONS} further "
-                  f"violation(s)", file=sys.stderr)
+            print(
+                f"... and {len(violations) - MAX_REPORTED_VIOLATIONS} further violation(s)",
+                file=sys.stderr,
+            )
         sys.exit(1)
     print("export axiom census: all checks passed")
 

@@ -59,8 +59,13 @@ ARG_FIELDS["product"] = [f"l{i}" for i in range(8)]
 
 # Bounds hypotheses the annotated spec theorems must provide, by argument name.
 BOUND_HYPS = {
-    "t": "ht", "modulus": "hm", "lhs": "hlhs", "rhs": "hrhs",
-    "value": "hv", "product": "hproduct", "acc": "hacc",
+    "t": "ht",
+    "modulus": "hm",
+    "lhs": "hlhs",
+    "rhs": "hrhs",
+    "value": "hv",
+    "product": "hproduct",
+    "acc": "hacc",
 }
 INV_BOUND_HYP = "hinv_lt"
 SKELETON_WIDTH = 100
@@ -70,10 +75,10 @@ class Emitter:
     """Records one block's Lean `let` bindings and their proof facts."""
 
     def __init__(self):
-        self.entries = []   # dicts: name, expr, comment, reads, load (bool)
+        self.entries = []  # dicts: name, expr, comment, reads, load (bool)
         self.known = set()  # names holding a value the program may read
         self.cur_reads = set()
-        self.pc = None      # index of the instruction being transcribed (None: an argument)
+        self.pc = None  # index of the instruction being transcribed (None: an argument)
 
     def bind(self, name, expr, comment=None, reads=None, load=False, fact=None, note=None):
         """Record a binding. `fact` is the skeleton's description of it: a tuple whose head
@@ -81,9 +86,18 @@ class Emitter:
         when given, replaces the instruction as the binding's trailing comment, for a binding
         that continues the instruction of the line above it."""
         self.known.add(name)
-        self.entries.append(dict(name=name, expr=expr, comment=comment, note=note,
-                                 reads=set(self.cur_reads) if reads is None else set(reads),
-                                 load=load, fact=fact, pc=self.pc))
+        self.entries.append(
+            {
+                "name": name,
+                "expr": expr,
+                "comment": comment,
+                "note": note,
+                "reads": set(self.cur_reads) if reads is None else set(reads),
+                "load": load,
+                "fact": fact,
+                "pc": self.pc,
+            }
+        )
 
     def liveness(self, result_names):
         """Which entries something later reads, by a backward pass from the result names."""
@@ -105,7 +119,9 @@ class Emitter:
             if keep:
                 lines.append((f"  let {e['name']} := {e['expr']}", e.get("note") or e["comment"]))
             elif e["load"]:
-                lines.append((None, f"  -- {e['comment']}: {e['name']} = {e['expr']} is never read"))
+                lines.append(
+                    (None, f"  -- {e['comment']}: {e['name']} = {e['expr']} is never read")
+                )
             elif e["name"] != "c":
                 raise ValueError(f"dead computation: {e['name']} := {e['expr']} ({e['comment']})")
         return lines
@@ -116,8 +132,18 @@ class Routine:
     emitter and result names for the proof skeleton, and for a round definition the text of its
     state structure."""
 
-    def __init__(self, doc, signature, lines, result, name, emitter, result_names, struct=None,
-                 arg_fields=None):
+    def __init__(
+        self,
+        doc,
+        signature,
+        lines,
+        result,
+        name,
+        emitter,
+        result_names,
+        struct=None,
+        arg_fields=None,
+    ):
         self.doc, self.signature, self.lines, self.result = doc, signature, lines, result
         self.name, self.emitter, self.result_names = name, emitter, result_names
         self.struct = struct
@@ -134,15 +160,23 @@ class Routine:
             if code is None:
                 body.append(comment)
             else:
-                body.append(f"{code.ljust(column) if len(code) + 2 <= column else code + '  '}-- {comment}")
+                body.append(
+                    f"{code.ljust(column) if len(code) + 2 <= column else code + '  '}-- {comment}"
+                )
         head = f"{self.struct}\n" if self.struct else ""
-        return head + f"{docstring(self.doc)}\n{self.signature}\n" + "\n".join(body) + f"\n{self.result}\n"
+        return (
+            head
+            + f"{docstring(self.doc)}\n{self.signature}\n"
+            + "\n".join(body)
+            + f"\n{self.result}\n"
+        )
 
 
 def docstring(text, width=100):
     """A `/-- ... -/` docstring wrapped to the repository's line width."""
-    lines = textwrap.TextWrapper(width=width, break_long_words=False, break_on_hyphens=False,
-                                 initial_indent="/-- ").wrap(text)
+    lines = textwrap.TextWrapper(
+        width=width, break_long_words=False, break_on_hyphens=False, initial_indent="/-- "
+    ).wrap(text)
     if len(lines[-1]) + 3 <= width:
         lines[-1] += " -/"
     else:
@@ -164,8 +198,8 @@ FIELDS = {"Fp": "pallasBase", "Fq": "vestaBase"}
 
 # The two moduli as integers, for classifying the vectors' operands.
 MODULUS_INT = {
-    "Fp": 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001,
-    "Fq": 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001,
+    "Fp": 0x40000000000000000000000000000000224698FC094CF91B992D30ED00000001,
+    "Fq": 0x40000000000000000000000000000000224698FC0994A8DD8C46EB2100000001,
 }
 
 VECTOR_OPERAND_COUNTS = {"MUL": 2, "SQR": 1, "FROM": 1}
@@ -245,14 +279,27 @@ namespace PastaAsm
 
 # The generated lists, by the corpus's routine key: the Lean name, its type, and its docstring.
 VECTOR_LISTS = {
-    "MUL": ("mulVectors", "List (Nat × PastaField × Limbs × Limbs × Limbs)",
+    "MUL": (
+        "mulVectors",
+        "List (Nat × PastaField × Limbs × Limbs × Limbs)",
+        (
             "The multiplication vectors inside the public contract: the index, the field, `lhs`, "
-            "`rhs`, and the expected result."),
-    "SQR": ("sqrVectors", "List (Nat × PastaField × Limbs × Limbs)",
+            "`rhs`, and the expected result."
+        ),
+    ),
+    "SQR": (
+        "sqrVectors",
+        "List (Nat × PastaField × Limbs × Limbs)",
+        (
             "The squaring vectors, all of them canonical inputs: the index, the field, the input, "
-            "and the expected result."),
-    "FROM": ("fromVectors", "List (Nat × PastaField × Limbs × Limbs)",
-             "The conversion vectors: the index, the field, the input, and the expected result."),
+            "and the expected result."
+        ),
+    ),
+    "FROM": (
+        "fromVectors",
+        "List (Nat × PastaField × Limbs × Limbs)",
+        "The conversion vectors: the index, the field, the input, and the expected result.",
+    ),
 }
 
 
@@ -278,8 +325,9 @@ def render_vector_data(lines):
         out.append("]\n\n")
     n = sum(len(entries) for entries in rows.values())
     omitted = ", ".join(f"{k} {op}" for op, k in sorted(skipped.items())) or "none"
-    out.append(f"-- {n} vectors; omitted as outside the public contracts: {omitted}.\n\n"
-               "end PastaAsm\n")
+    out.append(
+        f"-- {n} vectors; omitted as outside the public contracts: {omitted}.\n\nend PastaAsm\n"
+    )
     return "".join(out)
 
 
@@ -321,8 +369,24 @@ class SkeletonPreparation:
 class SkeletonFactContext:
     """Shared skeleton state exposed narrowly to an ISA backend's fact hook."""
 
-    def __init__(self, entries, names, index, entry, name, group_entries, group_names,
-                 lines, eq, lt64, le1, ren, bnd, unit_bound, consumed):
+    def __init__(
+        self,
+        entries,
+        names,
+        index,
+        entry,
+        name,
+        group_entries,
+        group_names,
+        lines,
+        eq,
+        lt64,
+        le1,
+        ren,
+        bnd,
+        unit_bound,
+        consumed,
+    ):
         self.entries, self.names, self.index = entries, names, index
         self.entry, self.name = entry, name
         self.group_entries = group_entries
@@ -380,10 +444,13 @@ def skeleton(routine):
     bnd = {}  # SSA name -> the fact bounding it below 2^64 (registers) or by 1 (carries)
     narrow = set()  # `lsr` results, whose bound is below 2^64 and needs weakening
     unit_bound = set()
-    out = [f"  -- generated skeleton for `{routine.name}`: do not edit between the annotations",
-           f"  unfold {routine.name} at hr", "  lift_lets -merge at hr"]
+    out = [
+        f"  -- generated skeleton for `{routine.name}`: do not edit between the annotations",
+        f"  unfold {routine.name} at hr",
+        "  lift_lets -merge at hr",
+    ]
     products = {}
-    eqs = []      # the current group's `have e_... := rfl` lines
+    eqs = []  # the current group's `have e_... := rfl` lines
 
     def r(op):  # operand as written in the entry, renamed to its SSA name at that point
         return ren.get(op, op)
@@ -435,9 +502,21 @@ def skeleton(routine):
         # and at most a disjunction. The `%`/`/` equations are derived by `rfl`, used to prove
         # those facts, and cleared.
         fact_context = SkeletonFactContext(
-            entries, names, i, en, nm,
-            group_entries or [(en, nm)], group_names,
-            lines, eq, lt64, le1, ren, bnd, unit_bound, len(group),
+            entries,
+            names,
+            i,
+            en,
+            nm,
+            group_entries or [(en, nm)],
+            group_names,
+            lines,
+            eq,
+            lt64,
+            le1,
+            ren,
+            bnd,
+            unit_bound,
+            len(group),
         )
 
         if backend.fact(kind, ops, fact_context):
@@ -446,7 +525,9 @@ def skeleton(routine):
             arg, field = ops
             hyp = BOUND_HYPS[arg]
             eq(nm, f"{arg}.{field}")
-            lines.append(f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact {hyp}.{proj(arg, field, routine.arg_fields)}")
+            lines.append(
+                f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact {hyp}.{proj(arg, field, routine.arg_fields)}"
+            )
             bnd[nm] = f"b_{nm}"
         elif kind == "inv":
             eq(nm, "inv")
@@ -467,14 +548,20 @@ def skeleton(routine):
         elif kind == "mul":
             a, b = ops
             eq(nm, f"{a} * {b} % 2^64")
-            lines.append(f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact Nat.mod_lt _ (Nat.two_pow_pos _)")
+            lines.append(
+                f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact Nat.mod_lt _ (Nat.two_pow_pos _)"
+            )
             bnd[nm] = f"b_{nm}"
             products[(a, b)] = nm  # its `%` equation is cleared at the matching `umulh`
         elif kind == "umulh":
             a, b = ops
             eq(nm, f"{a} * {b} / 2^64")
-            lines.append(f"  have p_{nm} : {a} * {b} < 2^64 * 2^64 := Nat.mul_lt_mul'' {lt64(a)} {lt64(b)}")
-            lines.append(f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact Nat.div_lt_of_lt_mul p_{nm}")
+            lines.append(
+                f"  have p_{nm} : {a} * {b} < 2^64 * 2^64 := Nat.mul_lt_mul'' {lt64(a)} {lt64(b)}"
+            )
+            lines.append(
+                f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact Nat.div_lt_of_lt_mul p_{nm}"
+            )
             bnd[nm] = f"b_{nm}"
             if (a, b) in products:
                 lo = products.pop((a, b))
@@ -497,7 +584,9 @@ def skeleton(routine):
             if k != 62:
                 raise ValueError(f"lsl by {k}: add a lemma to the spec preamble")
             eq(nm, f"{a} * 2^{k} % 2^64")
-            lines.append(f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact Nat.mod_lt _ (Nat.two_pow_pos _)")
+            lines.append(
+                f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact Nat.mod_lt _ (Nat.two_pow_pos _)"
+            )
             lines.append(f"  have sh_{nm} : {nm} + 2^64 * ({a} / 2^2) = {a} * 2^62 := by")
             lines.append(f"    rw [e_{nm}]; exact lsl62_lsr2_split _")
             bnd[nm] = f"b_{nm}"
@@ -505,16 +594,22 @@ def skeleton(routine):
             a, k = ops
             eq(nm, f"{a} / 2^{k}")
             lines.append(f"  have b_{nm} : {nm} < 2^{64 - k} := by")
-            lines.append(f"    rw [e_{nm}]; exact Nat.div_lt_of_lt_mul (lt_of_lt_of_eq {lt64(a)} (by norm_num))")
+            lines.append(
+                f"    rw [e_{nm}]; exact Nat.div_lt_of_lt_mul (lt_of_lt_of_eq {lt64(a)} (by norm_num))"
+            )
             bnd[nm] = f"b_{nm}"
             narrow.add(nm)
         elif kind == "adc":
             a, b, cin = ops
             eq(nm, f"({a} + {b} + {cin}) % 2^64")
-            lines.append(f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact Nat.mod_lt _ (Nat.two_pow_pos _)")
+            lines.append(
+                f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact Nat.mod_lt _ (Nat.two_pow_pos _)"
+            )
             lines.append(f"  obtain ⟨k_{nm}, b_k_{nm}, l_{nm}⟩ :")
             lines.append(f"      ∃ k, k ≤ 1 ∧ {nm} + 2^64 * k = {a} + {b} + {cin} :=")
-            lines.append(f"    ⟨({a} + {b} + {cin}) / 2^64, addc_carry_le_one {a} {b} {cin} {lt64(a)} {lt64(b)} {le1(cin)},")
+            lines.append(
+                f"    ⟨({a} + {b} + {cin}) / 2^64, addc_carry_le_one {a} {b} {cin} {lt64(a)} {lt64(b)} {le1(cin)},"
+            )
             lines.append(f"      by rw [e_{nm}]; exact Nat.mod_add_div _ _⟩")
             lines.append(f"  clear e_{nm}")
             bnd[nm] = f"b_{nm}"
@@ -536,7 +631,9 @@ def skeleton(routine):
 
         if not group_entries:
             ren[en["name"]] = nm
-        out.append(f"  -- {label}: {group_entries[0][0]['comment'] if group_entries else en['comment']}")
+        out.append(
+            f"  -- {label}: {group_entries[0][0]['comment'] if group_entries else en['comment']}"
+        )
         out += wrap_tactic("extract_lets -merge +onlyGivenNames", group, " at hr")
         out += eqs
         if prepared.clear_values:
@@ -572,7 +669,8 @@ def _strip_annotations(path, text):
             if label != active[0]:
                 print(
                     f"{path}:{line_number}: END `{label}` does not match BEGIN `{active[0]}` "
-                    f"at line {active[1]}", file=sys.stderr,
+                    f"at line {active[1]}",
+                    file=sys.stderr,
                 )
                 ok = False
             active = None
@@ -612,7 +710,7 @@ def check_spec(path, routines):
             ok = False
             continue
         start = starts[0]
-        found = remaining[start:start + len(generated)]
+        found = remaining[start : start + len(generated)]
         if found != generated:
             for index, expected in enumerate(generated):
                 actual = found[index] if index < len(found) else "<eof>"
@@ -697,9 +795,7 @@ def parse_spec_manifest(specification):
         raise ValueError(f"unregistered proof skeleton manifest: {key}")
     architecture, routine_names = SPEC_MANIFEST[key]
     if requested_architecture is not None and requested_architecture != architecture:
-        raise ValueError(
-            f"manifest {key} belongs to {architecture}, not {requested_architecture}"
-        )
+        raise ValueError(f"manifest {key} belongs to {architecture}, not {requested_architecture}")
     available = architecture_routines()
     if architecture not in available:
         raise ValueError(f"manifest {key} names unknown architecture {architecture}")
@@ -722,8 +818,9 @@ def check_specs(strict=False):
     mode rejects them as well. Kernel checking remains the responsibility of the Lean build.
     """
     available = architecture_routines()
-    inventory = {(arch, routine.name) for arch, routines in available.items()
-                 for routine in routines}
+    inventory = {
+        (arch, routine.name) for arch, routines in available.items() for routine in routines
+    }
     covered, unproved = {}, set()
     ok = True
     for filename, (arch, names) in SPEC_MANIFEST.items():
@@ -741,8 +838,10 @@ def check_specs(strict=False):
                 ok = False
                 continue
             if key in covered:
-                print(f"{arch}:{name}: duplicate coverage in {covered[key]} and {filename}",
-                      file=sys.stderr)
+                print(
+                    f"{arch}:{name}: duplicate coverage in {covered[key]} and {filename}",
+                    file=sys.stderr,
+                )
                 ok = False
             covered[key] = filename
             routines.append(by_name[name])
@@ -770,11 +869,15 @@ def check_specs(strict=False):
     for arch, name in sorted(unproved & inventory):
         print(f"unproved: {arch}:{name}")
     if strict and unproved:
-        print("strict Spec coverage requires every routine to have a checked skeleton",
-              file=sys.stderr)
+        print(
+            "strict Spec coverage requires every routine to have a checked skeleton",
+            file=sys.stderr,
+        )
         ok = False
-    print(f"Spec coverage: {len(covered)} registered, {len(unproved & inventory)} unproved; "
-          f"{'checks passed' if ok else 'FAILED'}")
+    print(
+        f"Spec coverage: {len(covered)} registered, {len(unproved & inventory)} unproved; "
+        f"{'checks passed' if ok else 'FAILED'}"
+    )
     return ok
 
 
@@ -783,17 +886,25 @@ def main(argv=None):
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--check", action="store_true", help="compare every output without writing")
     action.add_argument(
-        "--check-spec", metavar="[ARCH:]FILE",
+        "--check-spec",
+        metavar="[ARCH:]FILE",
         help="check the architecture's registered proof skeletons",
     )
     action.add_argument(
-        "--skeleton", metavar="[ARCH:]NAME",
+        "--skeleton",
+        metavar="[ARCH:]NAME",
         help="print one proof skeleton (bare names retain legacy AArch64 meaning)",
     )
-    action.add_argument("--check-specs", action="store_true",
-                        help="check all Spec files and account for every generated routine")
-    parser.add_argument("--strict", action="store_true",
-                        help="with --check-specs, reject explicitly unproved routines")
+    action.add_argument(
+        "--check-specs",
+        action="store_true",
+        help="check all Spec files and account for every generated routine",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="with --check-specs, reject explicitly unproved routines",
+    )
     args = parser.parse_args(argv)
     if args.strict and not args.check_specs:
         parser.error("--strict requires --check-specs")

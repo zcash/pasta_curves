@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Unit tests for shared reference-vector parsing, filtering, and emission."""
 
-from collections import Counter
 import sys
 import unittest
+from collections import Counter
 
 # Running this source-tree test should not leave lean/scripts/__pycache__ behind.
 sys.dont_write_bytecode = True
@@ -32,14 +32,16 @@ class SharedVectorTests(unittest.TestCase):
     def test_corpus_shape_covers_both_fields_and_all_operations(self):
         self.assertEqual(
             Counter((key, op) for op, key, _ in self.vectors),
-            Counter({
-                ("Fp", "MUL"): 493,
-                ("Fq", "MUL"): 493,
-                ("Fp", "SQR"): 17,
-                ("Fq", "SQR"): 17,
-                ("Fp", "FROM"): 17,
-                ("Fq", "FROM"): 17,
-            }),
+            Counter(
+                {
+                    ("Fp", "MUL"): 493,
+                    ("Fq", "MUL"): 493,
+                    ("Fp", "SQR"): 17,
+                    ("Fq", "SQR"): 17,
+                    ("Fp", "FROM"): 17,
+                    ("Fq", "FROM"): 17,
+                }
+            ),
         )
 
     def test_public_contract_counts(self):
@@ -58,8 +60,11 @@ class SharedVectorTests(unittest.TestCase):
         lists = self.generated.split("\ndef ")[1:]
         entries = {}
         for block in lists:
-            indices = [int(line[3:].split(",", 1)[0]) for line in block.splitlines()
-                       if line.startswith("  (") and line.endswith("Base,")]
+            indices = [
+                int(line[3:].split(",", 1)[0])
+                for line in block.splitlines()
+                if line.startswith("  (") and line.endswith("Base,")
+            ]
             self.assertEqual(indices, list(range(len(indices))))
             entries[block.split(" ", 1)[0]] = len(indices)
         self.assertEqual(entries, {"mulVectors": 806, "sqrVectors": 34, "fromVectors": 34})

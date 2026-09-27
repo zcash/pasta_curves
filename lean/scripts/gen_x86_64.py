@@ -15,13 +15,12 @@ comparison.
 
 import dataclasses
 import re
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 import asm_source
 import gen
 from asm_source import Declaration, GenerationError, ParsedFunction
-
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "src/asm/x86_64.rs"
@@ -67,7 +66,7 @@ FOOTER = "\nend PastaAsm.X86_64\n"
 class RoutineConfig:
     rust_name: str
     lean_name: str
-    args: Tuple[Tuple[str, str], ...]
+    args: tuple[tuple[str, str], ...]
     result_type: str
     result_count: int
     doc: str
@@ -86,9 +85,7 @@ def validate_high_limb(source: str) -> None:
         raise GenerationError("expected exactly one PASTA_HIGH_LIMB declaration")
     expression = re.sub(r"\s+", "", matches[0])
     if expression != "1<<62" or PASTA_HIGH_LIMB != 0x4000000000000000:
-        raise GenerationError(
-            "PASTA_HIGH_LIMB must be `1 << 62` (0x4000000000000000)"
-        )
+        raise GenerationError("PASTA_HIGH_LIMB must be `1 << 62` (0x4000000000000000)")
 
 
 def parse_declaration(text: str) -> Declaration:
@@ -110,37 +107,51 @@ MUL_ACC_FIELDS = ("r0", "r1", "r2", "r3", "r4", "q")
 
 ROUTINES = (
     RoutineConfig(
-        "add", "addMod",
+        "add",
+        "addMod",
         (("lhs", "Limbs"), ("rhs", "Limbs"), ("modulus", "Limbs")),
-        "Limbs", 4,
+        "Limbs",
+        4,
         "The inline `asm!` block of `add`: modular addition followed by its conditional reduction.",
     ),
     RoutineConfig(
-        "sub", "subMod",
+        "sub",
+        "subMod",
         (("lhs", "Limbs"), ("rhs", "Limbs"), ("modulus", "Limbs")),
-        "Limbs", 4,
+        "Limbs",
+        4,
         "The inline `asm!` block of `sub`: modular subtraction and conditional modulus addition.",
     ),
     RoutineConfig(
-        "mul", "mulMont",
+        "mul",
+        "mulMont",
         (("lhs", "Limbs"), ("rhs", "Limbs"), ("modulus", "Limbs"), ("inv", "Nat")),
-        "Limbs", 4,
+        "Limbs",
+        4,
         "The inline `asm!` block of `mul`: Montgomery multiplication and conditional reduction.",
     ),
     RoutineConfig(
-        "square_lo", "squareLo", (("value", "Limbs"),), "WideLimbs", 8,
+        "square_lo",
+        "squareLo",
+        (("value", "Limbs"),),
+        "WideLimbs",
+        8,
         "The inline `asm!` block of `square_lo`: the unreduced 512-bit square.",
     ),
     RoutineConfig(
-        "square_hi", "squareHi",
+        "square_hi",
+        "squareHi",
         (("product", "WideLimbs"), ("modulus", "Limbs"), ("inv", "Nat")),
-        "Limbs", 4,
+        "Limbs",
+        4,
         "The inline `asm!` block of `square_hi`: Montgomery reduction of `squareLo`'s product.",
     ),
     RoutineConfig(
-        "from_mont", "fromMont",
+        "from_mont",
+        "fromMont",
         (("value", "Limbs"), ("modulus", "Limbs"), ("inv", "Nat")),
-        "Limbs", 4,
+        "Limbs",
+        4,
         "The inline `asm!` block of `from_mont`: Montgomery reduction of a four-limb value.",
     ),
 )
@@ -161,14 +172,15 @@ def parse_function(source: str, config: RoutineConfig) -> ParsedFunction:
 @dataclasses.dataclass(frozen=True)
 class RegisterToken:
     name: str
-    modifier: Optional[str] = None
+    modifier: str | None = None
 
 
 class Emitter(gen.Emitter):
     """Validate x86-64 instructions and record them in the shared binding IR."""
 
-    def __init__(self, directions: Dict[str, str], pointers: Dict[str, str],
-                 clear_values: bool = True):
+    def __init__(
+        self, directions: dict[str, str], pointers: dict[str, str], clear_values: bool = True
+    ):
         super().__init__()
         self.directions = dict(directions)
         self.pointers = dict(pointers)
@@ -188,9 +200,10 @@ class Emitter(gen.Emitter):
         return ("mov", expression)
 
     @staticmethod
-    def _reads(*operands: str) -> Set[str]:
+    def _reads(*operands: str) -> set[str]:
         return {
-            operand for operand in operands
+            operand
+            for operand in operands
             if re.fullmatch(r"[A-Za-z_]\w*", operand) and not operand.isdigit()
         }
 
@@ -199,7 +212,11 @@ class Emitter(gen.Emitter):
         if register in self.known or register in self.pointers:
             raise GenerationError(f"duplicate initial binding for {register}")
         self.bind(
-            register, expression, description, reads=(), load="." in expression,
+            register,
+            expression,
+            description,
+            reads=(),
+            load="." in expression,
             fact=self._fact_for_input(register, expression),
         )
 
@@ -226,7 +243,7 @@ class Emitter(gen.Emitter):
     @staticmethod
     def parse_register(token: str) -> RegisterToken:
         token = token.strip()
-        if token.startswith("qword ptr") or token.startswith("["):
+        if token.startswith(("qword ptr", "[")):
             raise GenerationError(f"memory write is unsupported: {token}")
         if token == "rdx":
             return RegisterToken("rdx")
@@ -278,7 +295,7 @@ class Emitter(gen.Emitter):
         return self.read_register(token)
 
     @staticmethod
-    def split_instruction(text: str) -> Tuple[str, List[str]]:
+    def split_instruction(text: str) -> tuple[str, list[str]]:
         found = re.fullmatch(r"\s*([A-Za-z][A-Za-z0-9]*)\s*(.*?)\s*", text)
         if not found:
             raise GenerationError(f"cannot parse instruction {text!r}")
@@ -307,13 +324,17 @@ class Emitter(gen.Emitter):
         if not self.of_valid:
             raise GenerationError(f"OF read while invalid: {text}")
 
-    def emit(self, name: str, expr: str, comment: Optional[str] = None,
-             *, reads=(), fact=None, note=None) -> None:
+    def emit(
+        self, name: str, expr: str, comment: str | None = None, *, reads=(), fact=None, note=None
+    ) -> None:
         self.bind(name, expr, comment, reads=reads, fact=fact, note=note)
 
     def render(self, result_names):
         """Retain every architectural result in the mechanical x86 transcription."""
-        return [(f"  let {e['name']} := {e['expr']}", e.get("note") or e["comment"]) for e in self.entries]
+        return [
+            (f"  let {e['name']} := {e['expr']}", e.get("note") or e["comment"])
+            for e in self.entries
+        ]
 
     def binary_add(self, op: str, operands: Sequence[str], text: str) -> None:
         self.require_count(op, operands, 2)
@@ -328,8 +349,13 @@ class Emitter(gen.Emitter):
             carry = "ofl"
         dst = self.write_register(operands[0]).name
         flag = "ofl" if op == "adox" else "cf"
-        self.emit("s", f"addc {dst_old} {src} {carry}", text,
-                  reads=self._reads(dst_old, src, carry), fact=("x86_adds", dst_old, src, carry))
+        self.emit(
+            "s",
+            f"addc {dst_old} {src} {carry}",
+            text,
+            reads=self._reads(dst_old, src, carry),
+            fact=("x86_adds", dst_old, src, carry),
+        )
         self.emit(dst, "s.1", reads=("s",), fact=("fst",), note=f"  `-> {dst}")
         self.emit(flag, "s.2", reads=("s",), fact=("snd",), note=f"  `-> {flag}")
         if op == "adox":
@@ -348,8 +374,13 @@ class Emitter(gen.Emitter):
             self.require_cf(text)
             borrow = "cf"
         dst = self.write_register(operands[0]).name
-        self.emit("d", f"sbb {dst_old} {src} {borrow}", text,
-                  reads=self._reads(dst_old, src, borrow), fact=("x86_subs", dst_old, src, borrow))
+        self.emit(
+            "d",
+            f"sbb {dst_old} {src} {borrow}",
+            text,
+            reads=self._reads(dst_old, src, borrow),
+            fact=("x86_subs", dst_old, src, borrow),
+        )
         self.emit(dst, "d.1", reads=("d",), fact=("fst",), note=f"  `-> {dst}")
         self.emit("cf", "d.2", reads=("d",), fact=("snd",), note="  `-> cf")
         self.cf_valid = True
@@ -371,8 +402,13 @@ class Emitter(gen.Emitter):
                 low = self.write_register(operands[1]).name
                 if high == low:
                     raise GenerationError("mulx destinations must be distinct")
-                self.emit("m", f"mulx {rdx} {src}", text,
-                          reads=self._reads(rdx, src), fact=("x86_mulx", rdx, src))
+                self.emit(
+                    "m",
+                    f"mulx {rdx} {src}",
+                    text,
+                    reads=self._reads(rdx, src),
+                    fact=("x86_mulx", rdx, src),
+                )
                 self.emit(high, "m.1", reads=("m",), fact=("fst",), note=f"  `-> {high}")
                 self.emit(low, "m.2", reads=("m",), fact=("snd",), note=f"  `-> {low}")
             elif op == "imul":
@@ -380,8 +416,13 @@ class Emitter(gen.Emitter):
                 old = self.read_register(operands[0])
                 src = self.read_value(operands[1])
                 dst = self.write_register(operands[0]).name
-                self.emit(dst, f"mulLo {old} {src}", text,
-                          reads=self._reads(old, src), fact=("mul", old, src))
+                self.emit(
+                    dst,
+                    f"mulLo {old} {src}",
+                    text,
+                    reads=self._reads(old, src),
+                    fact=("mul", old, src),
+                )
                 self.cf_valid = False
                 self.of_valid = False
             elif op in ("shl", "shr"):
@@ -392,8 +433,13 @@ class Emitter(gen.Emitter):
                     raise GenerationError("only unmasked nonzero 64-bit shift counts are supported")
                 dst = self.write_register(operands[0]).name
                 operation = "lsl" if op == "shl" else "lsr"
-                self.emit(dst, f"{operation} {old} {amount}", text,
-                          reads=(old,), fact=(operation, old, amount))
+                self.emit(
+                    dst,
+                    f"{operation} {old} {amount}",
+                    text,
+                    reads=(old,),
+                    fact=(operation, old, amount),
+                )
                 self.cf_valid = False
                 self.of_valid = False
             elif op in ("add", "adc", "adcx", "adox"):
@@ -415,8 +461,13 @@ class Emitter(gen.Emitter):
                 old = self.read_register(operands[0])
                 src = self.read_value(operands[1])
                 dst = self.write_register(operands[0]).name
-                self.emit(dst, f"cmovnc cf {old} {src}", text,
-                          reads=self._reads("cf", old, src), fact=("select", "cf", src, old))
+                self.emit(
+                    dst,
+                    f"cmovnc cf {old} {src}",
+                    text,
+                    reads=self._reads("cf", old, src),
+                    fact=("select", "cf", src, old),
+                )
             elif op == "xor":
                 self.require_count(op, operands, 2)
                 left = self.parse_register(operands[0])
@@ -446,9 +497,9 @@ class Emitter(gen.Emitter):
 
 def input_expression(
     value: str,
-    locals_map: Dict[str, Tuple[str, int]],
-    argument_types: Dict[str, str],
-) -> Tuple[str, str]:
+    locals_map: dict[str, tuple[str, int]],
+    argument_types: dict[str, str],
+) -> tuple[str, str]:
     direct = re.fullmatch(r"([A-Za-z_]\w*)\[([0-9]+)\]", value)
     if direct:
         argument, index_text = direct.groups()
@@ -525,9 +576,7 @@ class SkeletonBackend(gen.SkeletonBackend):
                 linear = f"{value_name} + 2^64 * {flag_name} = {a} + {b} + {carry}"
                 linear_proof = f"addc_lin {a} {b} {carry}"
                 value_proof = f"addc_value_lt {a} {b} {carry}"
-                flag_proof = (
-                    f"addc_carry_le_one {a} {b} {carry} {context.lt64(a)} {context.lt64(b)} {context.le1(carry)}"
-                )
+                flag_proof = f"addc_carry_le_one {a} {b} {carry} {context.lt64(a)} {context.lt64(b)} {context.le1(carry)}"
             else:
                 linear = f"{value_name} + {b} + {carry} = {a} + 2^64 * {flag_name}"
                 linear_proof = f"sbb_lin {a} {b} {carry} {context.lt64(a)} {context.lt64(b)} {context.le1(carry)}"
@@ -603,8 +652,12 @@ class Routine(gen.Routine):
                     f"{code.ljust(column) if len(code) + 2 <= column else code + '  '}-- {comment}"
                 )
         head = f"{self.struct}\n" if self.struct else ""
-        return (head + f"{gen.docstring(self.doc)}\n{self.signature}\n" + "\n".join(body)
-                + f"\n{self.result}\n")
+        return (
+            head
+            + f"{gen.docstring(self.doc)}\n{self.signature}\n"
+            + "\n".join(body)
+            + f"\n{self.result}\n"
+        )
 
 
 # Code longer than this does not set the instruction-comment column.
@@ -616,7 +669,9 @@ def comment_column(routines):
     factored round calls, are outliers: they keep their comment two spaces away instead of
     pushing every other comment to the right."""
     return 2 + max(
-        len(code) for routine in routines for code, comment in routine.lines
+        len(code)
+        for routine in routines
+        for code, comment in routine.lines
         if code is not None and comment is not None and len(code) <= COMMENT_COLUMN_MAX
     )
 
@@ -636,7 +691,7 @@ def emit_routine(source: str, config: RoutineConfig) -> Routine:
     )
     if uses_architectural_rdx and len(fixed_rdx) != 1:
         raise GenerationError(
-            f"{config.rust_name}: literal rdx requires exactly one fixed out(\"rdx\") _ operand"
+            f'{config.rust_name}: literal rdx requires exactly one fixed out("rdx") _ operand'
         )
     if not uses_architectural_rdx and fixed_rdx:
         raise GenerationError(f"{config.rust_name}: unused fixed rdx operand")
@@ -646,7 +701,8 @@ def emit_routine(source: str, config: RoutineConfig) -> Routine:
             continue
         if declaration.kind == "const":
             emitter.bind_argument(
-                declaration.name, str(PASTA_HIGH_LIMB),
+                declaration.name,
+                str(PASTA_HIGH_LIMB),
                 f"operand {declaration.name} = const PASTA_HIGH_LIMB",
             )
         elif declaration.kind in ("in", "inout"):
@@ -665,9 +721,7 @@ def emit_routine(source: str, config: RoutineConfig) -> Routine:
                 )
                 emitter.bind_argument(declaration.name, expression, description)
         elif declaration.kind != "out":
-            raise GenerationError(
-                f"{config.rust_name}: unsupported direction {declaration.kind}"
-            )
+            raise GenerationError(f"{config.rust_name}: unsupported direction {declaration.kind}")
 
     if pointer_count:
         if "readonly" not in parsed.options or "nomem" in parsed.options:
@@ -694,7 +748,7 @@ def emit_routine(source: str, config: RoutineConfig) -> Routine:
                 f"{config.rust_name}: output register {register} was never written"
             )
 
-    grouped: List[str] = []
+    grouped: list[str] = []
     index = 0
     while index < len(config.args):
         name, kind = config.args[index]
@@ -708,8 +762,13 @@ def emit_routine(source: str, config: RoutineConfig) -> Routine:
 
     result = f"  ⟨{', '.join(result_registers)}⟩"
     return Routine(
-        config.doc, signature, emitter.render(result_registers), result,
-        config.lean_name, emitter, result_registers,
+        config.doc,
+        signature,
+        emitter.render(result_registers),
+        result,
+        config.lean_name,
+        emitter,
+        result_registers,
     )
 
 
@@ -754,8 +813,14 @@ def _normalized_mul_round_entries(emitter, pc_range, rotation, rhs_limb):
 def _round_fingerprint(entries):
     """The semantic IR fields whose equality justifies replacing a flattened round by a call."""
     return [
-        (entry["name"], entry["expr"], tuple(sorted(entry["reads"])),
-         entry["load"], entry["fact"], entry["pc"])
+        (
+            entry["name"],
+            entry["expr"],
+            tuple(sorted(entry["reads"])),
+            entry["load"],
+            entry["fact"],
+            entry["pc"],
+        )
         for entry in entries
     ]
 
@@ -826,9 +891,7 @@ def _factored_round_body(emitter):
             continue
         normalized = dict(entry)
         normalized["expr"] = _rename_round_value(entry["expr"], aliases, "")
-        normalized["reads"] = {
-            _rename_round_value(read, aliases, "") for read in entry["reads"]
-        }
+        normalized["reads"] = {_rename_round_value(read, aliases, "") for read in entry["reads"]}
         normalized["fact"] = _rename_round_value(entry["fact"], aliases, "")
         body.append(normalized)
         # The omitted entry load creates the initial alias only. Once the source writes RDX,
@@ -862,7 +925,8 @@ def _check_round_call(emitter, source_load, body, registers, rhs_limb, pc_range,
     that the call's registers and the round's rotation cannot disagree."""
     first, last = pc_range
     source = [
-        entry for entry in emitter.entries
+        entry
+        for entry in emitter.entries
         if entry["pc"] is not None and first <= entry["pc"] <= last
     ]
     flattened = _flattened_round_call(source_load, body, registers, rhs_limb, first)
@@ -884,7 +948,11 @@ def factor_mul_rounds(routine: Routine):
         if field == "q":
             continue
         round_emitter.bind(
-            field, f"acc.{field}", "accumulator argument", reads=(), load=True,
+            field,
+            f"acc.{field}",
+            "accumulator argument",
+            reads=(),
+            load=True,
             fact=("load", "acc", field),
         )
     round_emitter.entries.extend(dict(entry) for entry in helper_entries)
@@ -896,53 +964,83 @@ def factor_mul_rounds(routine: Routine):
         "The source's flattened rounds 1 and 2 are checked to have this same binding IR modulo "
         "their accumulator-register rotation and RHS limb, and this round, instantiated at each "
         "of its two calls, is checked to flatten back to the source's round.",
-        "def mulMontRound (lhs modulus : Limbs) (inv b : Nat) "
-        "(acc : MulMontAcc) : MulMontAcc :=",
+        "def mulMontRound (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc) : MulMontAcc :=",
         round_lines,
         f"  ⟨{', '.join(round_result)}⟩",
-        "mulMontRound", round_emitter, round_result,
-        struct=_mul_acc_struct(), arg_fields={"acc": MUL_ACC_FIELDS},
+        "mulMontRound",
+        round_emitter,
+        round_result,
+        struct=_mul_acc_struct(),
+        arg_fields={"acc": MUL_ACC_FIELDS},
     )
 
     # The multiplication proof clears values itself, at its arithmetic phase boundaries, rather
     # than after each extraction, which would recheck its large dependent tail every time.
     main_emitter = Emitter(routine.emitter.directions, {}, clear_values=False)
     main_emitter.entries = [
-        dict(entry) for entry in routine.emitter.entries
+        dict(entry)
+        for entry in routine.emitter.entries
         if entry["pc"] is None or entry["pc"] < MUL_ROUND_RANGES[0][0]
     ]
     current = ["be", "ce", "de", "ee", "ae"]
     inv_register = "inv"
     for round_number, rhs_index in ((1, 1), (2, 2)):
         _check_round_call(
-            routine.emitter, source_load, helper_entries, current + ["rdx"], f"rhs.l{rhs_index}",
-            MUL_ROUND_RANGES[round_number - 1], round_number,
+            routine.emitter,
+            source_load,
+            helper_entries,
+            current + ["rdx"],
+            f"rhs.l{rhs_index}",
+            MUL_ROUND_RANGES[round_number - 1],
+            round_number,
         )
         call_args = [inv_register, f"rhs.l{rhs_index}"] + current + ["rdx"]
-        fmt = "mulMontRound lhs modulus {0} {1} ⟨" + ", ".join(
-            "{%d}" % index for index in range(2, 8)
-        ) + "⟩"
+        fmt = (
+            "mulMontRound lhs modulus {0} {1} ⟨"
+            + ", ".join(f"{{{index}}}" for index in range(2, 8))
+            + "⟩"
+        )
         round_name = f"round{round_number}"
-        main_emitter.entries.append(dict(
-            name=round_name, expr=fmt.format(*call_args), comment=f"factored round {round_number}",
-            note=None, reads=set([inv_register, f"rhs.l{rhs_index}"] + current + ["rdx"]), load=False,
-            fact=("call", fmt, call_args), pc=None,
-        ))
+        main_emitter.entries.append(
+            {
+                "name": round_name,
+                "expr": fmt.format(*call_args),
+                "comment": f"factored round {round_number}",
+                "note": None,
+                "reads": set([inv_register, f"rhs.l{rhs_index}"] + current + ["rdx"]),
+                "load": False,
+                "fact": ("call", fmt, call_args),
+                "pc": None,
+            }
+        )
         next_current = current[1:] + current[:1]
         for register, field in zip(next_current + ["rdx"], MUL_ACC_FIELDS):
-            main_emitter.entries.append(dict(
-                name=register, expr=f"{round_name}.{field}",
-                comment=f"round {round_number} output", note=None, reads={round_name}, load=False,
-                fact=("callout", round_name, field), pc=None,
-            ))
+            main_emitter.entries.append(
+                {
+                    "name": register,
+                    "expr": f"{round_name}.{field}",
+                    "comment": f"round {round_number} output",
+                    "note": None,
+                    "reads": {round_name},
+                    "load": False,
+                    "fact": ("callout", round_name, field),
+                    "pc": None,
+                }
+            )
         current = next_current
     main_emitter.entries.extend(
-        dict(entry) for entry in routine.emitter.entries
+        dict(entry)
+        for entry in routine.emitter.entries
         if entry["pc"] is not None and entry["pc"] > MUL_ROUND_RANGES[-1][1]
     )
     main = Routine(
-        routine.doc, routine.signature, main_emitter.render(routine.result_names), routine.result,
-        routine.name, main_emitter, routine.result_names,
+        routine.doc,
+        routine.signature,
+        main_emitter.render(routine.result_names),
+        routine.result,
+        routine.name,
+        main_emitter,
+        routine.result_names,
     )
     return [round_routine, main]
 
@@ -959,14 +1057,14 @@ def transcribe(source: str, config: RoutineConfig) -> str:
     return "\n".join(routine.text(comment_column([routine])) for routine in routines)
 
 
-def gen_program(source: Optional[str] = None) -> str:
+def gen_program(source: str | None = None) -> str:
     routines = all_routines(source)
-    return HEADER + "\n".join(
-        routine.text(comment_column([routine])) for routine in routines
-    ) + FOOTER
+    return (
+        HEADER + "\n".join(routine.text(comment_column([routine])) for routine in routines) + FOOTER
+    )
 
 
-def all_routines(source: Optional[str] = None):
+def all_routines(source: str | None = None):
     """Return the validated x86-64 assembly routines and factored round helper."""
     if source is None:
         source = SOURCE.read_text()
@@ -980,4 +1078,3 @@ def all_routines(source: Optional[str] = None):
 def generated_outputs():
     """Return the x86-64 generated paths and contents without writing files."""
     return [(OUTPUT, gen_program())]
-

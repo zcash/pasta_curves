@@ -34,6 +34,7 @@ The script also generates the mechanical part of each block's correctness proof 
 `-- BEGIN ... -- END` annotation blocks are removed; the check script runs that too.
 Python 3.9+; stdlib only.
 """
+
 import re
 from pathlib import Path
 
@@ -63,16 +64,27 @@ COMMENT_COLUMN_MAX = 40
 # structure `state` has those fields, `value` names the ones that make up the accumulator, and
 # `emit_struct` says whether this block's transcription declares the structure.
 LOOPS = {
-    "mulMont": dict(
-        end="lsl t3,q,#62", count=3, operand="b{i}",
-        round="mulMontRound", state="MulMontAcc", emit_struct=True, param="b", arg="acc",
-        value=["r0", "r1", "r2", "r3", "r4"],
-        roles=[("r0", "r0", "accumulator limb 0"), ("r1", "r1", "accumulator limb 1"),
-               ("r2", "r2", "accumulator limb 2"), ("r3", "r3", "accumulator limb 3"),
-               ("r4", "r4", "accumulator limb 4"),
-               ("q", "q", "the round's Montgomery quotient `q`"),
-               ("t1", "t1", "`low(p1 * q)`, the first term of the round's reduction"),
-               ("t3", "t3", "`low(q * 2^62)`, the third term of the round's reduction")]),
+    "mulMont": {
+        "end": "lsl t3,q,#62",
+        "count": 3,
+        "operand": "b{i}",
+        "round": "mulMontRound",
+        "state": "MulMontAcc",
+        "emit_struct": True,
+        "param": "b",
+        "arg": "acc",
+        "value": ["r0", "r1", "r2", "r3", "r4"],
+        "roles": [
+            ("r0", "r0", "accumulator limb 0"),
+            ("r1", "r1", "accumulator limb 1"),
+            ("r2", "r2", "accumulator limb 2"),
+            ("r3", "r3", "accumulator limb 3"),
+            ("r4", "r4", "accumulator limb 4"),
+            ("q", "q", "the round's Montgomery quotient `q`"),
+            ("t1", "t1", "`low(p1 * q)`, the first term of the round's reduction"),
+            ("t3", "t3", "`low(q * 2^62)`, the third term of the round's reduction"),
+        ],
+    },
 }
 
 # The inline `asm!` blocks of the crate: the function whose block to read, the Lean name, the
@@ -81,27 +93,48 @@ LOOPS = {
 # `inv` is `inv`, and a `let mut a0 = value[0];` before the block makes the `inout` operand
 # `a0` the limb `value.l0`), and its named `out` and its `inout` operands are the result limbs.
 INLINE_ROUTINES = [
-    ("mul", "mulMont",
-     "The inline `asm!` block of `mul`: Montgomery multiplication, `lhs * rhs * 2^-256 mod p`, "
-     "with the result in the block's output operands. Its rounds are those of Semolina's "
-     "`mul_mont_pasta`; its epilogue keeps four limbs of the final candidate.",
-     ["lhs", "rhs", "modulus"]),
-    ("square", "sqrMont",
-     "The inline `asm!` block of `square`: Montgomery squaring, `value^2 * 2^-256 mod p`, the "
-     "squaring loop body of Semolina's `sqr_n_mul_mont_pasta` followed by a conditional "
-     "subtraction, with the result in the block's `inout` operands.",
-     ["value", "modulus"]),
-    ("add", "addMod",
-     "The inline `asm!` block of `add`: modular addition, `lhs + rhs mod p`, as a full-width "
-     "addition, a subtraction of the modulus, and the selection of the reduced sum when that "
-     "subtraction did not borrow, with the result in the block's `inout` operands.",
-     ["lhs", "rhs", "modulus"]),
-    ("sub", "subMod",
-     "The inline `asm!` block of `sub`: modular subtraction, `lhs - rhs mod p`, as a full-width "
-     "subtraction and the addition of the modulus when it borrowed, with the result in the "
-     "block's `inout` operands.",
-     ["lhs", "rhs", "modulus"]),
+    (
+        "mul",
+        "mulMont",
+        (
+            "The inline `asm!` block of `mul`: Montgomery multiplication, `lhs * rhs * 2^-256 mod p`, "
+            "with the result in the block's output operands. Its rounds are those of Semolina's "
+            "`mul_mont_pasta`; its epilogue keeps four limbs of the final candidate."
+        ),
+        ["lhs", "rhs", "modulus"],
+    ),
+    (
+        "square",
+        "sqrMont",
+        (
+            "The inline `asm!` block of `square`: Montgomery squaring, `value^2 * 2^-256 mod p`, the "
+            "squaring loop body of Semolina's `sqr_n_mul_mont_pasta` followed by a conditional "
+            "subtraction, with the result in the block's `inout` operands."
+        ),
+        ["value", "modulus"],
+    ),
+    (
+        "add",
+        "addMod",
+        (
+            "The inline `asm!` block of `add`: modular addition, `lhs + rhs mod p`, as a full-width "
+            "addition, a subtraction of the modulus, and the selection of the reduced sum when that "
+            "subtraction did not borrow, with the result in the block's `inout` operands."
+        ),
+        ["lhs", "rhs", "modulus"],
+    ),
+    (
+        "sub",
+        "subMod",
+        (
+            "The inline `asm!` block of `sub`: modular subtraction, `lhs - rhs mod p`, as a full-width "
+            "subtraction and the addition of the modulus when it borrowed, with the result in the "
+            "block's `inout` operands."
+        ),
+        ["lhs", "rhs", "modulus"],
+    ),
 ]
+
 
 def tokenize(rest):
     return re.findall(r"\[[^\]]*\]!?|[^,\s]+", rest)
@@ -140,8 +173,19 @@ class Emitter(gen.Emitter):
             super().bind(name, expr, comment, reads=reads, load=load, fact=fact, note=note)
 
     def step(self, op, t, text):
-        arity = {"mov": 2, "mul": 3, "umulh": 3, "lsl": 3, "lsr": 3,
-                 "adds": 3, "adcs": 3, "adc": 3, "subs": 3, "sbcs": 3, "csel": 4}
+        arity = {
+            "mov": 2,
+            "mul": 3,
+            "umulh": 3,
+            "lsl": 3,
+            "lsr": 3,
+            "adds": 3,
+            "adcs": 3,
+            "adc": 3,
+            "subs": 3,
+            "sbcs": 3,
+            "csel": 4,
+        }
         if op not in arity:
             raise ValueError(f"unhandled instruction: {text}")
         if len(t) != arity[op]:
@@ -266,8 +310,10 @@ def loop_routines(e, ins, name, doc, args, result, cfg):
     regs = [r for r, _, _ in cfg["roles"]]
     fields = [f for _, f, _ in cfg["roles"]]
     if sorted(live_out) != sorted(regs):
-        raise ValueError(f"{name}: registers carried between rounds are {sorted(live_out)}, "
-                         f"`roles` lists {sorted(regs)}")
+        raise ValueError(
+            f"{name}: registers carried between rounds are {sorted(live_out)}, "
+            f"`roles` lists {sorted(regs)}"
+        )
     # An input is an invariant argument if its value on entry is an argument limb or `inv`;
     # otherwise it is carried state.
     defs = {}
@@ -281,10 +327,15 @@ def loop_routines(e, ins, name, doc, args, result, cfg):
         else:
             carried.append(r)
     if sorted(carried) != sorted(regs):
-        raise ValueError(f"{name}: registers read from the previous round are {sorted(carried)}, "
-                         f"`roles` lists {sorted(regs)}")
-    limb_args = [arg for arg in args if any(d["fact"][0] == "load" and d["fact"][1] == arg
-                                            for _, d in invariant)]
+        raise ValueError(
+            f"{name}: registers read from the previous round are {sorted(carried)}, "
+            f"`roles` lists {sorted(regs)}"
+        )
+    limb_args = [
+        arg
+        for arg in args
+        if any(d["fact"][0] == "load" and d["fact"][1] == arg for _, d in invariant)
+    ]
     uses_inv = any(d["fact"][0] == "inv" for _, d in invariant)
     param, sarg = cfg["param"], cfg["arg"]
     # The round: its inputs bound as arguments, then the body.
@@ -303,55 +354,116 @@ def loop_routines(e, ins, name, doc, args, result, cfg):
     re_.entries += [dict(en) for en in body_entries]
     re_.cur_reads = set()
     round_result = [re_.read(r) for r in regs]
-    sig = (f"def {cfg['round']} ({' '.join(limb_args)} : Limbs) "
-           f"({'inv ' if uses_inv else ''}{param} : Nat) "
-           f"({sarg} : {cfg['state']}) : {cfg['state']} :=")
+    sig = (
+        f"def {cfg['round']} ({' '.join(limb_args)} : Limbs) "
+        f"({'inv ' if uses_inv else ''}{param} : Nat) "
+        f"({sarg} : {cfg['state']}) : {cfg['state']} :="
+    )
     where = f"the instructions between one `{cfg['end']}` and the next"
-    round_doc = (f"One round of `{name}`: {where} in each of its {count} rounds, on the "
-                 f"round's `rhs` limb `{param}` and the registers `{sarg}` carried from the "
-                 "previous round.")
+    round_doc = (
+        f"One round of `{name}`: {where} in each of its {count} rounds, on the "
+        f"round's `rhs` limb `{param}` and the registers `{sarg}` carried from the "
+        "previous round."
+    )
     struct = None
     if cfg["emit_struct"]:
         value = cfg["value"]
-        lines = [f"/-- The registers that `{name}` carries from one round to the next. -/",
-                 f"structure {cfg['state']} where"]
+        lines = [
+            f"/-- The registers that `{name}` carries from one round to the next. -/",
+            f"structure {cfg['state']} where",
+        ]
         for _, f, desc in cfg["roles"]:
             lines += [f"  /-- {desc} -/", f"  {f} : Nat"]
-        lines += ["  deriving DecidableEq, Repr", "", f"namespace {cfg['state']}", "",
-                  "/-- Every field is below `2^64`. -/",
-                  f"def Bounded (s : {cfg['state']}) : Prop :="]
-        lines += wrap_tactic("", [f"s.{f} < 2^64" + (" ∧" if i < len(fields) - 1 else "")
-                                  for i, f in enumerate(fields)], "", indent="  ")
-        lines += ["", f"/-- The accumulator's value: limbs `{'`, `'.join(value)}` with weights "
-                  f"`2^0` to `2^{64 * (len(value) - 1)}`. -/",
-                  f"def toNat (s : {cfg['state']}) : Nat :="]
-        terms = [f"{'2^%d * ' % (64 * i) if i else ''}s.{f}" for i, f in enumerate(value)]
-        lines += wrap_tactic("", [t + (" +" if i < len(value) - 1 else "")
-                                  for i, t in enumerate(terms)], "", indent="  ")
+        lines += [
+            "  deriving DecidableEq, Repr",
+            "",
+            f"namespace {cfg['state']}",
+            "",
+            "/-- Every field is below `2^64`. -/",
+            f"def Bounded (s : {cfg['state']}) : Prop :=",
+        ]
+        lines += wrap_tactic(
+            "",
+            [f"s.{f} < 2^64" + (" ∧" if i < len(fields) - 1 else "") for i, f in enumerate(fields)],
+            "",
+            indent="  ",
+        )
+        lines += [
+            "",
+            (
+                f"/-- The accumulator's value: limbs `{'`, `'.join(value)}` with weights "
+                f"`2^0` to `2^{64 * (len(value) - 1)}`. -/"
+            ),
+            f"def toNat (s : {cfg['state']}) : Nat :=",
+        ]
+        terms = [f"{f'2^{64 * i} * ' if i else ''}s.{f}" for i, f in enumerate(value)]
+        lines += wrap_tactic(
+            "",
+            [t + (" +" if i < len(value) - 1 else "") for i, t in enumerate(terms)],
+            "",
+            indent="  ",
+        )
         lines += ["", f"end {cfg['state']}", ""]
         struct = "\n".join(lines)
-    rnd = Routine(round_doc, sig, re_.render(round_result), f"  ⟨{', '.join(round_result)}⟩",
-                  cfg["round"], re_, round_result, struct=struct,
-                  arg_fields={sarg: fields})
+    rnd = Routine(
+        round_doc,
+        sig,
+        re_.render(round_result),
+        f"  ⟨{', '.join(round_result)}⟩",
+        cfg["round"],
+        re_,
+        round_result,
+        struct=struct,
+        arg_fields={sarg: fields},
+    )
     # The block: prologue, then per round the call and the outputs.
     me = Emitter(ins)
     me.entries = [dict(en) for en in prologue]
     inv_regs = [r for r, _ in invariant if defs[r]["fact"][0] == "inv"]
     n_scalar = len(inv_regs) + 1
-    fmt = (f"{cfg['round']} {' '.join(limb_args)} " + " ".join("{%d}" % i for i in range(n_scalar))
-           + " ⟨" + ", ".join("{%d}" % (n_scalar + i) for i in range(len(regs))) + "⟩")
+    fmt = (
+        f"{cfg['round']} {' '.join(limb_args)} "
+        + " ".join(f"{{{i}}}" for i in range(n_scalar))
+        + " ⟨"
+        + ", ".join(f"{{{n_scalar + i}}}" for i in range(len(regs)))
+        + "⟩"
+    )
     for k in range(1, count + 1):
         call_regs = inv_regs + [varying[k]] + regs
         rname = f"round{k}"
-        me.entries.append(dict(name=rname, expr=fmt.format(*call_regs), comment=f"round {k}",
-                               reads=set(call_regs), load=False, fact=("call", fmt, call_regs),
-                               pc=None))
+        me.entries.append(
+            {
+                "name": rname,
+                "expr": fmt.format(*call_regs),
+                "comment": f"round {k}",
+                "reads": set(call_regs),
+                "load": False,
+                "fact": ("call", fmt, call_regs),
+                "pc": None,
+            }
+        )
         for r, f in zip(regs, fields):
-            me.entries.append(dict(name=r, expr=f"{rname}.{f}", comment=f"round {k} output",
-                                   reads={rname}, load=False, fact=("callout", rname, f), pc=None))
+            me.entries.append(
+                {
+                    "name": r,
+                    "expr": f"{rname}.{f}",
+                    "comment": f"round {k} output",
+                    "reads": {rname},
+                    "load": False,
+                    "fact": ("callout", rname, f),
+                    "pc": None,
+                }
+            )
     me.entries += [dict(en) for en in e.entries if part(en) == "epilogue"]
-    main = Routine(doc, f"def {name} ({' '.join(args)} : Limbs) (inv : Nat) : Limbs :=",
-                   me.render(result), f"  ⟨{', '.join(result)}⟩", name, me, result)
+    main = Routine(
+        doc,
+        f"def {name} ({' '.join(args)} : Limbs) (inv : Nat) : Limbs :=",
+        me.render(result),
+        f"  ⟨{', '.join(result)}⟩",
+        name,
+        me,
+        result,
+    )
     return [rnd, main]
 
 
@@ -359,7 +471,10 @@ def parse_inline(path, fn, args):
     """Adapt the shared Rust asm parser to the AArch64 emitter's instruction representation."""
     rust_args = args + (["inv"] if fn in ("mul", "square") else [])
     parsed = asm_source.parse_function(
-        path.read_text(), fn, rust_args, 4,
+        path.read_text(),
+        fn,
+        rust_args,
+        4,
         allowed_options={"pure", "nomem", "nostack"},
         required_options={"pure", "nomem", "nostack"},
     )
@@ -419,8 +534,17 @@ def emit_inline(fn, name, doc, args):
     if name in LOOPS:
         return loop_routines(e, ins, name, doc, args, result, LOOPS[name])
     uses_inv = any(kind in ("in", "inout") and v == "inv" for _, kind, v in decls)
-    return [Routine(doc, f"def {name} ({' '.join(args)} : Limbs){' (inv : Nat)' if uses_inv else ''} : Limbs :=",
-                    e.render(result), f"  ⟨{', '.join(result)}⟩", name, e, result)]
+    return [
+        Routine(
+            doc,
+            f"def {name} ({' '.join(args)} : Limbs){' (inv : Nat)' if uses_inv else ''} : Limbs :=",
+            e.render(result),
+            f"  ⟨{', '.join(result)}⟩",
+            name,
+            e,
+            result,
+        )
+    ]
 
 
 class SkeletonBackend(gen.SkeletonBackend):
@@ -438,9 +562,11 @@ class SkeletonBackend(gen.SkeletonBackend):
             # An `adds`/`subs` whose carry nothing reads has no carry binding (the inline
             # block's last shift), so its group is the pair and the carry is a ghost, as for
             # `adc`.
-            dead_carry = (i + 2 >= len(entries) or entries[i + 2]["fact"] != ("snd",))
+            dead_carry = i + 2 >= len(entries) or entries[i + 2]["fact"] != ("snd",)
             group_count = 2 if dead_carry else 3
-            entries[i]["group"] = list(zip(entries[i:i + group_count], names[i:i + group_count]))
+            entries[i]["group"] = list(
+                zip(entries[i : i + group_count], names[i : i + group_count])
+            )
             entries[i]["group_label"] = names[i + 1]
             entries[i]["dead_carry"] = dead_carry
             i += group_count
@@ -465,8 +591,10 @@ class SkeletonBackend(gen.SkeletonBackend):
                 carry_proof = f"subc_carry_le_one {a} {b} {cin} {context.lt64(a)}"
             context.eq(xn, f"{val} % 2^64")
             if dead_carry:
-                context.lines.append(f"  have b_{xn} : {xn} < 2^64 := by rw [e_{xn}]; "
-                                     "exact Nat.mod_lt _ (Nat.two_pow_pos _)")
+                context.lines.append(
+                    f"  have b_{xn} : {xn} < 2^64 := by rw [e_{xn}]; "
+                    "exact Nat.mod_lt _ (Nat.two_pow_pos _)"
+                )
                 context.lines.append(f"  obtain ⟨{cn}, b_{cn}, l_{xn}⟩ :")
                 context.lines.append(f"      ∃ k, k ≤ 1 ∧ {lin.replace(cn, 'k')} :=")
                 context.lines.append(f"    ⟨{val} / 2^64, {carry_proof},")
@@ -479,7 +607,9 @@ class SkeletonBackend(gen.SkeletonBackend):
                 context.eq(cn, f"{val} / 2^64")
                 context.lines.append(f"  have l_{xn} : {lin} := by")
                 context.lines.append(f"    rw [e_{xn}, e_{cn}]; exact {lin_proof}")
-                context.lines.append(f"  have b_{xn} : {xn} < 2^64 := by rw [e_{xn}]; exact Nat.mod_lt _ (Nat.two_pow_pos _)")
+                context.lines.append(
+                    f"  have b_{xn} : {xn} < 2^64 := by rw [e_{xn}]; exact Nat.mod_lt _ (Nat.two_pow_pos _)"
+                )
                 context.lines.append(f"  have b_{cn} : {cn} ≤ 1 := by")
                 context.lines.append(f"    rw [e_{cn}]; exact {carry_proof}")
                 context.lines.append(f"  clear e_{xn} e_{cn}")
@@ -493,9 +623,15 @@ class SkeletonBackend(gen.SkeletonBackend):
             a, b, cin = ops
             nm = context.name
             context.eq(nm, f"({a} + 2^64 - {b} - (1 - {cin})) / 2^64")
-            context.lines.append(f"  have b_{nm} : {nm} ≤ 1 := by rw [e_{nm}]; exact subc_carry_le_one {a} {b} {cin} {context.lt64(a)}")
-            context.lines.append(f"  have l_{nm} : ({nm} = 1 ∧ {b} + 1 ≤ {a} + {cin}) ∨ ({nm} = 0 ∧ {a} + {cin} < {b} + 1) :=")
-            context.lines.append(f"    subc_carry_cases {a} {b} {cin} _ e_{nm} {context.lt64(a)} {context.lt64(b)} {context.le1(cin)}")
+            context.lines.append(
+                f"  have b_{nm} : {nm} ≤ 1 := by rw [e_{nm}]; exact subc_carry_le_one {a} {b} {cin} {context.lt64(a)}"
+            )
+            context.lines.append(
+                f"  have l_{nm} : ({nm} = 1 ∧ {b} + 1 ≤ {a} + {cin}) ∨ ({nm} = 0 ∧ {a} + {cin} < {b} + 1) :="
+            )
+            context.lines.append(
+                f"    subc_carry_cases {a} {b} {cin} _ e_{nm} {context.lt64(a)} {context.lt64(b)} {context.le1(cin)}"
+            )
             context.lines.append(f"  clear e_{nm}")
             context.bnd[nm] = f"b_{nm}"
             context.unit_bound.add(nm)
@@ -515,7 +651,10 @@ wrap_tactic = gen.wrap_tactic
 
 
 def gen_program():
-    parts = [HEADER, "import PastaAsm.AArch64.Semantics\n", """
+    parts = [
+        HEADER,
+        "import PastaAsm.AArch64.Semantics\n",
+        """
 /-!
 # The crate's inline Pasta field blocks, transcribed
 
@@ -532,18 +671,24 @@ comments. See the generator's docstring for what it checks.
 
 namespace PastaAsm.AArch64
 
-"""]
+""",
+    ]
     routines = all_routines()
     # One comment column for the whole file: two spaces past the widest ordinary `let`. Lines
     # longer than COMMENT_COLUMN_MAX are outliers (the round calls) and do not set the column.
-    column = 2 + max(len(code) for r in routines for code, _ in r.lines
-                     if code is not None and len(code) <= COMMENT_COLUMN_MAX)
+    column = 2 + max(
+        len(code)
+        for r in routines
+        for code, _ in r.lines
+        if code is not None and len(code) <= COMMENT_COLUMN_MAX
+    )
     parts.append("\n".join(r.text(column) for r in routines))
     parts.append("\nend PastaAsm.AArch64\n")
     return "".join(parts)
 
 
 # Proof skeleton construction and checking are shared in gen.py.
+
 
 def all_routines():
     routines = []

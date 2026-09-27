@@ -3,34 +3,28 @@
 # SPDX-License-Identifier: Apache-2.0
 """Unit tests for shared asm parsing and architecture-specific generators."""
 
-from collections import Counter
 import contextlib
 import io
 import re
 import sys
 import tempfile
-from pathlib import Path
 import unittest
-from unittest.mock import patch
-from types import SimpleNamespace
+from collections import Counter
+from pathlib import Path
 
 # Running this source-tree test should not leave lean/scripts/__pycache__ behind.
 sys.dont_write_bytecode = True
 
 import asm_source
 import gen
-import gen_aarch64 as gen_aarch64
+import gen_aarch64
 import gen_x86_64
 
 
 class DeclarationTests(unittest.TestCase):
     def test_inout_discard_and_named_outputs_are_parsed(self):
-        discarded = gen_x86_64.parse_declaration(
-            "z3 = inout(reg) product[3] => _,"
-        )
-        named = gen_x86_64.parse_declaration(
-            "z0 = inout(reg) product[0] => o1,"
-        )
+        discarded = gen_x86_64.parse_declaration("z3 = inout(reg) product[3] => _,")
+        named = gen_x86_64.parse_declaration("z0 = inout(reg) product[0] => o1,")
         self.assertEqual(
             discarded,
             gen_x86_64.Declaration("z3", "inout", "product[3]", "_"),
@@ -54,9 +48,11 @@ class DeclarationTests(unittest.TestCase):
 
     def test_named_rdx_and_internal_names_are_reserved(self):
         for name in ("rdx", "cf", "ofl", "s", "d", "m", "n"):
-            with self.subTest(name=name):
-                with self.assertRaisesRegex(gen_x86_64.GenerationError, "reserved operand name"):
-                    gen_x86_64.parse_declaration(f"{name} = out(reg) _,")
+            with (
+                self.subTest(name=name),
+                self.assertRaisesRegex(gen_x86_64.GenerationError, "reserved operand name"),
+            ):
+                gen_x86_64.parse_declaration(f"{name} = out(reg) _,")
 
     def test_high_limb_value_is_validated(self):
         source = gen_x86_64.SOURCE.read_text().replace(
@@ -223,17 +219,31 @@ class AArch64OperandCountTests(unittest.TestCase):
     def test_shifted_add_is_rejected(self):
         emitter = gen_aarch64.Emitter([])
         with self.assertRaisesRegex(ValueError, "adds expects 3 operands"):
-            emitter.step("adds", gen_aarch64.tokenize("r0, r0, b0, lsl #1"),
-                         "adds r0, r0, b0, lsl #1")
+            emitter.step(
+                "adds", gen_aarch64.tokenize("r0, r0, b0, lsl #1"), "adds r0, r0, b0, lsl #1"
+            )
 
     def test_missing_and_extra_operands_are_rejected_before_reads(self):
-        arities = {"mov": 2, "mul": 3, "umulh": 3, "lsl": 3, "lsr": 3,
-                   "adds": 3, "adcs": 3, "adc": 3, "subs": 3, "sbcs": 3, "csel": 4}
+        arities = {
+            "mov": 2,
+            "mul": 3,
+            "umulh": 3,
+            "lsl": 3,
+            "lsr": 3,
+            "adds": 3,
+            "adcs": 3,
+            "adc": 3,
+            "subs": 3,
+            "sbcs": 3,
+            "csel": 4,
+        }
         for op, count in arities.items():
             for actual in (count - 1, count + 1):
-                with self.subTest(op=op, actual=actual):
-                    with self.assertRaisesRegex(ValueError, "expects .* operands"):
-                        gen_aarch64.Emitter([]).step(op, ["r0"] * actual, op)
+                with (
+                    self.subTest(op=op, actual=actual),
+                    self.assertRaisesRegex(ValueError, "expects .* operands"),
+                ):
+                    gen_aarch64.Emitter([]).step(op, ["r0"] * actual, op)
 
 
 class SharedAArch64ParserTests(unittest.TestCase):
@@ -246,31 +256,43 @@ class SharedAArch64ParserTests(unittest.TestCase):
             with self.subTest(routine=rust_name):
                 rust_arguments = arguments + (["inv"] if rust_name in ("mul", "square") else [])
                 parsed = asm_source.parse_function(
-                    self.source, rust_name, rust_arguments, 4,
+                    self.source,
+                    rust_name,
+                    rust_arguments,
+                    4,
                     allowed_options={"pure", "nomem", "nostack"},
                     required_options={"pure", "nomem", "nostack"},
                 )
-                instructions, declarations, locals_map, outputs, returned = gen_aarch64.parse_inline(
-                    gen_aarch64.INLINE, rust_name, arguments
+                instructions, declarations, locals_map, outputs, returned = (
+                    gen_aarch64.parse_inline(gen_aarch64.INLINE, rust_name, arguments)
                 )
                 self.assertIsInstance(parsed, asm_source.ParsedFunction)
                 self.assertEqual(len(instructions), len(parsed.instructions) + 1)
-                self.assertEqual(declarations, [
-                    (declaration.name, declaration.kind, declaration.value)
-                    for declaration in parsed.declarations
-                ])
+                self.assertEqual(
+                    declarations,
+                    [
+                        (declaration.name, declaration.kind, declaration.value)
+                        for declaration in parsed.declarations
+                    ],
+                )
                 self.assertEqual(locals_map, parsed.locals)
                 self.assertEqual(outputs, asm_source.output_bindings(parsed, rust_name))
                 self.assertEqual(returned, asm_source.returned_registers(parsed, rust_name))
 
     def test_real_named_and_implicit_outputs_are_extracted(self):
         mul = asm_source.parse_function(
-            self.source, "mul", ["lhs", "rhs", "modulus", "inv"], 4,
+            self.source,
+            "mul",
+            ["lhs", "rhs", "modulus", "inv"],
+            4,
             allowed_options={"pure", "nomem", "nostack"},
             required_options={"pure", "nomem", "nostack"},
         )
         add = asm_source.parse_function(
-            self.source, "add", ["lhs", "rhs", "modulus"], 4,
+            self.source,
+            "add",
+            ["lhs", "rhs", "modulus"],
+            4,
             allowed_options={"pure", "nomem", "nostack"},
             required_options={"pure", "nomem", "nostack"},
         )
@@ -333,10 +355,12 @@ class X86RealSourceTests(unittest.TestCase):
                 parsed = gen_x86_64.parse_function(self.source, config)
                 generated = gen_x86_64.transcribe(self.source, config)
                 comments = Counter(re.findall(r"-- (.+)$", generated, re.MULTILINE))
-                self.assertEqual(Counter(parsed.instructions), Counter({
-                    instruction: comments[instruction]
-                    for instruction in parsed.instructions
-                }))
+                self.assertEqual(
+                    Counter(parsed.instructions),
+                    Counter(
+                        {instruction: comments[instruction] for instruction in parsed.instructions}
+                    ),
+                )
 
     def test_factored_mul_rounds_match_under_rotation(self):
         routine = gen_x86_64.emit_routine(self.source, gen_x86_64.ROUTINES[2])
@@ -372,7 +396,8 @@ class X86RealSourceTests(unittest.TestCase):
         registers = ["be", "ce", "de", "ee", "ae", "rdx"]
         for round_number, (first, last) in enumerate(gen_x86_64.MUL_ROUND_RANGES, start=1):
             source = [
-                entry for entry in routine.emitter.entries
+                entry
+                for entry in routine.emitter.entries
                 if entry["pc"] is not None and first <= entry["pc"] <= last
             ]
             flattened = gen_x86_64._flattened_round_call(
@@ -391,8 +416,13 @@ class X86RealSourceTests(unittest.TestCase):
             gen_x86_64.GenerationError, "does not flatten to the source's round 1"
         ):
             gen_x86_64._check_round_call(
-                routine.emitter, source_load, body, ["ce", "be", "de", "ee", "ae", "rdx"],
-                "rhs.l1", gen_x86_64.MUL_ROUND_RANGES[0], 1,
+                routine.emitter,
+                source_load,
+                body,
+                ["ce", "be", "de", "ee", "ae", "rdx"],
+                "rhs.l1",
+                gen_x86_64.MUL_ROUND_RANGES[0],
+                1,
             )
 
     def test_factored_mul_comments_cover_one_validated_full_round(self):
@@ -404,9 +434,10 @@ class X86RealSourceTests(unittest.TestCase):
         for pc, instruction in enumerate(parsed.instructions):
             if not second_first <= pc <= second_last:
                 omitted.append(instruction)
-        self.assertEqual(Counter(omitted), Counter({
-            instruction: comments[instruction] for instruction in omitted
-        }))
+        self.assertEqual(
+            Counter(omitted),
+            Counter({instruction: comments[instruction] for instruction in omitted}),
+        )
 
     def test_declared_pointer_blocks_are_readonly(self):
         for config in (gen_x86_64.ROUTINES[2], gen_x86_64.ROUTINES[4]):
@@ -452,9 +483,7 @@ class X86RealSourceTests(unittest.TestCase):
             "            options(pure, nomem, nostack),",
             "            options(pure, nomem, nostack),\n            junk,",
         )
-        self.assert_function_mutation_rejected(
-            "add", old, new, "operand after options"
-        )
+        self.assert_function_mutation_rejected("add", old, new, "operand after options")
 
     def test_second_asm_block_is_rejected(self):
         old = """            z = out(reg) _,
@@ -467,9 +496,7 @@ class X86RealSourceTests(unittest.TestCase):
             "        );\n    }",
             '        );\n        asm!("mov rax, rax");\n    }',
         )
-        self.assert_function_mutation_rejected(
-            "add", old, new, "exactly one asm! block"
-        )
+        self.assert_function_mutation_rejected("add", old, new, "exactly one asm! block")
 
     def test_input_only_operand_write_is_rejected_in_real_source(self):
         self.assert_mutation_rejected(
@@ -491,9 +518,7 @@ class X86RealSourceTests(unittest.TestCase):
             out("rdx") _,
             options(pure, nomem, nostack),"""
         new = old.replace('            out("rdx") _,\n', "")
-        self.assert_mutation_rejected(
-            old, new, "literal rdx requires exactly one fixed"
-        )
+        self.assert_mutation_rejected(old, new, "literal rdx requires exactly one fixed")
 
     def test_named_rdx_cannot_spoof_fixed_operand(self):
         old = """            t1 = out(reg) _,
@@ -519,29 +544,44 @@ class SharedGeneratorTests(unittest.TestCase):
     def test_skeleton_hooks_are_backend_owned(self):
         aarch_routines = gen_aarch64.all_routines()
         x86_routines = gen_x86_64.all_routines()
-        self.assertTrue(all(routine.skeleton_backend is gen_aarch64.SKELETON_BACKEND
-                            for routine in aarch_routines))
-        self.assertTrue(all(routine.skeleton_backend is gen_x86_64.SKELETON_BACKEND
-                            for routine in x86_routines))
+        self.assertTrue(
+            all(
+                routine.skeleton_backend is gen_aarch64.SKELETON_BACKEND
+                for routine in aarch_routines
+            )
+        )
+        self.assertTrue(
+            all(routine.skeleton_backend is gen_x86_64.SKELETON_BACKEND for routine in x86_routines)
+        )
         self.assertIsNot(gen_aarch64.SKELETON_BACKEND, gen_x86_64.SKELETON_BACKEND)
 
         aarch_add = next(routine for routine in aarch_routines if routine.name == "addMod")
-        aarch_live = [entry for entry, keep in zip(
-            aarch_add.emitter.entries, aarch_add.emitter.liveness(aarch_add.result_names)
-        ) if keep]
-        aarch_prepared = gen_aarch64.SKELETON_BACKEND.prepare(
-            aarch_add.emitter, aarch_live
+        aarch_live = [
+            entry
+            for entry, keep in zip(
+                aarch_add.emitter.entries, aarch_add.emitter.liveness(aarch_add.result_names)
+            )
+            if keep
+        ]
+        aarch_prepared = gen_aarch64.SKELETON_BACKEND.prepare(aarch_add.emitter, aarch_live)
+        self.assertTrue(
+            any(
+                entry.get("group_fact", entry["fact"])[0] == "subs"
+                and len(entry.get("group", ())) == 3
+                for entry in aarch_prepared.entries
+            )
         )
-        self.assertTrue(any(entry.get("group_fact", entry["fact"])[0] == "subs"
-                            and len(entry.get("group", ())) == 3
-                            for entry in aarch_prepared.entries))
 
         x86_square = next(routine for routine in x86_routines if routine.name == "squareLo")
         x86_prepared = gen_x86_64.SKELETON_BACKEND.prepare(
             x86_square.emitter, x86_square.emitter.entries
         )
-        self.assertTrue(any(entry.get("group_fact", entry["fact"])[0] == "x86_mulx"
-                            for entry in x86_prepared.entries))
+        self.assertTrue(
+            any(
+                entry.get("group_fact", entry["fact"])[0] == "x86_mulx"
+                for entry in x86_prepared.entries
+            )
+        )
 
     def test_skeleton_facts_come_from_the_routine_backend(self):
         # The shared traversal knows the common facts; an ISA-specific one reaches it only
@@ -558,16 +598,16 @@ class SharedGeneratorTests(unittest.TestCase):
 
         def routine(backend):
             emitter = gen.Emitter()
-            emitter.bind("x", "lhs.l0", "argument", reads=(), load=True,
-                         fact=("load", "lhs", "l0"))
+            emitter.bind("x", "lhs.l0", "argument", reads=(), load=True, fact=("load", "lhs", "l0"))
             emitter.bind("y", "stub x", "stub x", reads={"x"}, fact=("stub", "x"))
 
             class StubRoutine(gen.Routine):
                 architecture = "Stub"
                 skeleton_backend = backend
 
-            return StubRoutine("doc", "def stub", emitter.render(["y"]), "  y", "stub",
-                               emitter, ["y"])
+            return StubRoutine(
+                "doc", "def stub", emitter.render(["y"]), "  y", "stub", emitter, ["y"]
+            )
 
         skeleton = "\n".join(gen.skeleton(routine(StubBackend())))
         self.assertIn("have e_x : x = lhs.l0 := rfl", skeleton)
@@ -582,16 +622,22 @@ class SharedGeneratorTests(unittest.TestCase):
         emitter.bind("dead", "input + 1", reads={"input"}, fact=("call", "{} + 1", ["input"]))
         emitter.bind("result", "input", reads={"input"}, fact=("call", "{}", ["input"]))
         self.assertEqual(
-            [entry["name"] for entry, keep in zip(emitter.entries, emitter.liveness(["result"]))
-             if keep],
+            [
+                entry["name"]
+                for entry, keep in zip(emitter.entries, emitter.liveness(["result"]))
+                if keep
+            ],
             ["input", "result"],
         )
 
         retained = gen_x86_64.Emitter({}, {})
         retained.entries = list(emitter.entries)
         self.assertEqual(
-            [entry["name"] for entry, keep in zip(retained.entries, retained.liveness(["result"]))
-             if keep],
+            [
+                entry["name"]
+                for entry, keep in zip(retained.entries, retained.liveness(["result"]))
+                if keep
+            ],
             ["input", "result"],
         )
         self.assertIn(
@@ -612,11 +658,11 @@ class SharedGeneratorTests(unittest.TestCase):
                 extracted, current = [], None
                 for line in gen.skeleton(routine):
                     if line.startswith("  extract_lets -merge +onlyGivenNames "):
-                        current = line[len("  extract_lets -merge +onlyGivenNames "):]
+                        current = line[len("  extract_lets -merge +onlyGivenNames ") :]
                     elif current is not None:
                         current += " " + line.strip()
                     if current is not None and current.endswith(" at hr"):
-                        extracted += current[:-len(" at hr")].split()
+                        extracted += current[: -len(" at hr")].split()
                         current = None
                 self.assertEqual(sorted(extracted), sorted(prepared.names))
                 self.assertEqual(len(extracted), len(set(extracted)))
@@ -671,8 +717,10 @@ class SharedGeneratorTests(unittest.TestCase):
                     f"  -- generated skeleton for `{routine.name}`: do not edit between the annotations",
                 )
                 self.assertEqual(generated[-1], "  subst hr")
-                self.assertIs(gen.find_routine(f"X86_64:{routine.name}").emitter.__class__,
-                              routine.emitter.__class__)
+                self.assertIs(
+                    gen.find_routine(f"X86_64:{routine.name}").emitter.__class__,
+                    routine.emitter.__class__,
+                )
 
     def test_round_argument_fields_are_routine_local(self):
         aarch_round = next(
@@ -681,12 +729,30 @@ class SharedGeneratorTests(unittest.TestCase):
         x86_round = next(
             routine for routine in gen_x86_64.all_routines() if routine.name == "mulMontRound"
         )
-        self.assertEqual(aarch_round.arg_fields["acc"], [
-            "r0", "r1", "r2", "r3", "r4", "q", "t1", "t3",
-        ])
-        self.assertEqual(x86_round.arg_fields["acc"], [
-            "r0", "r1", "r2", "r3", "r4", "q",
-        ])
+        self.assertEqual(
+            aarch_round.arg_fields["acc"],
+            [
+                "r0",
+                "r1",
+                "r2",
+                "r3",
+                "r4",
+                "q",
+                "t1",
+                "t3",
+            ],
+        )
+        self.assertEqual(
+            x86_round.arg_fields["acc"],
+            [
+                "r0",
+                "r1",
+                "r2",
+                "r3",
+                "r4",
+                "q",
+            ],
+        )
         self.assertEqual(gen.proj("acc", "q", aarch_round.arg_fields), "2.2.2.2.2.1")
         self.assertEqual(gen.proj("acc", "q", x86_round.arg_fields), "2.2.2.2.2")
         self.assertEqual(gen.proj("acc", "r4", aarch_round.arg_fields), "2.2.2.2.1")
@@ -733,12 +799,8 @@ class SkeletonCheckerTests(unittest.TestCase):
         malformed = {
             "END without BEGIN": "-- END loose\n" + self.skeleton,
             "unterminated BEGIN": self.skeleton + "-- BEGIN loose\n",
-            "nested BEGIN": (
-                "-- BEGIN outer\n-- BEGIN inner\n-- END outer\n" + self.skeleton
-            ),
-            "does not match BEGIN": (
-                "-- BEGIN one\n-- END two\n" + self.skeleton
-            ),
+            "nested BEGIN": ("-- BEGIN outer\n-- BEGIN inner\n-- END outer\n" + self.skeleton),
+            "does not match BEGIN": ("-- BEGIN one\n-- END two\n" + self.skeleton),
         }
         for message, text in malformed.items():
             with self.subTest(message=message):
@@ -762,8 +824,11 @@ class SkeletonCheckerTests(unittest.TestCase):
                 if Path(manifest_path).exists:
                     path, routines = gen.parse_spec_manifest(str(manifest_path))
                     self.assertEqual(path, manifest_path)
-                    expected = (expected_names if expected_names is not None else
-                                tuple(routine.name for routine in available[arch]))
+                    expected = (
+                        expected_names
+                        if expected_names is not None
+                        else tuple(routine.name for routine in available[arch])
+                    )
                     self.assertEqual([routine.name for routine in routines], list(expected))
                 else:
                     with self.assertRaisesRegex(ValueError, "pending migration"):

@@ -3,11 +3,11 @@
 # SPDX-License-Identifier: Apache-2.0
 """Regression tests for fail-closed Rust surrounding-code parsing."""
 
-from pathlib import Path
 import re
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 # Running this source-tree test should not leave lean/scripts/__pycache__ behind.
@@ -31,18 +31,14 @@ class SurroundingCodeTests(unittest.TestCase):
         if match is None:
             raise AssertionError(f"function {name} not found")
         signature_open = masked.find("(", match.start())
-        signature_close = asm_source.matching_delimiter(
-            source, signature_open, "(", ")"
-        )
+        signature_close = asm_source.matching_delimiter(source, signature_open, "(", ")")
         body_open = masked.find("{", signature_close)
         body_close = asm_source.matching_delimiter(source, body_open, "{", "}")
-        function_source = source[match.start():body_close + 1]
+        function_source = source[match.start() : body_close + 1]
         if function_source.count(old) != 1:
             raise AssertionError(f"expected one {old!r} in {name}")
         return (
-            source[:match.start()]
-            + function_source.replace(old, new)
-            + source[body_close + 1:]
+            source[: match.start()] + function_source.replace(old, new) + source[body_close + 1 :]
         )
 
     @staticmethod
@@ -73,8 +69,7 @@ class SurroundingCodeTests(unittest.TestCase):
                     source,
                     "mul",
                     "    let (o0, o1, o2, o3): (u64, u64, u64, u64);",
-                    "    let inv = 0;\n"
-                    "    let (o0, o1, o2, o3): (u64, u64, u64, u64);",
+                    "    let inv = 0;\n    let (o0, o1, o2, o3): (u64, u64, u64, u64);",
                 )
                 with self.assertRaisesRegex(
                     asm_source.GenerationError,
@@ -120,8 +115,7 @@ class SurroundingCodeTests(unittest.TestCase):
                     source,
                     "add",
                     "    let [mut r0, mut r1, mut r2, mut r3] = *lhs;",
-                    "    let /* outputs */ [mut r0, mut r1, mut r2, mut r3] "
-                    "= * /* input */ lhs;",
+                    "    let /* outputs */ [mut r0, mut r1, mut r2, mut r3] = * /* input */ lhs;",
                 )
                 self.assertEqual(generate(commented), expected)
 

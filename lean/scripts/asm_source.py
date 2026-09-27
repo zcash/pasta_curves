@@ -11,8 +11,8 @@ import dataclasses
 import difflib
 import re
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 
 class GenerationError(ValueError):
@@ -24,17 +24,17 @@ class Declaration:
     name: str
     kind: str
     value: str
-    output: Optional[str]
+    output: str | None
     fixed: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
 class ParsedFunction:
-    instructions: Tuple[str, ...]
-    declarations: Tuple[Declaration, ...]
-    locals: Dict[str, Tuple[str, int]]
-    returns: Tuple[str, ...]
-    options: Set[str]
+    instructions: tuple[str, ...]
+    declarations: tuple[Declaration, ...]
+    locals: dict[str, tuple[str, int]]
+    returns: tuple[str, ...]
+    options: set[str]
 
 
 def _line_comment_end(text: str, start: int) -> int:
@@ -59,7 +59,7 @@ def _block_comment_end(text: str, start: int) -> int:
     raise GenerationError("unterminated block comment")
 
 
-def _quoted_end(text: str, start: int, quote: str = '"') -> Tuple[int, bool]:
+def _quoted_end(text: str, start: int, quote: str = '"') -> tuple[int, bool]:
     """The end of an ordinary Rust string/character token and whether it has an escape."""
     pos = start + 1
     escaped = False
@@ -74,7 +74,7 @@ def _quoted_end(text: str, start: int, quote: str = '"') -> Tuple[int, bool]:
     raise GenerationError("unterminated quoted literal")
 
 
-def _raw_string_end(text: str, start: int) -> Optional[int]:
+def _raw_string_end(text: str, start: int) -> int | None:
     """The end of a Rust raw string beginning at `start`, or `None` if there is none."""
     pos = start
     if text.startswith("br", pos):
@@ -95,7 +95,7 @@ def _raw_string_end(text: str, start: int) -> Optional[int]:
     return end + len(terminator)
 
 
-def _char_literal_end(text: str, start: int) -> Optional[int]:
+def _char_literal_end(text: str, start: int) -> int | None:
     """Recognize a character literal without treating a Rust lifetime as one."""
     if start + 2 < len(text) and text[start + 2] == "'":
         return start + 3
@@ -124,7 +124,7 @@ def masked_noncode(text: str) -> str:
     masked = list(text)
     pos = 0
     while pos < len(text):
-        end: Optional[int] = None
+        end: int | None = None
         if text.startswith("//", pos):
             end = _line_comment_end(text, pos)
         elif text.startswith("/*", pos):
@@ -180,7 +180,7 @@ def matching_delimiter(text: str, opening: int, left: str, right: str) -> int:
 
 def _strip_comments(text: str) -> str:
     """Remove comments from one asm argument while retaining literals verbatim."""
-    pieces: List[str] = []
+    pieces: list[str] = []
     pos = 0
     while pos < len(text):
         if text.startswith("//", pos):
@@ -208,7 +208,7 @@ def _strip_comments(text: str) -> str:
 def _argument_end(text: str, start: int) -> int:
     """Find an asm argument's top-level comma, validating its delimiters."""
     pairs = {"(": ")", "[": "]", "{": "}"}
-    stack: List[str] = []
+    stack: list[str] = []
     pos = start
     while pos < len(text):
         next_pos = _skip_trivia(text, pos)
@@ -239,9 +239,9 @@ def _argument_end(text: str, start: int) -> int:
 def parse_declaration(
     text: str,
     *,
-    reserved_names: Set[str] = frozenset(),
-    fixed_registers: Set[str] = frozenset(),
-    const_operands: Set[str] = frozenset(),
+    reserved_names: set[str] = frozenset(),
+    fixed_registers: set[str] = frozenset(),
+    const_operands: set[str] = frozenset(),
 ) -> Declaration:
     """Parse one inline-assembly declaration under backend-specific restrictions."""
     declaration = text.strip().rstrip(",").strip()
@@ -261,9 +261,7 @@ def parse_declaration(
             raise GenerationError(f"unsupported fixed-register binding: {text.strip()}")
         return Declaration(register, kind, value.strip(), None, fixed=True)
 
-    named = re.fullmatch(
-        r"([A-Za-z_]\w*)\s*=\s*(in|out|inout)\(([^)]+)\)\s+(.+)", declaration
-    )
+    named = re.fullmatch(r"([A-Za-z_]\w*)\s*=\s*(in|out|inout)\(([^)]+)\)\s+(.+)", declaration)
     if not named:
         raise GenerationError(f"unsupported operand binding: {text.strip()}")
     name, kind, constraint, body = named.groups()
@@ -284,9 +282,7 @@ def parse_declaration(
         output = value
     elif kind == "inout" and output is None:
         if not re.fullmatch(r"[A-Za-z_]\w*", value):
-            raise GenerationError(
-                f"inout without `=>` must bind a local variable: {text.strip()}"
-            )
+            raise GenerationError(f"inout without `=>` must bind a local variable: {text.strip()}")
         output = value
     return Declaration(name, kind, value, output)
 
@@ -295,16 +291,16 @@ def _parse_asm(
     inner: str,
     function: str,
     *,
-    reserved_names: Set[str],
-    fixed_registers: Set[str],
-    const_operands: Set[str],
-    allowed_options: Set[str],
-    required_options: Set[str],
-) -> Tuple[Tuple[str, ...], Tuple[Declaration, ...], Set[str]]:
+    reserved_names: set[str],
+    fixed_registers: set[str],
+    const_operands: set[str],
+    allowed_options: set[str],
+    required_options: set[str],
+) -> tuple[tuple[str, ...], tuple[Declaration, ...], set[str]]:
     """Consume the complete restricted grammar of one `asm!` invocation."""
-    instructions: List[str] = []
-    declarations: List[Declaration] = []
-    options: Optional[Set[str]] = None
+    instructions: list[str] = []
+    declarations: list[Declaration] = []
+    options: set[str] | None = None
     operands_started = False
     pos = 0
     while True:
@@ -319,7 +315,7 @@ def _parse_asm(
             end, escaped = _quoted_end(inner, pos)
             if escaped:
                 raise GenerationError(f"{function}: escaped asm template strings are unsupported")
-            instruction = inner[pos + 1:end - 1]
+            instruction = inner[pos + 1 : end - 1]
             if "\n" in instruction or "\r" in instruction:
                 raise GenerationError(f"{function}: multiline asm template strings are unsupported")
             pos = _skip_trivia(inner, end)
@@ -338,18 +334,18 @@ def _parse_asm(
         if option_match:
             if options is not None:
                 raise GenerationError(f"{function}: duplicate options")
-            options = {
-                part.strip() for part in option_match.group(1).split(",") if part.strip()
-            }
+            options = {part.strip() for part in option_match.group(1).split(",") if part.strip()}
         else:
             if options is not None:
                 raise GenerationError(f"{function}: operand after options: {argument}")
-            declarations.append(parse_declaration(
-                argument,
-                reserved_names=reserved_names,
-                fixed_registers=fixed_registers,
-                const_operands=const_operands,
-            ))
+            declarations.append(
+                parse_declaration(
+                    argument,
+                    reserved_names=reserved_names,
+                    fixed_registers=fixed_registers,
+                    const_operands=const_operands,
+                )
+            )
         pos = end if end == len(inner) else end + 1
 
     if not instructions:
@@ -360,9 +356,7 @@ def _parse_asm(
     if unsupported_options:
         raise GenerationError(f"{function}: unsupported options {sorted(unsupported_options)}")
     if not required_options.issubset(options):
-        raise GenerationError(
-            f"{function}: requires options {sorted(required_options)}"
-        )
+        raise GenerationError(f"{function}: requires options {sorted(required_options)}")
     return tuple(instructions), tuple(declarations), options
 
 
@@ -373,15 +367,11 @@ _INDEX_BINDING = re.compile(
 _DESTRUCTURING_BINDING = re.compile(
     rf"let\s*\[\s*([^\]]+)\s*\]\s*=\s*(?:\*\s*)?({_IDENTIFIER})\s*;"
 )
-_OUTPUT_DECLARATION = re.compile(
-    r"let\s*\(\s*([^()]*)\s*\)\s*:\s*\(\s*([^()]*)\s*\)\s*;"
-)
+_OUTPUT_DECLARATION = re.compile(r"let\s*\(\s*([^()]*)\s*\)\s*:\s*\(\s*([^()]*)\s*\)\s*;")
 _DEBUG_ASSERT = re.compile(r"debug_assert\s*!\s*\(")
 _UNSAFE_BLOCK = re.compile(r"unsafe\s*\{")
 _DIRECT_BINDING = re.compile(rf"let\s+(?:mut\s+)?({_IDENTIFIER})\b")
-_RETURN_ARRAY = re.compile(
-    rf"\[\s*({_IDENTIFIER}(?:\s*,\s*{_IDENTIFIER})*)\s*\]"
-)
+_RETURN_ARRAY = re.compile(rf"\[\s*({_IDENTIFIER}(?:\s*,\s*{_IDENTIFIER})*)\s*\]")
 
 
 def _parse_function_prefix(
@@ -389,13 +379,13 @@ def _parse_function_prefix(
     masked_body: str,
     asm_start: int,
     function: str,
-    expected: Set[str],
-) -> Dict[str, Tuple[str, int]]:
+    expected: set[str],
+) -> dict[str, tuple[str, int]]:
     """Consume the supported statements before an inline-assembly block."""
-    locals_map: Dict[str, Tuple[str, int]] = {}
-    bound_names: Set[str] = set()
+    locals_map: dict[str, tuple[str, int]] = {}
+    bound_names: set[str] = set()
 
-    def bind(name: str, binding: Optional[Tuple[str, int]] = None) -> None:
+    def bind(name: str, binding: tuple[str, int] | None = None) -> None:
         if name in expected:
             raise GenerationError(f"{function}: local {name} shadows a function argument")
         if name in bound_names:
@@ -444,9 +434,12 @@ def _parse_function_prefix(
         if output_declaration:
             names = tuple(part.strip() for part in output_declaration.group(1).split(","))
             types = tuple(part.strip() for part in output_declaration.group(2).split(","))
-            if (not names or len(names) != len(types)
-                    or any(not re.fullmatch(_IDENTIFIER, name) for name in names)
-                    or any(type_name != "u64" for type_name in types)):
+            if (
+                not names
+                or len(names) != len(types)
+                or any(not re.fullmatch(_IDENTIFIER, name) for name in names)
+                or any(type_name != "u64" for type_name in types)
+            ):
                 raise GenerationError(f"{function}: unsupported output declaration")
             for name in names:
                 bind(name)
@@ -465,8 +458,11 @@ def _parse_function_prefix(
             name = direct_binding.group(1)
             raise GenerationError(f"{function}: local {name} shadows a function argument")
         local_use = next(
-            (name for name in locals_map
-             if re.match(rf"\b{re.escape(name)}\b", masked_body[pos:asm_start])),
+            (
+                name
+                for name in locals_map
+                if re.match(rf"\b{re.escape(name)}\b", masked_body[pos:asm_start])
+            ),
             None,
         )
         if local_use is not None:
@@ -484,7 +480,7 @@ def _parse_function_suffix(
     asm_close: int,
     function: str,
     result_count: int,
-) -> Tuple[str, ...]:
+) -> tuple[str, ...]:
     """Consume the unsafe-block close and the function's exact result expression."""
     pos = _skip_trivia(body, asm_close + 1)
     if pos >= len(body) or body[pos] != ";":
@@ -514,52 +510,49 @@ def parse_function(
     expected_args: Sequence[str],
     result_count: int,
     *,
-    reserved_names: Set[str] = frozenset(),
-    fixed_registers: Set[str] = frozenset(),
-    const_operands: Set[str] = frozenset(),
-    allowed_options: Set[str] = frozenset(("pure", "readonly", "nomem", "nostack")),
-    required_options: Set[str] = frozenset(("pure", "nostack")),
+    reserved_names: set[str] = frozenset(),
+    fixed_registers: set[str] = frozenset(),
+    const_operands: set[str] = frozenset(),
+    allowed_options: set[str] = frozenset(("pure", "readonly", "nomem", "nostack")),
+    required_options: set[str] = frozenset(("pure", "nostack")),
 ) -> ParsedFunction:
     """Extract one Rust function's sole inline-asm block and surrounding bindings."""
     masked_source = masked_noncode(source)
-    pattern = re.compile(
-        rf"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?fn\s+{re.escape(function)}\s*\("
-    )
+    pattern = re.compile(rf"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?fn\s+{re.escape(function)}\s*\(")
     functions = list(pattern.finditer(masked_source))
     if len(functions) != 1:
-        raise GenerationError(
-            f"expected exactly one `fn {function}(`, found {len(functions)}"
-        )
+        raise GenerationError(f"expected exactly one `fn {function}(`, found {len(functions)}")
     found = functions[0]
     signature_open = found.end() - 1
     signature_close = matching_delimiter(source, signature_open, "(", ")")
-    parameters = set(re.findall(
-        r"\b([A-Za-z_]\w*)\s*:",
-        masked_source[signature_open + 1:signature_close],
-    ))
+    parameters = set(
+        re.findall(
+            r"\b([A-Za-z_]\w*)\s*:",
+            masked_source[signature_open + 1 : signature_close],
+        )
+    )
     expected = set(expected_args)
     if parameters != expected:
         raise GenerationError(
             f"{function}: parameters {sorted(parameters)} do not match {sorted(expected)}"
         )
 
-    body_open = masked_noncode(source[signature_close + 1:]).find("{")
+    body_open = masked_noncode(source[signature_close + 1 :]).find("{")
     if body_open < 0:
         raise GenerationError(f"{function}: missing function body")
     body_open += signature_close + 1
     body_close = matching_delimiter(source, body_open, "{", "}")
-    body = source[body_open + 1:body_close]
+    body = source[body_open + 1 : body_close]
     masked_body = masked_noncode(body)
     macros = list(re.finditer(r"\basm\s*!\s*\(", masked_body))
     if len(macros) != 1:
-        raise GenerationError(
-            f"{function}: expected exactly one asm! block, found {len(macros)}"
-        )
+        raise GenerationError(f"{function}: expected exactly one asm! block, found {len(macros)}")
     asm = macros[0]
     asm_open = masked_body.find("(", asm.start())
     asm_close = matching_delimiter(body, asm_open, "(", ")")
     instructions, declarations, options = _parse_asm(
-        body[asm_open + 1:asm_close], function,
+        body[asm_open + 1 : asm_close],
+        function,
         reserved_names=reserved_names,
         fixed_registers=fixed_registers,
         const_operands=const_operands,
@@ -567,16 +560,12 @@ def parse_function(
         required_options=required_options,
     )
 
-    locals_map = _parse_function_prefix(
-        body, masked_body, asm.start(), function, expected
-    )
-    returns = _parse_function_suffix(
-        body, masked_body, asm_close, function, result_count
-    )
+    locals_map = _parse_function_prefix(body, masked_body, asm.start(), function, expected)
+    returns = _parse_function_suffix(body, masked_body, asm_close, function, result_count)
     return ParsedFunction(instructions, declarations, locals_map, returns, options)
 
 
-def declaration_directions(parsed: ParsedFunction, function: str) -> Dict[str, str]:
+def declaration_directions(parsed: ParsedFunction, function: str) -> dict[str, str]:
     """Validate unique operand names and return their read/write directions."""
     names = [declaration.name for declaration in parsed.declarations]
     if len(names) != len(set(names)):
@@ -584,9 +573,9 @@ def declaration_directions(parsed: ParsedFunction, function: str) -> Dict[str, s
     return {declaration.name: declaration.kind for declaration in parsed.declarations}
 
 
-def output_bindings(parsed: ParsedFunction, function: str) -> Dict[str, str]:
+def output_bindings(parsed: ParsedFunction, function: str) -> dict[str, str]:
     """Map Rust asm output variables to operand names, rejecting ambiguous bindings."""
-    outputs: Dict[str, str] = {}
+    outputs: dict[str, str] = {}
     for declaration in parsed.declarations:
         output = declaration.output
         if not output or output == "_":
@@ -599,10 +588,10 @@ def output_bindings(parsed: ParsedFunction, function: str) -> Dict[str, str]:
     return outputs
 
 
-def returned_registers(parsed: ParsedFunction, function: str) -> Tuple[str, ...]:
+def returned_registers(parsed: ParsedFunction, function: str) -> tuple[str, ...]:
     """Resolve the Rust result tuple to asm operands and require a complete binding."""
     outputs = output_bindings(parsed, function)
-    registers: List[str] = []
+    registers: list[str] = []
     for output in parsed.returns:
         if output not in outputs:
             raise GenerationError(f"{function}: returned value {output} is not an asm output")
@@ -613,7 +602,7 @@ def returned_registers(parsed: ParsedFunction, function: str) -> Tuple[str, ...]
     return tuple(registers)
 
 
-def check_output(path: Path, expected: str, root: Optional[Path] = None) -> bool:
+def check_output(path: Path, expected: str, root: Path | None = None) -> bool:
     """Compare one generated file without writing it, printing a unified diff."""
     display = path.relative_to(root) if root is not None else path
     if not path.exists():
@@ -623,8 +612,10 @@ def check_output(path: Path, expected: str, root: Optional[Path] = None) -> bool
     if actual == expected:
         return True
     diff = difflib.unified_diff(
-        actual.splitlines(True), expected.splitlines(True),
-        fromfile=str(display), tofile="generated",
+        actual.splitlines(True),
+        expected.splitlines(True),
+        fromfile=str(display),
+        tofile="generated",
     )
     sys.stderr.writelines(diff)
     return False
