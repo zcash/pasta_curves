@@ -1,0 +1,299 @@
+import PastaCurves.Fields
+import PastaCurves.Spec
+import PastaCurves.Inversion.Divstep59
+
+/-!
+# The round arithmetic on words
+
+The three word-level functions of a round besides `divstep59`, and the facts about them that the
+round invariant needs (§3 of `book/src/design/inversion.md`). `f` and `g` are five-word signed
+values (`Signed5`), `d` and `e` four-word unsigned values (`Limbs`). The functions are defined by
+their integer effect with word-shaped inputs and outputs: `updateFG` encodes the exact quotients
+`(m f + m' g) / 2^59`, and `amontred` is one word of Montgomery reduction after adding `2^61 p`. The
+per-word carry structure belongs to an implementation's proof that it computes these functions.
+-/
+
+set_option exponentiation.threshold 400
+
+namespace PastaCurves
+
+theorem Limbs.ofNat_bounded (n : ℕ) : (Limbs.ofNat n).Bounded := by
+  unfold Limbs.ofNat Limbs.Bounded
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> exact Nat.mod_lt _ (by norm_num)
+
+theorem Limbs.toNat_ofNat (n : ℕ) (h : n < 2^256) : (Limbs.ofNat n).toNat = n := by
+  simp only [Limbs.ofNat, Limbs.toNat]
+  omega
+
+/-- The modulus is at least `2^254`, by its shape. -/
+theorem PastaField.two_pow_le_modulus (F : PastaField) : 2^254 ≤ F.modulus.toNat := by
+  obtain ⟨h2, h3⟩ := F.shape
+  unfold Limbs.toNat
+  rw [h2, h3]
+  omega
+
+theorem PastaField.modulus_lt (F : PastaField) : F.modulus.toNat < 2^255 :=
+  Limbs.toNat_lt_of_shape F.modulus F.bounded F.shape
+
+/-- `inv` is `-p⁻¹` modulo `2^64`, for the whole modulus and not only its low limb. -/
+theorem PastaField.inv_mul_modulus (F : PastaField) :
+    (F.inv * F.modulus.toNat + 1) % 2^64 = 0 := by
+  obtain ⟨h2, h3⟩ := F.shape
+  have hspec := F.inv_spec
+  have hsplit : F.inv * F.modulus.toNat =
+      F.inv * F.modulus.l0 + 2^64 * (F.inv * F.modulus.l1 + 2^190 * F.inv) := by
+    unfold Limbs.toNat
+    rw [h2, h3]
+    ring
+  rw [hsplit]
+  omega
+
+end PastaCurves
+
+namespace PastaCurves.Inversion
+
+/-! ## Five-word signed values -/
+
+/-- Five words, the top one carrying the sign: the value is
+`l0 + 2^64 l1 + 2^128 l2 + 2^192 l3 + 2^256 · (signed l4)`. -/
+structure Signed5 where
+  l0 : ℕ
+  l1 : ℕ
+  l2 : ℕ
+  l3 : ℕ
+  l4 : ℕ
+
+def Signed5.toInt (x : Signed5) : ℤ :=
+  x.l0 + 2^64 * x.l1 + 2^128 * x.l2 + 2^192 * x.l3
+    + 2^256 * (if x.l4 < 2^63 then (x.l4 : ℤ) else (x.l4 : ℤ) - 2^64)
+
+def Signed5.Bounded (x : Signed5) : Prop :=
+  x.l0 < 2^64 ∧ x.l1 < 2^64 ∧ x.l2 < 2^64 ∧ x.l3 < 2^64 ∧ x.l4 < 2^64
+
+/-- The five words of a natural number; bits at and above `2^320` are dropped. -/
+def Signed5.ofNat (n : ℕ) : Signed5 :=
+  ⟨n % 2^64, n / 2^64 % 2^64, n / 2^128 % 2^64, n / 2^192 % 2^64, n / 2^256 % 2^64⟩
+
+/-- The five words of an integer, in two's complement modulo `2^320`. -/
+def Signed5.ofInt (z : ℤ) : Signed5 := Signed5.ofNat (z % 2^320).toNat
+
+theorem Signed5.ofNat_bounded (n : ℕ) : (Signed5.ofNat n).Bounded := by
+  unfold Signed5.ofNat Signed5.Bounded
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> exact Nat.mod_lt _ (by norm_num)
+
+theorem Signed5.ofInt_bounded (z : ℤ) : (Signed5.ofInt z).Bounded := Signed5.ofNat_bounded _
+
+/-- The encoding is faithful below `2^319` in absolute value. -/
+theorem Signed5.toInt_ofInt (z : ℤ) (hz : |z| < 2^319) : (Signed5.ofInt z).toInt = z := by
+  have hpos : (0 : ℤ) < 2^320 := by positivity
+  have hnn : 0 ≤ z % 2^320 := Int.emod_nonneg _ hpos.ne'
+  obtain ⟨n, hn⟩ : ∃ n : ℕ, (n : ℤ) = z % 2^320 := ⟨_, Int.toNat_of_nonneg hnn⟩
+  have hnt : (z % 2^320).toNat = n := by omega
+  rw [abs_lt] at hz
+  unfold Signed5.ofInt
+  rw [hnt]
+  unfold Signed5.ofNat Signed5.toInt
+  dsimp only
+  push_cast
+  split_ifs <;> omega
+
+/-! ## `updateFG` -/
+
+/-- `updateFG`: `((u f + v g) / 2^59, (q f + r g) / 2^59)`, encoded in five words. -/
+def updateFG (M : Mat2) (f g : Signed5) : Signed5 × Signed5 :=
+  (Signed5.ofInt ((M.u * f.toInt + M.v * g.toInt) / 2^59),
+   Signed5.ofInt ((M.q * f.toInt + M.r * g.toInt) / 2^59))
+
+/-- A row combination is below `B · C` when the row sum is at most `B` and both values are
+below `C`. -/
+theorem row_abs_lt (a b f g B C : ℤ) (hab : |a| + |b| ≤ B) (hf : |f| < C) (hg : |g| < C)
+    (hB : 0 < B) : |a * f + b * g| < B * C := by
+  have hC : 0 < C := lt_of_le_of_lt (abs_nonneg f) hf
+  calc |a * f + b * g| ≤ |a * f| + |b * g| := abs_add_le _ _
+    _ = |a| * |f| + |b| * |g| := by rw [abs_mul, abs_mul]
+    _ ≤ |a| * (C - 1) + |b| * (C - 1) :=
+        add_le_add (mul_le_mul_of_nonneg_left (by omega) (abs_nonneg a))
+          (mul_le_mul_of_nonneg_left (by omega) (abs_nonneg b))
+    _ = (|a| + |b|) * (C - 1) := by ring
+    _ ≤ B * (C - 1) := mul_le_mul_of_nonneg_right hab (by omega)
+    _ < B * C := by linarith
+
+/-- Lemma 9: the words are bounded and decode to the quotients, given the bounds that the
+rounds maintain (`|f|, |g| < 2^256`, which admits a non-canonical four-word input). -/
+theorem updateFG_spec (M : Mat2) (f g : Signed5)
+    (hfv : |f.toInt| < 2^256) (hgv : |g.toInt| < 2^256)
+    (hM : |M.u| + |M.v| ≤ 2^59 ∧ |M.q| + |M.r| ≤ 2^59) :
+    (updateFG M f g).1.Bounded ∧ (updateFG M f g).2.Bounded ∧
+      (updateFG M f g).1.toInt = (M.u * f.toInt + M.v * g.toInt) / 2^59 ∧
+      (updateFG M f g).2.toInt = (M.q * f.toInt + M.r * g.toInt) / 2^59 := by
+  have h1 := row_abs_lt _ _ _ _ _ _ hM.1 hfv hgv (by positivity)
+  have h2 := row_abs_lt _ _ _ _ _ _ hM.2 hfv hgv (by positivity)
+  rw [abs_lt] at h1 h2
+  refine ⟨Signed5.ofInt_bounded _, Signed5.ofInt_bounded _, ?_, ?_⟩
+  · apply Signed5.toInt_ofInt
+    rw [abs_lt]; constructor <;> omega
+  · apply Signed5.toInt_ofInt
+    rw [abs_lt]; constructor <;> omega
+
+/-! ## `amontred` -/
+
+/-- The integer effect of `amontred`: add `2^61 p`, then one word of Montgomery reduction. -/
+def amontredZ (t : ℤ) (p inv : ℕ) : ℤ :=
+  let s : ℤ := t + 2^61 * (p : ℤ)
+  let w : ℤ := (s * (inv : ℤ)) % 2^64
+  (s + w * (p : ℤ)) / 2^64
+
+/-- Lemma 10. The sharp bound is `8 t' < 2^254 + 9 p`; it gives `t' < 2 p` and `t' < 2^256`. -/
+theorem amontredZ_spec (F : PastaField) (t : ℤ) (ht : |t| < 2^315) :
+    0 ≤ amontredZ t F.modulus.toNat F.inv ∧
+      8 * amontredZ t F.modulus.toNat F.inv < 2^254 + 9 * F.modulus.toNat ∧
+      amontredZ t F.modulus.toNat F.inv < 2 * F.modulus.toNat ∧
+      amontredZ t F.modulus.toNat F.inv < 2^256 ∧
+      amontredZ t F.modulus.toNat F.inv * 2^64 ≡ t [ZMOD F.modulus.toNat] := by
+  have hp1 : 2^254 ≤ F.modulus.toNat := F.two_pow_le_modulus
+  have hp2 : F.modulus.toNat < 2^255 := F.modulus_lt
+  have hinv : ((F.inv : ℤ) * F.modulus.toNat + 1) % 2^64 = 0 := by
+    exact_mod_cast F.inv_mul_modulus
+  set p : ℤ := (F.modulus.toNat : ℤ) with hp
+  have hp1' : (2 : ℤ)^254 ≤ p := by rw [hp]; exact_mod_cast hp1
+  have hp2' : p < (2 : ℤ)^255 := by rw [hp]; exact_mod_cast hp2
+  rw [abs_lt] at ht
+  set s : ℤ := t + 2^61 * p with hs
+  set w : ℤ := (s * (F.inv : ℤ)) % 2^64 with hw
+  have hw0 : 0 ≤ w := Int.emod_nonneg _ (by norm_num)
+  have hw1 : w < 2^64 := Int.emod_lt_of_pos _ (by norm_num)
+  have hwp : w * p ≤ (2^64 - 1) * p := mul_le_mul_of_nonneg_right (by omega) (by omega)
+  have hwp0 : 0 ≤ w * p := mul_nonneg hw0 (by omega)
+  -- `s + w p` is a multiple of `2^64`.
+  have h0 : (F.inv : ℤ) * p + 1 ≡ 0 [ZMOD 2^64] := by
+    unfold Int.ModEq; rw [hinv, Int.zero_emod]
+  have hwm : w ≡ s * F.inv [ZMOD 2^64] := Int.mod_modEq _ _
+  have hmul : s + w * p ≡ 0 [ZMOD 2^64] := by
+    calc s + w * p ≡ s + s * F.inv * p [ZMOD 2^64] := (hwm.mul_right p).add_left s
+      _ = s * (F.inv * p + 1) := by ring
+      _ ≡ s * 0 [ZMOD 2^64] := h0.mul_left s
+      _ = 0 := mul_zero s
+  have hdvd : (2 : ℤ)^64 ∣ s + w * p := Int.dvd_of_emod_eq_zero hmul
+  have hexact : (s + w * p) / 2^64 * 2^64 = s + w * p := Int.ediv_mul_cancel hdvd
+  have ht' : amontredZ t F.modulus.toNat F.inv = (s + w * p) / 2^64 := rfl
+  rw [ht']
+  set t' : ℤ := (s + w * p) / 2^64 with ht'def
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · exact Int.ediv_nonneg (by omega) (by norm_num)
+  · omega
+  · omega
+  · omega
+  · rw [Int.modEq_iff_dvd]
+    exact ⟨-(2^61 + w), by linear_combination -hexact⟩
+
+/-- `amontred` on five words: four words out, below `2^256`. -/
+def amontred (t : Signed5) (modulus : Limbs) (inv : ℕ) : Limbs :=
+  Limbs.ofNat (amontredZ t.toInt modulus.toNat inv).toNat
+
+theorem amontred_spec (F : PastaField) (t : Signed5) (htv : |t.toInt| < 2^315) :
+    (amontred t F.modulus F.inv).Bounded ∧
+      (amontred t F.modulus F.inv).toNat < 2 * F.modulus.toNat ∧
+      ((amontred t F.modulus F.inv).toNat : ℤ) * 2^64 ≡ t.toInt [ZMOD F.modulus.toNat] := by
+  obtain ⟨h0, -, h2, h3, h4⟩ := amontredZ_spec F t.toInt htv
+  have hnat : (((amontredZ t.toInt F.modulus.toNat F.inv).toNat : ℕ) : ℤ) =
+      amontredZ t.toInt F.modulus.toNat F.inv := Int.toNat_of_nonneg h0
+  have hlt : (amontredZ t.toInt F.modulus.toNat F.inv).toNat < 2^256 := by omega
+  unfold amontred
+  rw [Limbs.toNat_ofNat _ hlt]
+  refine ⟨Limbs.ofNat_bounded _, by omega, ?_⟩
+  rw [hnat]; exact h4
+
+/-! ## `updateDE` and the last round -/
+
+/-- `updateDE`: the two row combinations, each reduced by `amontred`. -/
+def updateDE (M : Mat2) (d e : Limbs) (modulus : Limbs) (inv : ℕ) : Limbs × Limbs :=
+  (Limbs.ofNat (amontredZ (M.u * d.toNat + M.v * e.toNat) modulus.toNat inv).toNat,
+   Limbs.ofNat (amontredZ (M.q * d.toNat + M.r * e.toNat) modulus.toNat inv).toNat)
+
+/-- The integer form of the reduced row: bounded, below `2p`, congruent to the row over `2^64`. -/
+theorem amontredZ_row (F : PastaField) (a b : ℤ) (d e : Limbs) (hd : d.Bounded) (he : e.Bounded)
+    (hab : |a| + |b| ≤ 2^59) :
+    (Limbs.ofNat (amontredZ (a * d.toNat + b * e.toNat) F.modulus.toNat F.inv).toNat).Bounded ∧
+      (Limbs.ofNat (amontredZ (a * d.toNat + b * e.toNat) F.modulus.toNat F.inv).toNat).toNat
+        < 2 * F.modulus.toNat ∧
+      ((Limbs.ofNat (amontredZ (a * d.toNat + b * e.toNat) F.modulus.toNat F.inv).toNat).toNat
+        : ℤ) * 2^64 ≡ a * d.toNat + b * e.toNat [ZMOD F.modulus.toNat] := by
+  have hd' : |(d.toNat : ℤ)| < 2^256 := by
+    rw [abs_of_nonneg (by positivity)]; exact_mod_cast Limbs.toNat_lt d hd
+  have he' : |(e.toNat : ℤ)| < 2^256 := by
+    rw [abs_of_nonneg (by positivity)]; exact_mod_cast Limbs.toNat_lt e he
+  have ht : |a * d.toNat + b * e.toNat| < 2^315 := by
+    have := row_abs_lt a b _ _ _ _ hab hd' he' (by positivity)
+    norm_num at this ⊢; exact this
+  obtain ⟨h0, -, h2, h3, h4⟩ := amontredZ_spec F _ ht
+  have hnat : (((amontredZ (a * d.toNat + b * e.toNat) F.modulus.toNat F.inv).toNat : ℕ) : ℤ) =
+      amontredZ (a * d.toNat + b * e.toNat) F.modulus.toNat F.inv := Int.toNat_of_nonneg h0
+  have hlt : (amontredZ (a * d.toNat + b * e.toNat) F.modulus.toNat F.inv).toNat < 2^256 := by
+    omega
+  rw [Limbs.toNat_ofNat _ hlt]
+  refine ⟨Limbs.ofNat_bounded _, by omega, ?_⟩
+  rw [hnat]; exact h4
+
+theorem updateDE_spec (F : PastaField) (M : Mat2) (d e : Limbs)
+    (hd : d.Bounded) (he : e.Bounded)
+    (hM : |M.u| + |M.v| ≤ 2^59 ∧ |M.q| + |M.r| ≤ 2^59) :
+    (updateDE M d e F.modulus F.inv).1.Bounded ∧ (updateDE M d e F.modulus F.inv).2.Bounded ∧
+      (updateDE M d e F.modulus F.inv).1.toNat < 2 * F.modulus.toNat ∧
+      (updateDE M d e F.modulus F.inv).2.toNat < 2 * F.modulus.toNat ∧
+      ((updateDE M d e F.modulus F.inv).1.toNat : ℤ) * 2^64
+        ≡ M.u * d.toNat + M.v * e.toNat [ZMOD F.modulus.toNat] ∧
+      ((updateDE M d e F.modulus F.inv).2.toNat : ℤ) * 2^64
+        ≡ M.q * d.toNat + M.r * e.toNat [ZMOD F.modulus.toNat] := by
+  obtain ⟨b1, l1, c1⟩ := amontredZ_row F M.u M.v d e hd he hM.1
+  obtain ⟨b2, l2, c2⟩ := amontredZ_row F M.q M.r d e hd he hM.2
+  exact ⟨b1, b2, l1, l2, c1, c2⟩
+
+/-- The last round: only `d`, with the sign of the new `f` folded into the row, then one
+conditional subtraction. `signWord` is the low word of `u f + v g`, whose bit 63 is the
+sign. -/
+def finalD (M : Mat2) (signWord : ℕ) (d e : Limbs) (modulus : Limbs) (inv : ℕ) : Limbs :=
+  let t := (if signWord < 2^63 then (1 : ℤ) else -1) * (M.u * d.toNat + M.v * e.toNat)
+  let t' := amontredZ t modulus.toNat inv
+  Limbs.ofNat (if t' < modulus.toNat then t' else t' - modulus.toNat).toNat
+
+theorem finalD_spec (F : PastaField) (M : Mat2) (signWord : ℕ) (d e : Limbs)
+    (hd : d.Bounded) (he : e.Bounded) (hM : |M.u| + |M.v| ≤ 2^59) :
+    (finalD M signWord d e F.modulus F.inv).Bounded ∧
+      (finalD M signWord d e F.modulus F.inv).toNat < F.modulus.toNat ∧
+      ((finalD M signWord d e F.modulus F.inv).toNat : ℤ) * 2^64
+        ≡ (if signWord < 2^63 then (1 : ℤ) else -1) * (M.u * d.toNat + M.v * e.toNat)
+          [ZMOD F.modulus.toNat] := by
+  have hd' : |(d.toNat : ℤ)| < 2^256 := by
+    rw [abs_of_nonneg (by positivity)]; exact_mod_cast Limbs.toNat_lt d hd
+  have he' : |(e.toNat : ℤ)| < 2^256 := by
+    rw [abs_of_nonneg (by positivity)]; exact_mod_cast Limbs.toNat_lt e he
+  set σ : ℤ := if signWord < 2^63 then (1 : ℤ) else -1 with hσ
+  have hσ1 : |σ| = 1 := by rw [hσ]; split_ifs <;> simp
+  have ht : |σ * (M.u * d.toNat + M.v * e.toNat)| < 2^315 := by
+    rw [abs_mul, hσ1, one_mul]
+    have := row_abs_lt M.u M.v _ _ _ _ hM hd' he' (by positivity)
+    norm_num at this ⊢; exact this
+  obtain ⟨h0, -, h2, h3, h4⟩ := amontredZ_spec F _ ht
+  have hp1 : 2^254 ≤ F.modulus.toNat := F.two_pow_le_modulus
+  set p : ℤ := (F.modulus.toNat : ℤ) with hp
+  set t' : ℤ := amontredZ (σ * (M.u * d.toNat + M.v * e.toNat)) F.modulus.toNat F.inv with ht'
+  have hres : finalD M signWord d e F.modulus F.inv =
+      Limbs.ofNat (if t' < p then t' else t' - p).toNat := rfl
+  rw [hres]
+  have hq0 : 0 ≤ (if t' < p then t' else t' - p) := by split_ifs <;> omega
+  have hqp : (if t' < p then t' else t' - p) < p := by split_ifs <;> omega
+  have hnat : ((((if t' < p then t' else t' - p)).toNat : ℕ) : ℤ) = if t' < p then t' else t' - p :=
+    Int.toNat_of_nonneg hq0
+  have hlt : (if t' < p then t' else t' - p).toNat < 2^256 := by
+    have : (p : ℤ) < 2^255 := by rw [hp]; exact_mod_cast F.modulus_lt
+    omega
+  rw [Limbs.toNat_ofNat _ hlt]
+  refine ⟨Limbs.ofNat_bounded _, by omega, ?_⟩
+  rw [hnat]
+  have hcong : (if t' < p then t' else t' - p) ≡ t' [ZMOD p] := by
+    split_ifs
+    · exact Int.ModEq.refl _
+    · exact Int.modEq_iff_dvd.2 (by rw [sub_sub_cancel])
+  exact (hcong.mul_right _).trans h4
+
+end PastaCurves.Inversion
