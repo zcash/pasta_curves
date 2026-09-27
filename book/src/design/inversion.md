@@ -202,7 +202,8 @@ $$
 t' = (s + w p) / 2^{64} < s / 2^{64} + p < 2^{251} + 2^{61} p / 2^{64} + p = 2^{251} + 9p/8.
 $$
 
-Since $p > 2^{251} \cdot 8/7$, this is below $2p$; and $2^{251} + 9p/8 < 2^{256}$ since
+In integers, $8 t' < 2^{254} + 9p$, which is the form that the Lean statement uses. Since
+$p > 2^{251} \cdot 8/7$, this is below $2p$; and $2^{251} + 9p/8 < 2^{256}$ since
 $p < 2^{255}$. Also $t' \equiv t \cdot 2^{-64}$. So $\mathrm{amontred}$ returns a four-word
 value below $2^{256}$ that is congruent to $t / 2^{64}$, and one conditional subtraction of
 $p$ makes it canonical. (s2n-bignum's P-256 version needs a top-carry check inside
