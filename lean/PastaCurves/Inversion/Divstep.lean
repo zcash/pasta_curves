@@ -291,4 +291,48 @@ theorem f_dvd_of_g_eq_zero (n : ℕ) (s : State) (hf : s.f % 2 = 1) (hg : (divst
   rw [hg, mul_zero, zero_sub] at h2
   exact ⟨⟨(M n s).r, by rw [h1]; ring⟩, ⟨-(M n s).q, by rw [h2]; ring⟩⟩
 
+/-! ## The half-open entry range -/
+
+theorem Mat2.mul_assoc (a b c : Mat2) : (a.mul b).mul c = a.mul (b.mul c) := by
+  simp only [Mat2.mul, Mat2.mk.injEq]
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> ring
+
+theorem Mat2.one_mul (a : Mat2) : Mat2.one.mul a = a := by
+  simp [Mat2.mul, Mat2.one]
+
+theorem Mat2.mul_one (a : Mat2) : a.mul Mat2.one = a := by
+  simp [Mat2.mul, Mat2.one]
+
+/-- `M` built up from the left: the newest step multiplies on the left. -/
+theorem M_succ_left (n : ℕ) (s : State) : M (n + 1) s = (T (divsteps n s)).mul (M n s) := by
+  induction n generalizing s with
+  | zero => simp [M, Mat2.one_mul, Mat2.mul_one]
+  | succ n ih =>
+    rw [M_succ, ih (divstep s), Mat2.mul_assoc, ← M_succ, divsteps_succ]
+
+/-- Lemma 3, the half-open range: every entry of `M n s` lies in `(-2^n, 2^n]`. With the newest
+step on the left, each new entry is either twice an old one or an old one plus or minus another,
+so the strict lower bound and the closed upper bound both propagate. This is the range that
+makes the packed-word decoding unambiguous. -/
+theorem M_entry_range (n : ℕ) (s : State) :
+    (-(2 : ℤ)^n < (M n s).u ∧ (M n s).u ≤ 2^n) ∧
+      (-(2 : ℤ)^n < (M n s).v ∧ (M n s).v ≤ 2^n) ∧
+      (-(2 : ℤ)^n < (M n s).q ∧ (M n s).q ≤ 2^n) ∧
+      (-(2 : ℤ)^n < (M n s).r ∧ (M n s).r ≤ 2^n) := by
+  induction n with
+  | zero => simp [M, Mat2.one]
+  | succ n ih =>
+    obtain ⟨⟨hu1, hu2⟩, ⟨hv1, hv2⟩, ⟨hq1, hq2⟩, ⟨hr1, hr2⟩⟩ := ih
+    rw [M_succ_left]
+    set N := M n s with hN
+    set t := divsteps n s with ht
+    have hpow : (2 : ℤ)^(n + 1) = 2^n * 2 := pow_succ 2 n
+    rw [hpow]
+    by_cases h : 0 < t.two_delta ∧ t.g % 2 = 1
+    · simp only [T, if_pos h, Mat2.mul]
+      refine ⟨⟨?_, ?_⟩, ⟨?_, ?_⟩, ⟨?_, ?_⟩, ⟨?_, ?_⟩⟩ <;> omega
+    · simp only [T, if_neg h, Mat2.mul]
+      have hb : 0 ≤ t.g % 2 ∧ t.g % 2 ≤ 1 := by omega
+      refine ⟨⟨?_, ?_⟩, ⟨?_, ?_⟩, ⟨?_, ?_⟩, ⟨?_, ?_⟩⟩ <;> nlinarith
+
 end PastaCurves.Inversion
