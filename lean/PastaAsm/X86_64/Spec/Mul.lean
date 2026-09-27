@@ -420,6 +420,7 @@ private theorem conclude_mod (out candidate input q p k : Nat)
     2^256 * out + (2^256 * k) * p = 2^256 * (out + k * p) := by ring
     _ = _ := by rw [ho]; exact h
 -- END multiplication congruence helper
+
 -- BEGIN multiplication conclusion helper
 private theorem mul_conclude {a0 a1 a2 a3 d0 d1 d2 d3 c r0 r1 r2 r3 input q p : Nat}
     (hi : 2^256 * (a0 + 2^64*a1 + 2^128*a2 + 2^192*a3) = input + q*p)
@@ -440,6 +441,7 @@ private theorem mul_conclude {a0 a1 a2 a3 d0 d1 d2 d3 c r0 r1 r2 r3 input q p : 
     refine ⟨by omega, conclude_mod _ _ _ _ _ 0 hi ?_⟩
     simpa only [Nat.zero_mul, Nat.add_zero] using ho
 -- END multiplication conclusion helper
+
 -- BEGIN mulMont_spec statement
 set_option exponentiation.threshold 512 in
 /-- Montgomery multiplication under the round-safety and final reduction bounds. -/

@@ -1675,6 +1675,7 @@ theorem sqrMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
     hinv_lt hinv hproduct_lt r (by simpa only [sqrMont] using hr)
   exact ⟨hb, hl, by simpa only [eproduct] using hc⟩
 -- END sqrMont_spec statement
+
 -- BEGIN sqrMont_spec corollaries
 /-- The squaring pair applied `count` times to a canonical `value`: the output remains canonical,
 and the Montgomery weight records one factor of `2^-256` per squaring. -/
