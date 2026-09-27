@@ -50,6 +50,14 @@ def divsteps (n : ℕ) (s : State) : State := divstep^[n] s
 theorem divsteps_succ (n : ℕ) (s : State) : divsteps (n + 1) s = divsteps n (divstep s) :=
   Function.iterate_succ_apply divstep n s
 
+theorem divsteps_succ' (n : ℕ) (s : State) : divsteps (n + 1) s = divstep (divsteps n s) :=
+  Function.iterate_succ_apply' divstep n s
+
+theorem divsteps_add (m n : ℕ) (s : State) : divsteps (m + n) s = divsteps n (divsteps m s) := by
+  unfold divsteps
+  rw [Nat.add_comm]
+  exact Function.iterate_add_apply divstep n m s
+
 /-- A `2×2` integer matrix `[[u, v], [q, r]]`. -/
 structure Mat2 where
   u : ℤ

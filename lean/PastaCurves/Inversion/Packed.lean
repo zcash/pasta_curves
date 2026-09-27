@@ -15,9 +15,6 @@ unambiguous.
 
 namespace PastaCurves.Inversion
 
-theorem divsteps_succ' (n : ℕ) (s : State) : divsteps (n + 1) s = divstep (divsteps n s) :=
-  Function.iterate_succ_apply' divstep n s
-
 /-- The packed start for a state whose `f` and `g` are the low bits: `(1, 0)` and `(0, 1)` are
 the identity matrix's rows, negated and shifted to bits 41 and 62. -/
 def packedStart (s : State) : State := ⟨s.two_delta, s.f - 2^41, s.g - 2^62⟩
