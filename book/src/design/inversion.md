@@ -12,8 +12,9 @@ Huang, Maxwell, Wang, Wuille, and Yang,
 here the Pasta primes take its place. The algorithm works on Montgomery residues: given the
 Montgomery form of $X$, it returns the Montgomery form of $X^{-1}$.
 
-The lemmas and theorems are numbered on this page. Theorem 5 is Theorem 1 of Bernstein et al.
-(2026), which this page cites rather than proves.
+The lemmas and theorems are numbered on this page, and the Lean development under
+`lean/PastaCurves/Inversion/` cites these numbers in its docstrings. Theorem 5 is Theorem 1 of
+Bernstein et al. (2026), which this page cites rather than proves.
 
 Notation: $p$ is one of the two Pasta primes, so $p$ is odd and $2^{254} < p < 2^{255}$, and
 $R = 2^{256}$. All congruences are modulo $p$ unless said otherwise. Powers of two are
