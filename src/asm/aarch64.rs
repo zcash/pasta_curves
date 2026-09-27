@@ -1,4 +1,7 @@
 // Copyright Supranational LLC (the Montgomery routines, transcribed from Semolina v0.1.4).
+// Copyright Amazon.com, Inc. or its affiliates (the inversion blocks, adapted from s2n-bignum's
+// `bignum_montinv_p256` at `ec62054cc1864839d44b1acc6e6a3f9eff5b6e68`, licensed Apache-2.0 OR
+// ISC OR MIT-0).
 // Copyright the zakura-core and pasta_curves contributors (the transcription and wrappers).
 
 //! AArch64 backend for the Pasta fields.
@@ -6,7 +9,9 @@
 //! The inline blocks are register-renamed transcriptions of the upstream
 //! Semolina v0.1.4 routines (`mul_mont_pasta`, and the squaring loop body of
 //! `sqr_n_mul_mont_pasta`), with rhs limbs and the modulus constants supplied
-//! in registers instead of loaded from memory. The per-instruction comments
+//! in registers instead of loaded from memory, and of the blocks of
+//! s2n-bignum's `bignum_montinv_p256` (its `divstep59` macro), with the
+//! P-256 constants replaced by the Pasta ones. The per-instruction comments
 //! are carried over from the assembly routines they transcribe. Because the
 //! operands are ordinary register operands and the blocks are declared
 //! `options(pure, nomem, nostack)`, LLVM inlines the wrappers into callers and
@@ -577,4 +582,378 @@ pub(crate) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
         );
     }
     [a0, a1, a2, a3]
+}
+
+/// One packed half-delta divstep, the step body of s2n-bignum's `divstep59`.
+///
+/// The words `pf` and `pg` carry the low bits of `f` and `g` with a row of the
+/// transition matrix in their upper bits, and `d` is the doubled half-delta.
+/// The flags hold the parity test of `pg` from the previous step (`tst pg, #1`
+/// before the first step of a batch). A step swaps and subtracts when `g` is
+/// odd and `d` is positive, adds `f` to `g` when `g` is odd and `d` is not,
+/// and does nothing to `g` when it is even; then it halves `g` and adds two
+/// to `d`. The parity of the next `g` is tested before the halving, on bit 1,
+/// so that the test does not wait for the shift. The `last` arm omits that
+/// test, since nothing follows the last step of a batch.
+macro_rules! divstep {
+    (core) => {
+        concat!(
+            "csel {t}, {pf}, xzr, ne\n",   // t = g odd ? f : 0.
+            "ccmp {d}, xzr, #8, ne\n",     // g odd: flags of d - 0; else N set.
+            "cneg {d}, {d}, ge\n",         // g odd and d >= 0: d = -d.
+            "cneg {t}, {t}, ge\n",         // g odd and d >= 0: t = -f.
+            "csel {pf}, {pg}, {pf}, ge\n", // g odd and d >= 0: f = g.
+            "add {pg}, {pg}, {t}\n",       // g = g + t.
+            "add {d}, {d}, #2\n",          // d = d + 2.
+        )
+    };
+    () => {
+        concat!(
+            divstep!(core),
+            "tst {pg}, #2\n",              // The parity of the halved g.
+            "asr {pg}, {pg}, #1\n",        // g = g / 2.
+        )
+    };
+    (last) => {
+        concat!(
+            divstep!(core),
+            "asr {pg}, {pg}, #1\n",        // g = g / 2.
+        )
+    };
+}
+
+/// Fifty-nine half-delta divsteps on the low words of `f` and `g`, returning
+/// the new `d` and the transition matrix.
+///
+/// `d` is the doubled half-delta as a two's-complement word (`1` at the
+/// start), and `f0` and `g0` are the low 64 bits of `f` and `g`, `f` odd. The
+/// result is `[d', m00, m01, m10, m11]`: the new `d`, and the 59-step
+/// transition matrix `M` with `2^59 (f', g') = M (f, g)`, as two's-complement
+/// words. The block is s2n-bignum's `divstep59` macro on named registers: three
+/// batches of 20, 20, and 19 steps, each on two words that pack the low 20 bits
+/// of `f` and `g` with a row of the batch's matrix in the upper bits (`u` at
+/// bit 41 and `v` at bit 62 at the start, halved with each step), whose
+/// matrices are read back out of the upper bits, negated, and multiplied
+/// together. Between batches the next low words are the matrix rows applied
+/// to the current ones, shifted right by the batch's step count.
+#[inline(always)]
+// Called only by its test until the inversion's driver composes it.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(super) fn divstep59(mut d: u64, f0: u64, g0: u64) -> [u64; 5] {
+    let (m00, m01, m10, m11): (u64, u64, u64, u64);
+    // SAFETY: straight-line register-only arithmetic; no memory access, no
+    // stack use, and outputs depend only on the declared inputs.
+    unsafe {
+        asm!(
+            // Batch 1: pack the low 20 bits with the identity row (-2^41, -2^62).
+            "and {pf}, {f}, #0xfffff",
+            "orr {pf}, {pf}, #0xfffffe0000000000",
+            "and {pg}, {g}, #0xfffff",
+            "orr {pg}, {pg}, #0xc000000000000000",
+            "tst {pg}, #1",
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(last),
+            // Read the negated matrix of batch 1 out of the upper bits: the
+            // row's first entry as the 21-bit field at bit 21 after adding
+            // 2^20, the second as the arithmetic shift by 42 after adding
+            // 2^20 + 2^41.
+            "add {a00}, {pf}, #0x100, lsl #12",
+            "sbfx {a00}, {a00}, #21, #21",
+            "mov {a11}, #0x100000",
+            "add {a11}, {a11}, {a11}, lsl #21",
+            "add {a01}, {pf}, {a11}",
+            "asr {a01}, {a01}, #42",
+            "add {a10}, {pg}, #0x100, lsl #12",
+            "sbfx {a10}, {a10}, #21, #21",
+            "add {a11}, {pg}, {a11}",
+            "asr {a11}, {a11}, #42",
+            // The next low words: the rows applied to the current ones,
+            // shifted right by 20.
+            "mul {t}, {a00}, {f}",
+            "mul {t2}, {a01}, {g}",
+            "mul {f}, {a10}, {f}",
+            "mul {g}, {a11}, {g}",
+            "add {pf}, {t}, {t2}",
+            "add {pg}, {f}, {g}",
+            "asr {f}, {pf}, #20",
+            "asr {g}, {pg}, #20",
+            // Batch 2.
+            "and {pf}, {f}, #0xfffff",
+            "orr {pf}, {pf}, #0xfffffe0000000000",
+            "and {pg}, {g}, #0xfffff",
+            "orr {pg}, {pg}, #0xc000000000000000",
+            "tst {pg}, #1",
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(last),
+            "add {b00}, {pf}, #0x100, lsl #12",
+            "sbfx {b00}, {b00}, #21, #21",
+            "mov {b11}, #0x100000",
+            "add {b11}, {b11}, {b11}, lsl #21",
+            "add {b01}, {pf}, {b11}",
+            "asr {b01}, {b01}, #42",
+            "add {b10}, {pg}, #0x100, lsl #12",
+            "sbfx {b10}, {b10}, #21, #21",
+            "add {b11}, {pg}, {b11}",
+            "asr {b11}, {b11}, #42",
+            "mul {t}, {b00}, {f}",
+            "mul {t2}, {b01}, {g}",
+            "mul {f}, {b10}, {f}",
+            "mul {g}, {b11}, {g}",
+            "add {pf}, {t}, {t2}",
+            "add {pg}, {f}, {g}",
+            "asr {f}, {pf}, #20",
+            "asr {g}, {pg}, #20",
+            // Batch 3, of 19 steps.
+            "and {pf}, {f}, #0xfffff",
+            "orr {pf}, {pf}, #0xfffffe0000000000",
+            "and {pg}, {g}, #0xfffff",
+            "orr {pg}, {pg}, #0xc000000000000000",
+            "tst {pg}, #1",
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            // The product of the negated matrices of batches 2 and 1, which is
+            // the product of the matrices themselves, into (a00, a01, c10, c11).
+            "mul {f}, {b00}, {a00}",
+            "mul {g}, {b00}, {a01}",
+            "mul {t}, {b10}, {a00}",
+            "mul {t2}, {b10}, {a01}",
+            "madd {a00}, {b01}, {a10}, {f}",
+            "madd {a01}, {b01}, {a11}, {g}",
+            "madd {c10}, {b11}, {a10}, {t}",
+            "madd {c11}, {b11}, {a11}, {t2}",
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(last),
+            // The negated matrix of batch 3, whose rows sit one bit higher
+            // after 19 steps.
+            "add {b00}, {pf}, #0x100, lsl #12",
+            "sbfx {b00}, {b00}, #22, #21",
+            "mov {b11}, #0x100000",
+            "add {b11}, {b11}, {b11}, lsl #21",
+            "add {b01}, {pf}, {b11}",
+            "asr {b01}, {b01}, #43",
+            "add {b10}, {pg}, #0x100, lsl #12",
+            "sbfx {b10}, {b10}, #22, #21",
+            "add {b11}, {pg}, {b11}",
+            "asr {b11}, {b11}, #43",
+            // The 59-step matrix: minus the negated matrix of batch 3 times
+            // the product of batches 2 and 1.
+            "mneg {f}, {b00}, {a00}",
+            "mneg {g}, {b00}, {a01}",
+            "mneg {pf}, {b10}, {a00}",
+            "mneg {pg}, {b10}, {a01}",
+            "msub {m00}, {b01}, {c10}, {f}",
+            "msub {m01}, {b01}, {c11}, {g}",
+            "msub {m10}, {b11}, {c10}, {pf}",
+            "msub {m11}, {b11}, {c11}, {pg}",
+            d = inout(reg) d,
+            f = inout(reg) f0 => _,
+            g = inout(reg) g0 => _,
+            pf = out(reg) _,
+            pg = out(reg) _,
+            t = out(reg) _,
+            t2 = out(reg) _,
+            a00 = out(reg) _,
+            a01 = out(reg) _,
+            a10 = out(reg) _,
+            a11 = out(reg) _,
+            b00 = out(reg) _,
+            b01 = out(reg) _,
+            b10 = out(reg) _,
+            b11 = out(reg) _,
+            c10 = out(reg) _,
+            c11 = out(reg) _,
+            m00 = out(reg) m00,
+            m01 = out(reg) m01,
+            m10 = out(reg) m10,
+            m11 = out(reg) m11,
+            options(pure, nomem, nostack),
+        );
+    }
+    [d, m00, m01, m10, m11]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::divstep59;
+    use core::arch::asm;
+
+    /// One step of the `divstep!` macro on a packed state, for tracing the block step by step:
+    /// the parity test that precedes a batch's first step, then the step without the test that
+    /// would feed a next one.
+    fn divstep_once(mut d: u64, mut pf: u64, mut pg: u64) -> [u64; 3] {
+        // SAFETY: register-only arithmetic with declared inputs and outputs.
+        unsafe {
+            asm!(
+                "tst {pg}, #1",
+                divstep!(last),
+                d = inout(reg) d,
+                pf = inout(reg) pf,
+                pg = inout(reg) pg,
+                t = out(reg) _,
+                options(pure, nomem, nostack),
+            );
+        }
+        [d, pf, pg]
+    }
+
+    /// The packed state `(d, pf, pg)` before each of the first batch's twenty steps on the
+    /// first vector of `DIVSTEP59_VECTORS`, and after the last, from the integer recurrence on
+    /// the packed state (`Inversion/Packed.lean`'s `packedDivsteps`).
+    const DIVSTEP_TRACE: [[u64; 3]; 21] = [
+        [0x0000000000000001, 0xfffffe0000000001, 0xc0000000000d9046],
+        [0x0000000000000003, 0xfffffe0000000001, 0xe00000000006c823],
+        [0xffffffffffffffff, 0xe00000000006c823, 0xf000010000036411],
+        [0x0000000000000001, 0xe00000000006c823, 0xe80000800005161a],
+        [0x0000000000000003, 0xe00000000006c823, 0xf400004000028b0d],
+        [0xffffffffffffffff, 0xf400004000028b0d, 0x0a00001ffffde175],
+        [0x0000000000000001, 0xf400004000028b0d, 0xff00003000003641],
+        [0x0000000000000001, 0xff00003000003641, 0x057ffff7fffed59a],
+        [0x0000000000000003, 0xff00003000003641, 0x02bffffbffff6acd],
+        [0xffffffffffffffff, 0x02bffffbffff6acd, 0x01dfffe5ffff9a46],
+        [0x0000000000000001, 0x02bffffbffff6acd, 0x00effff2ffffcd23],
+        [0x0000000000000001, 0x00effff2ffffcd23, 0xff17fffb8000312b],
+        [0x0000000000000001, 0xff17fffb8000312b, 0xff14000440003204],
+        [0x0000000000000003, 0xff17fffb8000312b, 0xff8a000220001902],
+        [0x0000000000000005, 0xff17fffb8000312b, 0xffc5000110000c81],
+        [0xfffffffffffffffd, 0xffc5000110000c81, 0x00568002c7ffedab],
+        [0xffffffffffffffff, 0xffc5000110000c81, 0x000dc001ebfffd16],
+        [0x0000000000000001, 0xffc5000110000c81, 0x0006e000f5fffe8b],
+        [0x0000000000000001, 0x0006e000f5fffe8b, 0x0020effff2fff905],
+        [0x0000000000000001, 0x0020effff2fff905, 0x000d07ff7e7ffd3d],
+        [0x0000000000000001, 0x000d07ff7e7ffd3d, 0xfff60bffc5c0021c],
+    ];
+
+    #[test]
+    fn divstep_trace() {
+        let [d, f0, g0, ..] = DIVSTEP59_VECTORS[0];
+        let packed = [d, (f0 & 0xfffff) | 0xfffffe0000000000, (g0 & 0xfffff) | 0xc000000000000000];
+        assert_eq!(packed, DIVSTEP_TRACE[0]);
+        for (i, pair) in DIVSTEP_TRACE.windows(2).enumerate() {
+            let [d, pf, pg] = pair[0];
+            assert_eq!(divstep_once(d, pf, pg), pair[1], "step {}", i + 1);
+        }
+    }
+
+    /// `(d, f0, g0)` and the expected `(d', m00, m01, m10, m11)`, from the integer divstep
+    /// recurrence run on the words as integers, which the block agrees with by locality.
+    const DIVSTEP59_VECTORS: [[u64; 8]; 6] = [
+        [
+            0x0000000000000001,
+            0x992d30ed00000001,
+            0x2a5f8c1b7e3d9046,
+            0x0000000000000001,
+            0xffffffffd94098a0,
+            0x000000001c166090,
+            0xffffffffc77ed7e2,
+            0xfffffffff41aad25,
+        ],
+        [
+            0x0000000000000001,
+            0xffffffffffffffff,
+            0x8000000000000001,
+            0x0000000000000073,
+            0xfc00000000000000,
+            0x0400000000000000,
+            0xffffffffffffffff,
+            0xffffffffffffffff,
+        ],
+        [
+            0xfffffffffffffffb,
+            0x1234567890abcdef,
+            0xfedcba0987654321,
+            0x000000000000000d,
+            0xfffffffee6d31a00,
+            0x000000014cbb7a00,
+            0xfffffffff5435e89,
+            0x00000000056bfef9,
+        ],
+        [
+            0x0000000000000011,
+            0x0000000000000001,
+            0x0000000000000000,
+            0x0000000000000087,
+            0x0800000000000000,
+            0x0000000000000000,
+            0x0000000000000000,
+            0x0000000000000001,
+        ],
+        [
+            0xfffffffffffffb65,
+            0xdeadbeefcafef00d,
+            0x0123456789abcdef,
+            0xfffffffffffffbdb,
+            0x0800000000000000,
+            0x0000000000000000,
+            0x025c39e1b6d34515,
+            0x0000000000000001,
+        ],
+        [
+            0x0000000000000007,
+            0xc8f1e2d3b4a59687,
+            0x1e2d3c4b5a697887,
+            0x0000000000000007,
+            0xffffffffb89e1e30,
+            0xfffffffe50f081d0,
+            0xffffffffff43c3c5,
+            0xffffffffdede823b,
+        ],
+    ];
+
+    #[test]
+    fn divstep59_known_answers() {
+        for [d, f0, g0, d2, m00, m01, m10, m11] in DIVSTEP59_VECTORS {
+            assert_eq!(divstep59(d, f0, g0), [d2, m00, m01, m10, m11]);
+        }
+    }
 }

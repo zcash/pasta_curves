@@ -73,12 +73,17 @@ done
 
 # ---- The assembly backend (asm.yml) ----
 # On a host with a backend, the backend's tests run, and the run must report exactly as many
-# passed as `src/asm` declares, so that a test that compiles out cannot pass silently. An x86-64
-# host has a backend unless it is Apple's; its CPU needs BMI2 and ADX to run it.
+# passed as `src/asm` declares, so that a test that compiles out cannot pass silently. A test
+# that needs one architecture lives in that backend's file, which is only counted on that
+# architecture. An x86-64 host has a backend unless it is Apple's; its CPU needs BMI2 and
+# ADX to run it.
 arch=$(uname -m)
 if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ] ||
    { [ "$arch" = "x86_64" ] && [ "$(uname -s)" != "Darwin" ]; }; then
-  expected=$(grep -rh '^\s*#\[test\]' src/asm | wc -l | tr -d ' ')
+  own=src/asm/x86_64.rs
+  if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then own=src/asm/aarch64.rs; fi
+  expected=$({ grep -rh --exclude=aarch64.rs --exclude=x86_64.rs '^\s*#\[test\]' src/asm
+    grep -h '^\s*#\[test\]' "$own" || true; } | wc -l | tr -d ' ')
   echo "tests in the backend: $expected"
   test "$expected" -gt 0
   count() {

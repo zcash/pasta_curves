@@ -120,7 +120,7 @@ PastaCurves/Inversion/HullCert.lean      the certificate checked by the kernel; 
 PastaCurves/Inversion/Correctness.lean   Theorem 12 unconditionally: `montInv_correct`
 PastaCurves/AArch64.lean                 AArch64 umbrella module
 PastaCurves/AArch64/Semantics.lean       AArch64 instruction semantics
-PastaCurves/AArch64/Transcription.lean   GENERATED: the blocks and the round
+PastaCurves/AArch64/Transcription.lean   GENERATED: the blocks and their factored rounds
 PastaCurves/AArch64/Compositions.lean    compositions of the AArch64 blocks
 PastaCurves/AArch64/Vectors.lean         the AArch64 blocks on the vectors, kernel-checked
 PastaCurves/AArch64/Spec.lean            proofs about the AArch64 blocks and compositions
@@ -278,9 +278,12 @@ theorems above. `from_mont` checks nothing and holds for every input.
 
 ## Status
 
-Present: the semantics, the generator, the generated transcription of the four inline blocks,
+Present: the semantics, the generator, the generated transcription of the five inline blocks,
 the compositions and the asserted conditions, the fields, the vectors, and the CI checks
-(regeneration, skeletons, and the nanoda re-check). The proofs cover:
+(regeneration, skeletons, and the nanoda re-check). The inversion's `divstep59` block is
+transcribed, with its step factored out of the block, and checked against known answers of the
+divstep recurrence and a step-by-step trace of one batch; it is not yet proved, and the Rust
+does not yet compose it. The proofs cover:
 
 * the multiplication block with its two operand contracts, and the conversion as that block
   at `1`;
