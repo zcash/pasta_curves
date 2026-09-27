@@ -179,4 +179,116 @@ theorem M_rowSum_le (n : ℕ) (s : State) :
       have h4 : |N.r| * |s.g % 2| ≤ |N.r| := mul_le_of_le_one_right hr hbit
       constructor <;> linarith
 
+/-! ## Locality: `n` steps see only the low `n` bits -/
+
+/-- Halving preserves a congruence between even numbers, at half the modulus. -/
+theorem half_emod {a b m : ℤ} (ha : 2 ∣ a) (hb : 2 ∣ b) (h : a % (2 * m) = b % (2 * m)) :
+    (a / 2) % m = (b / 2) % m := by
+  obtain ⟨a', rfl⟩ := ha
+  obtain ⟨b', rfl⟩ := hb
+  rw [Int.mul_emod_mul_of_pos _ _ (by norm_num), Int.mul_emod_mul_of_pos _ _ (by norm_num)] at h
+  rw [Int.mul_ediv_cancel_left _ (by norm_num), Int.mul_ediv_cancel_left _ (by norm_num)]
+  omega
+
+theorem emod_two_of_emod_pow {a b : ℤ} (n : ℕ) (h : a % 2^(n + 1) = b % 2^(n + 1)) :
+    a % 2 = b % 2 := by
+  have h2 : (2 : ℤ) ∣ 2^(n + 1) := dvd_pow_self 2 (Nat.succ_ne_zero n)
+  rw [← Int.emod_emod_of_dvd a h2, h, Int.emod_emod_of_dvd b h2]
+
+theorem emod_pow_of_emod_pow_succ {a b : ℤ} (n : ℕ) (h : a % 2^(n + 1) = b % 2^(n + 1)) :
+    a % 2^n = b % 2^n := by
+  have h2 : (2 : ℤ)^n ∣ 2^(n + 1) := pow_dvd_pow 2 (Nat.le_succ n)
+  rw [← Int.emod_emod_of_dvd a h2, h, Int.emod_emod_of_dvd b h2]
+
+/-- One step of Lemma 2: states congruent modulo `2^(n+1)` take the same branch and stay
+congruent modulo `2^n`. -/
+theorem divstep_local (n : ℕ) (s s' : State) (hf0 : s.f % 2 = 1) (hd : s.two_delta = s'.two_delta)
+    (hf : s.f % 2^(n + 1) = s'.f % 2^(n + 1)) (hg : s.g % 2^(n + 1) = s'.g % 2^(n + 1)) :
+    T s = T s' ∧ (divstep s).two_delta = (divstep s').two_delta ∧
+      (divstep s).f % 2^n = (divstep s').f % 2^n ∧ (divstep s).g % 2^n = (divstep s').g % 2^n := by
+  have hf2 : s.f % 2 = s'.f % 2 := emod_two_of_emod_pow n hf
+  have hg2 : s.g % 2 = s'.g % 2 := emod_two_of_emod_pow n hg
+  have hpow : (2 : ℤ)^(n + 1) = 2 * 2^n := by ring
+  rw [hpow] at hf hg
+  have hfn : s.f % 2^n = s'.f % 2^n := by
+    have h2 : (2 : ℤ)^n ∣ 2 * 2^n := dvd_mul_left _ _
+    rw [← Int.emod_emod_of_dvd s.f h2, hf, Int.emod_emod_of_dvd s'.f h2]
+  have hgn : s.g % 2^n = s'.g % 2^n := by
+    have h2 : (2 : ℤ)^n ∣ 2 * 2^n := dvd_mul_left _ _
+    rw [← Int.emod_emod_of_dvd s.g h2, hg, Int.emod_emod_of_dvd s'.g h2]
+  by_cases h : 0 < s.two_delta ∧ s.g % 2 = 1
+  · have h' : 0 < s'.two_delta ∧ s'.g % 2 = 1 := by rw [← hd, ← hg2]; exact h
+    have hT : T s = T s' := by simp only [T, if_pos h, if_pos h']
+    refine ⟨hT, ?_, ?_, ?_⟩ <;> simp only [divstep, if_pos h, if_pos h']
+    · rw [hd]
+    · exact hgn
+    have hsub : (s.g - s.f) % (2 * 2^n) = (s'.g - s'.f) % (2 * 2^n) := Int.ModEq.sub hg hf
+    exact half_emod (Int.dvd_of_emod_eq_zero (by omega)) (Int.dvd_of_emod_eq_zero (by omega)) hsub
+  · have h' : ¬ (0 < s'.two_delta ∧ s'.g % 2 = 1) := by rw [← hd, ← hg2]; exact h
+    have hT : T s = T s' := by simp only [T, if_neg h, if_neg h']; rw [hg2]
+    refine ⟨hT, ?_, ?_, ?_⟩ <;> simp only [divstep, if_neg h, if_neg h']
+    · rw [hd]
+    · exact hfn
+    rw [← hg2]
+    have hadd : (s.g + s.g % 2 * s.f) % (2 * 2^n) = (s'.g + s.g % 2 * s'.f) % (2 * 2^n) :=
+      Int.ModEq.add hg (Int.ModEq.mul_left _ hf)
+    rcases Int.emod_two_eq_zero_or_one s.g with h2 | h2
+    · rw [h2] at hadd ⊢
+      simp only [zero_mul, add_zero] at hadd ⊢
+      exact half_emod (Int.dvd_of_emod_eq_zero h2) (Int.dvd_of_emod_eq_zero (by omega)) hadd
+    · rw [h2] at hadd ⊢
+      simp only [one_mul] at hadd ⊢
+      exact half_emod (Int.dvd_of_emod_eq_zero (by omega)) (Int.dvd_of_emod_eq_zero (by omega)) hadd
+
+/-- Lemma 2: `δ_n` and `M_n` depend only on `δ_0` and the low `n` bits of `f_0, g_0`. -/
+theorem divsteps_local (n : ℕ) (s s' : State) (hf0 : s.f % 2 = 1) (hd : s.two_delta = s'.two_delta)
+    (hf : s.f % 2^n = s'.f % 2^n) (hg : s.g % 2^n = s'.g % 2^n) :
+    (divsteps n s).two_delta = (divsteps n s').two_delta ∧ M n s = M n s' := by
+  induction n generalizing s s' with
+  | zero => exact ⟨hd, rfl⟩
+  | succ n ih =>
+    obtain ⟨hT, hd', hf', hg'⟩ := divstep_local n s s' hf0 hd hf hg
+    obtain ⟨ihd, ihM⟩ := ih (divstep s) (divstep s') (divstep_f_odd s hf0) hd' hf' hg'
+    rw [divsteps_succ, divsteps_succ, M_succ, M_succ, hT, ihM]
+    exact ⟨ihd, rfl⟩
+
+/-! ## The determinant, the inverse identity, and the end state -/
+
+def Mat2.det (m : Mat2) : ℤ := m.u * m.r - m.v * m.q
+
+theorem Mat2.det_mul (m n : Mat2) : (m.mul n).det = m.det * n.det := by
+  simp only [Mat2.mul, Mat2.det]; ring
+
+theorem T_det (s : State) : (T s).det = 2 := by
+  unfold T; split_ifs <;> simp [Mat2.det]
+
+/-- `det (M n s) = 2^n`. -/
+theorem M_det (n : ℕ) (s : State) : (M n s).det = 2^n := by
+  induction n generalizing s with
+  | zero => simp [M, Mat2.one, Mat2.det]
+  | succ n ih => rw [M_succ, Mat2.det_mul, ih, T_det, pow_succ]
+
+/-- The adjugate identity: the inputs are integer combinations of the outputs, `f = r f_n - v g_n`
+and `g = u g_n - q f_n`. -/
+theorem M_inv_spec (n : ℕ) (s : State) (hf : s.f % 2 = 1) :
+    s.f = (M n s).r * (divsteps n s).f - (M n s).v * (divsteps n s).g ∧
+      s.g = (M n s).u * (divsteps n s).g - (M n s).q * (divsteps n s).f := by
+  obtain ⟨h1, h2⟩ := M_spec n s hf
+  have hdet := M_det n s
+  simp only [Mat2.det] at hdet
+  have hpos : (0 : ℤ) < 2^n := by positivity
+  constructor
+  · apply mul_left_cancel₀ hpos.ne'
+    linear_combination (-(M n s).r) * h1 + (M n s).v * h2 - s.f * hdet
+  · apply mul_left_cancel₀ hpos.ne'
+    linear_combination (-(M n s).u) * h2 + (M n s).q * h1 - s.g * hdet
+
+/-- Lemma 4, in the form Theorem 12 uses: once `g_n = 0`, `f_n` divides both inputs. -/
+theorem f_dvd_of_g_eq_zero (n : ℕ) (s : State) (hf : s.f % 2 = 1) (hg : (divsteps n s).g = 0) :
+    (divsteps n s).f ∣ s.f ∧ (divsteps n s).f ∣ s.g := by
+  obtain ⟨h1, h2⟩ := M_inv_spec n s hf
+  rw [hg, mul_zero, sub_zero] at h1
+  rw [hg, mul_zero, zero_sub] at h2
+  exact ⟨⟨(M n s).r, by rw [h1]; ring⟩, ⟨-(M n s).q, by rw [h2]; ring⟩⟩
+
 end PastaCurves.Inversion
