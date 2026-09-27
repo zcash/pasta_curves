@@ -14,7 +14,7 @@ Montgomery form of $X$, it returns the Montgomery form of $X^{-1}$.
 
 The lemmas and theorems are numbered on this page, and the Lean development under
 `lean/PastaCurves/Inversion/` cites these numbers in its docstrings. Theorem 5 is Theorem 1 of
-Bernstein et al. (2026), which this page cites rather than proves.
+Bernstein et al. (2026); §5 describes the certificate from which the Lean development proves it.
 
 Notation: $p$ is one of the two Pasta primes, so $p$ is odd and $2^{254} < p < 2^{255}$, and
 $R = 2^{256}$. All congruences are modulo $p$ unless said otherwise. Powers of two are
@@ -127,7 +127,8 @@ classical statement and is not needed separately.
 
 **Theorem 5 (termination; Bernstein et al. 2026, Theorem 1).** If $\delta_0 = \frac{1}{2}$, $f_0$ is
 odd, $0 \leq g_0 \leq f_0 < 2^b$, and $n \geq \lceil (9437 b + 1) / 4096 \rceil$, then $g_n = 0$.
-For $b = 256$ this is $n = 590$. The paper proves it for all $b$, in HOL Light.
+For $b = 256$ this is $n = 590$. The paper proves it for all $b$, in HOL Light, and the Lean
+development proves it for all $b$ from a certificate (§5).
 
 ## 2. Divsteps on packed words
 
@@ -242,7 +243,46 @@ low word of $2^{59} f_{10} = \pm 2^{59}$ before the shift: as a signed 64-bit wo
 bit 63 clear and $-2^{59}$ has it set. This uses only that the low word of the five-word product is
 the low word of the true integer, which Lemma 9 gives.
 
-## 5. What is not covered here
+## 5. The termination bound
 
-This page does not prove the bound (Theorem 5), which it cites, and it does not relate the
-algorithm to any implementation of it.
+The Lean development proves Theorem 5 from Bernstein's "hull light" certificate of 2023
+([`hull-light-20230416.sage`](https://cr.yp.to/2023/hull-light-20230416.sage), public domain),
+following Harrison's check and proof of it in HOL Light (the `Divstep/` directory of
+`jrh13/hol-light`). Section 4.3 of the paper describes the same argument.
+
+The certificate has two explicit 80-point rational hulls $S_{1/2}$ and $S_{-1/2}$; every other
+$S_\delta$ is defined as a linear image of $S_{1/2}$, with a factor $33/32$ for
+$|\delta| \geq 5/2$. It has a shrink factor $\lambda' = 30902639/41749730$, and it comes with
+three exact checks:
+
+* eight inclusions $M S_\delta \subseteq \lambda'^k S_{\delta'}$ for the step maps
+  $M_{-1}(x, y) = (y, (y - x)/2)$, $M_1(x, y) = (x, (y + x)/2)$, and $M_0(x, y) = (x, y/2)$, each
+  certified half-plane by half-plane with two Farkas multipliers; every other transition is an
+  equality by definition or follows from convexity;
+* the initial containment: the triangle $0 \leq y \leq x \leq 1$ scaled by $2753/4096$ lies in
+  $\mathrm{Hull}\, S_{1/2}$, so $0 \leq g \leq f \leq 2^b$ gives
+  $(f/H, g/H) \in \mathrm{Hull}\, S_{1/2}$ for $H = 2^b \cdot 4096/2753$;
+* a lattice-point endgame: with $L = 3047/2048$ the scaled hulls contain no integer point with
+  $y \neq 0$, checked through an outer box and the enumeration of the few candidate points, so
+  that once $2^b \lambda'^n \leq L \cdot 2753/4096$ the state has $g_n = 0$.
+
+The simpler endgame, $|x| < 1$ or $|y| < 1$ after $n$ steps, fails at $n = 590$ and first passes
+at 591, so it is not used; for $b = 256$ and $n = 590$ the slack is about 5%. The triangle
+covers only $g \leq f$. For the square, which would admit a non-canonical $x$ up to $2^{256}$,
+the largest admissible scale is $5193/8192$; with it, 590 steps fail by 0.19% and 591 pass, so
+the input stays canonical.
+
+In Lean, the half-planes and the Farkas records are generated data (`HullData.lean`, generated
+by `lean/scripts/gen_hull.py` from `lean/scripts/hull_certificate.json`); the inclusion checks
+are evaluated by the kernel (`HullCert.lean`); and the argument over abstract regions, following
+Harrison's structure, ends in `terminationBound_of_certified` (`HullBound.lean`), with the range
+of $\delta$ handled by the definitional formula and lemmas rather than a finite table.
+`lean/scripts/verify_hull_certificate.py` re-checks the certificate data independently, in exact
+arithmetic: the ten inclusions (the eight above, the initial triangle, and the outer box), with
+724 Farkas records, and the 16 lattice points.
+
+## 6. What is not covered here
+
+This page does not relate the algorithm to any implementation of it. The Lean correctness
+theorem takes the primality of $p$, which Theorem 12 needs for $\gcd(p, x) = 1$, as a
+hypothesis.
