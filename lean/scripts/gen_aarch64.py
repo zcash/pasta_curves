@@ -11,15 +11,15 @@ Invoke it through ``python3 lean/scripts/gen.py``.
 
 The transcription is deliberately mechanical. A block is read from its template lines, with
 the operand placeholders as register names, rebound by each instruction that writes them:
-the `in` and `inout` operands bind argument limbs and `inv`, the named `out` and the `inout`
-operands are the result limbs, and the block ends as a routine does. The compiler's
+the `in` and `inout` operands bind argument limbs and word arguments, the named `out` and the
+`inout` operands are the result words, and the block ends as a routine does. The compiler's
 allocation of registers to the operands is not modelled; the script checks that every
 register the block reads was written by the block or bound by an operand.
 
 A binding that nothing later reads is not emitted. For an operand this records that the
-block binds a value it never uses, and the dropped binding is left as a comment; for a carry
-flag it is an ordinary unread flag write. A computed register that is never read would be
-dead code in the block and is reported as an error, since none is expected.
+block binds a value it never uses, and the dropped binding is left as a comment; for a flag
+it is an ordinary unread flag write. A computed register that is never read would be dead
+code in the block and is reported as an error, since none is expected.
 
 Run from the repository root:
 
@@ -35,7 +35,9 @@ The script also generates the mechanical part of each block's correctness proof 
 Python 3.9+; stdlib only.
 """
 
+import dataclasses
 import re
+import textwrap
 from pathlib import Path
 
 import asm_source
@@ -44,14 +46,19 @@ import gen
 INLINE = Path("src/asm/aarch64.rs")
 OUT_PROGRAM = Path("lean/PastaCurves/AArch64/Transcription.lean")
 
+# Names the transcription uses for its own bindings; an operand may not take them.
+RESERVED_OPERAND_NAMES = {"s", "c", "fl"}
+
 HEADER = """/-
 Copyright Supranational LLC (the routines, transcribed from Semolina v0.1.4).
 Copyright (c) 2026 the pasta_curves contributors (the transcription).
 -/
 """
 
-# Code longer than this does not set the instruction-comment column (see `Routine.text`).
-COMMENT_COLUMN_MAX = 40
+# Code longer than this does not set the instruction-comment column (see `Routine.text`): the
+# round calls, and the longer expressions of the inversion blocks, take their comment two spaces
+# after the code, so that a new block does not re-align the comments of the existing ones.
+COMMENT_COLUMN_MAX = 30
 
 # Blocks whose instruction stream Semolina's generator (`pasta_mul-armv8.pl`) emitted as a
 # prologue, a loop body repeated a fixed number of times, and an epilogue. The body is
@@ -86,13 +93,45 @@ LOOPS = {
     },
 }
 
-# The inline `asm!` blocks of the crate: the function whose block to read, the Lean name, the
-# docstring, and the argument names in signature order. The block's template lines are the
-# instruction stream; its `in` and `inout` operands bind the arguments (`lhs[0]` is `lhs.l0`,
-# `inv` is `inv`, and a `let mut a0 = value[0];` before the block makes the `inout` operand
-# `a0` the limb `value.l0`), and its named `out` and its `inout` operands are the result limbs.
+# The Lean type of each argument kind and, for a structure, its fields in order.
+KIND_FIELDS = {
+    "Limbs": ["l0", "l1", "l2", "l3"],
+    "Signed5": ["l0", "l1", "l2", "l3", "l4"],
+    "Nat": None,
+}
+
+
+@dataclasses.dataclass(frozen=True)
+class RoutineConfig:
+    """An inline `asm!` block of the crate to transcribe: the Rust function whose block to read,
+    the Lean name, the docstring, the arguments as (name, kind) in signature order, and the
+    result's Lean type. A result type other than `Limbs` or `Signed5` is a structure declared by
+    the transcription, with `result_fields` as its fields in the source's result order and
+    `result_doc` as its docstring."""
+
+    rust_name: str
+    lean_name: str
+    doc: str
+    args: tuple
+    result: str = "Limbs"
+    result_fields: tuple = ("l0", "l1", "l2", "l3")
+    result_doc: str = ""
+
+    @property
+    def arg_names(self):
+        return [name for name, _ in self.args]
+
+    def fields(self, arg):
+        """The fields of argument `arg`, or `None` for a word."""
+        return KIND_FIELDS[dict(self.args)[arg]]
+
+
+# The inline `asm!` blocks of the crate. The block's template lines are the instruction stream;
+# its `in` and `inout` operands bind the arguments (`lhs[0]` is `lhs.l0`, a word argument such
+# as `inv` is itself, and a `let mut a0 = value[0];` before the block makes the `inout` operand
+# `a0` the limb `value.l0`), and its named `out` and its `inout` operands are the result words.
 INLINE_ROUTINES = [
-    (
+    RoutineConfig(
         "mul",
         "mulMont",
         (
@@ -100,9 +139,9 @@ INLINE_ROUTINES = [
             "with the result in the block's output operands. Its rounds are those of Semolina's "
             "`mul_mont_pasta`; its epilogue keeps four limbs of the final candidate."
         ),
-        ["lhs", "rhs", "modulus"],
+        (("lhs", "Limbs"), ("rhs", "Limbs"), ("modulus", "Limbs"), ("inv", "Nat")),
     ),
-    (
+    RoutineConfig(
         "square",
         "sqrMont",
         (
@@ -110,9 +149,9 @@ INLINE_ROUTINES = [
             "squaring loop body of Semolina's `sqr_n_mul_mont_pasta` followed by a conditional "
             "subtraction, with the result in the block's `inout` operands."
         ),
-        ["value", "modulus"],
+        (("value", "Limbs"), ("modulus", "Limbs"), ("inv", "Nat")),
     ),
-    (
+    RoutineConfig(
         "add",
         "addMod",
         (
@@ -120,9 +159,9 @@ INLINE_ROUTINES = [
             "addition, a subtraction of the modulus, and the selection of the reduced sum when that "
             "subtraction did not borrow, with the result in the block's `inout` operands."
         ),
-        ["lhs", "rhs", "modulus"],
+        (("lhs", "Limbs"), ("rhs", "Limbs"), ("modulus", "Limbs")),
     ),
-    (
+    RoutineConfig(
         "sub",
         "subMod",
         (
@@ -130,7 +169,7 @@ INLINE_ROUTINES = [
             "subtraction and the addition of the modulus when it borrowed, with the result in the "
             "block's `inout` operands."
         ),
-        ["lhs", "rhs", "modulus"],
+        (("lhs", "Limbs"), ("rhs", "Limbs"), ("modulus", "Limbs")),
     ),
 ]
 
@@ -156,40 +195,78 @@ class Emitter(gen.Emitter):
         super().__init__()
         self.ins = ins
         self.directions = directions or {}
+        # Which flag binding the last flag-setting instruction produced: `c` (a carry chain) or
+        # `fl` (the four flags), so that a condition reads the flags that are current.
+        self.flags = None
 
     def read(self, tok):
         if tok == "xzr":
             return "0"
         if tok.startswith("#"):
             return str(imm(tok))
+        if tok in ("c", "fl") and self.flags != tok:
+            raise ValueError(f"{tok} read while the flags are not in that form")
         if tok not in self.known:
             raise ValueError(f"{tok} read before being written")
         self.cur_reads.add(tok)
         return tok
 
     def bind(self, name, expr, comment, reads=None, load=False, fact=None, note=None):
+        if name in ("c", "fl"):
+            self.flags = name
         if name != "xzr":
             super().bind(name, expr, comment, reads=reads, load=load, fact=fact, note=note)
 
+    def operand(self, toks, text):
+        """A second source operand: a register or immediate, optionally shifted left by an
+        immediate (`b, lsl #k`), as an expression."""
+        if len(toks) == 1:
+            return self.read(toks[0])
+        if len(toks) == 3 and toks[1] == "lsl":
+            k = imm(toks[2])
+            if toks[0].startswith("#"):
+                return str(imm(toks[0]) * 2**k)
+            return f"(lsl {self.read(toks[0])} {k})"
+        raise ValueError(f"unsupported operand: {text}")
+
     def step(self, op, t, text):
+        # The number of operand tokens, or the numbers a shifted second source allows.
         arity = {
-            "mov": 2,
-            "mul": 3,
-            "umulh": 3,
-            "lsl": 3,
-            "lsr": 3,
-            "adds": 3,
-            "adcs": 3,
-            "adc": 3,
-            "subs": 3,
-            "sbcs": 3,
-            "csel": 4,
+            "mov": (2,),
+            "mul": (3,),
+            "umulh": (3,),
+            "madd": (4,),
+            "msub": (4,),
+            "mneg": (3,),
+            "lsl": (3,),
+            "lsr": (3,),
+            "asr": (3,),
+            "sbfx": (4,),
+            "extr": (4,),
+            "adds": (3,),
+            "adcs": (3,),
+            "adc": (3,),
+            "subs": (3,),
+            "sbcs": (3,),
+            "add": (3, 5),
+            "sub": (3,),
+            "neg": (2,),
+            "and": (3,),
+            "orr": (3,),
+            "eor": (3,),
+            "tst": (2,),
+            "cmp": (2,),
+            "ccmp": (4,),
+            "csel": (4,),
+            "cneg": (3,),
+            "csetm": (2,),
         }
         if op not in arity:
             raise ValueError(f"unhandled instruction: {text}")
-        if len(t) != arity[op]:
-            raise ValueError(f"{op} expects {arity[op]} operands, got {len(t)}: {text}")
-        if t[0] != "xzr":
+        if len(t) not in arity[op]:
+            expected = " or ".join(str(n) for n in arity[op])
+            raise ValueError(f"{op} expects {expected} operands, got {len(t)}: {text}")
+        if op not in ("tst", "cmp", "ccmp") and t[0] != "xzr":
             if self.directions.get(t[0]) == "in":
                 raise ValueError(f"input-only register {t[0]} cannot be written: {text}")
             if t[0] not in self.directions:
@@ -204,12 +281,21 @@ class Emitter(gen.Emitter):
         elif op == "umulh":
             a, b = self.read(t[1]), self.read(t[2])
             self.bind(t[0], f"umulh {a} {b}", text, fact=("umulh", a, b))
-        elif op == "lsl":
+        elif op in ("madd", "msub"):
+            a, b, c = self.read(t[1]), self.read(t[2]), self.read(t[3])
+            self.bind(t[0], f"{op} {a} {b} {c}", text, fact=(op, a, b, c))
+        elif op == "mneg":
+            a, b = self.read(t[1]), self.read(t[2])
+            self.bind(t[0], f"mneg {a} {b}", text, fact=("mneg", a, b))
+        elif op in ("lsl", "lsr", "asr"):
             a, k = self.read(t[1]), imm(t[2])
-            self.bind(t[0], f"lsl {a} {k}", text, fact=("lsl", a, k))
-        elif op == "lsr":
-            a, k = self.read(t[1]), imm(t[2])
-            self.bind(t[0], f"lsr {a} {k}", text, fact=("lsr", a, k))
+            self.bind(t[0], f"{op} {a} {k}", text, fact=(op, a, k))
+        elif op == "sbfx":
+            a, lsb, w = self.read(t[1]), imm(t[2]), imm(t[3])
+            self.bind(t[0], f"sbfx {a} {lsb} {w}", text, fact=("sbfx", a, lsb, w))
+        elif op == "extr":
+            hi, lo, k = self.read(t[1]), self.read(t[2]), imm(t[3])
+            self.bind(t[0], f"extr {hi} {lo} {k}", text, fact=("extr", hi, lo, k))
         elif op in ("adds", "adcs", "adc"):
             cin = "0" if op == "adds" else self.read("c")
             a, b = self.read(t[1]), self.read(t[2])
@@ -230,14 +316,53 @@ class Emitter(gen.Emitter):
                 self.bind("s", expr, text, fact=("subs", a, b, cin))
                 self.bind(t[0], "s.1", text, reads=("s",), fact=("fst",), note=f"  `-> {t[0]}")
                 self.bind("c", "s.2", text, reads=("s",), fact=("snd",), note="  `-> carry")
+        elif op == "add":
+            a, b = self.read(t[1]), self.operand(t[2:], text)
+            self.bind(t[0], f"addw {a} {b}", text, fact=("addw", a, b))
+        elif op == "sub":
+            a, b = self.read(t[1]), self.read(t[2])
+            self.bind(t[0], f"subw {a} {b}", text, fact=("subw", a, b))
+        elif op == "neg":
+            a = self.read(t[1])
+            self.bind(t[0], f"negw {a}", text, fact=("negw", a))
+        elif op in ("and", "orr", "eor"):
+            a, b = self.read(t[1]), self.read(t[2])
+            self.bind(t[0], f"{op}w {a} {b}", text, fact=(op, a, b))
+        elif op == "tst":
+            a, b = self.read(t[0]), self.read(t[1])
+            self.bind("fl", f"tstFlags (andw {a} {b})", text, fact=("tst", a, b))
+        elif op == "cmp":
+            a, b = self.read(t[0]), self.read(t[1])
+            self.bind("fl", f"cmpFlags {a} {b}", text, fact=("cmp", a, b))
+        elif op == "ccmp":
+            if t[3] != "ne":
+                raise ValueError(f"unexpected condition: {text}")
+            fl, a, b, nzcv = self.read("fl"), self.read(t[0]), self.read(t[1]), imm(t[2])
+            self.bind("fl", f"ccmpNe {fl} {a} {b} {nzcv}", text, fact=("ccmp_ne", fl, a, b, nzcv))
         elif op == "csel":
-            c, a, b = self.read("c"), self.read(t[1]), self.read(t[2])
             if t[3] in ("lo", "cc"):
+                c, a, b = self.read("c"), self.read(t[1]), self.read(t[2])
                 self.bind(t[0], f"cselLo {c} {a} {b}", text, fact=("select", c, a, b))
             elif t[3] in ("cs", "hs"):
+                c, a, b = self.read("c"), self.read(t[1]), self.read(t[2])
                 self.bind(t[0], f"cselCs {c} {a} {b}", text, fact=("select", c, b, a))
+            elif t[3] in ("ne", "ge"):
+                fl, a, b = self.read("fl"), self.read(t[1]), self.read(t[2])
+                fn = f"csel{t[3].capitalize()}"
+                self.bind(t[0], f"{fn} {fl} {a} {b}", text, fact=(f"csel_{t[3]}", fl, a, b))
             else:
                 raise ValueError(f"unexpected condition: {text}")
+        elif op == "cneg":
+            if t[2] not in ("ge", "mi"):
+                raise ValueError(f"unexpected condition: {text}")
+            fl, a = self.read("fl"), self.read(t[1])
+            fn = f"cneg{t[2].capitalize()}"
+            self.bind(t[0], f"{fn} {fl} {a}", text, fact=(f"cneg_{t[2]}", fl, a))
+        elif op == "csetm":
+            if t[1] != "mi":
+                raise ValueError(f"unexpected condition: {text}")
+            fl = self.read("fl")
+            self.bind(t[0], f"csetmMi {fl}", text, fact=("csetm_mi", fl))
         else:
             raise ValueError(f"unhandled instruction: {text}")
 
@@ -466,14 +591,15 @@ def loop_routines(e, ins, name, doc, args, result, cfg):
     return [rnd, main]
 
 
-def parse_inline(path, fn, args):
+def parse_inline(path, config):
     """Adapt the shared Rust asm parser to the AArch64 emitter's instruction representation."""
-    rust_args = args + (["inv"] if fn in ("mul", "square") else [])
+    fn = config.rust_name
     parsed = asm_source.parse_function(
         path.read_text(),
         fn,
-        rust_args,
-        4,
+        config.arg_names,
+        len(config.result_fields),
+        reserved_names=RESERVED_OPERAND_NAMES,
         allowed_options={"pure", "nomem", "nostack"},
         required_options={"pure", "nomem", "nostack"},
     )
@@ -487,31 +613,64 @@ def parse_inline(path, fn, args):
     asm_source.declaration_directions(parsed, fn)
     outputs = asm_source.output_bindings(parsed, fn)
     returned = asm_source.returned_registers(parsed, fn)
-    decls = [(decl.name, decl.kind, decl.value) for decl in parsed.declarations]
+    decls = [(decl.name, decl.kind, decl.value, decl.output) for decl in parsed.declarations]
     return ins, decls, parsed.locals, outputs, returned
 
 
-def emit_inline(fn, name, doc, args):
-    ins, decls, lets, named_outputs, returned = parse_inline(INLINE, fn, args)
-    e = Emitter(ins, {n: kind for n, kind, _ in decls})
+def signature(name, args, result):
+    """`def name (a b : K) (c : K') : result :=`, grouping consecutive arguments of one kind."""
+    groups = []
+    for arg, kind in args:
+        if groups and groups[-1][1] == kind:
+            groups[-1][0].append(arg)
+        else:
+            groups.append(([arg], kind))
+    params = " ".join(f"({' '.join(names)} : {kind})" for names, kind in groups)
+    return f"def {name} {params} : {result} :="
+
+
+def result_struct(config):
+    """The declaration of a block's result structure, when the result is not a shared type."""
+    if config.result in KIND_FIELDS:
+        return None
+    lines = [f"/-- {config.result_doc} -/", f"structure {config.result} where"]
+    lines += [f"  {f} : Nat" for f in config.result_fields]
+    lines += ["  deriving DecidableEq, Repr", ""]
+    return "\n".join(lines)
+
+
+def emit_inline(config):
+    name, doc, args = config.lean_name, config.doc, config.arg_names
+    ins, decls, lets, named_outputs, returned = parse_inline(INLINE, config)
+    e = Emitter(ins, {n: kind for n, kind, _, _ in decls})
     outs = []
-    for n, kind, v in decls:
+    for n, kind, v, out in decls:
         if kind in ("in", "inout"):
             m = re.fullmatch(r"(\w+)\[(\d)\]", v)
             if m:
-                arg, i = m.group(1), m.group(2)
+                arg, i = m.group(1), int(m.group(2))
             elif v in lets:
-                arg, i = lets[v][0], str(lets[v][1])
-            elif v == "inv":
-                e.bind(n, "inv", "argument", reads=(), fact=("inv",))
-                continue
+                arg, i = lets[v]
+            elif v in args and config.fields(v) is None:
+                fact = ("inv",) if v == "inv" else ("param", v)
+                e.bind(n, v, "argument", reads=(), fact=fact)
+                arg = None
             else:
                 raise ValueError(f"{name}: unexpected input operand {n} = {v}")
-            if arg not in args:
-                raise ValueError(f"{name}: operand {n} reads {v}, not an argument")
-            e.bind(n, f"{arg}.l{i}", "argument", reads=(), load=True, fact=("load", arg, f"l{i}"))
-            if kind == "inout":
-                outs.append((n, n))
+            if arg is not None:
+                if arg not in args:
+                    raise ValueError(f"{name}: operand {n} reads {v}, not an argument")
+                fields = config.fields(arg)
+                if fields is None or i >= len(fields):
+                    raise ValueError(f"{name}: operand {n} reads {v}, which {arg} does not have")
+                e.bind(
+                    n, f"{arg}.l{i}", "argument", reads=(), load=True, fact=("load", arg, f"l{i}")
+                )
+            # An `inout` operand whose output is discarded (`=> _`) is an input only.
+            if kind == "inout" and out != "_":
+                if named_outputs.get(out) != n:
+                    raise ValueError(f"{name}: output binding {out} does not name operand {n}")
+                outs.append((out, n))
         elif kind == "out":
             if v != "_":
                 if named_outputs.get(v) != n:
@@ -528,20 +687,23 @@ def emit_inline(fn, name, doc, args):
     e.run(0)
     e.cur_reads = set()
     result = [e.read(reg) for reg in ordered_outputs]
-    if len(result) != 4:
+    if len(result) != len(config.result_fields):
         raise ValueError(f"{name}: {len(result)} output operands")
+    arg_fields = {arg: fields for arg, fields in ((a, config.fields(a)) for a in args) if fields}
     if name in LOOPS:
-        return loop_routines(e, ins, name, doc, args, result, LOOPS[name])
-    uses_inv = any(kind in ("in", "inout") and v == "inv" for _, kind, v in decls)
+        limb_args = [arg for arg in args if config.fields(arg)]
+        return loop_routines(e, ins, name, doc, limb_args, result, LOOPS[name])
     return [
         Routine(
             doc,
-            f"def {name} ({' '.join(args)} : Limbs){' (inv : Nat)' if uses_inv else ''} : Limbs :=",
+            signature(name, config.args, config.result),
             e.render(result),
             f"  ⟨{', '.join(result)}⟩",
             name,
             e,
             result,
+            struct=result_struct(config),
+            arg_fields=arg_fields,
         )
     ]
 
@@ -649,23 +811,35 @@ class Routine(gen.Routine):
 wrap_tactic = gen.wrap_tactic
 
 
+MODULE_DOC = (
+    "GENERATED by `lean/scripts/gen.py` from the `asm!` blocks of BLOCKS in `src/asm/aarch64.rs`; do "
+    "not edit by hand. Each definition follows its block instruction by instruction (the "
+    "instruction is the trailing comment; the two lines that unpack an instruction's (result, "
+    "carry) pair are marked as its continuation), over the semantics of "
+    "`PastaCurves.AArch64.Semantics`. Registers are rebound by the instructions that write them, `c` "
+    "is the carry flag, `fl` the four flags, `s` is the (result, carry) pair of the instruction "
+    "that last set both, argument limbs are read where the block's operands bind them, and the "
+    "output words are bound where the block's output operands hold them. "
+    "Bindings that nothing reads are left as comments. See the generator's docstring for what it "
+    "checks."
+)
+
+
 def gen_program():
+    doc = textwrap.fill(
+        MODULE_DOC.replace("BLOCKS", block_list()),
+        width=100,
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
     parts = [
         HEADER,
         "import PastaCurves.AArch64.Semantics\n",
-        """
+        f"""
 /-!
 # The crate's inline Pasta field blocks, transcribed
 
-GENERATED by `lean/scripts/gen.py` from the `asm!` blocks of `mul`, `square`, `add`, and `sub`
-in `src/asm/aarch64.rs`; do not edit by hand. Each definition follows its block instruction by
-instruction (the instruction is the trailing comment; the two lines that unpack an
-instruction's (result, carry) pair are marked as its continuation), over the semantics of
-`PastaCurves.AArch64.Semantics`. Registers are rebound by the instructions that write them, `c`
-is the carry flag, `s` is the (result, carry) pair of the instruction that last set both,
-argument limbs are read where the block's operands bind them, and the output limbs are bound
-where the block's output operands hold them. Bindings that nothing reads are left as
-comments. See the generator's docstring for what it checks.
+{doc}
 -/
 
 namespace PastaCurves.AArch64
@@ -689,10 +863,16 @@ namespace PastaCurves.AArch64
 # Proof skeleton construction and checking are shared in gen.py.
 
 
+def block_list():
+    """The blocks' Rust names as an English list, for the generated module's docstring."""
+    names = [f"`{config.rust_name}`" for config in INLINE_ROUTINES]
+    return ", ".join(names[:-1]) + f", and {names[-1]}"
+
+
 def all_routines():
     routines = []
-    for fn, name, doc, args in INLINE_ROUTINES:
-        routines += emit_inline(fn, name, doc, args)
+    for config in INLINE_ROUTINES:
+        routines += emit_inline(config)
     return routines
 
 

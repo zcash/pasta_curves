@@ -18,7 +18,7 @@ allocation of registers to the operands is not modelled; the script checks that 
 register the block reads was written by the block or bound by an operand.
 
 AArch64 omits bindings that nothing later reads: unused operands are left as comments,
-unused carry writes are dropped, and unused computed registers are reported as errors.
+unused flag writes are dropped, and unused computed registers are reported as errors.
 x86-64 retains architectural results, including dead flag writes.
 
 For both architectures, the proof skeletons lift and extract the `let`s with merging off, so
@@ -121,7 +121,7 @@ class Emitter:
                 lines.append(
                     (None, f"  -- {e['comment']}: {e['name']} = {e['expr']} is never read")
                 )
-            elif e["name"] != "c":
+            elif e["name"] not in ("c", "fl"):
                 raise ValueError(f"dead computation: {e['name']} := {e['expr']} ({e['comment']})")
         return lines
 

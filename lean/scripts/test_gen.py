@@ -213,6 +213,96 @@ class AArch64WriteDirectionTests(unittest.TestCase):
         gen_aarch64.Emitter([]).step("mov", ["xzr", "xzr"], "mov xzr, xzr")
 
 
+class AArch64FlagFormTests(unittest.TestCase):
+    """A condition reads the flags in the form the last flag-setting instruction produced."""
+
+    @staticmethod
+    def emitter(*registers):
+        emitter = gen_aarch64.Emitter([], {register: "inout" for register in registers})
+        for register in registers:
+            emitter.bind(register, "0", "argument", reads=())
+        return emitter
+
+    def run_steps(self, emitter, *lines):
+        for line in lines:
+            op, rest = line.split(" ", 1)
+            emitter.step(op, gen_aarch64.tokenize(rest), line)
+
+    def test_carry_condition_after_four_flags_is_rejected(self):
+        emitter = self.emitter("a", "b")
+        self.run_steps(emitter, "tst a, #1")
+        with self.assertRaisesRegex(ValueError, "c read while the flags are not in that form"):
+            self.run_steps(emitter, "csel a, a, b, cs")
+
+    def test_four_flag_condition_after_carry_chain_is_rejected(self):
+        emitter = self.emitter("a", "b")
+        self.run_steps(emitter, "adds a, a, b")
+        with self.assertRaisesRegex(ValueError, "fl read while the flags are not in that form"):
+            self.run_steps(emitter, "csel a, a, b, ne")
+
+    def test_divstep_conditions_and_signed_operations_transcribe(self):
+        emitter = self.emitter("d", "pf", "pg", "t", "m")
+        self.run_steps(
+            emitter,
+            "tst pg, #1",
+            "csel t, pf, xzr, ne",
+            "ccmp d, xzr, #8, ne",
+            "cneg d, d, ge",
+            "csel pf, pg, pf, ge",
+            "add pg, pg, t",
+            "add d, d, #2",
+            "asr pg, pg, #1",
+            "add m, pf, #0x100, lsl #12",
+            "sbfx m, m, #21, #21",
+            "add m, m, m, lsl #21",
+            "cmp m, xzr",
+            "csetm t, mi",
+            "cneg m, m, mi",
+            "mneg t, m, d",
+            "msub m, t, d, pf",
+            "madd m, t, d, pf",
+            "extr m, pf, pg, #59",
+            "eor m, m, t",
+            "neg m, m",
+            "sub m, m, t",
+        )
+        expressions = [entry["expr"] for entry in emitter.entries[5:]]
+        self.assertEqual(
+            expressions,
+            [
+                "tstFlags (andw pg 1)",
+                "cselNe fl pf 0",
+                "ccmpNe fl d 0 8",
+                "cnegGe fl d",
+                "cselGe fl pg pf",
+                "addw pg t",
+                "addw d 2",
+                "asr pg 1",
+                "addw pf 1048576",
+                "sbfx m 21 21",
+                "addw m (lsl m 21)",
+                "cmpFlags m 0",
+                "csetmMi fl",
+                "cnegMi fl m",
+                "mneg m d",
+                "msub t d pf",
+                "madd t d pf",
+                "extr pf pg 59",
+                "eorw m t",
+                "negw m",
+                "subw m t",
+            ],
+        )
+
+    def test_unsupported_conditions_are_rejected(self):
+        for line in ("csel a, a, b, eq", "cneg a, a, lt", "csetm a, pl", "ccmp a, xzr, #8, ge"):
+            with self.subTest(line=line):
+                emitter = self.emitter("a", "b")
+                self.run_steps(emitter, "tst a, #1")
+                with self.assertRaisesRegex(ValueError, "unexpected condition"):
+                    self.run_steps(emitter, line)
+
+
 class AArch64OperandCountTests(unittest.TestCase):
     def test_shifted_add_is_rejected(self):
         emitter = gen_aarch64.Emitter([])
@@ -250,26 +340,26 @@ class SharedAArch64ParserTests(unittest.TestCase):
         cls.source = gen_aarch64.INLINE.read_text()
 
     def test_all_real_blocks_use_shared_parsed_function_model(self):
-        for rust_name, _lean_name, _doc, arguments in gen_aarch64.INLINE_ROUTINES:
+        for config in gen_aarch64.INLINE_ROUTINES:
+            rust_name = config.rust_name
             with self.subTest(routine=rust_name):
-                rust_arguments = arguments + (["inv"] if rust_name in ("mul", "square") else [])
                 parsed = asm_source.parse_function(
                     self.source,
                     rust_name,
-                    rust_arguments,
-                    4,
+                    config.arg_names,
+                    len(config.result_fields),
                     allowed_options={"pure", "nomem", "nostack"},
                     required_options={"pure", "nomem", "nostack"},
                 )
                 instructions, declarations, locals_map, outputs, returned = (
-                    gen_aarch64.parse_inline(gen_aarch64.INLINE, rust_name, arguments)
+                    gen_aarch64.parse_inline(gen_aarch64.INLINE, config)
                 )
                 self.assertIsInstance(parsed, asm_source.ParsedFunction)
                 self.assertEqual(len(instructions), len(parsed.instructions) + 1)
                 self.assertEqual(
                     declarations,
                     [
-                        (declaration.name, declaration.kind, declaration.value)
+                        (declaration.name, declaration.kind, declaration.value, declaration.output)
                         for declaration in parsed.declarations
                     ],
                 )
