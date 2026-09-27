@@ -100,6 +100,7 @@ PastaCurves/Spec.lean                    shared arithmetic and limb lemmas
 PastaCurves/Vectors.lean                 GENERATED: the reference vectors inside the contracts
 ../test-vectors/pasta_mul-armv8-vectors.txt   the hardware outputs the vectors are generated from
 PastaCurves/VectorCheck.lean             a backend's routines, and the vectors it fails
+PastaCurves/Inversion/Divstep.lean       half-delta divsteps on integers: the step matrix and its bounds
 PastaCurves/AArch64.lean                 AArch64 umbrella module
 PastaCurves/AArch64/Semantics.lean       AArch64 instruction semantics
 PastaCurves/AArch64/Transcription.lean   GENERATED: the blocks and the round

@@ -4,6 +4,7 @@ import PastaCurves.FieldTypes
 import PastaCurves.KnownAnswers
 import PastaCurves.Compositions
 import PastaCurves.Spec
+import PastaCurves.Inversion.Divstep
 import PastaCurves.AArch64
 import PastaCurves.X86_64
 
