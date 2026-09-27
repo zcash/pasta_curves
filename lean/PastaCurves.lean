@@ -7,6 +7,7 @@ import PastaCurves.Spec
 import PastaCurves.Inversion.Divstep
 import PastaCurves.Inversion.Packed
 import PastaCurves.Inversion.Divstep59
+import PastaCurves.Inversion.Round
 import PastaCurves.AArch64
 import PastaCurves.X86_64
 

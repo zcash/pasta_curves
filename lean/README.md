@@ -103,6 +103,7 @@ PastaCurves/VectorCheck.lean             a backend's routines, and the vectors i
 PastaCurves/Inversion/Divstep.lean       half-delta divsteps on integers: the step matrix and its bounds
 PastaCurves/Inversion/Packed.lean        divsteps on packed words: the batch equals the true matrix
 PastaCurves/Inversion/Divstep59.lean     the 59-step block on low words: three batches and their product
+PastaCurves/Inversion/Round.lean         the round arithmetic: five-word `updateFG`, `amontred`, `updateUV`, `finalU`
 PastaCurves/AArch64.lean                 AArch64 umbrella module
 PastaCurves/AArch64/Semantics.lean       AArch64 instruction semantics
 PastaCurves/AArch64/Transcription.lean   GENERATED: the blocks and the round
