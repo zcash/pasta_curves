@@ -21,6 +21,10 @@ AArch64 omits bindings that nothing later reads: unused operands are left as com
 unused flag writes are dropped, and unused computed registers are reported as errors.
 x86-64 retains architectural results, including dead flag writes.
 
+A template line may invoke a `macro_rules!` macro of the source file for a repeated
+instruction sequence (`asm_source.parse_macros`). A backend transcribes a sequence listed in
+its round table once and calls it per invocation; the AArch64 table is `MACRO_ROUNDS`.
+
 For both architectures, the proof skeletons lift and extract the `let`s with merging off, so
 every binding is its own `let`, equal values or not.
 
@@ -117,7 +121,7 @@ class Emitter:
         for e, keep in zip(self.entries, live):
             if keep:
                 lines.append((f"  let {e['name']} := {e['expr']}", e.get("note") or e["comment"]))
-            elif e["load"]:
+            elif e["load"] or e.get("optional"):
                 lines.append(
                     (None, f"  -- {e['comment']}: {e['name']} = {e['expr']} is never read")
                 )

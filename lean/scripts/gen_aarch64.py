@@ -16,10 +16,16 @@ the `in` and `inout` operands bind argument limbs and word arguments, the named 
 allocation of registers to the operands is not modelled; the script checks that every
 register the block reads was written by the block or bound by an operand.
 
-A binding that nothing later reads is not emitted. For an operand this records that the
-block binds a value it never uses, and the dropped binding is left as a comment; for a flag
-it is an ordinary unread flag write. A computed register that is never read would be dead
-code in the block and is reported as an error, since none is expected.
+A template line may also be an invocation of a `macro_rules!` macro of the source file whose
+arms expand to instruction lines (see `asm_source.parse_macros`). An arm listed in
+`MACRO_ROUNDS` is transcribed once, as a definition over the registers it carries, and each
+invocation becomes a call of it; any other arm is expanded in place.
+
+A binding that nothing later reads is not emitted. For an operand, or for an output of a
+round call, this records that the block binds a value it never uses, and the dropped binding
+is left as a comment; for a flag it is an ordinary unread flag write. A computed register that
+is never read would be dead code in the block and is reported as an error, since none is
+expected.
 
 Run from the repository root:
 
@@ -172,6 +178,13 @@ INLINE_ROUTINES = [
         (("lhs", "Limbs"), ("rhs", "Limbs"), ("modulus", "Limbs")),
     ),
 ]
+
+# The macro arms (see `asm_source.parse_macros`) that are transcribed as round definitions,
+# keyed by (macro, arm): the definition's name, the structure of the registers it carries in
+# and out, `roles` as (register, field, description) for that structure, and whether this arm's
+# transcription declares the structure. The field `fl` holds the flags; every other field is a
+# word. A round's body may read only carried registers.
+MACRO_ROUNDS = {}
 
 
 def tokenize(rest):
@@ -614,7 +627,7 @@ def parse_inline(path, config):
     outputs = asm_source.output_bindings(parsed, fn)
     returned = asm_source.returned_registers(parsed, fn)
     decls = [(decl.name, decl.kind, decl.value, decl.output) for decl in parsed.declarations]
-    return ins, decls, parsed.locals, outputs, returned
+    return ins, decls, parsed.locals, outputs, returned, parsed.origins
 
 
 def signature(name, args, result):
@@ -641,7 +654,7 @@ def result_struct(config):
 
 def emit_inline(config):
     name, doc, args = config.lean_name, config.doc, config.arg_names
-    ins, decls, lets, named_outputs, returned = parse_inline(INLINE, config)
+    ins, decls, lets, named_outputs, returned, origins = parse_inline(INLINE, config)
     e = Emitter(ins, {n: kind for n, kind, _, _ in decls})
     outs = []
     for n, kind, v, out in decls:
@@ -693,6 +706,8 @@ def emit_inline(config):
     if name in LOOPS:
         limb_args = [arg for arg in args if config.fields(arg)]
         return loop_routines(e, ins, name, doc, limb_args, result, LOOPS[name])
+    if any(origins):
+        return macro_routines(e, ins, origins, config, result, arg_fields)
     return [
         Routine(
             doc,
@@ -706,6 +721,156 @@ def emit_inline(config):
             arg_fields=arg_fields,
         )
     ]
+
+
+def state_struct(cfg):
+    """The declaration of a round's carried-register structure (see `MACRO_ROUNDS`)."""
+    lines = [
+        f"/-- The registers that `{cfg['round']}` carries in and out. -/",
+        f"structure {cfg['state']} where",
+    ]
+    for _, f, desc in cfg["roles"]:
+        lines += [f"  /-- {desc} -/", f"  {f} : {'Flags' if f == 'fl' else 'Nat'}"]
+    words = [f for _, f, _ in cfg["roles"] if f != "fl"]
+    lines += [
+        "  deriving DecidableEq, Repr",
+        "",
+        f"namespace {cfg['state']}",
+        "",
+        "/-- Every word is below `2^64`. -/",
+        f"def Bounded (s : {cfg['state']}) : Prop :=",
+    ]
+    lines += wrap_tactic(
+        "",
+        [f"s.{f} < 2^64" + (" ∧" if i < len(words) - 1 else "") for i, f in enumerate(words)],
+        "",
+        indent="  ",
+    )
+    lines += ["", f"end {cfg['state']}", ""]
+    return "\n".join(lines)
+
+
+def macro_routines(e, ins, origins, config, result, arg_fields):
+    """Split the transcription of a routine whose template invokes macros: each arm listed in
+    `MACRO_ROUNDS` becomes a definition over the registers it carries (`roles`), and each of its
+    invocations a call; other arms stay expanded in place."""
+    name, doc = config.lean_name, config.doc
+    origin_of = {pc: origin for pc, origin in enumerate(origins)}
+
+    def origin(en):
+        return origin_of.get(en["pc"]) if en["pc"] is not None else None
+
+    def cfg_of(o):
+        return MACRO_ROUNDS.get((o.macro, o.arm)) if o is not None else None
+
+    # The entries in segments: consecutive entries of one round invocation form a segment.
+    segments, current, current_site = [], [], object()
+    for en in e.entries:
+        o = origin(en)
+        site = o.site if cfg_of(o) else None
+        if site != current_site:
+            if current:
+                segments.append((current_site, current))
+            current, current_site = [], site
+        current.append(en)
+    if current:
+        segments.append((current_site, current))
+
+    # The round definitions, one per arm, from each arm's first invocation.
+    rounds = {}  # (macro, arm) -> Routine
+    round_of_site = {}
+    for site, entries in segments:
+        if site is None:
+            continue
+        o = origin(entries[0])
+        key = (o.macro, o.arm)
+        cfg = MACRO_ROUNDS[key]
+        round_of_site[site] = cfg
+        regs = [r for r, _, _ in cfg["roles"]]
+        fields = [f for _, f, _ in cfg["roles"]]
+        # The body's inputs: registers read before the body writes them.
+        bound, live_in = set(), []
+        for en in entries:
+            for r in sorted(en["reads"]):
+                if r not in bound and r not in live_in:
+                    live_in.append(r)
+            bound.add(en["name"])
+        if key in rounds:
+            continue
+        stray = sorted(set(live_in) - set(regs))
+        if stray:
+            raise ValueError(f"{name}: {cfg['round']} reads {stray}, which `roles` does not carry")
+        unused = sorted(set(regs) - set(live_in) - bound)
+        if unused:
+            raise ValueError(f"{name}: {cfg['round']} neither reads nor writes {unused}")
+        re_ = Emitter(ins)
+        sarg = cfg["arg"]
+        for r, f in zip(regs, fields):
+            re_.bind(r, f"{sarg}.{f}", "argument", reads=(), load=True, fact=("load", sarg, f))
+        re_.entries += [dict(en) for en in entries]
+        re_.flags = "fl" if "fl" in bound or "fl" in live_in else None
+        re_.cur_reads = set()
+        round_result = [re_.read(r) for r in regs]
+        rounds[key] = Routine(
+            f"`{o.macro}!({o.arm})`, {cfg['doc']}",
+            f"def {cfg['round']} ({sarg} : {cfg['state']}) : {cfg['state']} :=",
+            re_.render(round_result),
+            f"  ⟨{', '.join(round_result)}⟩",
+            cfg["round"],
+            re_,
+            round_result,
+            struct=state_struct(cfg) if cfg["emit_struct"] else None,
+            arg_fields={sarg: [f for f in fields if f != "fl"]},
+        )
+    # The block: each round segment becomes a call and the outputs it carries.
+    me = Emitter(ins)
+    for site, entries in segments:
+        if site is None:
+            me.entries += [dict(en) for en in entries]
+            continue
+        cfg = round_of_site[site]
+        regs = [r for r, _, _ in cfg["roles"]]
+        fields = [f for _, f, _ in cfg["roles"]]
+        rname = f"{cfg['call']}{site + 1}"
+        o = origin(entries[0])
+        arm = f"{o.macro}!({o.arm})"
+        fmt = f"{cfg['round']} ⟨" + ", ".join(f"{{{i}}}" for i in range(len(regs))) + "⟩"
+        me.entries.append(
+            {
+                "name": rname,
+                "expr": fmt.format(*regs),
+                "comment": f"{arm}, invocation {site + 1}",
+                "reads": set(regs),
+                "load": False,
+                "fact": ("call", fmt, regs),
+                "pc": None,
+            }
+        )
+        for r, f in zip(regs, fields):
+            me.entries.append(
+                {
+                    "name": r,
+                    "expr": f"{rname}.{f}",
+                    "comment": f"{arm}, invocation {site + 1} output",
+                    "reads": {rname},
+                    "load": False,
+                    "optional": True,
+                    "fact": ("callout", rname, f),
+                    "pc": None,
+                }
+            )
+    main = Routine(
+        doc,
+        signature(name, config.args, config.result),
+        me.render(result),
+        f"  ⟨{', '.join(result)}⟩",
+        name,
+        me,
+        result,
+        struct=result_struct(config),
+        arg_fields=arg_fields,
+    )
+    return list(rounds.values()) + [main]
 
 
 class SkeletonBackend(gen.SkeletonBackend):
@@ -819,7 +984,8 @@ MODULE_DOC = (
     "`PastaCurves.AArch64.Semantics`. Registers are rebound by the instructions that write them, `c` "
     "is the carry flag, `fl` the four flags, `s` is the (result, carry) pair of the instruction "
     "that last set both, argument limbs are read where the block's operands bind them, and the "
-    "output words are bound where the block's output operands hold them. "
+    "output words are bound where the block's output operands hold them. A block whose template "
+    "invokes a macro for a repeated step calls that step's definition once per invocation. "
     "Bindings that nothing reads are left as comments. See the generator's docstring for what it "
     "checks."
 )
