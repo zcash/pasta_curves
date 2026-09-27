@@ -903,8 +903,9 @@ SPEC_MANIFEST = {
     "lean/PastaCurves/X86_64/Spec/Square.lean": ("X86_64", ("squareLo", "squareHi")),
 }
 
-# Missing proofs are tracked by routine, not by hypothetical files.
-UNPROVED_ROUTINES = {}
+# Missing proofs are tracked by routine, not by hypothetical files. The inversion blocks are
+# transcribed ahead of their proofs.
+UNPROVED_ROUTINES = {"AArch64": ("divstepRound", "divstepLast", "divstep59Block")}
 
 
 def architecture_routines():
