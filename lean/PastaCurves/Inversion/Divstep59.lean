@@ -15,11 +15,6 @@ namespace PastaCurves.Inversion
 
 /-! ## Composing step counts -/
 
-theorem divsteps_add (m n : ℕ) (s : State) : divsteps (m + n) s = divsteps n (divsteps m s) := by
-  unfold divsteps
-  rw [Nat.add_comm]
-  exact Function.iterate_add_apply divstep n m s
-
 /-- The later steps' matrix, computed at the earlier state, multiplies on the left. -/
 theorem M_add (m n : ℕ) (s : State) : M (m + n) s = (M n (divsteps m s)).mul (M m s) := by
   induction m generalizing s with
