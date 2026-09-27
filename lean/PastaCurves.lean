@@ -11,6 +11,7 @@ import PastaCurves.Inversion.Round
 import PastaCurves.Inversion.Termination
 import PastaCurves.Inversion.Model
 import PastaCurves.Inversion.Hull
+import PastaCurves.Inversion.HullBound
 import PastaCurves.AArch64
 import PastaCurves.X86_64
 
