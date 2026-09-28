@@ -45,7 +45,8 @@ a re-derivation of the algorithms:
 - `src/asm/x86_64.rs`: `add`, `sub`, `mul`, `square_lo`, `square_hi`, and `from_mont`.
 
 Some of the crate's other entry points, `sqr_n_mul`, `from_mont`, and `invert`, are Rust
-compositions of assembly blocks on some architectures, and are modelled as such.
+compositions of assembly blocks on some architectures, and are modelled as such. The portable Rust
+blocks of `invert` (`src/inversion/portable.rs`), which every other target runs, are not modelled.
 
 The multiplication and squaring blocks are transcriptions of Semolina v0.1.4's
 `mul_mont_pasta` and of the squaring loop body of its `sqr_n_mul_mont_pasta`, and the addition
@@ -332,10 +333,10 @@ against a step-by-step trace of one batch. The proofs cover:
   multiplication;
 * the addition and subtraction blocks for every pair of operands on which they are exact, with
   their corollaries for a lazily reduced left operand and for canonical operands;
-* the inversion's six blocks against the word-level functions of the shared layer, and `invert`
-  over any backend's blocks against `montInvModel`, instantiated for AArch64;
+* the inversion's six AArch64 blocks against the word-level functions of the shared layer, and
+  `invert` over any backend's blocks against `montInvModel`, instantiated for AArch64;
 * from those, the six Montgomery entry points at either field under the conditions they
-  assert, and `invert` at either field.
+  assert, and `invert` over the AArch64 blocks at either field.
 
-This covers the crate's current code, up to the aspects that the trust story lists as reviewed
-by hand.
+This covers the crate's current code except the portable inversion blocks
+(`src/inversion/portable.rs`), up to the aspects that the trust story lists as reviewed by hand.

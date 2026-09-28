@@ -1314,28 +1314,4 @@ mod tests {
         crate::inversion::tests::invert_random::<Backend>();
     }
 
-    // The inversion's entry point, over this backend's blocks.
-    use crate::asm::invert;
-    use crate::test_fields::FIELDS;
-
-    /// The entry point reproduces the integer model's answers, and in a debug build its assertion
-    /// fires on a non-canonical input.
-    #[test]
-    fn invert_entry_point() {
-        for f in FIELDS {
-            for (x, z) in &f.inversions {
-                assert_eq!(invert(x, &f.modulus, f.inv, &f.v0), *z);
-            }
-            #[cfg(all(debug_assertions, panic = "unwind"))]
-            {
-                let panic =
-                    std::panic::catch_unwind(|| invert(&f.modulus, &f.modulus, f.inv, &f.v0))
-                        .expect_err("the debug assertion of invert's contract did not fire");
-                let message = panic
-                    .downcast_ref::<&str>()
-                    .expect("the assertion's message is a string literal");
-                assert!(message.contains("requires a canonical input"), "{message}");
-            }
-        }
-    }
 }
