@@ -230,6 +230,25 @@ INLINE_ROUTINES = [
         result="Signed5",
         result_fields=("l0", "l1", "l2", "l3", "l4"),
     ),
+    RoutineConfig(
+        "uv_row",
+        "uvRowBlock",
+        (
+            "The inline `asm!` block of `uv_row`: one row of the combination of `u` and `v`, "
+            "`m0 u + m1 v` as a five-word signed value, from the row's magnitudes `m0`, `m1` and "
+            "sign masks `s0`, `s1`. It is the accumulation of `fgRowBlock` without the shift."
+        ),
+        (
+            ("u", "Limbs"),
+            ("v", "Limbs"),
+            ("m0", "Nat"),
+            ("m1", "Nat"),
+            ("s0", "Nat"),
+            ("s1", "Nat"),
+        ),
+        result="Signed5",
+        result_fields=("l0", "l1", "l2", "l3", "l4"),
+    ),
 ]
 
 # The macro arms (see `asm_source.parse_macros`) that are transcribed as round definitions,
