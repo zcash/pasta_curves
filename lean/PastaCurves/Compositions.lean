@@ -5,7 +5,7 @@ import Mathlib.Tactic.Ring
 # The crate's Rust around the blocks
 
 `src/asm/entry.rs`, in a debug build, checks the operand contracts of `mul` and `square` before
-entering the blocks, and `src/asm/inversion.rs` composes `invert` from a backend's six blocks. These
+entering the blocks, and `src/inversion.rs` composes `invert` from a backend's six blocks. These
 definitions mirror that Rust: the canonicity check `is_canonical`, a borrow chain, the condition
 `mul_contract` that `mul` asserts, and `invert` over a record of the blocks.
 -/
@@ -85,7 +85,7 @@ def invertRound (B : InvertBlocks) (modulus : Limbs) (inv : Nat) (st : InvertSta
   let te := B.deRow st.d st.e sm.q sm.r sm.sq sm.sr
   ⟨dm.two_delta, f, g, B.amontred td modulus inv, B.amontred te modulus inv⟩
 
-/-- The sign word of the last round, as `src/asm/inversion.rs` computes it in Rust: the low word of
+/-- The sign word of the last round, as `src/inversion.rs` computes it in Rust: the low word of
 `f0 * u + g0 * v`, shifted arithmetically by 63, so all ones when the new `f` is negative and
 zero otherwise. -/
 def signWord (f0 g0 u v : Nat) : Nat :=

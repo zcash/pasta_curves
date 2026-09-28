@@ -691,9 +691,12 @@ def parse_function(
     allowed_options: set[str] = frozenset(("pure", "readonly", "nomem", "nostack")),
     required_options: set[str] = frozenset(("pure", "nostack")),
 ) -> ParsedFunction:
-    """Extract one Rust function's sole inline-asm block and surrounding bindings."""
+    """Extract one Rust function's sole inline-asm block and surrounding bindings.
+
+    The function is a top-level item, at the start of a line: a method of the same name in a
+    trait implementation, which forwards to it, is indented and so not matched."""
     masked_source = masked_noncode(source)
-    pattern = re.compile(rf"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?fn\s+{re.escape(function)}\s*\(")
+    pattern = re.compile(rf"(?m)^(?:pub(?:\([^)]*\))?\s+)?fn\s+{re.escape(function)}\s*\(")
     functions = list(pattern.finditer(masked_source))
     if len(functions) != 1:
         raise GenerationError(f"expected exactly one `fn {function}(`, found {len(functions)}")
