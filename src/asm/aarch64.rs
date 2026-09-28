@@ -823,10 +823,151 @@ pub(super) fn divstep59(mut d: u64, f0: u64, g0: u64) -> [u64; 5] {
     [d, m00, m01, m10, m11]
 }
 
+/// The sign-magnitude form of a transition matrix: each entry's magnitude,
+/// and its sign as a mask (all ones for a negative entry, else zero).
+///
+/// The row blocks multiply by a negative entry `m` as `|m| · ((x ^ mask) + 1)`,
+/// that is by the magnitude times the complement of `x`, with the `+ |m|` folded
+/// into the initial carry, so they take the entries in this form. The result is
+/// `[m00, m01, m10, m11, s00, s01, s10, s11]`, magnitudes then masks. The entry
+/// `-2^63` has no magnitude as a word; the 59-step matrices' entries are below
+/// `2^59` in magnitude.
+#[inline(always)]
+// Called only by its test until the inversion's driver composes it.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(super) fn sign_mag(mut m00: u64, mut m01: u64, mut m10: u64, mut m11: u64) -> [u64; 8] {
+    let (s00, s01, s10, s11): (u64, u64, u64, u64);
+    // SAFETY: register-only arithmetic with declared inputs and outputs;
+    // no memory or stack access and no data-dependent control flow.
+    unsafe {
+        asm!(
+            "cmp {m00}, xzr",
+            "csetm {s00}, mi",
+            "cneg {m00}, {m00}, mi",
+            "cmp {m01}, xzr",
+            "csetm {s01}, mi",
+            "cneg {m01}, {m01}, mi",
+            "cmp {m10}, xzr",
+            "csetm {s10}, mi",
+            "cneg {m10}, {m10}, mi",
+            "cmp {m11}, xzr",
+            "csetm {s11}, mi",
+            "cneg {m11}, {m11}, mi",
+            m00 = inout(reg) m00,
+            m01 = inout(reg) m01,
+            m10 = inout(reg) m10,
+            m11 = inout(reg) m11,
+            s00 = out(reg) s00,
+            s01 = out(reg) s01,
+            s10 = out(reg) s10,
+            s11 = out(reg) s11,
+            options(pure, nomem, nostack),
+        );
+    }
+    [m00, m01, m10, m11, s00, s01, s10, s11]
+}
+
 #[cfg(test)]
 mod tests {
-    use super::divstep59;
+    use super::{divstep59, sign_mag};
     use core::arch::asm;
+
+    /// The four entries of a transition matrix as words, then the expected magnitudes and
+    /// masks, from the round model on both fields.
+    const SIGN_MAG_VECTORS: [[u64; 12]; 6] = [
+        [
+            0xffce000000000000,
+            0x004a000000000000,
+            0xffffffffffffffe5,
+            0xffffffffffffffff,
+            0x0032000000000000,
+            0x004a000000000000,
+            0x000000000000001b,
+            0x0000000000000001,
+            0xffffffffffffffff,
+            0x0000000000000000,
+            0xffffffffffffffff,
+            0xffffffffffffffff,
+        ],
+        [
+            0x0000000000000000,
+            0x0000008000000000,
+            0xfffffffffff00000,
+            0x00000058b6db6db7,
+            0x0000000000000000,
+            0x0000008000000000,
+            0x0000000000100000,
+            0x00000058b6db6db7,
+            0x0000000000000000,
+            0x0000000000000000,
+            0xffffffffffffffff,
+            0x0000000000000000,
+        ],
+        [
+            0x0800000000000000,
+            0x0000000000000000,
+            0x0000000000000000,
+            0x0000000000000001,
+            0x0800000000000000,
+            0x0000000000000000,
+            0x0000000000000000,
+            0x0000000000000001,
+            0x0000000000000000,
+            0x0000000000000000,
+            0x0000000000000000,
+            0x0000000000000000,
+        ],
+        [
+            0xffffffffc5706190,
+            0x000000004e1e1b64,
+            0xfffffffffe7f182c,
+            0xffffffffdf08984b,
+            0x000000003a8f9e70,
+            0x000000004e1e1b64,
+            0x000000000180e7d4,
+            0x0000000020f767b5,
+            0xffffffffffffffff,
+            0x0000000000000000,
+            0xffffffffffffffff,
+            0xffffffffffffffff,
+        ],
+        [
+            0xffffffffb32e679c,
+            0xffffffffb4ff6206,
+            0xffffffffe38509c2,
+            0xffffffffc9886ce5,
+            0x000000004cd19864,
+            0x000000004b009dfa,
+            0x000000001c7af63e,
+            0x000000003677931b,
+            0xffffffffffffffff,
+            0xffffffffffffffff,
+            0xffffffffffffffff,
+            0xffffffffffffffff,
+        ],
+        [
+            0x8000000000000001,
+            0x7fffffffffffffff,
+            0x0000000000000000,
+            0xffffffffffffffff,
+            0x7fffffffffffffff,
+            0x7fffffffffffffff,
+            0x0000000000000000,
+            0x0000000000000001,
+            0xffffffffffffffff,
+            0x0000000000000000,
+            0x0000000000000000,
+            0xffffffffffffffff,
+        ],
+    ];
+
+    #[test]
+    fn sign_mag_known_answers() {
+        for row in SIGN_MAG_VECTORS {
+            let [m00, m01, m10, m11] = [row[0], row[1], row[2], row[3]];
+            assert_eq!(sign_mag(m00, m01, m10, m11), row[4..12]);
+        }
+    }
 
     /// One step of the `divstep!` macro on a packed state, for tracing the block step by step:
     /// the parity test that precedes a batch's first step, then the step without the test that
