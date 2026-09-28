@@ -62,6 +62,13 @@ example : let p := pallasBase.modulus.toNat
     x < p ∧ (x*R) % p = (2^256 - 1) % p := by
   decide +kernel
 
+-- `FP.v0`: `2^562 mod p`, the starting `v` of `invert`.
+example : let p := pallasBase.modulus.toNat
+    let x := Limbs.toNat
+      ⟨0x9a5f583ce5084635, 0x4f417e233776c195, 0x74634b1a733f7785, 0x1c51de5ea66f0f25⟩
+    x = 2^562 % p := by
+  decide +kernel
+
 -- `FQ.two_r`: `2R mod p`.
 example : let p := vestaBase.modulus.toNat
     let x := Limbs.toNat
@@ -109,6 +116,103 @@ example : let p := vestaBase.modulus.toNat
     let x := Limbs.toNat
       ⟨0x2b2d474371e59083, 0x5bb8b7d46bcea6f2, 0xa86f41a73faf20ec, 0x20857622e89b86ac⟩
     x < p ∧ (x*R) % p = (2^256 - 1) % p := by
+  decide +kernel
+
+-- `FQ.v0`: `2^562 mod p`, the starting `v` of `invert`.
+example : let p := vestaBase.modulus.toNat
+    let x := Limbs.toNat
+      ⟨0xa3efbd8ee5083303, 0xfbadea62cefef7a1, 0xd6418abb493f6cf9, 0x2aa5feb88c401333⟩
+    x = 2^562 % p := by
+  decide +kernel
+
+-- `FP.inversions[0]`: `invert` maps `x` to `z`, the Montgomery inverse.
+example : let p := pallasBase.modulus.toNat
+    let x := Limbs.toNat
+      ⟨0xd83bd700ffffffe5, 0x628ddd6b04e1ba16, 0xfffffffffffffffc, 0x3fffffffffffffff⟩
+    let z := Limbs.toNat
+      ⟨0x8398bdd8b6db6db7, 0xbbc0f148939d4828, 0xdb6db6db6db6db6d, 0x2db6db6db6db6db6⟩
+    z < p ∧ (x*z) % p = (if x = 0 then 0 else R^2 % p) := by
+  decide +kernel
+
+-- `FP.inversions[1]`: `invert` maps `x` to `z`, the Montgomery inverse.
+example : let p := pallasBase.modulus.toNat
+    let x := Limbs.toNat
+      ⟨0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000⟩
+    let z := Limbs.toNat
+      ⟨0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000⟩
+    z < p ∧ (x*z) % p = (if x = 0 then 0 else R^2 % p) := by
+  decide +kernel
+
+-- `FP.inversions[2]`: `invert` maps `x` to `z`, the Montgomery inverse.
+example : let p := pallasBase.modulus.toNat
+    let x := Limbs.toNat
+      ⟨0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000⟩
+    let z := Limbs.toNat
+      ⟨0x8c78ecb30000000f, 0xd7d30dbd8b0de0e7, 0x7797a99bc3c95d18, 0x096d41af7b9cb714⟩
+    z < p ∧ (x*z) % p = (if x = 0 then 0 else R^2 % p) := by
+  decide +kernel
+
+-- `FP.inversions[3]`: `invert` maps `x` to `z`, the Montgomery inverse.
+example : let p := pallasBase.modulus.toNat
+    let x := Limbs.toNat
+      ⟨0x992d30ed00000000, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000⟩
+    let z := Limbs.toNat
+      ⟨0x0cb44439fffffff2, 0x4a738b3e7e3f1834, 0x886856643c36a2e7, 0x3692be50846348eb⟩
+    z < p ∧ (x*z) % p = (if x = 0 then 0 else R^2 % p) := by
+  decide +kernel
+
+-- `FP.inversions[4]`: `invert` maps `x` to `z`, the Montgomery inverse.
+example : let p := pallasBase.modulus.toNat
+    let x := Limbs.toNat
+      ⟨0xfc962fc962fc9630, 0x369d0369d0369cd2, 0x0000000000000000, 0x0000000000000000⟩
+    let z := Limbs.toNat
+      ⟨0x33912c173eb52b5e, 0x8094d7a33b979988, 0x4c1c894cf5cc5f05, 0x2d05c75a616fc8d4⟩
+    z < p ∧ (x*z) % p = (if x = 0 then 0 else R^2 % p) := by
+  decide +kernel
+
+-- `FQ.inversions[0]`: `invert` maps `x` to `z`, the Montgomery inverse.
+example : let p := vestaBase.modulus.toNat
+    let x := Limbs.toNat
+      ⟨0x34853384ffffffe5, 0x628ddd6afd5230a2, 0xfffffffffffffffc, 0x3fffffffffffffff⟩
+    let z := Limbs.toNat
+      ⟨0x81c0fd04b6db6db7, 0xbbc0f14893a785d6, 0xdb6db6db6db6db6d, 0x2db6db6db6db6db6⟩
+    z < p ∧ (x*z) % p = (if x = 0 then 0 else R^2 % p) := by
+  decide +kernel
+
+-- `FQ.inversions[1]`: `invert` maps `x` to `z`, the Montgomery inverse.
+example : let p := vestaBase.modulus.toNat
+    let x := Limbs.toNat
+      ⟨0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000⟩
+    let z := Limbs.toNat
+      ⟨0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000⟩
+    z < p ∧ (x*z) % p = (if x = 0 then 0 else R^2 % p) := by
+  decide +kernel
+
+-- `FQ.inversions[2]`: `invert` maps `x` to `z`, the Montgomery inverse.
+example : let p := vestaBase.modulus.toNat
+    let x := Limbs.toNat
+      ⟨0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000⟩
+    let z := Limbs.toNat
+      ⟨0xfc9678ff0000000f, 0x67bb433d891a16e3, 0x7fae231004ccf590, 0x096d41af7ccfdaa9⟩
+    z < p ∧ (x*z) % p = (if x = 0 then 0 else R^2 % p) := by
+  decide +kernel
+
+-- `FQ.inversions[3]`: `invert` maps `x` to `z`, the Montgomery inverse.
+example : let p := vestaBase.modulus.toNat
+    let x := Limbs.toNat
+      ⟨0x8c46eb2100000000, 0x224698fc0994a8dd, 0x0000000000000000, 0x4000000000000000⟩
+    let z := Limbs.toNat
+      ⟨0x8fb07221fffffff2, 0xba8b55be807a91f9, 0x8051dceffb330a6f, 0x3692be5083302556⟩
+    z < p ∧ (x*z) % p = (if x = 0 then 0 else R^2 % p) := by
+  decide +kernel
+
+-- `FQ.inversions[4]`: `invert` maps `x` to `z`, the Montgomery inverse.
+example : let p := vestaBase.modulus.toNat
+    let x := Limbs.toNat
+      ⟨0xfc962fc962fc9630, 0x369d0369d0369cd2, 0x0000000000000000, 0x0000000000000000⟩
+    let z := Limbs.toNat
+      ⟨0xe5c6fb7bddd0cf4b, 0x65ee805e3b7d0d89, 0x7562671be840d861, 0x1253ce66fd1d1868⟩
+    z < p ∧ (x*z) % p = (if x = 0 then 0 else R^2 % p) := by
   decide +kernel
 
 end PastaCurves.KnownAnswers

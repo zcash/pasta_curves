@@ -230,3 +230,40 @@ pub fn from_mont(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
         super::x86_64::from_mont(value, modulus, inv)
     }
 }
+
+/// Inverts a canonical Montgomery residue for a Pasta modulus, in constant time.
+///
+/// Returns the canonical `z` with `x * z ≡ 2^512 (mod p)`: for `x` the Montgomery form of a
+/// nonzero residue `X`, `z` is the Montgomery form of `X^-1`; for `x = 0` it is `0`. The
+/// algorithm is the serial variant of Bernstein, Chen, Harrison, Huang, Maxwell, Wang, Wuille,
+/// and Yang, "Accelerating and verifying constant-time modular inversion" (EUROCRYPT 2026), as in
+/// s2n-bignum's `bignum_montinv_p256`: 590 half-delta divsteps in ten rounds of 59, computed on
+/// packed words, with the coefficients reduced by one Montgomery word per round. It runs a fixed
+/// sequence of register-only blocks, so its timing does not depend on `x`. The design and the
+/// correctness argument are in `book/src/design/inversion.md`.
+///
+/// Outputs are canonical.
+///
+/// # Safety
+///
+/// `x` must be canonical. This is debug-asserted. The machine-checked proofs in `lean/` cover the
+/// algorithm on words (`montInv_spec`); the proofs that the blocks compute the word-level
+/// functions are not present.
+///
+/// `modulus` must be either the Pallas or Vesta field modulus, `inv` must be correctly derived
+/// from it, and `v0` must be `2^562 mod p`, the starting value of the coefficient `v`, which
+/// compensates the ten one-word Montgomery reductions (`2^562 = 2^(512 + 5 * 10)`). Any other
+/// values will cause undefined results.
+///
+/// The inversion is provided on AArch64.
+#[cfg(any(target_arch = "aarch64", doc))]
+#[cfg_attr(docsrs, doc(cfg(target_arch = "aarch64")))]
+#[inline]
+#[allow(dead_code)] // The field types do not call the inversion.
+pub fn invert(x: &Limbs, modulus: &Limbs, inv: u64, v0: &Limbs) -> Limbs {
+    debug_assert!(
+        is_canonical(x, modulus),
+        "pasta_curves::asm::invert requires a canonical input"
+    );
+    super::aarch64::invert(x, modulus, inv, v0)
+}

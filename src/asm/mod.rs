@@ -16,7 +16,8 @@
 //! ADCX/ADOX: Intel Broadwell / AMD Zen or newer); neither is checked.
 //! `from_mont` uses MULX (BMI2) alone. Apple x86-64 targets are excluded
 //! altogether: they reserve `rbp`, and so have fewer available registers than
-//! the squaring blocks need.
+//! the squaring blocks need. The constant-time inversion, `invert`, is provided
+//! on AArch64.
 //!
 //! On every other target, that is any target other than AArch64 and non-Apple
 //! x86-64 with 64-bit pointers, the module has no backend. The same holds on
