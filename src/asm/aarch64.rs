@@ -1140,9 +1140,50 @@ pub(super) fn amontred(t: &[u64; 5], modulus: &Limbs, inv: u64) -> Limbs {
     [o0, o1, o2, o3]
 }
 
+/// Subtracts the modulus from `r` unless the subtraction borrows.
+///
+/// For `r < 2p` the result is `r mod p`; the inversion applies it to the final
+/// round's `amontred` output, which is below `2p`. It is the tail of the
+/// Montgomery blocks, with the modulus shape `modulus[2] = 0`,
+/// `modulus[3] = 2^62`.
+#[inline(always)]
+// Called only by its test until the inversion's driver composes it.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(super) fn cond_sub(r: &Limbs, modulus: &Limbs) -> Limbs {
+    let [mut r0, mut r1, mut r2, mut r3] = *r;
+    // SAFETY: register-only arithmetic with declared inputs and outputs;
+    // no memory or stack access and no data-dependent control flow.
+    unsafe {
+        asm!(
+            "mov {q}, #0x4000000000000000",
+            "subs {t0}, {r0}, {p0}",
+            "sbcs {t1}, {r1}, {p1}",
+            "sbcs {t2}, {r2}, xzr",
+            "sbcs {t3}, {r3}, {q}",
+            "csel {r0}, {r0}, {t0}, lo",
+            "csel {r1}, {r1}, {t1}, lo",
+            "csel {r2}, {r2}, {t2}, lo",
+            "csel {r3}, {r3}, {t3}, lo",
+            r0 = inout(reg) r0,
+            r1 = inout(reg) r1,
+            r2 = inout(reg) r2,
+            r3 = inout(reg) r3,
+            p0 = in(reg) modulus[0],
+            p1 = in(reg) modulus[1],
+            q = out(reg) _,
+            t0 = out(reg) _,
+            t1 = out(reg) _,
+            t2 = out(reg) _,
+            t3 = out(reg) _,
+            options(pure, nomem, nostack),
+        );
+    }
+    [r0, r1, r2, r3]
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{amontred, divstep59, fg_row, sign_mag, de_row};
+    use super::{amontred, cond_sub, divstep59, fg_row, sign_mag, de_row};
     use super::Limbs;
     use core::arch::asm;
 
@@ -1464,6 +1505,29 @@ mod tests {
             let t: [u64; 5] = row[0..5].try_into().expect("five words");
             let modulus: Limbs = row[5..9].try_into().expect("four words");
             assert_eq!(amontred(&t, &modulus, row[9]), row[10..14]);
+        }
+    }
+
+    /// A reduction below `2p`, the modulus, then the expected canonical value, from the final rounds of the round model on both fields.
+    const COND_SUB_VECTORS: [[u64; 12]; 10] = [
+        [0x8398bdd8b6db6db7, 0xbbc0f148939d4828, 0xdb6db6db6db6db6d, 0x2db6db6db6db6db6, 0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000, 0x8398bdd8b6db6db7, 0xbbc0f148939d4828, 0xdb6db6db6db6db6d, 0x2db6db6db6db6db6],
+        [0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000, 0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+        [0x8c78ecb30000000f, 0xd7d30dbd8b0de0e7, 0x7797a99bc3c95d18, 0x096d41af7b9cb714, 0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000, 0x8c78ecb30000000f, 0xd7d30dbd8b0de0e7, 0x7797a99bc3c95d18, 0x096d41af7b9cb714],
+        [0x0cb44439fffffff2, 0x4a738b3e7e3f1834, 0x886856643c36a2e7, 0x3692be50846348eb, 0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000, 0x0cb44439fffffff2, 0x4a738b3e7e3f1834, 0x886856643c36a2e7, 0x3692be50846348eb],
+        [0x33912c173eb52b5e, 0x8094d7a33b979988, 0x4c1c894cf5cc5f05, 0x2d05c75a616fc8d4, 0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000, 0x33912c173eb52b5e, 0x8094d7a33b979988, 0x4c1c894cf5cc5f05, 0x2d05c75a616fc8d4],
+        [0x81c0fd04b6db6db7, 0xbbc0f14893a785d6, 0xdb6db6db6db6db6d, 0x2db6db6db6db6db6, 0x8c46eb2100000001, 0x224698fc0994a8dd, 0x0000000000000000, 0x4000000000000000, 0x81c0fd04b6db6db7, 0xbbc0f14893a785d6, 0xdb6db6db6db6db6d, 0x2db6db6db6db6db6],
+        [0x8c46eb2100000001, 0x224698fc0994a8dd, 0x0000000000000000, 0x4000000000000000, 0x8c46eb2100000001, 0x224698fc0994a8dd, 0x0000000000000000, 0x4000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+        [0xfc9678ff0000000f, 0x67bb433d891a16e3, 0x7fae231004ccf590, 0x096d41af7ccfdaa9, 0x8c46eb2100000001, 0x224698fc0994a8dd, 0x0000000000000000, 0x4000000000000000, 0xfc9678ff0000000f, 0x67bb433d891a16e3, 0x7fae231004ccf590, 0x096d41af7ccfdaa9],
+        [0x8fb07221fffffff2, 0xba8b55be807a91f9, 0x8051dceffb330a6f, 0x3692be5083302556, 0x8c46eb2100000001, 0x224698fc0994a8dd, 0x0000000000000000, 0x4000000000000000, 0x8fb07221fffffff2, 0xba8b55be807a91f9, 0x8051dceffb330a6f, 0x3692be5083302556],
+        [0xe5c6fb7bddd0cf4b, 0x65ee805e3b7d0d89, 0x7562671be840d861, 0x1253ce66fd1d1868, 0x8c46eb2100000001, 0x224698fc0994a8dd, 0x0000000000000000, 0x4000000000000000, 0xe5c6fb7bddd0cf4b, 0x65ee805e3b7d0d89, 0x7562671be840d861, 0x1253ce66fd1d1868],
+    ];
+
+    #[test]
+    fn cond_sub_known_answers() {
+        for row in COND_SUB_VECTORS {
+            let x: Limbs = row[0..4].try_into().expect("four words");
+            let modulus: Limbs = row[4..8].try_into().expect("four words");
+            assert_eq!(cond_sub(&x, &modulus), row[8..12]);
         }
     }
 }

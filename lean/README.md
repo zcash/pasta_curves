@@ -278,12 +278,13 @@ theorems above. `from_mont` checks nothing and holds for every input.
 
 ## Status
 
-Present: the semantics, the generator, the generated transcription of the five inline blocks,
+Present: the semantics, the generator, the generated transcription of the ten inline blocks,
 the compositions and the asserted conditions, the fields, the vectors, and the CI checks
-(regeneration, skeletons, and the nanoda re-check). The inversion's `divstep59` block is
-transcribed, with its step factored out of the block, and checked against known answers of the
-divstep recurrence and a step-by-step trace of one batch; it is not yet proved, and the Rust
-does not yet compose it. The proofs cover:
+(regeneration, skeletons, and the nanoda re-check). The inversion's six blocks (`divstep59`,
+with its step factored out of the block, `sign_mag`, `fg_row`, `de_row`, `amontred`, and
+`cond_sub`) are transcribed and checked against known answers from the round model, and
+`divstep59` also against a step-by-step trace of one batch; they are not yet proved, and the
+Rust does not yet compose them. The proofs cover:
 
 * the multiplication block with its two operand contracts, and the conversion as that block
   at `1`;
