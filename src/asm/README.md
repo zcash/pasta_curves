@@ -90,7 +90,8 @@ no tests to run. `scripts/ci.sh` runs every check CI runs.
 their correctness. The model is at the instruction level. Individual blocks of assembly are proven;
 from those, each of the six Montgomery entry points is proved at either Pasta field, under the
 condition that the entry point asserts. The inversion's algorithm is proved on words
-(`montInv_spec`), and its blocks are transcribed and checked against known answers; the proofs that
-the blocks compute the word-level functions are not present. The transcription is generated from the
-module's own inline blocks, CI regenerates and diffs it, and the independent `nanoda` implementation
-of the Lean kernel re-checks the build. See [`lean/README.md`](../../lean/README.md).
+(`montInv_spec`), each of its six blocks is proved to compute its word-level function, and `invert`
+is proved at either field from their composition (`invert_entry_spec`). The transcription is
+generated from the module's own inline blocks, CI regenerates and diffs it, and the independent
+`nanoda` implementation of the Lean kernel re-checks the build. See
+[`lean/README.md`](../../lean/README.md).
