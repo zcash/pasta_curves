@@ -99,10 +99,13 @@ LOOPS = {
     },
 }
 
-# The Lean type of each argument kind and, for a structure, its fields in order.
+# The Lean type of each argument or result kind and, for a structure, its fields in order. The
+# structures are declared in `PastaCurves/Semantics.lean`, shared by the backends.
 KIND_FIELDS = {
     "Limbs": ["l0", "l1", "l2", "l3"],
     "Signed5": ["l0", "l1", "l2", "l3", "l4"],
+    "Divstep59Result": ["two_delta", "u", "v", "q", "r"],
+    "SignMag": ["u", "v", "q", "r", "su", "sv", "sq", "sr"],
     "Nat": None,
 }
 
@@ -111,17 +114,18 @@ KIND_FIELDS = {
 class RoutineConfig:
     """An inline `asm!` block of the crate to transcribe: the Rust function whose block to read,
     the Lean name, the docstring, the arguments as (name, kind) in signature order, and the
-    result's Lean type. A result type other than `Limbs` or `Signed5` is a structure declared by
-    the transcription, with `result_fields` as its fields in the source's result order and
-    `result_doc` as its docstring."""
+    result's kind, a structure of `KIND_FIELDS` whose fields are the result words in the source's
+    result order."""
 
     rust_name: str
     lean_name: str
     doc: str
     args: tuple
     result: str = "Limbs"
-    result_fields: tuple = ("l0", "l1", "l2", "l3")
-    result_doc: str = ""
+
+    @property
+    def result_fields(self):
+        return KIND_FIELDS[self.result]
 
     @property
     def arg_names(self):
@@ -189,11 +193,6 @@ INLINE_ROUTINES = [
         ),
         (("two_delta", "Nat"), ("f0", "Nat"), ("g0", "Nat")),
         result="Divstep59Result",
-        result_fields=("two_delta", "u", "v", "q", "r"),
-        result_doc=(
-            "The result of `divstep59Block`: the new `two_delta` and the entries of the 59-step matrix, each a "
-            "two's-complement word."
-        ),
     ),
     RoutineConfig(
         "sign_mag",
@@ -205,11 +204,6 @@ INLINE_ROUTINES = [
         ),
         (("u", "Nat"), ("v", "Nat"), ("q", "Nat"), ("r", "Nat")),
         result="SignMag",
-        result_fields=("u", "v", "q", "r", "su", "sv", "sq", "sr"),
-        result_doc=(
-            "The result of `signMagBlock`: the magnitudes `u`, `v`, `q`, and `r` of the matrix "
-            "entries and their sign masks `su`, `sv`, `sq`, and `sr`."
-        ),
     ),
     RoutineConfig(
         "fg_row",
@@ -228,7 +222,6 @@ INLINE_ROUTINES = [
             ("s1", "Nat"),
         ),
         result="Signed5",
-        result_fields=("l0", "l1", "l2", "l3", "l4"),
     ),
     RoutineConfig(
         "de_row",
@@ -247,7 +240,6 @@ INLINE_ROUTINES = [
             ("s1", "Nat"),
         ),
         result="Signed5",
-        result_fields=("l0", "l1", "l2", "l3", "l4"),
     ),
     RoutineConfig(
         "amontred",
@@ -772,16 +764,6 @@ def signature(name, args, result):
     return f"def {name} {params} : {result} :="
 
 
-def result_struct(config):
-    """The declaration of a block's result structure, when the result is not a shared type."""
-    if config.result in KIND_FIELDS:
-        return None
-    lines = [gen.docstring(config.result_doc), f"structure {config.result} where"]
-    lines += [f"  {f} : Nat" for f in config.result_fields]
-    lines += ["  deriving DecidableEq, Repr", ""]
-    return "\n".join(lines)
-
-
 def emit_inline(config):
     name, doc, args = config.lean_name, config.doc, config.arg_names
     ins, decls, lets, named_outputs, returned, origins = parse_inline(INLINE, config)
@@ -845,7 +827,6 @@ def emit_inline(config):
             name,
             e,
             result,
-            struct=result_struct(config),
             arg_fields=arg_fields,
         )
     ]
@@ -997,7 +978,6 @@ def macro_routines(e, ins, origins, config, result, arg_fields):
         name,
         me,
         result,
-        struct=result_struct(config),
         arg_fields=arg_fields,
     )
     return list(rounds.values()) + [main]
