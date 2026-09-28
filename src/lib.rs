@@ -22,6 +22,17 @@ extern crate std;
 mod asm;
 pub use asm::BACKEND;
 
+if_asm_supported! {
+    // The constant-time inversion's driver over a backend's blocks, which the AArch64 backend
+    // provides.
+    #[cfg(any(target_arch = "aarch64", doc))]
+    mod inversion;
+
+    // The fields' constants and known answers for the tests of the backends and the inversion.
+    #[cfg(test)]
+    mod test_fields;
+}
+
 #[macro_use]
 mod macros;
 mod curves;
