@@ -941,6 +941,7 @@ SPEC_MANIFEST = {
     "lean/PastaCurves/AArch64/Spec/SignMag.lean": ("AArch64", ("signMagBlock",)),
     "lean/PastaCurves/AArch64/Spec/DeRow.lean": ("AArch64", ("deRowBlock",)),
     "lean/PastaCurves/AArch64/Spec/FgRow.lean": ("AArch64", ("fgRowBlock",)),
+    "lean/PastaCurves/AArch64/Spec/Divstep.lean": ("AArch64", ("divstepRound", "divstepLast")),
     "lean/PastaCurves/X86_64/Spec/Add.lean": ("X86_64", ("addMod",)),
     "lean/PastaCurves/X86_64/Spec/Sub.lean": ("X86_64", ("subMod",)),
     "lean/PastaCurves/X86_64/Spec/FromMont.lean": ("X86_64", ("fromMont",)),
@@ -951,11 +952,7 @@ SPEC_MANIFEST = {
 # Missing proofs are tracked by routine, not by hypothetical files. The inversion blocks are
 # transcribed ahead of their proofs.
 UNPROVED_ROUTINES = {
-    "AArch64": (
-        "divstepRound",
-        "divstepLast",
-        "divstep59Block",
-    ),
+    "AArch64": ("divstep59Block",),
 }
 
 
