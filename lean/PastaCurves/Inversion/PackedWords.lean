@@ -19,12 +19,16 @@ namespace PastaCurves.Inversion
 
 /-! ## Words -/
 
+/-- The low word of a product of words carrying `X` and `Y` carries `X * Y`: the congruence that
+reads a skeleton's `%` equation on the integers that the packed state represents. -/
 theorem mul_word (x y : ℕ) (X Y : ℤ) (hx : (x : ℤ) = X % 2^64) (hy : (y : ℤ) = Y % 2^64) :
     ((x * y % 2^64 : ℕ) : ℤ) = (X * Y) % 2^64 := by
   have h : ((x * y % 2^64 : ℕ) : ℤ) = ((x : ℤ) * y) % 2^64 := by push_cast; norm_num
   rw [h, hx, hy]
   exact (Int.mod_modEq X _).mul (Int.mod_modEq Y _)
 
+/-- The low word of a sum of words carrying `X` and `Y` carries `X + Y`: the congruence that reads
+a skeleton's `add` equation on the integers that the packed state represents. -/
 theorem addw_word (x y : ℕ) (X Y : ℤ) (hx : (x : ℤ) = X % 2^64) (hy : (y : ℤ) = Y % 2^64) :
     ((addw x y : ℕ) : ℤ) = (X + Y) % 2^64 := by
   have h : ((addw x y : ℕ) : ℤ) = ((x : ℤ) + y) % 2^64 := by
@@ -45,7 +49,8 @@ theorem or_low_high (x k m : ℕ) (hx : x < 2^k) : x ||| 2^k * m = 2^k * m + x :
 
 /-! ## Packing -/
 
-/-- The packing of a low word: its low 20 bits with `-2^41` (resp. `-2^62`) in two's complement. -/
+/-- The packing of the low `f` word: its low 20 bits with `-2^41` in two's complement, the identity
+matrix's row in the upper bits. -/
 theorem pack_f_word (f : ℕ) :
     ((orrw (andw f 0xfffff) 0xfffffe0000000000 : ℕ) : ℤ) = (f % 2^20 - 2^41) % 2^64 := by
   unfold orrw andw
@@ -55,6 +60,8 @@ theorem pack_f_word (f : ℕ) :
   push_cast
   omega
 
+/-- The packing of the low `g` word: its low 20 bits with `-2^62` in two's complement, the identity
+matrix's other row in the upper bits. -/
 theorem pack_g_word (g : ℕ) :
     ((orrw (andw g 0xfffff) 0xc000000000000000 : ℕ) : ℤ) = (g % 2^20 - 2^62) % 2^64 := by
   unfold orrw andw
