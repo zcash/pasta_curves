@@ -913,6 +913,7 @@ UNPROVED_ROUTINES = {
         "signMagBlock",
         "fgRowBlock",
         "uvRowBlock",
+        "amontredBlock",
     ),
 }
 
