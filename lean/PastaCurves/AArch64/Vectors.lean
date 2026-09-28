@@ -113,4 +113,41 @@ theorem divstep_trace_reproduced : divstepTraceFailures = [] := by decide +kerne
 #guard_msgs in
 #eval divstepTraceFailures
 
+/-! ## The sign-magnitude block -/
+
+/-- Matrix entries as words and the expected magnitudes and masks, as in the crate's
+`sign_mag_known_answers`. -/
+def signMagVectors : List (Nat × Nat × Nat × Nat × SignMag) := [
+  (0xffce000000000000, 0x004a000000000000, 0xffffffffffffffe5, 0xffffffffffffffff,
+    ⟨0x0032000000000000, 0x004a000000000000, 0x000000000000001b, 0x0000000000000001,
+      0xffffffffffffffff, 0x0000000000000000, 0xffffffffffffffff, 0xffffffffffffffff⟩),
+  (0x0000000000000000, 0x0000008000000000, 0xfffffffffff00000, 0x00000058b6db6db7,
+    ⟨0x0000000000000000, 0x0000008000000000, 0x0000000000100000, 0x00000058b6db6db7,
+      0x0000000000000000, 0x0000000000000000, 0xffffffffffffffff, 0x0000000000000000⟩),
+  (0x0800000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000001,
+    ⟨0x0800000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000001,
+      0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000⟩),
+  (0xffffffffc5706190, 0x000000004e1e1b64, 0xfffffffffe7f182c, 0xffffffffdf08984b,
+    ⟨0x000000003a8f9e70, 0x000000004e1e1b64, 0x000000000180e7d4, 0x0000000020f767b5,
+      0xffffffffffffffff, 0x0000000000000000, 0xffffffffffffffff, 0xffffffffffffffff⟩),
+  (0xffffffffb32e679c, 0xffffffffb4ff6206, 0xffffffffe38509c2, 0xffffffffc9886ce5,
+    ⟨0x000000004cd19864, 0x000000004b009dfa, 0x000000001c7af63e, 0x000000003677931b,
+      0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff⟩),
+  (0x8000000000000001, 0x7fffffffffffffff, 0x0000000000000000, 0xffffffffffffffff,
+    ⟨0x7fffffffffffffff, 0x7fffffffffffffff, 0x0000000000000000, 0x0000000000000001,
+      0xffffffffffffffff, 0x0000000000000000, 0x0000000000000000, 0xffffffffffffffff⟩)]
+
+/-- The indices of the vectors that the block's transcription does not reproduce. -/
+def signMagFailures : List Nat :=
+  (List.range signMagVectors.length).filter fun i =>
+    match signMagVectors[i]? with
+    | some (m00, m01, m10, m11, r) => signMagBlock m00 m01 m10 m11 != r
+    | none => false
+
+theorem signMag_vectors_reproduced : signMagFailures = [] := by decide +kernel
+
+/-- info: [] -/
+#guard_msgs in
+#eval signMagFailures
+
 end PastaCurves.AArch64
