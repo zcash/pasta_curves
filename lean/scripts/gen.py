@@ -937,6 +937,7 @@ SPEC_MANIFEST = {
     "lean/PastaCurves/AArch64/Spec/Mul.lean": ("AArch64", ("mulMont", "mulMontRound")),
     "lean/PastaCurves/AArch64/Spec/Square.lean": ("AArch64", ("sqrMont",)),
     "lean/PastaCurves/AArch64/Spec/CondSub.lean": ("AArch64", ("condSubBlock",)),
+    "lean/PastaCurves/AArch64/Spec/Amontred.lean": ("AArch64", ("amontredBlock",)),
     "lean/PastaCurves/X86_64/Spec/Add.lean": ("X86_64", ("addMod",)),
     "lean/PastaCurves/X86_64/Spec/Sub.lean": ("X86_64", ("subMod",)),
     "lean/PastaCurves/X86_64/Spec/FromMont.lean": ("X86_64", ("fromMont",)),
@@ -954,7 +955,6 @@ UNPROVED_ROUTINES = {
         "signMagBlock",
         "fgRowBlock",
         "deRowBlock",
-        "amontredBlock",
     ),
 }
 
