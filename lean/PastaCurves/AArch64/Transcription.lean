@@ -1268,13 +1268,13 @@ def amontredBlock (t : Signed5) (modulus : Limbs) (inv : Nat) : Limbs :=
   let t4 := (addc t4 0 c).1     -- adc t4,t4,xzr
   ⟨t1, t2, t3, t4⟩
 
-/-- The inline `asm!` block of `cond_sub`: the subtraction of the modulus from `r`, kept unless it
-borrows. For `r < 2p` the result is `r mod p`. -/
-def condSubBlock (r modulus : Limbs) : Limbs :=
-  let r0 := r.l0                -- argument
-  let r1 := r.l1                -- argument
-  let r2 := r.l2                -- argument
-  let r3 := r.l3                -- argument
+/-- The inline `asm!` block of `cond_sub`: the subtraction of the modulus from `value`, kept unless
+it borrows. For `value < 2p` the result is `value mod p`. -/
+def condSubBlock (value modulus : Limbs) : Limbs :=
+  let r0 := value.l0            -- argument
+  let r1 := value.l1            -- argument
+  let r2 := value.l2            -- argument
+  let r3 := value.l3            -- argument
   let p0 := modulus.l0          -- argument
   let p1 := modulus.l1          -- argument
   let q := 4611686018427387904  -- mov q,#0x4000000000000000
