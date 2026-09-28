@@ -38,6 +38,8 @@ theorem PastaField.modulus_odd (F : PastaField) : F.modulus.toNat % 2 = 1 := by
   unfold Limbs.toNat
   omega
 
+/-- The modulus is coprime to every power of two, being odd: what cancels the `2^n` in Theorem
+12's congruences. -/
 theorem PastaField.gcd_two_pow (F : PastaField) (n : ℕ) :
     Int.gcd (F.modulus.toNat : ℤ) (2^n) = 1 := by
   have hc : Nat.Coprime F.modulus.toNat (2^n) := by
@@ -48,6 +50,7 @@ theorem PastaField.gcd_two_pow (F : PastaField) (n : ℕ) :
   rw [this, Int.gcd_natCast_natCast]
   exact hc
 
+/-- The modulus is positive as an integer, for the cancellation lemma's side condition. -/
 theorem PastaField.modulus_pos (F : PastaField) : (0 : ℤ) < F.modulus.toNat := by
   have := F.two_pow_le_modulus
   exact_mod_cast lt_of_lt_of_le (by norm_num) this
@@ -69,10 +72,12 @@ namespace PastaCurves.Inversion
 /-- Four limbs as a five-word signed value, sign word zero. -/
 def Signed5.ofLimbs (x : Limbs) : Signed5 := ⟨x.l0, x.l1, x.l2, x.l3, 0⟩
 
+/-- Four bounded limbs make a bounded five-word value. -/
 theorem Signed5.ofLimbs_bounded (x : Limbs) (hx : x.Bounded) : (Signed5.ofLimbs x).Bounded := by
   obtain ⟨h0, h1, h2, h3⟩ := hx
   exact ⟨h0, h1, h2, h3, by show (0 : ℕ) < 2^64; norm_num⟩
 
+/-- Four limbs as five words keep their value. -/
 theorem Signed5.toInt_ofLimbs (x : Limbs) : (Signed5.ofLimbs x).toInt = x.toNat := by
   simp only [Signed5.toInt, Signed5.ofLimbs, Limbs.toNat]
   rw [if_pos (by norm_num)]

@@ -15,37 +15,59 @@ set_option maxRecDepth 8192
 
 /-! ## The checks, evaluated by the kernel -/
 
+/-- The inclusion `theorem0` of the certificate: `H0` into `H1` under `(x, y) ↦ (x, y / 2)`, scale
+`s`. -/
 theorem check_theorem0 :
     checkInclusion H0 H1 ⟨1, 0, 0, 1 / 2⟩ (s ^ 1) farkas_theorem0 = true := by decide +kernel
+
+/-- `theorem1`: `H0` into `H1` under `(x, y) ↦ (x, (x + y) / 2)`, scale `s`. -/
 theorem check_theorem1 :
     checkInclusion H0 H1 ⟨1, 0, 1 / 2, 1 / 2⟩ (s ^ 1) farkas_theorem1 = true := by decide +kernel
+
+/-- `theorem3`: `H1` into itself under `(x, y) ↦ (y, (y - x) / 2)`, scale `s`. -/
 theorem check_theorem3 :
     checkInclusion H1 H1 ⟨0, 1, -1 / 2, 1 / 2⟩ (s ^ 1) farkas_theorem3 = true := by decide +kernel
+
+/-- `theorem5`: `H1` into `H0` under `(x, y) ↦ (y / 2, -x / 2 + y / 4)`, scale `s^2`. -/
 theorem check_theorem5 :
     checkInclusion H1 H0 ⟨0, 1 / 2, -1 / 2, 1 / 4⟩ (s ^ 2) farkas_theorem5 = true := by
   decide +kernel
+
+/-- `theorem_2`: `H1` into `H0` under `(x, y) ↦ (y / 4, -x / 4 + y / 16)`, scale `s^4`. -/
 theorem check_theorem_2 :
     checkInclusion H1 H0 ⟨0, 1 / 4, -1 / 4, 1 / 16⟩ (s ^ 4) farkas_theorem_2 = true := by
   decide +kernel
+
+/-- `theorem_1`: `H1` into `H0` under `(x, y) ↦ (y / 4, -x / 4 + 3 y / 16)`, scale `s^4`. -/
 theorem check_theorem_1 :
     checkInclusion H1 H0 ⟨0, 1 / 4, -1 / 4, 3 / 16⟩ (s ^ 4) farkas_theorem_1 = true := by
   decide +kernel
+
+/-- `theorem_4scale`: `H1` into itself under `(33/64) (x + y / 8, y)`, scale `s^2`. -/
 theorem check_theorem_4scale :
     checkInclusion H1 H1 ⟨33 / 64, 33 / 512, 0, 33 / 64⟩ (s ^ 2) farkas_theorem_4scale = true := by
   decide +kernel
+
+/-- `theorem_3scale`: `H1` into itself under `(33/64) (x - y / 8, y)`, scale `s^2`. -/
 theorem check_theorem_3scale :
     checkInclusion H1 H1 ⟨33 / 64, -33 / 512, 0, 33 / 64⟩ (s ^ 2) farkas_theorem_3scale = true := by
   decide +kernel
+
+/-- `init2stable`: the initial triangle, scaled by `stretch`, into `H1`. -/
 theorem check_init2stable :
     checkInclusion hinit H1 ⟨stretch, 0, 0, stretch⟩ 1 farkas_init2stable = true := by
   decide +kernel
+
+/-- `theoremouter`: `H1` into the outer box. -/
 theorem check_theoremouter :
     checkInclusion H1 houter ⟨1, 0, 0, 1⟩ 1 farkas_theoremouter = true := by decide +kernel
 
+/-- The origin is in `H1`, which makes `H1` star-shaped for the shrinks. -/
 theorem H1_zero : H1.mem 0 0 := by decide +kernel
 
 /-! ## The certified facts -/
 
+/-- The outer box bounds both coordinates of its points. -/
 theorem houter_mem (x y : ℚ) (h : houter.mem x y) : |x| ≤ 8193 / 8192 ∧ |y| ≤ 379 / 512 := by
   have h1 := h ⟨0, -512, 379⟩ (by simp [houter])
   have h2 := h ⟨8192, 0, 8193⟩ (by simp [houter])
@@ -54,11 +76,14 @@ theorem houter_mem (x y : ℚ) (h : houter.mem x y) : |x| ≤ 8193 / 8192 ∧ |y
   simp only [HalfPlane.holds] at h1 h2 h3 h4
   constructor <;> rw [abs_le] <;> constructor <;> linarith
 
+/-- The triangle `0 ≤ y ≤ x ≤ 1` lies in `hinit`. -/
 theorem hinit_mem (x y : ℚ) (h0 : 0 ≤ y) (hxy : y ≤ x) (hx1 : x ≤ 1) : hinit.mem x y := by
   intro h hh
   simp only [hinit, List.mem_cons, List.not_mem_nil, or_false] at hh
   rcases hh with rfl | rfl | rfl <;> simp only [HalfPlane.holds] <;> linarith
 
+/-- The lattice endgame at the smallest scale: no integer point of the box with `y ≠ 0` lies in
+`H1 / L`, by enumerating the box. -/
 theorem lat0 (x y : ℤ) (hx : |x| ≤ 1) (hy : |y| ≤ 1) (hne : y ≠ 0) :
     ¬ H1.mem (x / L) (y / L) := by
   intro hmem
@@ -70,6 +95,7 @@ theorem lat0 (x y : ℤ) (hx : |x| ≤ 1) (hy : |y| ≤ 1) (hne : y ≠ 0) :
     | exact absurd rfl hne
     | exact absurd hmem (by decide +kernel)
 
+/-- The lattice endgame at the next scale, with `|x| ≤ 2`. -/
 theorem lat1 (x y : ℤ) (hx : |x| ≤ 2) (hy : |y| ≤ 1) (hne : y ≠ 0) :
     ¬ H1.mem (x * s ^ 2 / L) (y * (2 * s ^ 2) / L) := by
   intro hmem
