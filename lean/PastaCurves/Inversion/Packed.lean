@@ -192,4 +192,68 @@ theorem packedDivsteps_spec (k : ℕ) (hk : k ≤ 20) (s : State) (hf : s.f % 2 
   · exact unpack_spec k hk _ _ _ (by omega) hu1 hu2
   · exact unpack_spec k hk _ _ _ (by omega) hq1 hq2
 
+/-- Lemma 6′: after every step of a batch the packed `g` is below `2^62` in magnitude, so the sum
+`g ± f` that the next step halves, which is twice this `g`, fits a signed 64-bit word. The row-sum
+bound alone gives only `2^62`: `2^(j+1) g_{j+1} = q f₀ + r g₀` with `|f₀| ≤ 2^41`, `|g₀| ≤ 2^62`,
+and `|q| + |r| ≤ 2^(j+1)`, so the extreme needs `q = 0` and `r = 2^(j+1)`. That row arises only as
+the sum of the two rows of the previous matrix with both second entries equal to `2^j`, and then the
+determinant `2^j` of that matrix forces its first entries to differ by one, so `q` is odd. -/
+theorem divsteps_packedStart_g_abs_lt (j : ℕ) (s : State) (hf : s.f % 2 = 1)
+    (hsf : 0 ≤ s.f ∧ s.f < 2^20) (hsg : 0 ≤ s.g ∧ s.g < 2^20) :
+    |(divsteps (j + 1) (packedStart s)).g| < 2^62 := by
+  set P := packedStart s with hP
+  have hPf : P.f % 2 = 1 := by show (s.f - 2^41) % 2 = 1; omega
+  have hPfb : |P.f| ≤ 2^41 := by show |s.f - 2^41| ≤ 2^41; rw [abs_le]; constructor <;> omega
+  have hPgb : |P.g| ≤ 2^62 := by show |s.g - 2^62| ≤ 2^62; rw [abs_le]; constructor <;> omega
+  obtain ⟨-, hg⟩ := M_spec (j + 1) P hPf
+  have hrow := (M_rowSum_le (j + 1) P).2
+  set q' := (M (j + 1) P).q with hq'
+  set r' := (M (j + 1) P).r with hr'
+  -- The row in terms of the previous matrix `N` and the step matrix.
+  obtain ⟨⟨hu1, hu2⟩, ⟨hv1, hv2⟩, ⟨hq1, hq2⟩, ⟨hr1, hr2⟩⟩ := M_entry_range j P
+  have hdet := M_det j P
+  simp only [Mat2.det] at hdet
+  set N := M j P with hN
+  set Z : ℤ := 2^j with hZ
+  have hZpos : 0 < Z := by positivity
+  have hstep : q' = (T (divsteps j P)).q * N.u + (T (divsteps j P)).r * N.q ∧
+      r' = (T (divsteps j P)).q * N.v + (T (divsteps j P)).r * N.r := by
+    rw [hq', hr', M_succ_left]; exact ⟨rfl, rfl⟩
+  -- Either `|r'| < 2^(j+1)`, or `q'` is odd.
+  have hdisj : |r'| ≤ 2 * Z - 1 ∨ 1 ≤ |q'| := by
+    obtain ⟨hq'', hr''⟩ := hstep
+    by_cases h : 0 < (divsteps j P).two_delta ∧ (divsteps j P).g % 2 = 1
+    · simp only [T, if_pos h] at hq'' hr''
+      left; rw [hr'', abs_le]; constructor <;> omega
+    · simp only [T, if_neg h] at hq'' hr''
+      rcases Int.emod_two_eq_zero_or_one (divsteps j P).g with h2 | h2
+      · rw [h2] at hr''; left; rw [hr'', abs_le]; constructor <;> omega
+      · rw [h2] at hq'' hr''
+        by_cases hv : N.v = Z ∧ N.r = Z
+        · right
+          obtain ⟨hv1', hr1'⟩ := hv
+          rw [hv1', hr1'] at hdet
+          have huq : N.u - N.q = 1 := by
+            have h3 : Z * (N.u - N.q) = Z * 1 := by linear_combination hdet
+            exact mul_left_cancel₀ hZpos.ne' h3
+          have hodd : q' ≠ 0 := by rw [hq'']; omega
+          exact Int.one_le_abs hodd
+        · left; rw [hr'', abs_le]; constructor <;> omega
+  -- The bound on the row combination.
+  have hY : (2 : ℤ)^(j + 1) = 2 * Z := by rw [hZ, pow_succ]; ring
+  rw [hY] at hg hrow
+  have hq0 := abs_nonneg q'
+  have hr0 := abs_nonneg r'
+  have hcomb : |q' * P.f + r' * P.g| ≤ |q'| * 2^41 + |r'| * 2^62 := by
+    calc |q' * P.f + r' * P.g| ≤ |q' * P.f| + |r' * P.g| := abs_add_le _ _
+      _ = |q'| * |P.f| + |r'| * |P.g| := by rw [abs_mul, abs_mul]
+      _ ≤ |q'| * 2^41 + |r'| * 2^62 :=
+          add_le_add (mul_le_mul_of_nonneg_left hPfb hq0) (mul_le_mul_of_nonneg_left hPgb hr0)
+  have hlt : |q'| * 2^41 + |r'| * 2^62 < 2^62 * (2 * Z) := by
+    rcases hdisj with h | h <;> omega
+  have h2g : |2 * Z * (divsteps (j + 1) P).g| < 2^62 * (2 * Z) := by
+    rw [hg]; exact lt_of_le_of_lt hcomb hlt
+  rw [abs_mul, abs_of_pos (by positivity : (0 : ℤ) < 2 * Z), mul_comm] at h2g
+  exact lt_of_mul_lt_mul_right h2g (by positivity)
+
 end PastaCurves.Inversion
