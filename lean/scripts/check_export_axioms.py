@@ -3,7 +3,7 @@
 
 The export format is lean4export's ndjson format, described in its `format_ndjson.md`;
 the link is to the tag that CI builds lean4export from, matching `lean-toolchain`:
-https://github.com/leanprover/lean4export/blob/v4.30.0/format_ndjson.md
+https://github.com/leanprover/lean4export/blob/v4.31.0/format_ndjson.md
 
 nanoda's strict mode (`unpermitted_axiom_hard_error: true`) rejects any axiom *declared*
 outside the permitted list, but must permit axioms Lean core declares whether or not

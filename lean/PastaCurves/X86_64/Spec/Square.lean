@@ -288,7 +288,7 @@ private theorem squareLo_spec_traced (value : Limbs) (hv : value.Bounded) :
           2^320 * (a2 * a3) :=
     cross_terms (by simpa only [e_rdx] using d_t1) (by simpa only [e_rdx] using d_t2)
       (by simpa only [e_rdx] using d_z4) (by simpa only [add_zero] using l_z2_1)
-      l_z3_1 (by simpa only [zero_add] using l_z4_1) z_cf_5
+      l_z3_1 (by simpa only [add_zero] using l_z4_1) z_cf_5
       (by simpa only [e_rdx_1] using d_t2_1) (by simpa only [add_zero] using l_z3_2)
       l_z4_2 (by simpa only [e_z5, zero_add] using l_z5_1) z_cf_8
       (by simpa only [e_rdx_1] using d_t2_2) (by simpa only [add_zero] using l_z4_3)
