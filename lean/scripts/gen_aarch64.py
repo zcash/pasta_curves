@@ -195,6 +195,22 @@ INLINE_ROUTINES = [
             "two's-complement word."
         ),
     ),
+    RoutineConfig(
+        "sign_mag",
+        "signMagBlock",
+        (
+            "The inline `asm!` block of `sign_mag`: the sign-magnitude form of the four entries of a "
+            "transition matrix, each entry's magnitude and its sign as a mask (all ones when negative, "
+            "else zero), which the row blocks take."
+        ),
+        (("u", "Nat"), ("v", "Nat"), ("q", "Nat"), ("r", "Nat")),
+        result="SignMag",
+        result_fields=("u", "v", "q", "r", "su", "sv", "sq", "sr"),
+        result_doc=(
+            "The result of `signMagBlock`: the magnitudes `u`, `v`, `q`, and `r` of the matrix "
+            "entries and their sign masks `su`, `sv`, `sq`, and `sr`."
+        ),
+    ),
 ]
 
 # The macro arms (see `asm_source.parse_macros`) that are transcribed as round definitions,
@@ -696,7 +712,7 @@ def result_struct(config):
     """The declaration of a block's result structure, when the result is not a shared type."""
     if config.result in KIND_FIELDS:
         return None
-    lines = [f"/-- {config.result_doc} -/", f"structure {config.result} where"]
+    lines = [gen.docstring(config.result_doc), f"structure {config.result} where"]
     lines += [f"  {f} : Nat" for f in config.result_fields]
     lines += ["  deriving DecidableEq, Repr", ""]
     return "\n".join(lines)
