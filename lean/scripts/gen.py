@@ -905,7 +905,9 @@ SPEC_MANIFEST = {
 
 # Missing proofs are tracked by routine, not by hypothetical files. The inversion blocks are
 # transcribed ahead of their proofs.
-UNPROVED_ROUTINES = {"AArch64": ("divstepRound", "divstepLast", "divstep59Block")}
+UNPROVED_ROUTINES = {
+    "AArch64": ("divstepRound", "divstepLast", "divstep59Block", "signMagBlock"),
+}
 
 
 def architecture_routines():
