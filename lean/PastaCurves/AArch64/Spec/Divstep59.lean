@@ -29,7 +29,7 @@ set_option exponentiation.threshold 400
 namespace PastaCurves.AArch64
 
 open Inversion (State divstep divsteps M packedStart mul_word addw_word pack_f_word pack_g_word
-  asr20_word asr20_word44 decode_v20 decode_v19)
+  asr20_word asr20_word44 decode_v20 decode_v19 PackedStep)
 
 -- BEGIN divstep59Block_spec lemmas
 /-! ## Words -/
@@ -111,35 +111,20 @@ theorem decode19 (w : ℕ) (W φ u v : ℤ) (hw : (w : ℤ) = W % 2^64)
 
 /-! ## Iterating the step -/
 
-/-- `n` rounds on words carrying the packed state `P` carry `divsteps n P`, given the bounds of
-every step: the size of `d`, and Lemma 6′'s no-wrap bound. -/
-theorem rounds_words (n : ℕ) (P : State) (hf : P.f % 2 = 1) (hd : P.d % 2 = 1)
-    (hD : |P.d| + 2 * n < 2^62) (hg0 : |P.g| < 2^63)
-    (hg : ∀ j, j < n → |(divsteps (j + 1) P).g| < 2^62)
-    (st : DivstepState) (hst : st.Bounded)
-    (ed : (st.d : ℤ) = P.d % 2^64) (ef : (st.f : ℤ) = P.f % 2^64) (eg : (st.g : ℤ) = P.g % 2^64)
-    (hz : st.fl.z = if P.g % 2 = 0 then 1 else 0) :
-    (divstepRound^[n] st).Bounded ∧
-      ((divstepRound^[n] st).d : ℤ) = (divsteps n P).d % 2^64 ∧
-      ((divstepRound^[n] st).f : ℤ) = (divsteps n P).f % 2^64 ∧
-      ((divstepRound^[n] st).g : ℤ) = (divsteps n P).g % 2^64 ∧
-      (divstepRound^[n] st).fl.z = if (divsteps n P).g % 2 = 0 then 1 else 0 := by
-  induction n with
-  | zero => exact ⟨hst, ed, ef, eg, hz⟩
-  | succ n ih =>
-    obtain ⟨ihb, ihd, ihf, ihg, ihz⟩ := ih (by omega) (fun j hj => hg j (by omega))
-    rw [Function.iterate_succ_apply', Inversion.divsteps_succ']
-    have hsd : |(divsteps n P).d| < 2^62 := by
-      have := Inversion.divsteps_d_abs_le n P; push_cast at this; omega
-    have hsg : |(divsteps n P).g| < 2^63 := by
-      rcases n with _ | n
-      · exact hg0
-      · exact lt_trans (hg n (by omega)) (by norm_num)
-    exact divstepRound_spec _ ihb (divsteps n P) (Inversion.divsteps_f_odd n P hf)
-      (by rw [Inversion.divsteps_d_emod_two]; exact hd) hsd hsg
-      (by rw [← Inversion.divsteps_succ']; exact hg n (by omega)) ihd ihf ihg ihz _ rfl
+/-- The AArch64 packed step, for the shared batch iteration: `divstepRound` and `divstepLast` on
+`DivstepState`, whose `Z` flag is the parity flag. -/
+def packedStep : PackedStep :=
+  ⟨DivstepState, DivstepState.Bounded, (·.d), (·.f), (·.g), (·.fl.z), divstepRound, divstepLast⟩
 
-/-- A batch of `n + 1` steps: `n` rounds and the last step. -/
+/-- The two step theorems, as the batch iteration takes them. -/
+theorem packedStep_spec : packedStep.Spec where
+  round := fun st hst s hf hd hD hG hG' ed ef eg hz =>
+    divstepRound_spec st hst s hf hd hD hG hG' ed ef eg hz _ rfl
+  last := fun st hst s hf hd hD hG hG' ed ef eg hz =>
+    divstepLast_spec st hst s hf hd hD hG hG' ed ef eg hz _ rfl
+
+/-- A batch of `n + 1` steps: `n` rounds and the last step, the shared `batch_words` at the AArch64
+step. -/
 theorem batch_words (n : ℕ) (P : State) (hf : P.f % 2 = 1) (hd : P.d % 2 = 1)
     (hD : |P.d| + 2 * (n + 1) < 2^62) (hg0 : |P.g| < 2^63)
     (hg : ∀ j, j < n + 1 → |(divsteps (j + 1) P).g| < 2^62)
@@ -149,19 +134,8 @@ theorem batch_words (n : ℕ) (P : State) (hf : P.f % 2 = 1) (hd : P.d % 2 = 1)
     (divstepLast (divstepRound^[n] st)).Bounded ∧
       ((divstepLast (divstepRound^[n] st)).d : ℤ) = (divsteps (n + 1) P).d % 2^64 ∧
       ((divstepLast (divstepRound^[n] st)).f : ℤ) = (divsteps (n + 1) P).f % 2^64 ∧
-      ((divstepLast (divstepRound^[n] st)).g : ℤ) = (divsteps (n + 1) P).g % 2^64 := by
-  obtain ⟨ihb, ihd, ihf, ihg, ihz⟩ := rounds_words n P hf hd (by omega) hg0
-    (fun j hj => hg j (by omega)) st hst ed ef eg hz
-  rw [Inversion.divsteps_succ']
-  have hsd : |(divsteps n P).d| < 2^62 := by
-    have := Inversion.divsteps_d_abs_le n P; push_cast at this; omega
-  have hsg : |(divsteps n P).g| < 2^63 := by
-    rcases n with _ | m
-    · exact hg0
-    · exact lt_trans (hg m (by omega)) (by norm_num)
-  exact divstepLast_spec _ ihb (divsteps n P) (Inversion.divsteps_f_odd _ P hf)
-    (by rw [Inversion.divsteps_d_emod_two]; exact hd) hsd hsg
-    (by rw [← Inversion.divsteps_succ']; exact hg n (by omega)) ihd ihf ihg ihz _ rfl
+      ((divstepLast (divstepRound^[n] st)).g : ℤ) = (divsteps (n + 1) P).g % 2^64 :=
+  packedStep_spec.batch_words n P hf hd hD hg0 hg st hst ed ef eg hz
 
 -- END divstep59Block_spec lemmas
 
