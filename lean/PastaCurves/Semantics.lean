@@ -1,3 +1,4 @@
+import Mathlib.Logic.Function.Iterate
 
 /-!
 # Generic semantics for the Pasta arithmetic routines

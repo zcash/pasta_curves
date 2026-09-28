@@ -18,8 +18,9 @@ register the block reads was written by the block or bound by an operand.
 
 A template line may also be an invocation of a `macro_rules!` macro of the source file whose
 arms expand to instruction lines (see `asm_source.parse_macros`). An arm listed in
-`MACRO_ROUNDS` is transcribed once, as a definition over the registers it carries, and each
-invocation becomes a call of it; any other arm is expanded in place.
+`MACRO_ROUNDS` is transcribed once, as a definition over the registers it carries, and each run
+of consecutive invocations becomes a call of it, iterated over the run; any other arm is
+expanded in place.
 
 A binding that nothing later reads is not emitted. For an operand, or for an output of a
 round call, this records that the block binds a value it never uses, and the dropped binding
@@ -870,8 +871,9 @@ def state_struct(cfg):
 
 def macro_routines(e, ins, origins, config, result, arg_fields):
     """Split the transcription of a routine whose template invokes macros: each arm listed in
-    `MACRO_ROUNDS` becomes a definition over the registers it carries (`roles`), and each of its
-    invocations a call; other arms stay expanded in place."""
+    `MACRO_ROUNDS` becomes a definition over the registers it carries (`roles`), and each run of
+    consecutive invocations of it a call of the definition iterated over the run; other arms
+    stay expanded in place."""
     name, doc = config.lean_name, config.doc
     origin_of = {pc: origin for pc, origin in enumerate(origins)}
 
@@ -942,24 +944,41 @@ def macro_routines(e, ins, origins, config, result, arg_fields):
             struct=state_struct(cfg) if cfg["emit_struct"] else None,
             arg_fields={sarg: [f for f in fields if f != "fl"]},
         )
-    # The block: each round segment becomes a call and the outputs it carries.
-    me = Emitter(ins)
+    # The block: a run of consecutive invocations of one arm becomes one call, the round iterated
+    # over the run, and the outputs it carries; a proof about the run is then the step theorem
+    # iterated, without one binding per invocation. A run is (cfg, (macro, arm), first site,
+    # last site); a stretch of instructions is (None, None, None, entries).
+    runs = []
     for site, entries in segments:
         if site is None:
-            me.entries += [dict(en) for en in entries]
+            runs.append((None, None, None, entries))
             continue
-        cfg = round_of_site[site]
+        o = origin(entries[0])
+        key = (o.macro, o.arm)
+        if runs and runs[-1][1] == key:
+            runs[-1] = (runs[-1][0], key, runs[-1][2], site)
+        else:
+            runs.append((round_of_site[site], key, site, site))
+    me = Emitter(ins)
+    for cfg, key, first, last in runs:
+        if cfg is None:
+            me.entries += [dict(en) for en in last]
+            continue
         regs = [r for r, _, _ in cfg["roles"]]
         fields = [f for _, f, _ in cfg["roles"]]
-        rname = f"{cfg['call']}{site + 1}"
-        o = origin(entries[0])
-        arm = f"{o.macro}!({o.arm})"
-        fmt = f"{cfg['round']} ⟨" + ", ".join(f"{{{i}}}" for i in range(len(regs))) + "⟩"
+        rname = f"{cfg['call']}{last + 1}"
+        arm = f"{key[0]}!({key[1]})"
+        count = last - first + 1
+        call = cfg["round"] if count == 1 else f"{cfg['round']}^[{count}]"
+        which = (
+            f"invocation {first + 1}" if count == 1 else f"invocations {first + 1} to {last + 1}"
+        )
+        fmt = f"{call} ⟨" + ", ".join(f"{{{i}}}" for i in range(len(regs))) + "⟩"
         me.entries.append(
             {
                 "name": rname,
                 "expr": fmt.format(*regs),
-                "comment": f"{arm}, invocation {site + 1}",
+                "comment": f"{arm}, {which}",
                 "reads": set(regs),
                 "load": False,
                 "fact": ("call", fmt, regs),
@@ -971,7 +990,7 @@ def macro_routines(e, ins, origins, config, result, arg_fields):
                 {
                     "name": r,
                     "expr": f"{rname}.{f}",
-                    "comment": f"{arm}, invocation {site + 1} output",
+                    "comment": f"{arm}, {which} output",
                     "reads": {rname},
                     "load": False,
                     "optional": True,
@@ -1165,7 +1184,8 @@ MODULE_DOC = (
     "is the carry flag, `fl` the four flags, `s` is the (result, carry) pair of the instruction "
     "that last set both, argument limbs are read where the block's operands bind them, and the "
     "output words are bound where the block's output operands hold them. A block whose template "
-    "invokes a macro for a repeated step calls that step's definition once per invocation. "
+    "invokes a macro for a repeated step calls that step's definition once per run of consecutive "
+    "invocations, iterated over the run. "
     "Bindings that nothing reads are left as comments. See the generator's docstring for what it "
     "checks."
 )
