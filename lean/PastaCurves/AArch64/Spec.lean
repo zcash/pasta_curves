@@ -12,6 +12,7 @@ import PastaCurves.AArch64.Spec.SignMag
 import PastaCurves.AArch64.Spec.DeRow
 import PastaCurves.AArch64.Spec.FgRow
 import PastaCurves.AArch64.Spec.Divstep
+import PastaCurves.AArch64.Spec.Divstep59
 
 /-!
 # Correctness of the transcribed Pasta Montgomery blocks
