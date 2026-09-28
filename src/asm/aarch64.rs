@@ -1130,15 +1130,15 @@ pub(super) fn amontred(t: &[u64; 5], modulus: &Limbs, inv: u64) -> Limbs {
     [o0, o1, o2, o3]
 }
 
-/// Subtracts the modulus from `r` unless the subtraction borrows.
+/// Subtracts the modulus from `value` unless the subtraction borrows.
 ///
-/// For `r < 2p` the result is `r mod p`; the inversion applies it to the final
+/// For `value < 2p` the result is `value mod p`; the inversion applies it to the final
 /// round's `amontred` output, which is below `2p`. It is the tail of the
 /// Montgomery blocks, with the modulus shape `modulus[2] = 0`,
 /// `modulus[3] = 2^62`.
 #[inline(always)]
-pub(super) fn cond_sub(r: &Limbs, modulus: &Limbs) -> Limbs {
-    let [mut r0, mut r1, mut r2, mut r3] = *r;
+pub(super) fn cond_sub(value: &Limbs, modulus: &Limbs) -> Limbs {
+    let [mut r0, mut r1, mut r2, mut r3] = *value;
     // SAFETY: register-only arithmetic with declared inputs and outputs;
     // no memory or stack access and no data-dependent control flow.
     unsafe {
