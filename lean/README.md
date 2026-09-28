@@ -120,7 +120,8 @@ PastaCurves/Inversion/Hull.lean          convex regions by half-planes, inclusio
 PastaCurves/Inversion/HullBound.lean     the termination bound from a certificate (the hull-light argument)
 PastaCurves/Inversion/HullData.lean      GENERATED: the certificate's half-planes and Farkas records
 PastaCurves/Inversion/HullCert.lean      the certificate checked by the kernel; `terminationBound_256`
-PastaCurves/Inversion/SignMag.lean       the sign-magnitude form of a matrix entry, as the row blocks take it
+PastaCurves/Inversion/SignMag.lean       the sign-magnitude form of a matrix entry; the row identities on words
+PastaCurves/Inversion/PackedWords.lean   the packed step, packing, and decoder on words, for any instruction set
 PastaCurves/Inversion/Composition.lean   `InvertBlocks.Spec`, and `invert` equals the model over blocks that meet it
 PastaCurves/AArch64.lean                 AArch64 umbrella module
 PastaCurves/AArch64/Semantics.lean       AArch64 instruction semantics

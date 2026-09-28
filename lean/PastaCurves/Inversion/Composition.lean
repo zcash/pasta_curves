@@ -1,5 +1,6 @@
 import PastaCurves.Compositions
 import PastaCurves.Inversion.SignMag
+import PastaCurves.Inversion.PackedWords
 import PastaCurves.Inversion.Model
 import PastaCurves.Inversion.HullCert
 
@@ -30,7 +31,7 @@ set_option exponentiation.threshold 400
 namespace PastaCurves
 
 open Inversion (State divsteps M RoundState rounds trueState round initState startV montInvModel
-  signWordOf finalU updateFG updateUV amontredZ Mat2 SignMagRep signMask)
+  signWordOf finalU updateFG updateUV amontredZ Mat2 SignMagRep signMask mul_word addw_word)
 
 /-- What the composition needs of a backend's blocks at a field `F`: each block, on bounded
 inputs, computes the word-level function of the shared layer that the round model composes. -/
@@ -105,21 +106,6 @@ theorem trueState_facts (F : PastaField) (x : Limbs) (hx : x.Bounded) (i : ℕ) 
   · rw [abs_lt]; constructor <;> omega
   · rw [abs_lt]; constructor <;> omega
   · rw [abs_lt]; constructor <;> omega
-
-/-- The low word of a product of words carrying two integers carries their product. -/
-theorem mulLo_word (x y : ℕ) (X Y : ℤ) (hx : (x : ℤ) = X % 2^64) (hy : (y : ℤ) = Y % 2^64) :
-    ((mulLo x y : ℕ) : ℤ) = (X * Y) % 2^64 := by
-  have h : ((mulLo x y : ℕ) : ℤ) = ((x : ℤ) * y) % 2^64 := by
-    unfold mulLo regMod; push_cast; norm_num
-  rw [h, hx, hy]
-  exact (Int.mod_modEq X _).mul (Int.mod_modEq Y _)
-
-/-- The low word of a sum of words carrying two integers carries their sum. -/
-theorem add_mod_word (x y : ℕ) (X Y : ℤ) (hx : (x : ℤ) = X % 2^64) (hy : (y : ℤ) = Y % 2^64) :
-    (((x + y) % 2^64 : ℕ) : ℤ) = (X + Y) % 2^64 := by
-  have h : (((x + y) % 2^64 : ℕ) : ℤ) = ((x : ℤ) + y) % 2^64 := by push_cast; norm_num
-  rw [h, hx, hy]
-  exact (Int.mod_modEq X _).add (Int.mod_modEq Y _)
 
 /-- One round of `invert` on words carrying the model's state after `i` rounds carries its state
 after `i + 1`. -/
@@ -265,12 +251,12 @@ theorem invert_eq_model (B : InvertBlocks) (F : PastaField) (hB : B.Spec F) (x :
   have hsw64 : sw < 2^64 := by
     have := Int.emod_lt_of_pos (N.a * t.f + N.b * t.g) (by norm_num : (0 : ℤ) < 2^64); omega
   have hsign : signWord rs.f.l0 rs.g.l0 dm.m00 dm.m01 = if sw < 2^63 then 0 else 2^64 - 1 := by
-    have h1 : ((mulLo rs.f.l0 dm.m00 : ℕ) : ℤ) = (t.f * N.a) % 2^64 := mulLo_word _ _ _ _ hfl hM00
-    have h2 : ((mulLo rs.g.l0 dm.m01 : ℕ) : ℤ) = (t.g * N.b) % 2^64 := mulLo_word _ _ _ _ hgl hM01
-    have hw : (((mulLo rs.f.l0 dm.m00 + mulLo rs.g.l0 dm.m01) % 2^64 : ℕ) : ℤ)
-        = (t.f * N.a + t.g * N.b) % 2^64 := add_mod_word _ _ _ _ h1 h2
-    have hw' : (mulLo rs.f.l0 dm.m00 + mulLo rs.g.l0 dm.m01) % 2^64 = sw := by
-      have : (((mulLo rs.f.l0 dm.m00 + mulLo rs.g.l0 dm.m01) % 2^64 : ℕ) : ℤ) = sw := by
+    have h1 : ((mulLo rs.f.l0 dm.m00 : ℕ) : ℤ) = (t.f * N.a) % 2^64 := mul_word _ _ _ _ hfl hM00
+    have h2 : ((mulLo rs.g.l0 dm.m01 : ℕ) : ℤ) = (t.g * N.b) % 2^64 := mul_word _ _ _ _ hgl hM01
+    have hw : ((addw (mulLo rs.f.l0 dm.m00) (mulLo rs.g.l0 dm.m01) : ℕ) : ℤ)
+        = (t.f * N.a + t.g * N.b) % 2^64 := addw_word _ _ _ _ h1 h2
+    have hw' : addw (mulLo rs.f.l0 dm.m00) (mulLo rs.g.l0 dm.m01) = sw := by
+      have : ((addw (mulLo rs.f.l0 dm.m00) (mulLo rs.g.l0 dm.m01) : ℕ) : ℤ) = sw := by
         rw [hw, hsw']; exact congrArg (· % 2^64) (by ring)
       exact_mod_cast this
     unfold signWord regMod
