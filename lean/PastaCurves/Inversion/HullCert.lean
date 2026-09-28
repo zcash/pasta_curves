@@ -136,8 +136,7 @@ theorem certified : Certified H0 H1 where
   inc_4s := by
     intro x y h
     have := checkInclusion_sound H1 H1 _ _ farkas_theorem_4scale check_theorem_4scale x y h
-    convert this using 1
-    simp only [Mat.apY]
+    convert this using 1 <;> simp only [Mat.apX, Mat.apY]
     ring
   inc_3s := by
     intro x y h
