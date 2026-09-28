@@ -1563,12 +1563,14 @@ mod tests {
     use crate::asm::{invert, is_canonical, mul, sub};
 
     /// `z = invert(x)` is canonical and is the Montgomery inverse of a nonzero `x`:
-    /// `mul(x, z) = R`, and inverting `z` gives `x` back.
+    /// `mul(x, z) = R`, inverting `z` gives `x` back, and `z` is the inverse that the field
+    /// type's portable arithmetic gives.
     fn check_inverse(f: &Field, x: &Limbs) {
         let z = invert(x, &f.modulus, f.inv, &f.v0);
         assert!(is_canonical(&z, &f.modulus), "{x:x?}");
         assert_eq!(mul(x, &z, &f.modulus, f.inv), f.r, "{x:x?}");
         assert_eq!(invert(&z, &f.modulus, f.inv, &f.v0), *x, "{x:x?}");
+        assert_eq!(z, (f.portable_inverse)(x), "{x:x?}");
     }
 
     /// `invert` reproduces the integer model of the algorithm on the recorded inputs, which include
