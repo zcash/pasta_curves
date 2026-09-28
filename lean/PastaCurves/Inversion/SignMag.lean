@@ -41,6 +41,7 @@ with the mask `s` clear for `a = m`, or set for `a = -m`. Zero has both forms, w
 last round's masking by the sign word needs. -/
 def SignMagRep (m s : ℕ) (a : ℤ) : Prop := (s = 0 ∧ (m : ℤ) = a) ∨ (s = 2^64 - 1 ∧ (m : ℤ) = -a)
 
+/-- The form that `sign_mag` produces: the magnitude with the sign mask. -/
 theorem SignMagRep.of_natAbs (a : ℤ) : SignMagRep a.natAbs (signMask a) a := by
   unfold SignMagRep signMask
   rcases lt_or_ge a 0 with h | h
@@ -55,10 +56,13 @@ theorem SignMagRep.xor_ones (m s : ℕ) (a : ℤ) (h : SignMagRep m s a) :
   · right; rw [hs, Nat.zero_xor]; exact ⟨rfl, by rw [hm, neg_neg]⟩
   · left; rw [hs, Nat.xor_self]; exact ⟨rfl, hm⟩
 
+/-- Xoring the mask with zero keeps the representation: the last round's masking when the sign
+word is zero. -/
 theorem SignMagRep.xor_zero (m s : ℕ) (a : ℤ) (h : SignMagRep m s a) :
     SignMagRep m (s ^^^ 0) a := by
   rwa [Nat.xor_zero]
 
+/-- The magnitude and the mask of a represented integer below `2^64` in magnitude are bounded. -/
 theorem SignMagRep.lt (m s : ℕ) (a : ℤ) (h : SignMagRep m s a) (ha : |a| < 2^64) :
     m < 2^64 ∧ s < 2^64 := by
   rw [abs_lt] at ha
