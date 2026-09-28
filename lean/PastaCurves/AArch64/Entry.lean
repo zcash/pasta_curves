@@ -1,7 +1,6 @@
 import PastaCurves.Fields
 import PastaCurves.Spec
 import PastaCurves.AArch64.Spec
-import PastaCurves.Inversion.HullCert
 
 /-!
 # The crate's entry points at its fields
@@ -92,20 +91,17 @@ theorem sub_entry_spec (F : PastaField) (lhs rhs : Limbs) (hlhs : lhs.Bounded)
     ((isCanonical_iff lhs F.modulus hlhs F.bounded).1 hl)
     ((isCanonical_iff rhs F.modulus hrhs F.bounded).1 hr) _ rfl
 
-/-- The crate's `invert` at a Pasta field. The input is canonical, as the entry point asserts,
-and `e0` is `2^562 mod p`, as its contract requires. The result is canonical. For `x = 0` it is
-`0`; otherwise it is the Montgomery inverse, with `x * result ≡ R^2 (mod p)`. The termination
-bound of the divstep recurrence is discharged by the hull certificate's `terminationBound_256`,
-and the primality of `p` is `F.prime`. -/
+/-- The crate's `invert` at a Pasta field, on the AArch64 blocks: the shared `invert_entry_spec`
+at `invertBlocks`. The input is canonical, as the entry point asserts, and `e0` is `2^562 mod p`,
+as its contract requires. The result is canonical. For `x = 0` it is `0`; otherwise it is the
+Montgomery inverse, with `x * result ≡ R^2 (mod p)`. -/
 theorem invert_entry_spec (F : PastaField) (x : Limbs) (hx : x.Bounded)
     (h : isCanonical x F.modulus = true) (e0 : Limbs) (he0 : e0 = Inversion.startE F) :
-    (invert x F.modulus F.inv e0).Bounded ∧
-      (invert x F.modulus F.inv e0).toNat < F.modulus.toNat ∧
-      (x.toNat = 0 → invert x F.modulus F.inv e0 = Limbs.ofNat 0) ∧
+    (invert invertBlocks x F.modulus F.inv e0).Bounded ∧
+      (invert invertBlocks x F.modulus F.inv e0).toNat < F.modulus.toNat ∧
+      (x.toNat = 0 → invert invertBlocks x F.modulus F.inv e0 = Limbs.ofNat 0) ∧
       (x.toNat ≠ 0 →
-        x.toNat * (invert x F.modulus F.inv e0).toNat ≡ R^2 [MOD F.modulus.toNat]) := by
-  rw [he0, invert_eq_model F x hx]
-  exact Inversion.montInv_spec F Inversion.Hull.terminationBound_256 x hx
-    ((isCanonical_iff x F.modulus hx F.bounded).1 h)
+        x.toNat * (invert invertBlocks x F.modulus F.inv e0).toNat ≡ R^2 [MOD F.modulus.toNat]) :=
+  PastaCurves.invert_entry_spec invertBlocks F (invertBlocks_spec F) x hx h e0 he0
 
 end PastaCurves.AArch64

@@ -19,6 +19,8 @@ set_option exponentiation.threshold 400
 
 namespace PastaCurves.AArch64
 
+open Inversion (SignMagRep)
+
 -- BEGIN deRowBlock_spec lemmas
 /-- `eor` with the all-ones word complements a word. -/
 theorem eorw_ones (x : ℕ) (hx : x < 2^64) : eorw x (2^64 - 1) = 2^64 - 1 - x := by

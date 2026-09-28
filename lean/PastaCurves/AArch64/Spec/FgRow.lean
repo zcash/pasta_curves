@@ -18,6 +18,8 @@ set_option exponentiation.threshold 400
 
 namespace PastaCurves.AArch64
 
+open Inversion (SignMagRep)
+
 -- BEGIN fgRowBlock_spec lemmas
 /-- A bounded five-word value below `2^256` in magnitude has a sign word of zero or all ones. -/
 theorem Signed5.l4_of_abs_lt (x : Signed5) (hx : x.Bounded) (hv : |x.toInt| < 2^256) :

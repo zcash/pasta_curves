@@ -266,5 +266,5 @@ pub fn invert(x: &Limbs, modulus: &Limbs, inv: u64, e0: &Limbs) -> Limbs {
         is_canonical(x, modulus),
         "pasta_curves::asm::invert requires a canonical input"
     );
-    super::aarch64::invert(x, modulus, inv, e0)
+    super::inversion::invert(x, modulus, inv, e0)
 }

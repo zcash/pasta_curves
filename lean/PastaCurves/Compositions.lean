@@ -5,8 +5,9 @@ import Mathlib.Tactic.Ring
 # The crate's Rust around the blocks
 
 `src/asm/entry.rs`, in a debug build, checks the operand contracts of `mul` and `square` before
-entering the blocks. These definitions mirror that Rust: the canonicity check `is_canonical`,
-a borrow chain, and the condition `mul_contract` that `mul` asserts.
+entering the blocks, and `src/asm/inversion.rs` composes `invert` from a backend's six blocks. These
+definitions mirror that Rust: the canonicity check `is_canonical`, a borrow chain, the condition
+`mul_contract` that `mul` asserts, and `invert` over a record of the blocks.
 -/
 
 namespace PastaCurves
@@ -48,5 +49,59 @@ theorem mulContract_iff (lhs rhs modulus : Limbs) (hlhs : lhs.Bounded) (hrhs : r
   simp only [Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_iff,
     isCanonical_iff lhs modulus hlhs hm, isCanonical_iff rhs modulus hrhs hm]
   omega
+
+/-! ## The inversion -/
+
+/-- The inversion's six blocks, as one backend transcribes them: `divstep59` on `two_delta` and the
+low words of `f` and `g`; `sign_mag` on the four matrix words; `fg_row` and `de_row` on a row's
+magnitudes and masks; `amontred` and `cond_sub` with the modulus limbs (and `inv`) last. -/
+structure InvertBlocks where
+  divstep59 : Nat → Nat → Nat → Divstep59Result
+  signMag : Nat → Nat → Nat → Nat → SignMag
+  fgRow : Signed5 → Signed5 → Nat → Nat → Nat → Nat → Signed5
+  deRow : Limbs → Limbs → Nat → Nat → Nat → Nat → Signed5
+  amontred : Signed5 → Limbs → Nat → Limbs
+  condSub : Limbs → Limbs → Limbs
+
+/-- The state that the inversion's rounds carry: `two_delta` as a word, the five-word `f` and `g`,
+and the four-limb `d` and `e`. -/
+structure InvertState where
+  two_delta : Nat
+  f : Signed5
+  g : Signed5
+  d : Limbs
+  e : Limbs
+
+/-- One round of `invert`: `divstep59` on the low words, the sign-magnitude form of its matrix,
+`fg_row` for each row of the update of `f` and `g`, and `de_row` for each row of the combination
+of `d` and `e`, each reduced by `amontred`. -/
+def invertRound (B : InvertBlocks) (modulus : Limbs) (inv : Nat) (st : InvertState) :
+    InvertState :=
+  let dm := B.divstep59 st.two_delta st.f.l0 st.g.l0
+  let sm := B.signMag dm.u dm.v dm.q dm.r
+  let f := B.fgRow st.f st.g sm.u sm.v sm.su sm.sv
+  let g := B.fgRow st.f st.g sm.q sm.r sm.sq sm.sr
+  let td := B.deRow st.d st.e sm.u sm.v sm.su sm.sv
+  let te := B.deRow st.d st.e sm.q sm.r sm.sq sm.sr
+  ⟨dm.two_delta, f, g, B.amontred td modulus inv, B.amontred te modulus inv⟩
+
+/-- The sign word of the last round, as `src/asm/inversion.rs` computes it in Rust: the low word of
+`f0 * u + g0 * v`, shifted arithmetically by 63, so all ones when the new `f` is negative and
+zero otherwise. -/
+def signWord (f0 g0 u v : Nat) : Nat :=
+  if (mulLo f0 u + mulLo g0 v) % regMod < 2^63 then 0 else regMod - 1
+
+/-- `invert`: nine rounds from `(two_delta, f, g, d, e) = (1, p, x, 0, e0)`, then the last round,
+which computes only `d`, with the sign of the new `f` xored into the masks of its row, and reduces
+strictly. -/
+def invert (B : InvertBlocks) (x modulus : Limbs) (inv : Nat) (e0 : Limbs) : Limbs :=
+  let st := (invertRound B modulus inv)^[9]
+    ⟨1, ⟨modulus.l0, modulus.l1, modulus.l2, modulus.l3, 0⟩, ⟨x.l0, x.l1, x.l2, x.l3, 0⟩,
+      ⟨0, 0, 0, 0⟩, e0⟩
+  let dm := B.divstep59 st.two_delta st.f.l0 st.g.l0
+  let sign := signWord st.f.l0 st.g.l0 dm.u dm.v
+  let sm := B.signMag dm.u dm.v dm.q dm.r
+  let t := B.deRow st.d st.e sm.u sm.v (sm.su ^^^ sign) (sm.sv ^^^ sign)
+  B.condSub (B.amontred t modulus inv) modulus
 
 end PastaCurves
