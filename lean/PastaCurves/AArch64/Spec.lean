@@ -6,6 +6,7 @@ import PastaCurves.AArch64.Spec.Add
 import PastaCurves.AArch64.Spec.Sub
 import PastaCurves.AArch64.Spec.Mul
 import PastaCurves.AArch64.Spec.Square
+import PastaCurves.AArch64.Spec.CondSub
 
 /-!
 # Correctness of the transcribed Pasta Montgomery blocks
