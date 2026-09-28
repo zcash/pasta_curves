@@ -53,13 +53,17 @@ structure HalfPlane where
 /-- A convex region: the points satisfying every half-plane of the list. -/
 abbrev Region := List HalfPlane
 
+/-- The point `(x, y)` satisfies the half-plane. -/
 def HalfPlane.holds (h : HalfPlane) (x y : ℚ) : Prop := h.a * x + h.b * y ≤ h.c
 
+/-- Decidable, so that the kernel can evaluate the checks. -/
 instance (h : HalfPlane) (x y : ℚ) : Decidable (h.holds x y) := by
   unfold HalfPlane.holds; infer_instance
 
+/-- The point `(x, y)` lies in the region: every half-plane holds. -/
 def Region.mem (R : Region) (x y : ℚ) : Prop := ∀ h ∈ R, h.holds x y
 
+/-- Decidable, so that the kernel can evaluate the checks. -/
 instance (R : Region) (x y : ℚ) : Decidable (R.mem x y) := by
   unfold Region.mem; infer_instance
 
@@ -71,7 +75,10 @@ structure Mat where
   m22 : ℚ
   deriving DecidableEq, Repr
 
+/-- The first coordinate of `M (x, y)`. -/
 def Mat.apX (M : Mat) (x y : ℚ) : ℚ := M.m11 * x + M.m12 * y
+
+/-- The second coordinate of `M (x, y)`. -/
 def Mat.apY (M : Mat) (x y : ℚ) : ℚ := M.m21 * x + M.m22 * y
 
 /-- One Farkas record: the target half-plane follows from source half-planes `i` and `j` with
@@ -90,6 +97,7 @@ half-plane in `(x, y)` that says `t` holds at the image. -/
 def pullback (t : HalfPlane) (M : Mat) (d : ℚ) : HalfPlane :=
   ⟨(t.a * M.m11 + t.b * M.m21) / d, (t.a * M.m12 + t.b * M.m22) / d, t.c⟩
 
+/-- The pullback holds at `(x, y)` exactly when the target holds at the image. -/
 theorem pullback_holds (t : HalfPlane) (M : Mat) (d : ℚ) (x y : ℚ) :
     (pullback t M d).holds x y ↔ t.holds (M.apX x y / d) (M.apY x y / d) := by
   unfold pullback HalfPlane.holds Mat.apX Mat.apY
@@ -123,6 +131,8 @@ def checkFarkas (S : Region) (t : HalfPlane) (f : Farkas) : Bool :=
       f.m * e₁.c + f.n * e₂.c + f.p == f.q * t.c
   | _, _ => false
 
+/-- A record that passes the check proves its target half-plane on the source region, by
+`farkas_sound`. -/
 theorem checkFarkas_sound (S : Region) (t : HalfPlane) (f : Farkas)
     (h : checkFarkas S t f = true) (x y : ℚ) (hS : S.mem x y) : t.holds x y := by
   unfold checkFarkas at h
@@ -139,6 +149,8 @@ def checkInclusion (S T : Region) (M : Mat) (d : ℚ) (fs : List Farkas) : Bool 
   T.length == fs.length &&
     (List.zip T fs).all fun ⟨t, f⟩ => checkFarkas S (pullback t M d) f
 
+/-- A certificate that passes the check proves the inclusion: every point of `S`, mapped and
+scaled, lies in `T`. -/
 theorem checkInclusion_sound (S T : Region) (M : Mat) (d : ℚ) (fs : List Farkas)
     (h : checkInclusion S T M d fs = true) (x y : ℚ) (hS : S.mem x y) :
     T.mem (M.apX x y / d) (M.apY x y / d) := by
