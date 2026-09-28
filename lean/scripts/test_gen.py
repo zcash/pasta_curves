@@ -399,9 +399,12 @@ class SharedAArch64ParserTests(unittest.TestCase):
         routines = {routine.name: routine for routine in gen_aarch64.all_routines()}
         block = routines["divstep59Block"]
         calls = [entry for entry in block.emitter.entries if entry["fact"][0] == "call"]
+        # A run of consecutive invocations is one call of the round iterated over the run; the
+        # third batch's run breaks where the second batch's matrix products are scheduled.
         self.assertEqual(
             [entry["expr"].split(" ")[0] for entry in calls],
-            (["divstepRound"] * 19 + ["divstepLast"]) * 2 + ["divstepRound"] * 18 + ["divstepLast"],
+            ["divstepRound^[19]", "divstepLast"] * 2
+            + ["divstepRound^[10]", "divstepRound^[8]", "divstepLast"],
         )
         for name in ("divstepRound", "divstepLast"):
             body = [code for code, _ in routines[name].lines if code is not None]
