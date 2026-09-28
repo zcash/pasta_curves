@@ -167,8 +167,9 @@ cd .. && lean/scripts/check.sh   # regenerate the transcription and check the sk
   `lean/scripts/gen.py` from the Rust `asm!` blocks and the reference vectors. Never edit them
   by hand; change the generator or its inputs and regenerate. Architecture-specific
   `Compositions.lean` mirrors the actual Rust compositions, not another backend's implementation.
-  Shared `Compositions.lean` models common operand checks; `Fields.lean` states the two fields'
-  constants. A change on either side changes the other.
+  Shared `Compositions.lean` models common operand checks and the inversion's driver over a
+  record of a backend's blocks; `Fields.lean` states the two fields' constants. A change on
+  either side changes the other.
 - **Every architecture's block proofs use generated, checked skeletons.** Generated skeleton
   lines in `Spec.lean` (or `Spec/*.lean`) are not hand-edited. Only theorem statements and
   `-- BEGIN ... -- END` annotation blocks are hand-written. Skeleton generation and `check_spec`
