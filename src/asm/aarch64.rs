@@ -867,9 +867,116 @@ pub(super) fn sign_mag(mut m00: u64, mut m01: u64, mut m10: u64, mut m11: u64) -
     [m00, m01, m10, m11, s00, s01, s10, s11]
 }
 
+/// One row of the update of `f` and `g` by a transition matrix:
+/// `(m0 · f + m1 · g) / 2^59`, an exact division, on five-word signed values.
+///
+/// `f` and `g` are five words each, the top word being the sign word (zero or
+/// all ones, since the rounds keep them below `2^256` in magnitude). `m0` and
+/// `m1` are the row's magnitudes and `s0` and `s1` its sign masks, from
+/// `sign_mag`. A negative entry multiplies the complement of its operand under
+/// the mask, with the magnitude added as the initial carry. The 320-bit sum is
+/// accumulated digit by digit with a two-word carry and shifted right by 59 as
+/// it is stored, the top word arithmetically. It is s2n-bignum's `f`/`g` update
+/// on named registers, one row at a time.
+#[inline(always)]
+// Called only by its test until the inversion's driver composes it.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(super) fn fg_row(f: &[u64; 5], g: &[u64; 5], m0: u64, m1: u64, s0: u64, s1: u64) -> [u64; 5] {
+    let (d0, d1, d2, d3, d4): (u64, u64, u64, u64, u64);
+    // SAFETY: register-only arithmetic with declared inputs and outputs;
+    // no memory or stack access and no data-dependent control flow.
+    unsafe {
+        asm!(
+            // The initial carry: the magnitude of each negative entry.
+            "and {lo}, {m0}, {s0}",
+            "and {w}, {m1}, {s1}",
+            "add {d0}, {lo}, {w}",
+            // Digit 0.
+            "eor {w}, {f0}, {s0}",
+            "mul {lo}, {w}, {m0}",
+            "umulh {w}, {w}, {m0}",
+            "adds {d0}, {d0}, {lo}",
+            "adc {d1}, xzr, {w}",
+            "eor {w}, {g0}, {s1}",
+            "mul {lo}, {w}, {m1}",
+            "umulh {w}, {w}, {m1}",
+            "adds {d0}, {d0}, {lo}",
+            "adc {d1}, {d1}, {w}",
+            // Digit 1, then the shifted digit 0.
+            "eor {w}, {f1}, {s0}",
+            "mul {lo}, {w}, {m0}",
+            "umulh {w}, {w}, {m0}",
+            "adds {d1}, {d1}, {lo}",
+            "adc {d2}, xzr, {w}",
+            "eor {w}, {g1}, {s1}",
+            "mul {lo}, {w}, {m1}",
+            "umulh {w}, {w}, {m1}",
+            "adds {d1}, {d1}, {lo}",
+            "adc {d2}, {d2}, {w}",
+            "extr {d0}, {d1}, {d0}, #59",
+            // Digit 2, then the shifted digit 1.
+            "eor {w}, {f2}, {s0}",
+            "mul {lo}, {w}, {m0}",
+            "umulh {w}, {w}, {m0}",
+            "adds {d2}, {d2}, {lo}",
+            "adc {d3}, xzr, {w}",
+            "eor {w}, {g2}, {s1}",
+            "mul {lo}, {w}, {m1}",
+            "umulh {w}, {w}, {m1}",
+            "adds {d2}, {d2}, {lo}",
+            "adc {d3}, {d3}, {w}",
+            "extr {d1}, {d2}, {d1}, #59",
+            // Digits 3 and 4: the sign word contributes minus the magnitude when
+            // the complemented operand is negative.
+            "eor {w}, {f3}, {s0}",
+            "eor {d4}, {f4}, {s0}",
+            "and {d4}, {d4}, {m0}",
+            "neg {d4}, {d4}",
+            "mul {lo}, {w}, {m0}",
+            "umulh {w}, {w}, {m0}",
+            "adds {d3}, {d3}, {lo}",
+            "adc {d4}, {d4}, {w}",
+            "eor {w}, {g3}, {s1}",
+            "eor {lo}, {g4}, {s1}",
+            "and {lo}, {lo}, {m1}",
+            "sub {d4}, {d4}, {lo}",
+            "mul {lo}, {w}, {m1}",
+            "umulh {w}, {w}, {m1}",
+            "adds {d3}, {d3}, {lo}",
+            "adc {d4}, {d4}, {w}",
+            "extr {d2}, {d3}, {d2}, #59",
+            "extr {d3}, {d4}, {d3}, #59",
+            "asr {d4}, {d4}, #59",
+            f0 = in(reg) f[0],
+            f1 = in(reg) f[1],
+            f2 = in(reg) f[2],
+            f3 = in(reg) f[3],
+            f4 = in(reg) f[4],
+            g0 = in(reg) g[0],
+            g1 = in(reg) g[1],
+            g2 = in(reg) g[2],
+            g3 = in(reg) g[3],
+            g4 = in(reg) g[4],
+            m0 = in(reg) m0,
+            m1 = in(reg) m1,
+            s0 = in(reg) s0,
+            s1 = in(reg) s1,
+            lo = out(reg) _,
+            w = out(reg) _,
+            d0 = out(reg) d0,
+            d1 = out(reg) d1,
+            d2 = out(reg) d2,
+            d3 = out(reg) d3,
+            d4 = out(reg) d4,
+            options(pure, nomem, nostack),
+        );
+    }
+    [d0, d1, d2, d3, d4]
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{divstep59, sign_mag};
+    use super::{divstep59, fg_row, sign_mag};
     use core::arch::asm;
 
     /// The four entries of a transition matrix as words, then the expected magnitudes and
@@ -1095,6 +1202,31 @@ mod tests {
     fn divstep59_known_answers() {
         for [d, f0, g0, d2, m00, m01, m10, m11] in DIVSTEP59_VECTORS {
             assert_eq!(divstep59(d, f0, g0), [d2, m00, m01, m10, m11]);
+        }
+    }
+
+    /// `f`, `g` (five words each), a row's magnitudes and masks, then the expected row of the update, from the round model on both fields.
+    const FG_ROW_VECTORS: [[u64; 19]; 12] = [
+        [0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000, 0x0000000000000000, 0xd83bd700ffffffe5, 0x628ddd6b04e1ba16, 0xfffffffffffffffc, 0x3fffffffffffffff, 0x0000000000000000, 0x0032000000000000, 0x004a000000000000, 0xffffffffffffffff, 0x0000000000000000, 0x66d2cf12ffffffff, 0xddb96703f6b306e4, 0xffffffffffffffff, 0x00bfffffffffffff, 0x0000000000000000],
+        [0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000, 0x0000000000000000, 0xd83bd700ffffffe5, 0x628ddd6b04e1ba16, 0xfffffffffffffffc, 0x3fffffffffffffff, 0x0000000000000000, 0x000000000000001b, 0x0000000000000001, 0xffffffffffffffff, 0xffffffffffffffff, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0xffffffffffffff20, 0xffffffffffffffff],
+        [0x66d2cf12ffffffff, 0xddb96703f6b306e4, 0xffffffffffffffff, 0x00bfffffffffffff, 0x0000000000000000, 0xffffffffff900000, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0x0000000000000000, 0x0000008000000000, 0x0000000000000000, 0x0000000000000000, 0xfffffffffffffff9, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+        [0x66d2cf12ffffffff, 0xddb96703f6b306e4, 0xffffffffffffffff, 0x00bfffffffffffff, 0x0000000000000000, 0xffffffffff900000, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0x0000000000100000, 0x00000058b6db6db7, 0xffffffffffffffff, 0x0000000000000000, 0xf81299f237325a5d, 0x0000000000448d31, 0x0000000000000000, 0xfffffffffffe8000, 0xffffffffffffffff],
+        [0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0800000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000, 0x0000000000000000],
+        [0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+        [0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0800000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000, 0x0000000000000000],
+        [0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+        [0xdb241905fa248697, 0xfffffffffffffff9, 0x872517d55c1331ff, 0xfffffffffffffff4, 0xffffffffffffffff, 0x599ff9f880e4b2a4, 0xfffffffffffffffe, 0xeb5679967b925eff, 0xfffffffffffffffc, 0xffffffffffffffff, 0x000000003a8f9e70, 0x000000004e1e1b64, 0xffffffffffffffff, 0x0000000000000000, 0x0000001cdd290a4d, 0x3d11b618fe078000, 0x00000035e519a92f, 0x0000000000000000, 0x0000000000000000],
+        [0xdb241905fa248697, 0xfffffffffffffff9, 0x872517d55c1331ff, 0xfffffffffffffff4, 0xffffffffffffffff, 0x599ff9f880e4b2a4, 0xfffffffffffffffe, 0xeb5679967b925eff, 0xfffffffffffffffc, 0xffffffffffffffff, 0x000000000180e7d4, 0x0000000020f767b5, 0xffffffffffffffff, 0xffffffffffffffff, 0x00000007f42196ae, 0xc132e71048cda000, 0x0000000ed9e178b1, 0x0000000000000000, 0x0000000000000000],
+        [0xe71681d6d322b145, 0x000000000000577d, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x74b8fd762c36d47e, 0x00000000000014ae, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x000000004cd19864, 0x000000004b009dfa, 0xffffffffffffffff, 0xffffffffffffffff, 0xfffbf5fa922aef71, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+        [0xe71681d6d322b145, 0x000000000000577d, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x74b8fd762c36d47e, 0x00000000000014ae, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x000000001c7af63e, 0x000000003677931b, 0xffffffffffffffff, 0xffffffffffffffff, 0xfffe3bb7def33478, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+    ];
+
+    #[test]
+    fn fg_row_known_answers() {
+        for row in FG_ROW_VECTORS {
+            let f: [u64; 5] = row[0..5].try_into().expect("five words");
+            let g: [u64; 5] = row[5..10].try_into().expect("five words");
+            assert_eq!(fg_row(&f, &g, row[10], row[11], row[12], row[13]), row[14..19]);
         }
     }
 }

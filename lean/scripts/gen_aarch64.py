@@ -211,6 +211,25 @@ INLINE_ROUTINES = [
             "their sign masks `s00` to `s11`."
         ),
     ),
+    RoutineConfig(
+        "fg_row",
+        "fgRowBlock",
+        (
+            "The inline `asm!` block of `fg_row`: one row of the update of `f` and `g`, "
+            "`(m0 f + m1 g) / 2^59` on five-word signed values, from the row's magnitudes `m0`, `m1` "
+            "and sign masks `s0`, `s1`, as a 320-bit accumulation shifted right by 59."
+        ),
+        (
+            ("f", "Signed5"),
+            ("g", "Signed5"),
+            ("m0", "Nat"),
+            ("m1", "Nat"),
+            ("s0", "Nat"),
+            ("s1", "Nat"),
+        ),
+        result="Signed5",
+        result_fields=("l0", "l1", "l2", "l3", "l4"),
+    ),
 ]
 
 # The macro arms (see `asm_source.parse_macros`) that are transcribed as round definitions,
