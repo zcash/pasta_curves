@@ -130,9 +130,6 @@ if_asm_supported! {
     #[cfg(any(target_arch = "x86_64", doc))]
     mod x86_64;
 
-    #[cfg(any(target_arch = "aarch64", doc))]
-    mod inversion;
-
     // The tests use std only to catch the debug assertions they check, so a release test
     // build stays free of it.
     #[cfg(all(test, debug_assertions))]
