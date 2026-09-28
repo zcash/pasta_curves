@@ -249,6 +249,17 @@ INLINE_ROUTINES = [
         result="Signed5",
         result_fields=("l0", "l1", "l2", "l3", "l4"),
     ),
+    RoutineConfig(
+        "amontred",
+        "amontredBlock",
+        (
+            "The inline `asm!` block of `amontred`: the almost-Montgomery reduction of a five-word "
+            "signed value by one word, `(s + w p) / 2^64` for `s = t + 2^61 p` and "
+            "`w = s inv mod 2^64`, as four words. For the Pasta shape no top carry is captured and "
+            "no conditional subtraction follows."
+        ),
+        (("t", "Signed5"), ("modulus", "Limbs"), ("inv", "Nat")),
+    ),
 ]
 
 # The macro arms (see `asm_source.parse_macros`) that are transcribed as round definitions,

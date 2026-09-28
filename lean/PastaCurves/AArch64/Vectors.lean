@@ -358,4 +358,89 @@ theorem deRow_vectors_reproduced : deRowFailures = [] := by decide +kernel
 #guard_msgs in
 #eval deRowFailures
 
+/-! ## The almost-Montgomery reduction block -/
+
+/-- A row combination, the field, and the expected reduction, as in the crate's
+`amontred_known_answers`. -/
+def amontredVectors : List (Signed5 × PastaField × Limbs) := [
+  (⟨0x4b52000000000000, 0xf53e9f8f819a3464, 0x8c88e8ee762e0853, 0x60d3a4b3b5a55058,
+    0x00082faa475c1c1a⟩, pallasBase, ⟨0xadb482ad66b03465, 0xa4b9d87ba80679cc, 0x60d3a4b3b5a55058,
+    0x2d33afaa475c1c1a⟩),
+  (⟨0x65a0a7c31af7b9cb, 0xb0be81dcc8893e6a, 0x8b9cb4e58cc0887a, 0xe3ae21a15990f0da,
+    0xffffffffffffffff⟩, pallasBase, ⟨0x7806e5a0c4c00001, 0xadeb423bad68faee, 0x23ae21a15990f0da,
+    0x400eda4af942118d⟩),
+  (⟨0x0000008000000000, 0x0e7c8dcc9e987680, 0xe04a67da0015e78c, 0x00000000011234c7,
+    0x0000002000000000⟩, pallasBase, ⟨0x012d30ed08000001, 0x029100c4e61662a3, 0x00000000011234c8,
+    0x4000000000000000⟩),
+  (⟨0xc47fbd36e0cb6db7, 0x34c05fd325d0d03d, 0x6d486e24e511ab96, 0x198a0ab7153a88b6,
+    0x000000162db47e90⟩, pallasBase, ⟨0xcd5f403284675db7, 0x722dece6c4bee381, 0x598a0ab7153a88b6,
+    0x092489633581a322⟩),
+  (⟨0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+    0x0000000000000000⟩, pallasBase, ⟨0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000,
+    0x4000000000000000⟩),
+  (⟨0x9a5f583ce5084635, 0x4f417e233776c195, 0x74634b1a733f7785, 0x1c51de5ea66f0f25,
+    0x0000000000000000⟩, pallasBase, ⟨0xba537c393b400001, 0x96a1efbc6530f748, 0xdc51de5ea66f0f25,
+    0x3ff125b506bdee72⟩),
+  (⟨0x0800000000000000, 0xdcc9698768000000, 0x011234c7e04a67c8, 0x0000000000000000,
+    0x0200000000000000⟩, pallasBase, ⟨0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000,
+    0x4000000000000000⟩),
+  (⟨0x993130ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000,
+    0x0000000000000000⟩, pallasBase, ⟨0xb4becc383c4c0001, 0x22460fe1a55cd3e7, 0x0000000000000000,
+    0x3fff000000000000⟩),
+  (⟨0x1737410aa35dfa90, 0xb8e66c17d71f7ca3, 0xd8211d46aeb7b8ab, 0xd6e9e255bb861dfb,
+    0x0000000000d0e5bc⟩, pallasBase, ⟨0x6e3d45a481a7dcc4, 0xf643efa7a0c6948d, 0xd6e9e255bb861dfb,
+    0x38452d9157f96718⟩),
+  (⟨0xc0b26c8bf7e63aec, 0xbfc45c1c4733ea1c, 0x267edd41b4b9a6a1, 0xf2dd9e86b1ca270f,
+    0xfffffffffb928537⟩, pallasBase, ⟨0xdaef3d96915ccd46, 0x3178b9732fd6b26a, 0xf2dd9e86b1ca270f,
+    0x147e97fbfd98f67c⟩),
+  (⟨0x9ee787ac8aab8f82, 0x7c279d554451297d, 0x4a202205c178e33b, 0xa20ab2aa3e30dfa2,
+    0xffffffffe83e9a60⟩, pallasBase, ⟨0x55fb4a4f35158971, 0x67231724fb0356b4, 0x220ab2aa3e30dfa2,
+    0x362baceb4593b680⟩),
+  (⟨0x72dda29c687f5c37, 0x3d5ddd77e2361e16, 0x27f0f1b1b7be7085, 0xb23361418edf7439,
+    0xfffffffff638a4c3⟩, pallasBase, ⟨0xb4bb2db5fe7889f4, 0x30a4e02f8b124676, 0xf23361418edf7439,
+    0x104003139c18cdb5⟩),
+  (⟨0x5000000000000000, 0x8a49ac35c6db6db6, 0xa430681b4d385ce5, 0xdb6db6db6db6db6d,
+    0x01b6db6db6db6db6⟩, pallasBase, ⟨0x8398bdd8b6db6db7, 0xbbc0f148939d4828, 0xdb6db6db6db6db6d,
+    0x2db6db6db6db6db6⟩),
+  (⟨0x0800000000000000, 0xdcc9698768000000, 0x011234c7e04a67c8, 0x0000000000000000,
+    0x0200000000000000⟩, pallasBase, ⟨0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000,
+    0x4000000000000000⟩),
+  (⟨0xd800000000000000, 0x3c89dd0df800000e, 0xd27805d62999d9fb, 0x7797a99bc3c95d18,
+    0xff6d41af7b9cb714⟩, pallasBase, ⟨0x8c78ecb30000000f, 0xd7d30dbd8b0de0e7, 0x7797a99bc3c95d18,
+    0x096d41af7b9cb714⟩),
+  (⟨0x2000000000000000, 0xe6acb96a9ffffff1, 0x2c75c561f61bbe3b, 0x886856643c36a2e7,
+    0xfe92be50846348eb⟩, pallasBase, ⟨0x0cb44439fffffff2, 0x4a738b3e7e3f1834, 0x886856643c36a2e7,
+    0x3692be50846348eb⟩),
+  (⟨0x5000000000000000, 0x3a421a744eb52b5d, 0x69044e75f532ae45, 0x4c1c894cf5cc5f05,
+    0x0105c75a616fc8d4⟩, pallasBase, ⟨0x33912c173eb52b5e, 0x8094d7a33b979988, 0x4c1c894cf5cc5f05,
+    0x2d05c75a616fc8d4⟩),
+  (⟨0x5000000000000000, 0x31503b5e06db6db6, 0xa430681b4d1151be, 0xdb6db6db6db6db6d,
+    0x01b6db6db6db6db6⟩, vestaBase, ⟨0x81c0fd04b6db6db7, 0xbbc0f14893a785d6, 0xdb6db6db6db6db6d,
+    0x2db6db6db6db6db6⟩),
+  (⟨0x0800000000000000, 0xec62375908000000, 0x011234c7e04ca546, 0x0000000000000000,
+    0x0200000000000000⟩, vestaBase, ⟨0x8c46eb2100000001, 0x224698fc0994a8dd, 0x0000000000000000,
+    0x4000000000000000⟩),
+  (⟨0xe000000000000000, 0x4b0d9b9ae000000e, 0x6372701e07e781c8, 0x7fae231004ccf590,
+    0x016d41af7ccfdaa9⟩, vestaBase, ⟨0xfc9678ff0000000f, 0x67bb433d891a16e3, 0x7fae231004ccf590,
+    0x096d41af7ccfdaa9⟩),
+  (⟨0x2800000000000000, 0xa1549bbe27fffff1, 0x9d9fc4a9d865237e, 0x8051dceffb330a6f,
+    0x0092be5083302556⟩, vestaBase, ⟨0x8fb07221fffffff2, 0xba8b55be807a91f9, 0x8051dceffb330a6f,
+    0x3692be5083302556⟩),
+  (⟨0xb800000000000000, 0x9653095a95d0cf4a, 0x5c4aa55758cb3e0b, 0x7562671be840d861,
+    0x0053ce66fd1d1868⟩, vestaBase, ⟨0xe5c6fb7bddd0cf4b, 0x65ee805e3b7d0d89, 0x7562671be840d861,
+    0x1253ce66fd1d1868⟩)]
+
+/-- The indices of the vectors that the block's transcription does not reproduce. -/
+def amontredFailures : List Nat :=
+  (List.range amontredVectors.length).filter fun i =>
+    match amontredVectors[i]? with
+    | some (t, F, res) => amontredBlock t F.modulus F.inv != res
+    | none => false
+
+theorem amontred_vectors_reproduced : amontredFailures = [] := by decide +kernel
+
+/-- info: [] -/
+#guard_msgs in
+#eval amontredFailures
+
 end PastaCurves.AArch64
