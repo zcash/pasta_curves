@@ -19,54 +19,7 @@ set_option exponentiation.threshold 400
 
 namespace PastaCurves.AArch64
 
-open Inversion (SignMagRep)
-
--- BEGIN deRowBlock_spec lemmas
-/-- `eor` with the all-ones word complements a word. -/
-theorem eorw_ones (x : ℕ) (hx : x < 2^64) : eorw x (2^64 - 1) = 2^64 - 1 - x := by
-  unfold eorw
-  rw [show 2^64 - 1 - x = 2^64 - (x + 1) by omega]
-  apply Nat.eq_of_testBit_eq
-  intro i
-  rw [Nat.testBit_xor, Nat.testBit_two_pow_sub_one, Nat.testBit_two_pow_sub_succ hx]
-  by_cases hi : i < 64
-  · simp [hi]
-  · have hxi : x < 2^i := lt_of_lt_of_le hx (Nat.pow_le_pow_right (by decide) (by omega))
-    simp [hi, Nat.testBit_lt_two_pow hxi]
-
-/-- **Why the block's corrections give the signed product:** the block multiplies by the
-magnitude `|z|` and makes the product signed by complementing the words of `x` when `z` is
-negative. Since `|z| (2^256 - 1 - x) = 2^256 |z| - |z| - |z| x`, adding `|z|` in the low word and
-subtracting `2^256 |z|` in the top word leaves `-|z| x = z x`. When `z` is nonnegative the mask
-is zero, the words are unchanged, and both corrections vanish. This is that identity for one
-side of a row, so the block proof only accounts for the carries. -/
-theorem row_side (z : ℤ) (hz : |z| < 2^64) (x : Limbs) (hx : x.Bounded) (m s : ℕ)
-    (hrep : SignMagRep m s z) :
-    ((eorw x.l0 s + 2^64 * eorw x.l1 s + 2^128 * eorw x.l2 s + 2^192 * eorw x.l3 s : ℕ) : ℤ)
-        * m + (andw m s : ℤ) - 2^256 * (andw s m : ℤ) = z * x.toNat := by
-  obtain ⟨h0, h1, h2, h3⟩ := hx
-  obtain ⟨hm64, -⟩ := hrep.lt _ _ _ hz
-  unfold Limbs.toNat
-  rcases hrep with ⟨hs, hm⟩ | ⟨hs, hm⟩
-  · subst hs
-    simp only [eorw, andw, Nat.xor_zero, Nat.and_zero, Nat.zero_and]
-    push_cast
-    rw [← hm]
-    ring
-  · subst hs
-    have a1 : andw m (2^64 - 1) = m := by
-      unfold andw; rw [Nat.and_two_pow_sub_one_eq_mod, Nat.mod_eq_of_lt hm64]
-    have a2 : andw (2^64 - 1) m = m := by rw [andw, Nat.and_comm]; exact a1
-    have hsum : ((eorw x.l0 (2^64 - 1) + 2^64 * eorw x.l1 (2^64 - 1)
-        + 2^128 * eorw x.l2 (2^64 - 1) + 2^192 * eorw x.l3 (2^64 - 1) : ℕ) : ℤ)
-        = 2^256 - 1 - (x.l0 + 2^64 * x.l1 + 2^128 * x.l2 + 2^192 * x.l3) := by
-      rw [eorw_ones _ h0, eorw_ones _ h1, eorw_ones _ h2, eorw_ones _ h3]; omega
-    rw [hsum, a1, a2]
-    push_cast
-    rw [hm]
-    ring
-
--- END deRowBlock_spec lemmas
+open Inversion (SignMagRep row_side)
 
 -- BEGIN deRowBlock_spec statement
 /-- The row `a d + b e` of `updateDE` before its `amontred`, as the exact integer in five words.

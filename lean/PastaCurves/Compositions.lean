@@ -89,7 +89,7 @@ def invertRound (B : InvertBlocks) (modulus : Limbs) (inv : Nat) (st : InvertSta
 `f0 * u + g0 * v`, shifted arithmetically by 63, so all ones when the new `f` is negative and
 zero otherwise. -/
 def signWord (f0 g0 u v : Nat) : Nat :=
-  if (mulLo f0 u + mulLo g0 v) % regMod < 2^63 then 0 else regMod - 1
+  if addw (mulLo f0 u) (mulLo g0 v) < 2^63 then 0 else regMod - 1
 
 /-- `invert`: nine rounds from `(two_delta, f, g, d, e) = (1, p, x, 0, e0)`, then the last round,
 which computes only `d`, with the sign of the new `f` xored into the masks of its row, and reduces

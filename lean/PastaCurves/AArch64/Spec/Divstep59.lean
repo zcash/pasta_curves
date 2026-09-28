@@ -4,6 +4,7 @@ Copyright (c) 2026 the pasta_curves contributors (the transcription and the proo
 -/
 import PastaCurves.AArch64.Spec.Divstep
 import PastaCurves.Inversion.Divstep59
+import PastaCurves.Inversion.PackedWords
 
 /-!
 # Correctness of the inversion's 59-step block
@@ -27,16 +28,11 @@ set_option exponentiation.threshold 400
 
 namespace PastaCurves.AArch64
 
-open Inversion (State divstep divsteps M packedStart)
+open Inversion (State divstep divsteps M packedStart mul_word addw_word pack_f_word pack_g_word
+  asr20_word asr20_word44 decode_v20 decode_v19)
 
 -- BEGIN divstep59Block_spec lemmas
 /-! ## Words -/
-
-theorem mul_word (x y : ℕ) (X Y : ℤ) (hx : (x : ℤ) = X % 2^64) (hy : (y : ℤ) = Y % 2^64) :
-    ((x * y % 2^64 : ℕ) : ℤ) = (X * Y) % 2^64 := by
-  have h : ((x * y % 2^64 : ℕ) : ℤ) = ((x : ℤ) * y) % 2^64 := by push_cast; norm_num
-  rw [h, hx, hy]
-  exact (Int.mod_modEq X _).mul (Int.mod_modEq Y _)
 
 theorem madd_word (x y z : ℕ) (X Y Z : ℤ) (hx : (x : ℤ) = X % 2^64) (hy : (y : ℤ) = Y % 2^64)
     (hz : (z : ℤ) = Z % 2^64) : ((madd x y z : ℕ) : ℤ) = (X * Y + Z) % 2^64 := by
@@ -63,43 +59,6 @@ theorem msub_word (x y z : ℕ) (X Y Z : ℤ) (hx : (x : ℤ) = X % 2^64) (hy : 
   rw [h, hx, hy, hz]
   exact (Int.mod_modEq Z _).sub ((Int.mod_modEq X _).mul (Int.mod_modEq Y _))
 
-theorem addw_word (x y : ℕ) (X Y : ℤ) (hx : (x : ℤ) = X % 2^64) (hy : (y : ℤ) = Y % 2^64) :
-    ((addw x y : ℕ) : ℤ) = (X + Y) % 2^64 := by
-  have h : ((addw x y : ℕ) : ℤ) = ((x : ℤ) + y) % 2^64 := by
-    unfold addw regMod; push_cast; norm_num
-  rw [h, hx, hy]
-  exact (Int.mod_modEq X _).add (Int.mod_modEq Y _)
-
-/-- A bitwise or of a value below `2^k` with a multiple of `2^k` is their sum. -/
-theorem or_low_high (x k m : ℕ) (hx : x < 2^k) : x ||| 2^k * m = 2^k * m + x := by
-  apply Nat.eq_of_testBit_eq
-  intro j
-  rw [Nat.testBit_or, Nat.testBit_two_pow_mul, Nat.testBit_two_pow_mul_add m hx]
-  by_cases hj : j < k
-  · simp [hj, Nat.not_le.mpr hj]
-  · have hkj : k ≤ j := Nat.le_of_not_lt hj
-    have hxj : x < 2^j := lt_of_lt_of_le hx (Nat.pow_le_pow_right (by decide) hkj)
-    simp [hj, hkj, Nat.testBit_lt_two_pow hxj]
-
-/-- The packing of a low word: its low 20 bits with `-2^41` (resp. `-2^62`) in two's complement. -/
-theorem pack_f_word (f : ℕ) :
-    ((orrw (andw f 0xfffff) 0xfffffe0000000000 : ℕ) : ℤ) = (f % 2^20 - 2^41) % 2^64 := by
-  unfold orrw andw
-  rw [show (0xfffff : ℕ) = 2^20 - 1 by norm_num, Nat.and_two_pow_sub_one_eq_mod,
-    show (0xfffffe0000000000 : ℕ) = 2^20 * (2^21 * (2^23 - 1)) by norm_num,
-    or_low_high _ _ _ (Nat.mod_lt _ (by norm_num))]
-  push_cast
-  omega
-
-theorem pack_g_word (g : ℕ) :
-    ((orrw (andw g 0xfffff) 0xc000000000000000 : ℕ) : ℤ) = (g % 2^20 - 2^62) % 2^64 := by
-  unfold orrw andw
-  rw [show (0xfffff : ℕ) = 2^20 - 1 by norm_num, Nat.and_two_pow_sub_one_eq_mod,
-    show (0xc000000000000000 : ℕ) = 2^20 * (2^42 * 3) by norm_num,
-    or_low_high _ _ _ (Nat.mod_lt _ (by norm_num))]
-  push_cast
-  omega
-
 /-- `tst pg, #1` on the packed `g` word reads the parity of the packed `g`. -/
 theorem tst_one_z (w : ℕ) (W : ℤ) (hw : (w : ℤ) = W % 2^64) :
     (tstFlags (andw w 1)).z = if W % 2 = 0 then 1 else 0 := by
@@ -111,40 +70,27 @@ theorem tst_one_z (w : ℕ) (W : ℤ) (hw : (w : ℤ) = W % 2^64) :
   · rw [if_pos hp, if_pos (by omega)]
   · rw [if_neg hp, if_neg (by omega)]
 
-/-- `asr` by 20 of a word that is `2^20 X` modulo `2^64` leaves `X` modulo `2^44`. -/
-theorem asr20_word (w : ℕ) (X : ℤ) (hw : (w : ℤ) = (2^20 * X) % 2^64) :
-    ((asr w 20 : ℕ) : ℤ) % 2^44 = X % 2^44 := by
-  unfold asr; norm_num
-  split_ifs <;> omega
-
-/-- `asr` by 20 of a word that is `2^20 X` modulo `2^44` leaves `X` modulo `2^24`. -/
-theorem asr20_word44 (w : ℕ) (X : ℤ) (hw : (w : ℤ) % 2^44 = (2^20 * X) % 2^44) :
-    ((asr w 20 : ℕ) : ℤ) % 2^24 = X % 2^24 := by
-  unfold asr; norm_num
-  split_ifs <;> omega
-
 /-! ## The decoder -/
 
 /-- The decoder of a batch's packed word, for `k = 20`: `sbfx` at bit 21 of `w + 2^20` gives `-u`,
 and `asr` by 42 of `w + 2^20 + 2^41` gives `-v`, as words. The offsets round the `|φ| < 2^20`
-disturbance away, as Lemma 7 does with the opposite sign. -/
+disturbance away, as Lemma 7 does with the opposite sign. The `asr` half is the shared `decode_v20`.
+-/
 theorem decode20 (w : ℕ) (W φ u v : ℤ) (hw : (w : ℤ) = W % 2^64)
     (hW : W = φ - 2^21 * u - 2^42 * v) (hφ : |φ| < 2^20)
     (hu : -(2 : ℤ)^20 < u ∧ u ≤ 2^20) (hv : -(2 : ℤ)^20 < v ∧ v ≤ 2^20) :
     ((sbfx (addw w 0x100000) 21 21 : ℕ) : ℤ) = (-u) % 2^64 ∧
       ((asr (addw w (addw 0x100000 (lsl 0x100000 21))) 42 : ℕ) : ℤ) = (-v) % 2^64 := by
-  rw [abs_lt] at hφ
-  have hw64 : w < 2^64 := by omega
   have hc : addw 0x100000 (lsl 0x100000 21) = 2^20 + 2^41 := by decide
   rw [hc]
+  refine ⟨?_, decode_v20 w W φ u v hw hW hφ hu hv⟩
+  rw [abs_lt] at hφ
+  have hw64 : w < 2^64 := by omega
   have ha1 : addw w 0x100000 = (w + 2^20) % 2^64 := rfl
-  have ha2 : addw w (2^20 + 2^41) = (w + (2^20 + 2^41)) % 2^64 := rfl
-  unfold sbfx asr
-  rw [ha1, ha2]
+  unfold sbfx
+  rw [ha1]
   norm_num
-  constructor
-  · split_ifs <;> omega
-  · split_ifs <;> omega
+  split_ifs <;> omega
 
 /-- The decoder for `k = 19`: `sbfx` at bit 22 and `asr` by 43. -/
 theorem decode19 (w : ℕ) (W φ u v : ℤ) (hw : (w : ℤ) = W % 2^64)
@@ -152,18 +98,16 @@ theorem decode19 (w : ℕ) (W φ u v : ℤ) (hw : (w : ℤ) = W % 2^64)
     (hu : -(2 : ℤ)^19 < u ∧ u ≤ 2^19) (hv : -(2 : ℤ)^19 < v ∧ v ≤ 2^19) :
     ((sbfx (addw w 0x100000) 22 21 : ℕ) : ℤ) = (-u) % 2^64 ∧
       ((asr (addw w (addw 0x100000 (lsl 0x100000 21))) 43 : ℕ) : ℤ) = (-v) % 2^64 := by
-  rw [abs_lt] at hφ
-  have hw64 : w < 2^64 := by omega
   have hc : addw 0x100000 (lsl 0x100000 21) = 2^20 + 2^41 := by decide
   rw [hc]
+  refine ⟨?_, decode_v19 w W φ u v hw hW hφ hu hv⟩
+  rw [abs_lt] at hφ
+  have hw64 : w < 2^64 := by omega
   have ha1 : addw w 0x100000 = (w + 2^20) % 2^64 := rfl
-  have ha2 : addw w (2^20 + 2^41) = (w + (2^20 + 2^41)) % 2^64 := rfl
-  unfold sbfx asr
-  rw [ha1, ha2]
+  unfold sbfx
+  rw [ha1]
   norm_num
-  constructor
-  · split_ifs <;> omega
-  · split_ifs <;> omega
+  split_ifs <;> omega
 
 /-! ## Iterating the step -/
 

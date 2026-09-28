@@ -18,6 +18,7 @@ import PastaCurves.Inversion.HullData
 import PastaCurves.Inversion.HullCert
 import PastaCurves.Inversion.Correctness
 import PastaCurves.Inversion.SignMag
+import PastaCurves.Inversion.PackedWords
 import PastaCurves.Inversion.Composition
 import PastaCurves.AArch64
 import PastaCurves.X86_64
