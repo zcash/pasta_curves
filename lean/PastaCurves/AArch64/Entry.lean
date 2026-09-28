@@ -91,4 +91,19 @@ theorem sub_entry_spec (F : PastaField) (lhs rhs : Limbs) (hlhs : lhs.Bounded)
     ((isCanonical_iff lhs F.modulus hlhs F.bounded).1 hl)
     ((isCanonical_iff rhs F.modulus hrhs F.bounded).1 hr) _ rfl
 
+/-- The crate's `invert` at a Pasta field. The input is canonical, as the entry point asserts,
+and `v0` is `2^562 mod p`, as its contract requires. The result is canonical. For `x = 0` it is
+`0`; otherwise it is the Montgomery inverse, with `x * result ≡ R^2 (mod p)`. The termination
+bound of the divstep recurrence is a hypothesis, as in `montInv_spec`; the primality of `p` is
+`F.prime`. -/
+theorem invert_entry_spec (F : PastaField) (hbound : Inversion.TerminationBound 256)
+    (x : Limbs) (hx : x.Bounded) (h : isCanonical x F.modulus = true) (v0 : Limbs) (hv0 : v0 = Inversion.startV F) :
+    (invert x F.modulus F.inv v0).Bounded ∧
+      (invert x F.modulus F.inv v0).toNat < F.modulus.toNat ∧
+      (x.toNat = 0 → invert x F.modulus F.inv v0 = Limbs.ofNat 0) ∧
+      (x.toNat ≠ 0 →
+        x.toNat * (invert x F.modulus F.inv v0).toNat ≡ R^2 [MOD F.modulus.toNat]) := by
+  rw [hv0, invert_eq_model F x hx]
+  exact Inversion.montInv_spec F hbound x hx ((isCanonical_iff x F.modulus hx F.bounded).1 h)
+
 end PastaCurves.AArch64
