@@ -5,15 +5,19 @@
 # is what its JSON generates. The certificate JSON is also verified independently of Lean, in
 # exact arithmetic.
 #
-# Run from the repository root; exits non-zero on violation.
+# Run from the repository root; exits non-zero on violation. PYTHON selects the interpreter
+# (default: `python3` from PATH); no run leaves bytecode caches behind.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-python3 lean/scripts/gen.py --check
-python3 lean/scripts/gen.py --check-specs
-PYTHONDONTWRITEBYTECODE=1 python3 lean/scripts/test_gen.py
-PYTHONDONTWRITEBYTECODE=1 python3 lean/scripts/test_vectors.py
-PYTHONDONTWRITEBYTECODE=1 python3 lean/scripts/test_asm_source.py
+PYTHON=${PYTHON:-python3}
+export PYTHONDONTWRITEBYTECODE=1
+
+"$PYTHON" lean/scripts/gen.py --check
+"$PYTHON" lean/scripts/gen.py --check-specs
+"$PYTHON" lean/scripts/test_gen.py
+"$PYTHON" lean/scripts/test_vectors.py
+"$PYTHON" lean/scripts/test_asm_source.py
 echo "Lean transcription: current."
-python3 lean/scripts/gen_hull.py --check
-python3 lean/scripts/verify_hull_certificate.py
+"$PYTHON" lean/scripts/gen_hull.py --check
+"$PYTHON" lean/scripts/verify_hull_certificate.py
