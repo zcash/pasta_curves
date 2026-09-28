@@ -122,7 +122,7 @@ PastaCurves/Inversion/HullData.lean      GENERATED: the certificate's half-plane
 PastaCurves/Inversion/HullCert.lean      the certificate checked by the kernel; `terminationBound_256`
 PastaCurves/Inversion/Correctness.lean   Theorem 12 unconditionally: `montInv_correct`
 PastaCurves/Inversion/SignMag.lean       the sign-magnitude form of a matrix entry; the row identities on words
-PastaCurves/Inversion/PackedWords.lean   the packed step, packing, and decoder on words, for any instruction set
+PastaCurves/Inversion/PackedWords.lean   the packed step on words, its packing and decoder, and its batch iteration
 PastaCurves/Inversion/Composition.lean   `InvertBlocks.Spec`, and `invert` equals the model over blocks that meet it
 PastaCurves/AArch64.lean                 AArch64 umbrella module
 PastaCurves/AArch64/Semantics.lean       AArch64 instruction semantics
