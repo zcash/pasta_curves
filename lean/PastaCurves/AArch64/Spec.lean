@@ -8,6 +8,7 @@ import PastaCurves.AArch64.Spec.Mul
 import PastaCurves.AArch64.Spec.Square
 import PastaCurves.AArch64.Spec.CondSub
 import PastaCurves.AArch64.Spec.Amontred
+import PastaCurves.AArch64.Spec.SignMag
 
 /-!
 # Correctness of the transcribed Pasta Montgomery blocks
