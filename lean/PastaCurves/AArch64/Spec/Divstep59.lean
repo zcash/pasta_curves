@@ -167,530 +167,229 @@ theorem divstep59Block_spec (two_delta f0 g0 : ℕ) (s : State) (hsf : s.f % 2 =
   unfold divstep59Block at hres
   lift_lets -merge at hres
   -- two_delta': argument
-  extract_lets -merge +onlyGivenNames two_delta' at hres
-  have e_two_delta' : two_delta' = two_delta := rfl
-  clear_value two_delta'
-  have b_two_delta' : two_delta' < 2^64 := by rw [e_two_delta']; exact htwo_delta
+  word_step two_delta' := two_delta using htwo_delta
   -- f: argument
-  extract_lets -merge +onlyGivenNames f at hres
-  have e_f : f = f0 := rfl
-  clear_value f
-  have b_f : f < 2^64 := by rw [e_f]; exact hf0
+  word_step f := f0 using hf0
   -- g: argument
-  extract_lets -merge +onlyGivenNames g at hres
-  have e_g : g = g0 := rfl
-  clear_value g
-  have b_g : g < 2^64 := by rw [e_g]; exact hg0
+  word_step g := g0 using hg0
   -- pf: and pf,f,#0xfffff
-  extract_lets -merge +onlyGivenNames pf at hres
-  have e_pf : pf = andw f 0xfffff := rfl
-  clear_value pf
-  have b_pf : pf < 2^64 := by rw [e_pf]; exact andw_lt f 0xfffff b_f (by decide)
+  word_step pf := andw f 0xfffff using andw_lt f 0xfffff b_f (by decide)
   -- pf_1: orr pf,pf,#0xfffffe0000000000
-  extract_lets -merge +onlyGivenNames pf_1 at hres
-  have e_pf_1 : pf_1 = orrw pf 0xfffffe0000000000 := rfl
-  clear_value pf_1
-  have b_pf_1 : pf_1 < 2^64 := by rw [e_pf_1]; exact orrw_lt pf 0xfffffe0000000000 b_pf (by decide)
+  word_step pf_1 := orrw pf 0xfffffe0000000000 using orrw_lt pf 0xfffffe0000000000 b_pf (by decide)
   -- pg: and pg,g,#0xfffff
-  extract_lets -merge +onlyGivenNames pg at hres
-  have e_pg : pg = andw g 0xfffff := rfl
-  clear_value pg
-  have b_pg : pg < 2^64 := by rw [e_pg]; exact andw_lt g 0xfffff b_g (by decide)
+  word_step pg := andw g 0xfffff using andw_lt g 0xfffff b_g (by decide)
   -- pg_1: orr pg,pg,#0xc000000000000000
-  extract_lets -merge +onlyGivenNames pg_1 at hres
-  have e_pg_1 : pg_1 = orrw pg 0xc000000000000000 := rfl
-  clear_value pg_1
-  have b_pg_1 : pg_1 < 2^64 := by rw [e_pg_1]; exact orrw_lt pg 0xc000000000000000 b_pg (by decide)
+  word_step pg_1 := orrw pg 0xc000000000000000 using orrw_lt pg 0xc000000000000000 b_pg (by decide)
   -- fl: tst pg,#1
-  extract_lets -merge +onlyGivenNames fl at hres
-  have e_fl : fl = tstFlags (andw pg_1 1) := rfl
-  clear_value fl
+  word_step fl := tstFlags (andw pg_1 1)
   -- step19: divstep!(), invocations 1 to 19
-  extract_lets -merge +onlyGivenNames step19 at hres
-  have e_step19 : step19 = divstepRound^[19] ⟨two_delta', pf_1, pg_1, fl⟩ := rfl
-  clear_value step19
+  word_step step19 := divstepRound^[19] ⟨two_delta', pf_1, pg_1, fl⟩
   -- two_delta_1: divstep!(), invocations 1 to 19 output
-  extract_lets -merge +onlyGivenNames two_delta_1 at hres
-  have e_two_delta_1 : two_delta_1 = step19.two_delta := rfl
-  clear_value two_delta_1
+  word_step two_delta_1 := step19.two_delta
   -- pf_2: divstep!(), invocations 1 to 19 output
-  extract_lets -merge +onlyGivenNames pf_2 at hres
-  have e_pf_2 : pf_2 = step19.f := rfl
-  clear_value pf_2
+  word_step pf_2 := step19.f
   -- pg_2: divstep!(), invocations 1 to 19 output
-  extract_lets -merge +onlyGivenNames pg_2 at hres
-  have e_pg_2 : pg_2 = step19.g := rfl
-  clear_value pg_2
+  word_step pg_2 := step19.g
   -- fl_1: divstep!(), invocations 1 to 19 output
-  extract_lets -merge +onlyGivenNames fl_1 at hres
-  have e_fl_1 : fl_1 = step19.fl := rfl
-  clear_value fl_1
+  word_step fl_1 := step19.fl
   -- step20: divstep!(last), invocation 20
-  extract_lets -merge +onlyGivenNames step20 at hres
-  have e_step20 : step20 = divstepLast ⟨two_delta_1, pf_2, pg_2, fl_1⟩ := rfl
-  clear_value step20
+  word_step step20 := divstepLast ⟨two_delta_1, pf_2, pg_2, fl_1⟩
   -- two_delta_2: divstep!(last), invocation 20 output
-  extract_lets -merge +onlyGivenNames two_delta_2 at hres
-  have e_two_delta_2 : two_delta_2 = step20.two_delta := rfl
-  clear_value two_delta_2
+  word_step two_delta_2 := step20.two_delta
   -- pf_3: divstep!(last), invocation 20 output
-  extract_lets -merge +onlyGivenNames pf_3 at hres
-  have e_pf_3 : pf_3 = step20.f := rfl
-  clear_value pf_3
+  word_step pf_3 := step20.f
   -- pg_3: divstep!(last), invocation 20 output
-  extract_lets -merge +onlyGivenNames pg_3 at hres
-  have e_pg_3 : pg_3 = step20.g := rfl
-  clear_value pg_3
+  word_step pg_3 := step20.g
   -- a00: add a00,pf,#0x100,lsl #12
-  extract_lets -merge +onlyGivenNames a00 at hres
-  have e_a00 : a00 = addw pf_3 0x100000 := rfl
-  clear_value a00
-  have b_a00 : a00 < 2^64 := by rw [e_a00]; exact addw_lt pf_3 0x100000
+  word_step a00 := addw pf_3 0x100000 using addw_lt pf_3 0x100000
   -- a00_1: sbfx a00,a00,#21,#21
-  extract_lets -merge +onlyGivenNames a00_1 at hres
-  have e_a00_1 : a00_1 = sbfx a00 21 21 := rfl
-  clear_value a00_1
-  have b_a00_1 : a00_1 < 2^64 := by rw [e_a00_1]; exact sbfx_lt a00 21 21 b_a00
+  word_step a00_1 := sbfx a00 21 21 using sbfx_lt a00 21 21 b_a00
   -- a11: mov a11,#0x100000
-  extract_lets -merge +onlyGivenNames a11 at hres
-  have e_a11 : a11 = 0x100000 := rfl
-  clear_value a11
-  have b_a11 : a11 < 2^64 := by rw [e_a11]; decide
+  word_step a11 := 0x100000 using (by decide)
   -- a11_1: add a11,a11,a11,lsl #21
-  extract_lets -merge +onlyGivenNames a11_1 at hres
-  have e_a11_1 : a11_1 = addw a11 (lsl a11 21) := rfl
-  clear_value a11_1
-  have b_a11_1 : a11_1 < 2^64 := by rw [e_a11_1]; exact addw_lt a11 (lsl a11 21)
+  word_step a11_1 := addw a11 (lsl a11 21) using addw_lt a11 (lsl a11 21)
   -- a01: add a01,pf,a11
-  extract_lets -merge +onlyGivenNames a01 at hres
-  have e_a01 : a01 = addw pf_3 a11_1 := rfl
-  clear_value a01
-  have b_a01 : a01 < 2^64 := by rw [e_a01]; exact addw_lt pf_3 a11_1
+  word_step a01 := addw pf_3 a11_1 using addw_lt pf_3 a11_1
   -- a01_1: asr a01,a01,#42
-  extract_lets -merge +onlyGivenNames a01_1 at hres
-  have e_a01_1 : a01_1 = asr a01 42 := rfl
-  clear_value a01_1
-  have b_a01_1 : a01_1 < 2^64 := by rw [e_a01_1]; exact asr_lt a01 42 b_a01
+  word_step a01_1 := asr a01 42 using asr_lt a01 42 b_a01
   -- a10: add a10,pg,#0x100,lsl #12
-  extract_lets -merge +onlyGivenNames a10 at hres
-  have e_a10 : a10 = addw pg_3 0x100000 := rfl
-  clear_value a10
-  have b_a10 : a10 < 2^64 := by rw [e_a10]; exact addw_lt pg_3 0x100000
+  word_step a10 := addw pg_3 0x100000 using addw_lt pg_3 0x100000
   -- a10_1: sbfx a10,a10,#21,#21
-  extract_lets -merge +onlyGivenNames a10_1 at hres
-  have e_a10_1 : a10_1 = sbfx a10 21 21 := rfl
-  clear_value a10_1
-  have b_a10_1 : a10_1 < 2^64 := by rw [e_a10_1]; exact sbfx_lt a10 21 21 b_a10
+  word_step a10_1 := sbfx a10 21 21 using sbfx_lt a10 21 21 b_a10
   -- a11_2: add a11,pg,a11
-  extract_lets -merge +onlyGivenNames a11_2 at hres
-  have e_a11_2 : a11_2 = addw pg_3 a11_1 := rfl
-  clear_value a11_2
-  have b_a11_2 : a11_2 < 2^64 := by rw [e_a11_2]; exact addw_lt pg_3 a11_1
+  word_step a11_2 := addw pg_3 a11_1 using addw_lt pg_3 a11_1
   -- a11_3: asr a11,a11,#42
-  extract_lets -merge +onlyGivenNames a11_3 at hres
-  have e_a11_3 : a11_3 = asr a11_2 42 := rfl
-  clear_value a11_3
-  have b_a11_3 : a11_3 < 2^64 := by rw [e_a11_3]; exact asr_lt a11_2 42 b_a11_2
+  word_step a11_3 := asr a11_2 42 using asr_lt a11_2 42 b_a11_2
   -- t: mul t,a00,f
-  extract_lets -merge +onlyGivenNames t at hres
-  have e_t : t = a00_1 * f % 2^64 := rfl
-  clear_value t
-  have b_t : t < 2^64 := by rw [e_t]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step t := a00_1 * f % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   -- t2: mul t2,a01,g
-  extract_lets -merge +onlyGivenNames t2 at hres
-  have e_t2 : t2 = a01_1 * g % 2^64 := rfl
-  clear_value t2
-  have b_t2 : t2 < 2^64 := by rw [e_t2]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step t2 := a01_1 * g % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   -- f_1: mul f,a10,f
-  extract_lets -merge +onlyGivenNames f_1 at hres
-  have e_f_1 : f_1 = a10_1 * f % 2^64 := rfl
-  clear_value f_1
-  have b_f_1 : f_1 < 2^64 := by rw [e_f_1]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step f_1 := a10_1 * f % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   -- g_1: mul g,a11,g
-  extract_lets -merge +onlyGivenNames g_1 at hres
-  have e_g_1 : g_1 = a11_3 * g % 2^64 := rfl
-  clear_value g_1
-  have b_g_1 : g_1 < 2^64 := by rw [e_g_1]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step g_1 := a11_3 * g % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   -- pf_4: add pf,t,t2
-  extract_lets -merge +onlyGivenNames pf_4 at hres
-  have e_pf_4 : pf_4 = addw t t2 := rfl
-  clear_value pf_4
-  have b_pf_4 : pf_4 < 2^64 := by rw [e_pf_4]; exact addw_lt t t2
+  word_step pf_4 := addw t t2 using addw_lt t t2
   -- pg_4: add pg,f,g
-  extract_lets -merge +onlyGivenNames pg_4 at hres
-  have e_pg_4 : pg_4 = addw f_1 g_1 := rfl
-  clear_value pg_4
-  have b_pg_4 : pg_4 < 2^64 := by rw [e_pg_4]; exact addw_lt f_1 g_1
+  word_step pg_4 := addw f_1 g_1 using addw_lt f_1 g_1
   -- f_2: asr f,pf,#20
-  extract_lets -merge +onlyGivenNames f_2 at hres
-  have e_f_2 : f_2 = asr pf_4 20 := rfl
-  clear_value f_2
-  have b_f_2 : f_2 < 2^64 := by rw [e_f_2]; exact asr_lt pf_4 20 b_pf_4
+  word_step f_2 := asr pf_4 20 using asr_lt pf_4 20 b_pf_4
   -- g_2: asr g,pg,#20
-  extract_lets -merge +onlyGivenNames g_2 at hres
-  have e_g_2 : g_2 = asr pg_4 20 := rfl
-  clear_value g_2
-  have b_g_2 : g_2 < 2^64 := by rw [e_g_2]; exact asr_lt pg_4 20 b_pg_4
+  word_step g_2 := asr pg_4 20 using asr_lt pg_4 20 b_pg_4
   -- pf_5: and pf,f,#0xfffff
-  extract_lets -merge +onlyGivenNames pf_5 at hres
-  have e_pf_5 : pf_5 = andw f_2 0xfffff := rfl
-  clear_value pf_5
-  have b_pf_5 : pf_5 < 2^64 := by rw [e_pf_5]; exact andw_lt f_2 0xfffff b_f_2 (by decide)
+  word_step pf_5 := andw f_2 0xfffff using andw_lt f_2 0xfffff b_f_2 (by decide)
   -- pf_6: orr pf,pf,#0xfffffe0000000000
-  extract_lets -merge +onlyGivenNames pf_6 at hres
-  have e_pf_6 : pf_6 = orrw pf_5 0xfffffe0000000000 := rfl
-  clear_value pf_6
-  have b_pf_6 : pf_6 < 2^64 := by rw [e_pf_6]; exact orrw_lt pf_5 0xfffffe0000000000 b_pf_5 (by decide)
+  word_step pf_6 := orrw pf_5 0xfffffe0000000000 using orrw_lt pf_5 0xfffffe0000000000 b_pf_5 (by decide)
   -- pg_5: and pg,g,#0xfffff
-  extract_lets -merge +onlyGivenNames pg_5 at hres
-  have e_pg_5 : pg_5 = andw g_2 0xfffff := rfl
-  clear_value pg_5
-  have b_pg_5 : pg_5 < 2^64 := by rw [e_pg_5]; exact andw_lt g_2 0xfffff b_g_2 (by decide)
+  word_step pg_5 := andw g_2 0xfffff using andw_lt g_2 0xfffff b_g_2 (by decide)
   -- pg_6: orr pg,pg,#0xc000000000000000
-  extract_lets -merge +onlyGivenNames pg_6 at hres
-  have e_pg_6 : pg_6 = orrw pg_5 0xc000000000000000 := rfl
-  clear_value pg_6
-  have b_pg_6 : pg_6 < 2^64 := by rw [e_pg_6]; exact orrw_lt pg_5 0xc000000000000000 b_pg_5 (by decide)
+  word_step pg_6 := orrw pg_5 0xc000000000000000 using orrw_lt pg_5 0xc000000000000000 b_pg_5 (by decide)
   -- fl_2: tst pg,#1
-  extract_lets -merge +onlyGivenNames fl_2 at hres
-  have e_fl_2 : fl_2 = tstFlags (andw pg_6 1) := rfl
-  clear_value fl_2
+  word_step fl_2 := tstFlags (andw pg_6 1)
   -- step39: divstep!(), invocations 21 to 39
-  extract_lets -merge +onlyGivenNames step39 at hres
-  have e_step39 : step39 = divstepRound^[19] ⟨two_delta_2, pf_6, pg_6, fl_2⟩ := rfl
-  clear_value step39
+  word_step step39 := divstepRound^[19] ⟨two_delta_2, pf_6, pg_6, fl_2⟩
   -- two_delta_3: divstep!(), invocations 21 to 39 output
-  extract_lets -merge +onlyGivenNames two_delta_3 at hres
-  have e_two_delta_3 : two_delta_3 = step39.two_delta := rfl
-  clear_value two_delta_3
+  word_step two_delta_3 := step39.two_delta
   -- pf_7: divstep!(), invocations 21 to 39 output
-  extract_lets -merge +onlyGivenNames pf_7 at hres
-  have e_pf_7 : pf_7 = step39.f := rfl
-  clear_value pf_7
+  word_step pf_7 := step39.f
   -- pg_7: divstep!(), invocations 21 to 39 output
-  extract_lets -merge +onlyGivenNames pg_7 at hres
-  have e_pg_7 : pg_7 = step39.g := rfl
-  clear_value pg_7
+  word_step pg_7 := step39.g
   -- fl_3: divstep!(), invocations 21 to 39 output
-  extract_lets -merge +onlyGivenNames fl_3 at hres
-  have e_fl_3 : fl_3 = step39.fl := rfl
-  clear_value fl_3
+  word_step fl_3 := step39.fl
   -- step40: divstep!(last), invocation 40
-  extract_lets -merge +onlyGivenNames step40 at hres
-  have e_step40 : step40 = divstepLast ⟨two_delta_3, pf_7, pg_7, fl_3⟩ := rfl
-  clear_value step40
+  word_step step40 := divstepLast ⟨two_delta_3, pf_7, pg_7, fl_3⟩
   -- two_delta_4: divstep!(last), invocation 40 output
-  extract_lets -merge +onlyGivenNames two_delta_4 at hres
-  have e_two_delta_4 : two_delta_4 = step40.two_delta := rfl
-  clear_value two_delta_4
+  word_step two_delta_4 := step40.two_delta
   -- pf_8: divstep!(last), invocation 40 output
-  extract_lets -merge +onlyGivenNames pf_8 at hres
-  have e_pf_8 : pf_8 = step40.f := rfl
-  clear_value pf_8
+  word_step pf_8 := step40.f
   -- pg_8: divstep!(last), invocation 40 output
-  extract_lets -merge +onlyGivenNames pg_8 at hres
-  have e_pg_8 : pg_8 = step40.g := rfl
-  clear_value pg_8
+  word_step pg_8 := step40.g
   -- b00: add b00,pf,#0x100,lsl #12
-  extract_lets -merge +onlyGivenNames b00 at hres
-  have e_b00 : b00 = addw pf_8 0x100000 := rfl
-  clear_value b00
-  have b_b00 : b00 < 2^64 := by rw [e_b00]; exact addw_lt pf_8 0x100000
+  word_step b00 := addw pf_8 0x100000 using addw_lt pf_8 0x100000
   -- b00_1: sbfx b00,b00,#21,#21
-  extract_lets -merge +onlyGivenNames b00_1 at hres
-  have e_b00_1 : b00_1 = sbfx b00 21 21 := rfl
-  clear_value b00_1
-  have b_b00_1 : b00_1 < 2^64 := by rw [e_b00_1]; exact sbfx_lt b00 21 21 b_b00
+  word_step b00_1 := sbfx b00 21 21 using sbfx_lt b00 21 21 b_b00
   -- b11: mov b11,#0x100000
-  extract_lets -merge +onlyGivenNames b11 at hres
-  have e_b11 : b11 = 0x100000 := rfl
-  clear_value b11
-  have b_b11 : b11 < 2^64 := by rw [e_b11]; decide
+  word_step b11 := 0x100000 using (by decide)
   -- b11_1: add b11,b11,b11,lsl #21
-  extract_lets -merge +onlyGivenNames b11_1 at hres
-  have e_b11_1 : b11_1 = addw b11 (lsl b11 21) := rfl
-  clear_value b11_1
-  have b_b11_1 : b11_1 < 2^64 := by rw [e_b11_1]; exact addw_lt b11 (lsl b11 21)
+  word_step b11_1 := addw b11 (lsl b11 21) using addw_lt b11 (lsl b11 21)
   -- b01: add b01,pf,b11
-  extract_lets -merge +onlyGivenNames b01 at hres
-  have e_b01 : b01 = addw pf_8 b11_1 := rfl
-  clear_value b01
-  have b_b01 : b01 < 2^64 := by rw [e_b01]; exact addw_lt pf_8 b11_1
+  word_step b01 := addw pf_8 b11_1 using addw_lt pf_8 b11_1
   -- b01_1: asr b01,b01,#42
-  extract_lets -merge +onlyGivenNames b01_1 at hres
-  have e_b01_1 : b01_1 = asr b01 42 := rfl
-  clear_value b01_1
-  have b_b01_1 : b01_1 < 2^64 := by rw [e_b01_1]; exact asr_lt b01 42 b_b01
+  word_step b01_1 := asr b01 42 using asr_lt b01 42 b_b01
   -- b10: add b10,pg,#0x100,lsl #12
-  extract_lets -merge +onlyGivenNames b10 at hres
-  have e_b10 : b10 = addw pg_8 0x100000 := rfl
-  clear_value b10
-  have b_b10 : b10 < 2^64 := by rw [e_b10]; exact addw_lt pg_8 0x100000
+  word_step b10 := addw pg_8 0x100000 using addw_lt pg_8 0x100000
   -- b10_1: sbfx b10,b10,#21,#21
-  extract_lets -merge +onlyGivenNames b10_1 at hres
-  have e_b10_1 : b10_1 = sbfx b10 21 21 := rfl
-  clear_value b10_1
-  have b_b10_1 : b10_1 < 2^64 := by rw [e_b10_1]; exact sbfx_lt b10 21 21 b_b10
+  word_step b10_1 := sbfx b10 21 21 using sbfx_lt b10 21 21 b_b10
   -- b11_2: add b11,pg,b11
-  extract_lets -merge +onlyGivenNames b11_2 at hres
-  have e_b11_2 : b11_2 = addw pg_8 b11_1 := rfl
-  clear_value b11_2
-  have b_b11_2 : b11_2 < 2^64 := by rw [e_b11_2]; exact addw_lt pg_8 b11_1
+  word_step b11_2 := addw pg_8 b11_1 using addw_lt pg_8 b11_1
   -- b11_3: asr b11,b11,#42
-  extract_lets -merge +onlyGivenNames b11_3 at hres
-  have e_b11_3 : b11_3 = asr b11_2 42 := rfl
-  clear_value b11_3
-  have b_b11_3 : b11_3 < 2^64 := by rw [e_b11_3]; exact asr_lt b11_2 42 b_b11_2
+  word_step b11_3 := asr b11_2 42 using asr_lt b11_2 42 b_b11_2
   -- t_1: mul t,b00,f
-  extract_lets -merge +onlyGivenNames t_1 at hres
-  have e_t_1 : t_1 = b00_1 * f_2 % 2^64 := rfl
-  clear_value t_1
-  have b_t_1 : t_1 < 2^64 := by rw [e_t_1]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step t_1 := b00_1 * f_2 % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   -- t2_1: mul t2,b01,g
-  extract_lets -merge +onlyGivenNames t2_1 at hres
-  have e_t2_1 : t2_1 = b01_1 * g_2 % 2^64 := rfl
-  clear_value t2_1
-  have b_t2_1 : t2_1 < 2^64 := by rw [e_t2_1]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step t2_1 := b01_1 * g_2 % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   -- f_3: mul f,b10,f
-  extract_lets -merge +onlyGivenNames f_3 at hres
-  have e_f_3 : f_3 = b10_1 * f_2 % 2^64 := rfl
-  clear_value f_3
-  have b_f_3 : f_3 < 2^64 := by rw [e_f_3]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step f_3 := b10_1 * f_2 % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   -- g_3: mul g,b11,g
-  extract_lets -merge +onlyGivenNames g_3 at hres
-  have e_g_3 : g_3 = b11_3 * g_2 % 2^64 := rfl
-  clear_value g_3
-  have b_g_3 : g_3 < 2^64 := by rw [e_g_3]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step g_3 := b11_3 * g_2 % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   -- pf_9: add pf,t,t2
-  extract_lets -merge +onlyGivenNames pf_9 at hres
-  have e_pf_9 : pf_9 = addw t_1 t2_1 := rfl
-  clear_value pf_9
-  have b_pf_9 : pf_9 < 2^64 := by rw [e_pf_9]; exact addw_lt t_1 t2_1
+  word_step pf_9 := addw t_1 t2_1 using addw_lt t_1 t2_1
   -- pg_9: add pg,f,g
-  extract_lets -merge +onlyGivenNames pg_9 at hres
-  have e_pg_9 : pg_9 = addw f_3 g_3 := rfl
-  clear_value pg_9
-  have b_pg_9 : pg_9 < 2^64 := by rw [e_pg_9]; exact addw_lt f_3 g_3
+  word_step pg_9 := addw f_3 g_3 using addw_lt f_3 g_3
   -- f_4: asr f,pf,#20
-  extract_lets -merge +onlyGivenNames f_4 at hres
-  have e_f_4 : f_4 = asr pf_9 20 := rfl
-  clear_value f_4
-  have b_f_4 : f_4 < 2^64 := by rw [e_f_4]; exact asr_lt pf_9 20 b_pf_9
+  word_step f_4 := asr pf_9 20 using asr_lt pf_9 20 b_pf_9
   -- g_4: asr g,pg,#20
-  extract_lets -merge +onlyGivenNames g_4 at hres
-  have e_g_4 : g_4 = asr pg_9 20 := rfl
-  clear_value g_4
-  have b_g_4 : g_4 < 2^64 := by rw [e_g_4]; exact asr_lt pg_9 20 b_pg_9
+  word_step g_4 := asr pg_9 20 using asr_lt pg_9 20 b_pg_9
   -- pf_10: and pf,f,#0xfffff
-  extract_lets -merge +onlyGivenNames pf_10 at hres
-  have e_pf_10 : pf_10 = andw f_4 0xfffff := rfl
-  clear_value pf_10
-  have b_pf_10 : pf_10 < 2^64 := by rw [e_pf_10]; exact andw_lt f_4 0xfffff b_f_4 (by decide)
+  word_step pf_10 := andw f_4 0xfffff using andw_lt f_4 0xfffff b_f_4 (by decide)
   -- pf_11: orr pf,pf,#0xfffffe0000000000
-  extract_lets -merge +onlyGivenNames pf_11 at hres
-  have e_pf_11 : pf_11 = orrw pf_10 0xfffffe0000000000 := rfl
-  clear_value pf_11
-  have b_pf_11 : pf_11 < 2^64 := by rw [e_pf_11]; exact orrw_lt pf_10 0xfffffe0000000000 b_pf_10 (by decide)
+  word_step pf_11 := orrw pf_10 0xfffffe0000000000 using orrw_lt pf_10 0xfffffe0000000000 b_pf_10 (by decide)
   -- pg_10: and pg,g,#0xfffff
-  extract_lets -merge +onlyGivenNames pg_10 at hres
-  have e_pg_10 : pg_10 = andw g_4 0xfffff := rfl
-  clear_value pg_10
-  have b_pg_10 : pg_10 < 2^64 := by rw [e_pg_10]; exact andw_lt g_4 0xfffff b_g_4 (by decide)
+  word_step pg_10 := andw g_4 0xfffff using andw_lt g_4 0xfffff b_g_4 (by decide)
   -- pg_11: orr pg,pg,#0xc000000000000000
-  extract_lets -merge +onlyGivenNames pg_11 at hres
-  have e_pg_11 : pg_11 = orrw pg_10 0xc000000000000000 := rfl
-  clear_value pg_11
-  have b_pg_11 : pg_11 < 2^64 := by rw [e_pg_11]; exact orrw_lt pg_10 0xc000000000000000 b_pg_10 (by decide)
+  word_step pg_11 := orrw pg_10 0xc000000000000000 using orrw_lt pg_10 0xc000000000000000 b_pg_10 (by decide)
   -- fl_4: tst pg,#1
-  extract_lets -merge +onlyGivenNames fl_4 at hres
-  have e_fl_4 : fl_4 = tstFlags (andw pg_11 1) := rfl
-  clear_value fl_4
+  word_step fl_4 := tstFlags (andw pg_11 1)
   -- step50: divstep!(), invocations 41 to 50
-  extract_lets -merge +onlyGivenNames step50 at hres
-  have e_step50 : step50 = divstepRound^[10] ⟨two_delta_4, pf_11, pg_11, fl_4⟩ := rfl
-  clear_value step50
+  word_step step50 := divstepRound^[10] ⟨two_delta_4, pf_11, pg_11, fl_4⟩
   -- two_delta_5: divstep!(), invocations 41 to 50 output
-  extract_lets -merge +onlyGivenNames two_delta_5 at hres
-  have e_two_delta_5 : two_delta_5 = step50.two_delta := rfl
-  clear_value two_delta_5
+  word_step two_delta_5 := step50.two_delta
   -- pf_12: divstep!(), invocations 41 to 50 output
-  extract_lets -merge +onlyGivenNames pf_12 at hres
-  have e_pf_12 : pf_12 = step50.f := rfl
-  clear_value pf_12
+  word_step pf_12 := step50.f
   -- pg_12: divstep!(), invocations 41 to 50 output
-  extract_lets -merge +onlyGivenNames pg_12 at hres
-  have e_pg_12 : pg_12 = step50.g := rfl
-  clear_value pg_12
+  word_step pg_12 := step50.g
   -- fl_5: divstep!(), invocations 41 to 50 output
-  extract_lets -merge +onlyGivenNames fl_5 at hres
-  have e_fl_5 : fl_5 = step50.fl := rfl
-  clear_value fl_5
+  word_step fl_5 := step50.fl
   -- f_5: mul f,b00,a00
-  extract_lets -merge +onlyGivenNames f_5 at hres
-  have e_f_5 : f_5 = b00_1 * a00_1 % 2^64 := rfl
-  clear_value f_5
-  have b_f_5 : f_5 < 2^64 := by rw [e_f_5]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step f_5 := b00_1 * a00_1 % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   -- g_5: mul g,b00,a01
-  extract_lets -merge +onlyGivenNames g_5 at hres
-  have e_g_5 : g_5 = b00_1 * a01_1 % 2^64 := rfl
-  clear_value g_5
-  have b_g_5 : g_5 < 2^64 := by rw [e_g_5]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step g_5 := b00_1 * a01_1 % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   -- t_2: mul t,b10,a00
-  extract_lets -merge +onlyGivenNames t_2 at hres
-  have e_t_2 : t_2 = b10_1 * a00_1 % 2^64 := rfl
-  clear_value t_2
-  have b_t_2 : t_2 < 2^64 := by rw [e_t_2]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step t_2 := b10_1 * a00_1 % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   -- t2_2: mul t2,b10,a01
-  extract_lets -merge +onlyGivenNames t2_2 at hres
-  have e_t2_2 : t2_2 = b10_1 * a01_1 % 2^64 := rfl
-  clear_value t2_2
-  have b_t2_2 : t2_2 < 2^64 := by rw [e_t2_2]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step t2_2 := b10_1 * a01_1 % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   -- a00_2: madd a00,b01,a10,f
-  extract_lets -merge +onlyGivenNames a00_2 at hres
-  have e_a00_2 : a00_2 = madd b01_1 a10_1 f_5 := rfl
-  clear_value a00_2
-  have b_a00_2 : a00_2 < 2^64 := by rw [e_a00_2]; exact madd_lt b01_1 a10_1 f_5
+  word_step a00_2 := madd b01_1 a10_1 f_5 using madd_lt b01_1 a10_1 f_5
   -- a01_2: madd a01,b01,a11,g
-  extract_lets -merge +onlyGivenNames a01_2 at hres
-  have e_a01_2 : a01_2 = madd b01_1 a11_3 g_5 := rfl
-  clear_value a01_2
-  have b_a01_2 : a01_2 < 2^64 := by rw [e_a01_2]; exact madd_lt b01_1 a11_3 g_5
+  word_step a01_2 := madd b01_1 a11_3 g_5 using madd_lt b01_1 a11_3 g_5
   -- c10: madd c10,b11,a10,t
-  extract_lets -merge +onlyGivenNames c10 at hres
-  have e_c10 : c10 = madd b11_3 a10_1 t_2 := rfl
-  clear_value c10
-  have b_c10 : c10 < 2^64 := by rw [e_c10]; exact madd_lt b11_3 a10_1 t_2
+  word_step c10 := madd b11_3 a10_1 t_2 using madd_lt b11_3 a10_1 t_2
   -- c11: madd c11,b11,a11,t2
-  extract_lets -merge +onlyGivenNames c11 at hres
-  have e_c11 : c11 = madd b11_3 a11_3 t2_2 := rfl
-  clear_value c11
-  have b_c11 : c11 < 2^64 := by rw [e_c11]; exact madd_lt b11_3 a11_3 t2_2
+  word_step c11 := madd b11_3 a11_3 t2_2 using madd_lt b11_3 a11_3 t2_2
   -- step58: divstep!(), invocations 51 to 58
-  extract_lets -merge +onlyGivenNames step58 at hres
-  have e_step58 : step58 = divstepRound^[8] ⟨two_delta_5, pf_12, pg_12, fl_5⟩ := rfl
-  clear_value step58
+  word_step step58 := divstepRound^[8] ⟨two_delta_5, pf_12, pg_12, fl_5⟩
   -- two_delta_6: divstep!(), invocations 51 to 58 output
-  extract_lets -merge +onlyGivenNames two_delta_6 at hres
-  have e_two_delta_6 : two_delta_6 = step58.two_delta := rfl
-  clear_value two_delta_6
+  word_step two_delta_6 := step58.two_delta
   -- pf_13: divstep!(), invocations 51 to 58 output
-  extract_lets -merge +onlyGivenNames pf_13 at hres
-  have e_pf_13 : pf_13 = step58.f := rfl
-  clear_value pf_13
+  word_step pf_13 := step58.f
   -- pg_13: divstep!(), invocations 51 to 58 output
-  extract_lets -merge +onlyGivenNames pg_13 at hres
-  have e_pg_13 : pg_13 = step58.g := rfl
-  clear_value pg_13
+  word_step pg_13 := step58.g
   -- fl_6: divstep!(), invocations 51 to 58 output
-  extract_lets -merge +onlyGivenNames fl_6 at hres
-  have e_fl_6 : fl_6 = step58.fl := rfl
-  clear_value fl_6
+  word_step fl_6 := step58.fl
   -- step59: divstep!(last), invocation 59
-  extract_lets -merge +onlyGivenNames step59 at hres
-  have e_step59 : step59 = divstepLast ⟨two_delta_6, pf_13, pg_13, fl_6⟩ := rfl
-  clear_value step59
+  word_step step59 := divstepLast ⟨two_delta_6, pf_13, pg_13, fl_6⟩
   -- two_delta_7: divstep!(last), invocation 59 output
-  extract_lets -merge +onlyGivenNames two_delta_7 at hres
-  have e_two_delta_7 : two_delta_7 = step59.two_delta := rfl
-  clear_value two_delta_7
+  word_step two_delta_7 := step59.two_delta
   -- pf_14: divstep!(last), invocation 59 output
-  extract_lets -merge +onlyGivenNames pf_14 at hres
-  have e_pf_14 : pf_14 = step59.f := rfl
-  clear_value pf_14
+  word_step pf_14 := step59.f
   -- pg_14: divstep!(last), invocation 59 output
-  extract_lets -merge +onlyGivenNames pg_14 at hres
-  have e_pg_14 : pg_14 = step59.g := rfl
-  clear_value pg_14
+  word_step pg_14 := step59.g
   -- b00_2: add b00,pf,#0x100,lsl #12
-  extract_lets -merge +onlyGivenNames b00_2 at hres
-  have e_b00_2 : b00_2 = addw pf_14 0x100000 := rfl
-  clear_value b00_2
-  have b_b00_2 : b00_2 < 2^64 := by rw [e_b00_2]; exact addw_lt pf_14 0x100000
+  word_step b00_2 := addw pf_14 0x100000 using addw_lt pf_14 0x100000
   -- b00_3: sbfx b00,b00,#22,#21
-  extract_lets -merge +onlyGivenNames b00_3 at hres
-  have e_b00_3 : b00_3 = sbfx b00_2 22 21 := rfl
-  clear_value b00_3
-  have b_b00_3 : b00_3 < 2^64 := by rw [e_b00_3]; exact sbfx_lt b00_2 22 21 b_b00_2
+  word_step b00_3 := sbfx b00_2 22 21 using sbfx_lt b00_2 22 21 b_b00_2
   -- b11_4: mov b11,#0x100000
-  extract_lets -merge +onlyGivenNames b11_4 at hres
-  have e_b11_4 : b11_4 = 0x100000 := rfl
-  clear_value b11_4
-  have b_b11_4 : b11_4 < 2^64 := by rw [e_b11_4]; decide
+  word_step b11_4 := 0x100000 using (by decide)
   -- b11_5: add b11,b11,b11,lsl #21
-  extract_lets -merge +onlyGivenNames b11_5 at hres
-  have e_b11_5 : b11_5 = addw b11_4 (lsl b11_4 21) := rfl
-  clear_value b11_5
-  have b_b11_5 : b11_5 < 2^64 := by rw [e_b11_5]; exact addw_lt b11_4 (lsl b11_4 21)
+  word_step b11_5 := addw b11_4 (lsl b11_4 21) using addw_lt b11_4 (lsl b11_4 21)
   -- b01_2: add b01,pf,b11
-  extract_lets -merge +onlyGivenNames b01_2 at hres
-  have e_b01_2 : b01_2 = addw pf_14 b11_5 := rfl
-  clear_value b01_2
-  have b_b01_2 : b01_2 < 2^64 := by rw [e_b01_2]; exact addw_lt pf_14 b11_5
+  word_step b01_2 := addw pf_14 b11_5 using addw_lt pf_14 b11_5
   -- b01_3: asr b01,b01,#43
-  extract_lets -merge +onlyGivenNames b01_3 at hres
-  have e_b01_3 : b01_3 = asr b01_2 43 := rfl
-  clear_value b01_3
-  have b_b01_3 : b01_3 < 2^64 := by rw [e_b01_3]; exact asr_lt b01_2 43 b_b01_2
+  word_step b01_3 := asr b01_2 43 using asr_lt b01_2 43 b_b01_2
   -- b10_2: add b10,pg,#0x100,lsl #12
-  extract_lets -merge +onlyGivenNames b10_2 at hres
-  have e_b10_2 : b10_2 = addw pg_14 0x100000 := rfl
-  clear_value b10_2
-  have b_b10_2 : b10_2 < 2^64 := by rw [e_b10_2]; exact addw_lt pg_14 0x100000
+  word_step b10_2 := addw pg_14 0x100000 using addw_lt pg_14 0x100000
   -- b10_3: sbfx b10,b10,#22,#21
-  extract_lets -merge +onlyGivenNames b10_3 at hres
-  have e_b10_3 : b10_3 = sbfx b10_2 22 21 := rfl
-  clear_value b10_3
-  have b_b10_3 : b10_3 < 2^64 := by rw [e_b10_3]; exact sbfx_lt b10_2 22 21 b_b10_2
+  word_step b10_3 := sbfx b10_2 22 21 using sbfx_lt b10_2 22 21 b_b10_2
   -- b11_6: add b11,pg,b11
-  extract_lets -merge +onlyGivenNames b11_6 at hres
-  have e_b11_6 : b11_6 = addw pg_14 b11_5 := rfl
-  clear_value b11_6
-  have b_b11_6 : b11_6 < 2^64 := by rw [e_b11_6]; exact addw_lt pg_14 b11_5
+  word_step b11_6 := addw pg_14 b11_5 using addw_lt pg_14 b11_5
   -- b11_7: asr b11,b11,#43
-  extract_lets -merge +onlyGivenNames b11_7 at hres
-  have e_b11_7 : b11_7 = asr b11_6 43 := rfl
-  clear_value b11_7
-  have b_b11_7 : b11_7 < 2^64 := by rw [e_b11_7]; exact asr_lt b11_6 43 b_b11_6
+  word_step b11_7 := asr b11_6 43 using asr_lt b11_6 43 b_b11_6
   -- f_6: mneg f,b00,a00
-  extract_lets -merge +onlyGivenNames f_6 at hres
-  have e_f_6 : f_6 = mneg b00_3 a00_2 := rfl
-  clear_value f_6
-  have b_f_6 : f_6 < 2^64 := by rw [e_f_6]; exact mneg_lt b00_3 a00_2
+  word_step f_6 := mneg b00_3 a00_2 using mneg_lt b00_3 a00_2
   -- g_6: mneg g,b00,a01
-  extract_lets -merge +onlyGivenNames g_6 at hres
-  have e_g_6 : g_6 = mneg b00_3 a01_2 := rfl
-  clear_value g_6
-  have b_g_6 : g_6 < 2^64 := by rw [e_g_6]; exact mneg_lt b00_3 a01_2
+  word_step g_6 := mneg b00_3 a01_2 using mneg_lt b00_3 a01_2
   -- pf_15: mneg pf,b10,a00
-  extract_lets -merge +onlyGivenNames pf_15 at hres
-  have e_pf_15 : pf_15 = mneg b10_3 a00_2 := rfl
-  clear_value pf_15
-  have b_pf_15 : pf_15 < 2^64 := by rw [e_pf_15]; exact mneg_lt b10_3 a00_2
+  word_step pf_15 := mneg b10_3 a00_2 using mneg_lt b10_3 a00_2
   -- pg_15: mneg pg,b10,a01
-  extract_lets -merge +onlyGivenNames pg_15 at hres
-  have e_pg_15 : pg_15 = mneg b10_3 a01_2 := rfl
-  clear_value pg_15
-  have b_pg_15 : pg_15 < 2^64 := by rw [e_pg_15]; exact mneg_lt b10_3 a01_2
+  word_step pg_15 := mneg b10_3 a01_2 using mneg_lt b10_3 a01_2
   -- u: msub u,b01,c10,f
-  extract_lets -merge +onlyGivenNames u at hres
-  have e_u : u = msub b01_3 c10 f_6 := rfl
-  clear_value u
-  have b_u : u < 2^64 := by rw [e_u]; exact msub_lt b01_3 c10 f_6
+  word_step u := msub b01_3 c10 f_6 using msub_lt b01_3 c10 f_6
   -- v: msub v,b01,c11,g
-  extract_lets -merge +onlyGivenNames v at hres
-  have e_v : v = msub b01_3 c11 g_6 := rfl
-  clear_value v
-  have b_v : v < 2^64 := by rw [e_v]; exact msub_lt b01_3 c11 g_6
+  word_step v := msub b01_3 c11 g_6 using msub_lt b01_3 c11 g_6
   -- q: msub q,b11,c10,pf
-  extract_lets -merge +onlyGivenNames q at hres
-  have e_q : q = msub b11_7 c10 pf_15 := rfl
-  clear_value q
-  have b_q : q < 2^64 := by rw [e_q]; exact msub_lt b11_7 c10 pf_15
+  word_step q := msub b11_7 c10 pf_15 using msub_lt b11_7 c10 pf_15
   -- r: msub r,b11,c11,pg
-  extract_lets -merge +onlyGivenNames r at hres
-  have e_r : r = msub b11_7 c11 pg_15 := rfl
-  clear_value r
-  have b_r : r < 2^64 := by rw [e_r]; exact msub_lt b11_7 c11 pg_15
+  word_step r := msub b11_7 c11 pg_15 using msub_lt b11_7 c11 pg_15
   subst hres
   -- BEGIN conclusion
   -- Each batch's bindings are the round iterated, then the last step; the third batch's run

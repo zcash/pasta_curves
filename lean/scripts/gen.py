@@ -562,6 +562,7 @@ class SkeletonFactContext:
         group_names,
         lines,
         eq,
+        bound,
         lt64,
         le1,
         ren,
@@ -573,17 +574,18 @@ class SkeletonFactContext:
         self.entry, self.name = entry, name
         self.group_entries = group_entries
         self.group_names = group_names
-        self.lines, self.eq = lines, eq
+        self.lines, self.eq, self.bound = lines, eq, bound
         self.lt64, self.le1 = lt64, le1
         self.ren, self.bnd, self.unit_bound = ren, bnd, unit_bound
         self.consumed = consumed
 
 
 def wrap_tactic(head, words, tail, indent="  "):
-    """`head w1 w2 ... tail`, broken over lines at SKELETON_WIDTH with a 4-space continuation."""
+    """`head w1 w2 ... tail`, broken over lines at SKELETON_WIDTH with a 4-space continuation;
+    the first word stays on the head's line however long it is."""
     lines, cur = [], indent + head
     for w in words:
-        if len(cur) + 1 + len(w) > SKELETON_WIDTH:
+        if cur != indent + head and len(cur) + 1 + len(w) > SKELETON_WIDTH:
             lines.append(cur)
             cur = indent + "    " + w
         else:
@@ -601,15 +603,16 @@ def proj(arg, field, arg_fields=ARG_FIELDS):
 
 def skeleton(routine):
     """The generated part of the correctness proof of `routine`: unfold the routine in `hres` and
-    lift its lets to the top; then, instruction by instruction, extract that instruction's lets
-    from `hres` under SSA names, record their defining equations (by `rfl`, in `%`/`/` form), make
-    the locals opaque when requested by the backend, and derive the linear facts from the equations,
-    clearing the equations
-    the later steps do not need. Each derived fact is an instance of one lemma
-    (`Nat.mod_add_div`, `Nat.mod_lt`, `Nat.div_lt_of_lt_mul`, or a carry lemma from the spec
-    file's preamble), so a step costs nothing wherever it sits and names the facts it rests on;
-    `omega` is left to the hand-written annotations, which go after the facts of the group whose
-    marker (`-- <register>: <instruction>`) names the register they need.
+    lift its lets to the top; then, instruction by instruction, a `word_step` (the tactic of
+    `PastaCurves/Tactic/WordStep.lean`) extracts that instruction's lets from `hres` under SSA names,
+    records their defining equations (by `rfl`, in `%`/`/` form), makes the locals opaque when
+    requested by the backend, and proves the bound `b_x : x < 2^64` of each result whose bound
+    is one lemma instance (`x := v using proof`). The lines after the step derive the other facts
+    from the equations (the carry-chain equation, a carry's bound by `1`, a narrower bound, the
+    product decomposition), each an instance of one lemma, and clear the equations that the
+    later steps do not need. So a step costs nothing wherever it sits and names the facts it
+    rests on; `omega` is left to the hand-written annotations, which go after the facts of the
+    group whose marker (`-- <register>: <instruction>`) names the register they need.
 
     Extracting one instruction at a time (`extract_lets +onlyGivenNames`) keeps the rest of the
     chain folded inside `hres`, so that `clear_value` has one hypothesis to revert and re-check.
@@ -632,7 +635,8 @@ def skeleton(routine):
         "  lift_lets -merge at hres",
     ]
     products = {}
-    eqs = []  # the current group's `have e_... := rfl` lines
+    values = {}  # the current group's equations `e_x : x = v`, as the `x := v` of its step
+    bounds = {}  # the current group's bounds `b_x : x < 2^64`, as the `using proof` of its step
 
     def r(op):  # operand as written in the entry, renamed to its SSA name at that point
         return ren.get(op, op)
@@ -665,7 +669,12 @@ def skeleton(routine):
         return bnd[op]
 
     def eq(nm, rhs):
-        eqs.append(f"  have e_{nm} : {nm} = {rhs} := rfl")
+        values[nm] = rhs
+
+    def bound(nm, proof):
+        """Record that `proof : v < 2^64` for the value `v` of `nm`; the step proves `b_{nm}`."""
+        bounds[nm] = proof
+        bnd[nm] = f"b_{nm}"
 
     i = 0
     while i < len(entries):
@@ -684,7 +693,7 @@ def skeleton(routine):
             group = [nm]
         group_names = group
         label = en.get("group_label", nm)
-        eqs, lines = [], []
+        values, bounds, lines = {}, {}, []
         # Every step records only facts `omega` handles cheaply later: linear equations, bounds,
         # and at most a disjunction. The `%`/`/` equations are derived by `rfl`, used to prove
         # those facts, and cleared.
@@ -698,6 +707,7 @@ def skeleton(routine):
             group_names,
             lines,
             eq,
+            bound,
             lt64,
             le1,
             ren,
@@ -710,46 +720,28 @@ def skeleton(routine):
             pass
         elif kind == "load":
             arg, field = ops
-            hyp = bound_hyp(arg)
             eq(nm, f"{arg}.{field}")
-            lines.append(
-                f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact {hyp}.{proj(arg, field, routine.arg_fields)}"
-            )
-            bnd[nm] = f"b_{nm}"
+            bound(nm, f"{bound_hyp(arg)}.{proj(arg, field, routine.arg_fields)}")
         elif kind == "inv":
             eq(nm, "inv")
-            lines.append(f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact {INV_BOUND_HYP}")
-            bnd[nm] = f"b_{nm}"
+            bound(nm, INV_BOUND_HYP)
         elif kind == "param":
             (p,) = ops
             eq(nm, p)
-            lines.append(f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact h{p}")
-            bnd[nm] = f"b_{nm}"
+            bound(nm, f"h{p}")
         elif kind == "mov":
             (a,) = ops
             eq(nm, a)
-            direct = expression_bound(a)
-            proof = "decide" if LITERAL.fullmatch(a) else f"exact {direct or lt64(a)}"
-            lines.append(f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; {proof}")
-            bnd[nm] = f"b_{nm}"
+            bound(nm, lt64(a))
         elif kind == "mul":
             a, b = ops
             eq(nm, f"{a} * {b} % 2^64")
-            lines.append(
-                f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact Nat.mod_lt _ (Nat.two_pow_pos _)"
-            )
-            bnd[nm] = f"b_{nm}"
+            bound(nm, "Nat.mod_lt _ (Nat.two_pow_pos _)")
             products[(a, b)] = nm  # its `%` equation is cleared at the matching `umulh`
         elif kind == "umulh":
             a, b = ops
             eq(nm, f"{a} * {b} / 2^64")
-            lines.append(
-                f"  have p_{nm} : {a} * {b} < 2^64 * 2^64 := Nat.mul_lt_mul'' {lt64(a)} {lt64(b)}"
-            )
-            lines.append(
-                f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact Nat.div_lt_of_lt_mul p_{nm}"
-            )
-            bnd[nm] = f"b_{nm}"
+            bound(nm, f"Nat.div_lt_of_lt_mul (Nat.mul_lt_mul'' {lt64(a)} {lt64(b)})")
             if (a, b) in products:
                 lo = products.pop((a, b))
                 lines.append(f"  have d_{nm} : {lo} + 2^64 * {nm} = {a} * {b} := by")
@@ -771,12 +763,9 @@ def skeleton(routine):
             if k != 62:
                 raise ValueError(f"lsl by {k}: add a lemma to the spec preamble")
             eq(nm, f"{a} * 2^{k} % 2^64")
-            lines.append(
-                f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact Nat.mod_lt _ (Nat.two_pow_pos _)"
-            )
+            bound(nm, "Nat.mod_lt _ (Nat.two_pow_pos _)")
             lines.append(f"  have sh_{nm} : {nm} + 2^64 * ({a} / 2^2) = {a} * 2^62 := by")
             lines.append(f"    rw [e_{nm}]; exact lsl62_lsr2_split _")
-            bnd[nm] = f"b_{nm}"
         elif kind == "lsr":
             a, k = ops
             eq(nm, f"{a} / 2^{k}")
@@ -789,9 +778,7 @@ def skeleton(routine):
         elif kind == "adc":
             a, b, cin = ops
             eq(nm, f"({a} + {b} + {cin}) % 2^64")
-            lines.append(
-                f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact Nat.mod_lt _ (Nat.two_pow_pos _)"
-            )
+            bound(nm, "Nat.mod_lt _ (Nat.two_pow_pos _)")
             lines.append(f"  obtain ⟨k_{nm}, b_k_{nm}, l_{nm}⟩ :")
             lines.append(f"      ∃ k, k ≤ 1 ∧ {nm} + 2^64 * k = {a} + {b} + {cin} :=")
             lines.append(
@@ -799,13 +786,10 @@ def skeleton(routine):
             )
             lines.append(f"      by rw [e_{nm}]; exact Nat.mod_add_div _ _⟩")
             lines.append(f"  clear e_{nm}")
-            bnd[nm] = f"b_{nm}"
         elif kind == "select":
             c, a, b = ops
             eq(nm, f"(if {c} = 0 then {a} else {b})")
-            lines.append(f"  have b_{nm} : {nm} < 2^64 := by")
-            lines.append(f"    rw [e_{nm}]; split <;> first | exact {lt64(a)} | exact {lt64(b)}")
-            bnd[nm] = f"b_{nm}"
+            bound(nm, f"ite_lt {lt64(a)} {lt64(b)}")
         elif kind == "call":
             fmt, cargs = ops
             eq(nm, fmt.format(*[r(o) for o in cargs]))
@@ -821,10 +805,16 @@ def skeleton(routine):
         out.append(
             f"  -- {label}: {group_entries[0][0]['comment'] if group_entries else en['comment']}"
         )
-        out += wrap_tactic("extract_lets -merge +onlyGivenNames", group, " at hres")
-        out += eqs
-        if prepared.clear_values:
-            out.append(f"  clear_value {' '.join(group)}")
+        items = []
+        for name in group:
+            item = name
+            if name in values:
+                item += f" := {values[name]}"
+            if name in bounds:
+                item += f" using {bounds[name]}"
+            items.append(item)
+        head = "word_step" if prepared.clear_values else "word_step -clear"
+        out += wrap_tactic(head, [f"{item}," for item in items[:-1]] + items[-1:], "")
         out += lines
         i += fact_context.consumed
     out.append("  subst hres")

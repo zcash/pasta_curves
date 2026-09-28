@@ -133,67 +133,31 @@ theorem divstepRound_spec (st : DivstepState) (hst : st.Bounded) (s : State)
   unfold divstepRound at hres
   lift_lets -merge at hres
   -- two_delta: argument
-  extract_lets -merge +onlyGivenNames two_delta at hres
-  have e_two_delta : two_delta = st.two_delta := rfl
-  clear_value two_delta
-  have b_two_delta : two_delta < 2^64 := by rw [e_two_delta]; exact hst.1
+  word_step two_delta := st.two_delta using hst.1
   -- pf: argument
-  extract_lets -merge +onlyGivenNames pf at hres
-  have e_pf : pf = st.f := rfl
-  clear_value pf
-  have b_pf : pf < 2^64 := by rw [e_pf]; exact hst.2.1
+  word_step pf := st.f using hst.2.1
   -- pg: argument
-  extract_lets -merge +onlyGivenNames pg at hres
-  have e_pg : pg = st.g := rfl
-  clear_value pg
-  have b_pg : pg < 2^64 := by rw [e_pg]; exact hst.2.2
+  word_step pg := st.g using hst.2.2
   -- fl: argument
-  extract_lets -merge +onlyGivenNames fl at hres
-  have e_fl : fl = st.fl := rfl
-  clear_value fl
+  word_step fl := st.fl
   -- t: csel t,pf,xzr,ne
-  extract_lets -merge +onlyGivenNames t at hres
-  have e_t : t = cselNe fl pf 0 := rfl
-  clear_value t
-  have b_t : t < 2^64 := by rw [e_t]; exact cselNe_lt fl pf 0 b_pf (by decide)
+  word_step t := cselNe fl pf 0 using cselNe_lt fl pf 0 b_pf (by decide)
   -- fl_1: ccmp two_delta,xzr,#8,ne
-  extract_lets -merge +onlyGivenNames fl_1 at hres
-  have e_fl_1 : fl_1 = ccmpNe fl two_delta 0 8 := rfl
-  clear_value fl_1
+  word_step fl_1 := ccmpNe fl two_delta 0 8
   -- two_delta_1: cneg two_delta,two_delta,ge
-  extract_lets -merge +onlyGivenNames two_delta_1 at hres
-  have e_two_delta_1 : two_delta_1 = cnegGe fl_1 two_delta := rfl
-  clear_value two_delta_1
-  have b_two_delta_1 : two_delta_1 < 2^64 := by rw [e_two_delta_1]; exact cnegGe_lt fl_1 two_delta b_two_delta
+  word_step two_delta_1 := cnegGe fl_1 two_delta using cnegGe_lt fl_1 two_delta b_two_delta
   -- t_1: cneg t,t,ge
-  extract_lets -merge +onlyGivenNames t_1 at hres
-  have e_t_1 : t_1 = cnegGe fl_1 t := rfl
-  clear_value t_1
-  have b_t_1 : t_1 < 2^64 := by rw [e_t_1]; exact cnegGe_lt fl_1 t b_t
+  word_step t_1 := cnegGe fl_1 t using cnegGe_lt fl_1 t b_t
   -- pf_1: csel pf,pg,pf,ge
-  extract_lets -merge +onlyGivenNames pf_1 at hres
-  have e_pf_1 : pf_1 = cselGe fl_1 pg pf := rfl
-  clear_value pf_1
-  have b_pf_1 : pf_1 < 2^64 := by rw [e_pf_1]; exact cselGe_lt fl_1 pg pf b_pg b_pf
+  word_step pf_1 := cselGe fl_1 pg pf using cselGe_lt fl_1 pg pf b_pg b_pf
   -- pg_1: add pg,pg,t
-  extract_lets -merge +onlyGivenNames pg_1 at hres
-  have e_pg_1 : pg_1 = addw pg t_1 := rfl
-  clear_value pg_1
-  have b_pg_1 : pg_1 < 2^64 := by rw [e_pg_1]; exact addw_lt pg t_1
+  word_step pg_1 := addw pg t_1 using addw_lt pg t_1
   -- two_delta_2: add two_delta,two_delta,#2
-  extract_lets -merge +onlyGivenNames two_delta_2 at hres
-  have e_two_delta_2 : two_delta_2 = addw two_delta_1 2 := rfl
-  clear_value two_delta_2
-  have b_two_delta_2 : two_delta_2 < 2^64 := by rw [e_two_delta_2]; exact addw_lt two_delta_1 2
+  word_step two_delta_2 := addw two_delta_1 2 using addw_lt two_delta_1 2
   -- fl_2: tst pg,#2
-  extract_lets -merge +onlyGivenNames fl_2 at hres
-  have e_fl_2 : fl_2 = tstFlags (andw pg_1 2) := rfl
-  clear_value fl_2
+  word_step fl_2 := tstFlags (andw pg_1 2)
   -- pg_2: asr pg,pg,#1
-  extract_lets -merge +onlyGivenNames pg_2 at hres
-  have e_pg_2 : pg_2 = asr pg_1 1 := rfl
-  clear_value pg_2
-  have b_pg_2 : pg_2 < 2^64 := by rw [e_pg_2]; exact asr_lt pg_1 1 b_pg_1
+  word_step pg_2 := asr pg_1 1 using asr_lt pg_1 1 b_pg_1
   subst hres
   -- BEGIN conclusion
   obtain ⟨h1, h2, h3, h4⟩ := divstep_words s hf hd hD hG hG' two_delta pf pg fl b_two_delta b_pf
@@ -223,63 +187,29 @@ theorem divstepLast_spec (st : DivstepState) (hst : st.Bounded) (s : State)
   unfold divstepLast at hres
   lift_lets -merge at hres
   -- two_delta: argument
-  extract_lets -merge +onlyGivenNames two_delta at hres
-  have e_two_delta : two_delta = st.two_delta := rfl
-  clear_value two_delta
-  have b_two_delta : two_delta < 2^64 := by rw [e_two_delta]; exact hst.1
+  word_step two_delta := st.two_delta using hst.1
   -- pf: argument
-  extract_lets -merge +onlyGivenNames pf at hres
-  have e_pf : pf = st.f := rfl
-  clear_value pf
-  have b_pf : pf < 2^64 := by rw [e_pf]; exact hst.2.1
+  word_step pf := st.f using hst.2.1
   -- pg: argument
-  extract_lets -merge +onlyGivenNames pg at hres
-  have e_pg : pg = st.g := rfl
-  clear_value pg
-  have b_pg : pg < 2^64 := by rw [e_pg]; exact hst.2.2
+  word_step pg := st.g using hst.2.2
   -- fl: argument
-  extract_lets -merge +onlyGivenNames fl at hres
-  have e_fl : fl = st.fl := rfl
-  clear_value fl
+  word_step fl := st.fl
   -- t: csel t,pf,xzr,ne
-  extract_lets -merge +onlyGivenNames t at hres
-  have e_t : t = cselNe fl pf 0 := rfl
-  clear_value t
-  have b_t : t < 2^64 := by rw [e_t]; exact cselNe_lt fl pf 0 b_pf (by decide)
+  word_step t := cselNe fl pf 0 using cselNe_lt fl pf 0 b_pf (by decide)
   -- fl_1: ccmp two_delta,xzr,#8,ne
-  extract_lets -merge +onlyGivenNames fl_1 at hres
-  have e_fl_1 : fl_1 = ccmpNe fl two_delta 0 8 := rfl
-  clear_value fl_1
+  word_step fl_1 := ccmpNe fl two_delta 0 8
   -- two_delta_1: cneg two_delta,two_delta,ge
-  extract_lets -merge +onlyGivenNames two_delta_1 at hres
-  have e_two_delta_1 : two_delta_1 = cnegGe fl_1 two_delta := rfl
-  clear_value two_delta_1
-  have b_two_delta_1 : two_delta_1 < 2^64 := by rw [e_two_delta_1]; exact cnegGe_lt fl_1 two_delta b_two_delta
+  word_step two_delta_1 := cnegGe fl_1 two_delta using cnegGe_lt fl_1 two_delta b_two_delta
   -- t_1: cneg t,t,ge
-  extract_lets -merge +onlyGivenNames t_1 at hres
-  have e_t_1 : t_1 = cnegGe fl_1 t := rfl
-  clear_value t_1
-  have b_t_1 : t_1 < 2^64 := by rw [e_t_1]; exact cnegGe_lt fl_1 t b_t
+  word_step t_1 := cnegGe fl_1 t using cnegGe_lt fl_1 t b_t
   -- pf_1: csel pf,pg,pf,ge
-  extract_lets -merge +onlyGivenNames pf_1 at hres
-  have e_pf_1 : pf_1 = cselGe fl_1 pg pf := rfl
-  clear_value pf_1
-  have b_pf_1 : pf_1 < 2^64 := by rw [e_pf_1]; exact cselGe_lt fl_1 pg pf b_pg b_pf
+  word_step pf_1 := cselGe fl_1 pg pf using cselGe_lt fl_1 pg pf b_pg b_pf
   -- pg_1: add pg,pg,t
-  extract_lets -merge +onlyGivenNames pg_1 at hres
-  have e_pg_1 : pg_1 = addw pg t_1 := rfl
-  clear_value pg_1
-  have b_pg_1 : pg_1 < 2^64 := by rw [e_pg_1]; exact addw_lt pg t_1
+  word_step pg_1 := addw pg t_1 using addw_lt pg t_1
   -- two_delta_2: add two_delta,two_delta,#2
-  extract_lets -merge +onlyGivenNames two_delta_2 at hres
-  have e_two_delta_2 : two_delta_2 = addw two_delta_1 2 := rfl
-  clear_value two_delta_2
-  have b_two_delta_2 : two_delta_2 < 2^64 := by rw [e_two_delta_2]; exact addw_lt two_delta_1 2
+  word_step two_delta_2 := addw two_delta_1 2 using addw_lt two_delta_1 2
   -- pg_2: asr pg,pg,#1
-  extract_lets -merge +onlyGivenNames pg_2 at hres
-  have e_pg_2 : pg_2 = asr pg_1 1 := rfl
-  clear_value pg_2
-  have b_pg_2 : pg_2 < 2^64 := by rw [e_pg_2]; exact asr_lt pg_1 1 b_pg_1
+  word_step pg_2 := asr pg_1 1 using asr_lt pg_1 1 b_pg_1
   subst hres
   -- BEGIN conclusion
   obtain ⟨h1, h2, h3, -⟩ := divstep_words s hf hd hD hG hG' two_delta pf pg fl b_two_delta b_pf

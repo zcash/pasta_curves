@@ -66,81 +66,37 @@ theorem signMagBlock_spec (zu zv zq zr : ℤ) (u v q r : Nat)
   unfold signMagBlock at hres
   lift_lets -merge at hres
   -- u': argument
-  extract_lets -merge +onlyGivenNames u' at hres
-  have e_u' : u' = u := rfl
-  clear_value u'
-  have b_u' : u' < 2^64 := by rw [e_u']; exact hu
+  word_step u' := u using hu
   -- v': argument
-  extract_lets -merge +onlyGivenNames v' at hres
-  have e_v' : v' = v := rfl
-  clear_value v'
-  have b_v' : v' < 2^64 := by rw [e_v']; exact hv
+  word_step v' := v using hv
   -- q': argument
-  extract_lets -merge +onlyGivenNames q' at hres
-  have e_q' : q' = q := rfl
-  clear_value q'
-  have b_q' : q' < 2^64 := by rw [e_q']; exact hq
+  word_step q' := q using hq
   -- r': argument
-  extract_lets -merge +onlyGivenNames r' at hres
-  have e_r' : r' = r := rfl
-  clear_value r'
-  have b_r' : r' < 2^64 := by rw [e_r']; exact hr
+  word_step r' := r using hr
   -- fl: cmp u,xzr
-  extract_lets -merge +onlyGivenNames fl at hres
-  have e_fl : fl = cmpFlags u' 0 := rfl
-  clear_value fl
+  word_step fl := cmpFlags u' 0
   -- su: csetm su,mi
-  extract_lets -merge +onlyGivenNames su at hres
-  have e_su : su = csetmMi fl := rfl
-  clear_value su
-  have b_su : su < 2^64 := by rw [e_su]; exact csetmMi_lt fl
+  word_step su := csetmMi fl using csetmMi_lt fl
   -- u_1: cneg u,u,mi
-  extract_lets -merge +onlyGivenNames u_1 at hres
-  have e_u_1 : u_1 = cnegMi fl u' := rfl
-  clear_value u_1
-  have b_u_1 : u_1 < 2^64 := by rw [e_u_1]; exact cnegMi_lt fl u' b_u'
+  word_step u_1 := cnegMi fl u' using cnegMi_lt fl u' b_u'
   -- fl_1: cmp v,xzr
-  extract_lets -merge +onlyGivenNames fl_1 at hres
-  have e_fl_1 : fl_1 = cmpFlags v' 0 := rfl
-  clear_value fl_1
+  word_step fl_1 := cmpFlags v' 0
   -- sv: csetm sv,mi
-  extract_lets -merge +onlyGivenNames sv at hres
-  have e_sv : sv = csetmMi fl_1 := rfl
-  clear_value sv
-  have b_sv : sv < 2^64 := by rw [e_sv]; exact csetmMi_lt fl_1
+  word_step sv := csetmMi fl_1 using csetmMi_lt fl_1
   -- v_1: cneg v,v,mi
-  extract_lets -merge +onlyGivenNames v_1 at hres
-  have e_v_1 : v_1 = cnegMi fl_1 v' := rfl
-  clear_value v_1
-  have b_v_1 : v_1 < 2^64 := by rw [e_v_1]; exact cnegMi_lt fl_1 v' b_v'
+  word_step v_1 := cnegMi fl_1 v' using cnegMi_lt fl_1 v' b_v'
   -- fl_2: cmp q,xzr
-  extract_lets -merge +onlyGivenNames fl_2 at hres
-  have e_fl_2 : fl_2 = cmpFlags q' 0 := rfl
-  clear_value fl_2
+  word_step fl_2 := cmpFlags q' 0
   -- sq: csetm sq,mi
-  extract_lets -merge +onlyGivenNames sq at hres
-  have e_sq : sq = csetmMi fl_2 := rfl
-  clear_value sq
-  have b_sq : sq < 2^64 := by rw [e_sq]; exact csetmMi_lt fl_2
+  word_step sq := csetmMi fl_2 using csetmMi_lt fl_2
   -- q_1: cneg q,q,mi
-  extract_lets -merge +onlyGivenNames q_1 at hres
-  have e_q_1 : q_1 = cnegMi fl_2 q' := rfl
-  clear_value q_1
-  have b_q_1 : q_1 < 2^64 := by rw [e_q_1]; exact cnegMi_lt fl_2 q' b_q'
+  word_step q_1 := cnegMi fl_2 q' using cnegMi_lt fl_2 q' b_q'
   -- fl_3: cmp r,xzr
-  extract_lets -merge +onlyGivenNames fl_3 at hres
-  have e_fl_3 : fl_3 = cmpFlags r' 0 := rfl
-  clear_value fl_3
+  word_step fl_3 := cmpFlags r' 0
   -- sr: csetm sr,mi
-  extract_lets -merge +onlyGivenNames sr at hres
-  have e_sr : sr = csetmMi fl_3 := rfl
-  clear_value sr
-  have b_sr : sr < 2^64 := by rw [e_sr]; exact csetmMi_lt fl_3
+  word_step sr := csetmMi fl_3 using csetmMi_lt fl_3
   -- r_1: cneg r,r,mi
-  extract_lets -merge +onlyGivenNames r_1 at hres
-  have e_r_1 : r_1 = cnegMi fl_3 r' := rfl
-  clear_value r_1
-  have b_r_1 : r_1 < 2^64 := by rw [e_r_1]; exact cnegMi_lt fl_3 r' b_r'
+  word_step r_1 := cnegMi fl_3 r' using cnegMi_lt fl_3 r' b_r'
   subst hres
   -- BEGIN conclusion
   obtain ⟨hA, hA'⟩ := signMag_word zu hzu u eu
