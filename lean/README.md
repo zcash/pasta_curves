@@ -40,11 +40,12 @@ on the Pasta fields, under the operand contracts they actually have.
 The proof is about the instruction streams of the crate's own inline `asm!` blocks, not about
 a re-derivation of the algorithms:
 
-- `src/asm/aarch64.rs`: `add`, `sub`, `mul`, and `square`.
+- `src/asm/aarch64.rs`: `add`, `sub`, `mul`, `square`, and the inversion's `divstep59`, `sign_mag`,
+  `fg_row`, `uv_row`, `amontred`, and `cond_sub`.
 - `src/asm/x86_64.rs`: `add`, `sub`, `mul`, `square_lo`, `square_hi`, and `from_mont`.
 
-Some of the crate's other entry points, `sqr_n_mul` and `from_mont`, are Rust compositions of
-assembly blocks on some architectures, and are modelled as such.
+Some of the crate's other entry points, `sqr_n_mul`, `from_mont`, and `invert`, are Rust
+compositions of assembly blocks on some architectures, and are modelled as such.
 
 The multiplication and squaring blocks are transcriptions of Semolina v0.1.4's
 `mul_mont_pasta` and of the squaring loop body of its `sqr_n_mul_mont_pasta`, and the addition
@@ -66,9 +67,10 @@ What is trusted, beyond Lean's kernel and standard axioms:
    expanding the macros that a block invokes for a repeated step, and the operand declarations;
    CI regenerates and diffs.
 3. The Rust mirrored in `PastaCurves/AArch64/Compositions.lean` and
-   `PastaCurves/X86_64/Compositions.lean`: the compositions `sqr_n_mul` and `from_mont`; and in
-   `PastaCurves/Compositions.lean`: the shared canonicity check `is_canonical` and the condition
-   `mul_contract` that `mul` asserts. A few lines each, checked by inspection.
+   `PastaCurves/X86_64/Compositions.lean`: the compositions `sqr_n_mul` and `from_mont`, and on
+   AArch64 the inversion's driver `invert`; and in `PastaCurves/Compositions.lean`: the shared
+   canonicity check `is_canonical` and the condition `mul_contract` that `mul` asserts. Short, and
+   checked against the Rust by inspection.
 4. The reference vectors: outputs of the real assembly on an Apple M-series machine, at
    pasta_curves commit `8ad85e9fab7929f6236960e472f432a4bd9ccd74`, embedded as kernel-checked
    examples (`decide +kernel`). These are concrete closed facts that any independent run of
@@ -265,6 +267,31 @@ code assumes) and `inv · p0 ≡ −1 (mod 2^64)`:
   `2^255`) and `subMod_spec_of_lt` (canonical operands, a canonical result) both have
   `output + rhs ≡ lhs (mod p)`.
 
+The inversion's blocks, each equated with the word-level function of the shared layer
+(`PastaCurves/Inversion/`) that the round model composes:
+
+* `condSubBlock_spec` (proved): the conditional subtraction block returns its input when that
+  is below `p` and the input minus `p` otherwise, so a value below `2 · p` becomes canonical.
+* `amontredBlock_spec` (proved): the reduction block computes the round's `amontred`, one word
+  of Montgomery reduction of a five-word value after adding `2^61 · p`. By Lemma 10 the result
+  is below `2 · p` and below `2^256`, so the top carry that the block drops is `0`.
+* `signMagBlock_spec` (proved): the block converts the four matrix entries from two's
+  complement to magnitudes and sign masks.
+* `uvRowBlock_spec` and `fgRowBlock_spec` (proved): one matrix row of the `u`, `v` combination,
+  the exact `a · u + b · v` in five words, and of the `f`, `g` update, the exact
+  `(a · f + b · g) / 2^59`, each under the row bound `|a| + |b| ≤ 2^63`. Both are stated over
+  the sign-magnitude representation, which admits a zero entry with an all-ones mask, since the
+  last round's masking by the sign word produces one.
+* `divstepRound_spec` and `divstepLast_spec` (proved): one packed half-delta divstep of the
+  `divstep59` macro is the recurrence of `Inversion/Packed.lean`, under the no-wrap bound on
+  the packed `g` (Lemma 6′).
+* `divstep59Block_spec` (proved): the block's three batches compute `divstep59`'s `d` and the
+  entries of the 59-step matrix modulo `2^64`. The assembly's negated decoder is absorbed by
+  the recurrence's sign symmetry.
+* `invert_eq_model` (proved): the composition `invert` of `AArch64/Compositions.lean`, which
+  mirrors the Rust driver, computes `montInvModel`. Each round carries the model's state by the
+  block theorems, whose bounds come from the model's round invariant.
+
 The crate's entry points, in `Entry.lean`: `mul_entry_spec`, `square_entry_spec`,
 `sqrNMul_entry_spec`, `fromMont_entry_spec`, `add_entry_spec`, and `sub_entry_spec` (all
 proved) restate the above for the entry points as `src/asm/mod.rs` exposes them, at either of the
@@ -273,17 +300,20 @@ hypotheses on the modulus) and under the condition that the entry point checks i
 build: `mulContract` for `mul`, and `isCanonical` for `square`, for the squarings of
 `sqr_n_mul`, and for both operands of `add` and `sub`. `isCanonical_iff` and `mulContract_iff`
 relate those Boolean checks, which mirror the Rust, to the arithmetic conditions of the
-theorems above. `from_mont` checks nothing and holds for every input.
+theorems above. `from_mont` checks nothing and holds for every input. `invert_entry_spec`
+(proved) restates `montInv_spec` for the crate's `invert`: for a canonical input, as it
+asserts, and `v0 = 2^562 mod p`, as its contract requires, the result is canonical, `0` for
+`x = 0`, and otherwise the Montgomery inverse with `x · result ≡ R^2 (mod p)`. The primality of
+the modulus is the field's `prime`, and the termination bound is `terminationBound_256`.
 
 ## Status
 
-Present: the semantics, the generator, the generated transcription of the ten inline blocks,
-the compositions and the asserted conditions, the fields, the vectors, and the CI checks
+Present: the semantics, the generator, the generated transcription of the inline blocks, the
+compositions and the asserted conditions, the fields, the vectors, and the CI checks
 (regeneration, skeletons, and the nanoda re-check). The inversion's six blocks (`divstep59`,
 with its step factored out of the block, `sign_mag`, `fg_row`, `uv_row`, `amontred`, and
-`cond_sub`) are transcribed and checked against known answers from the round model, and
-`divstep59` also against a step-by-step trace of one batch; they are not yet proved, and the
-Rust does not yet compose them. The proofs cover:
+`cond_sub`) are also checked against known answers from the round model, and `divstep59`
+against a step-by-step trace of one batch. The proofs cover:
 
 * the multiplication block with its two operand contracts, and the conversion as that block
   at `1`;
@@ -291,7 +321,10 @@ Rust does not yet compose them. The proofs cover:
   multiplication;
 * the addition and subtraction blocks for every pair of operands on which they are exact, with
   their corollaries for a lazily reduced left operand and for canonical operands;
-* from those, the six entry points at either field under the conditions they assert.
+* the inversion's six blocks against the word-level functions of the shared layer, and the
+  AArch64 `invert` as their composition against `montInvModel`;
+* from those, the six Montgomery entry points at either field under the conditions they
+  assert, and `invert` at either field.
 
 This covers the crate's current code, up to the aspects that the trust story lists as reviewed
 by hand.
