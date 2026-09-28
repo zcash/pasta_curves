@@ -61,10 +61,11 @@ Copyright (c) 2026 the pasta_curves contributors (the transcription).
 -/
 """
 
-# Code longer than this does not set the instruction-comment column (see `Routine.text`): the
-# round calls, and the longer expressions of the inversion blocks, take their comment two spaces
-# after the code, so that a new block does not re-align the comments of the existing ones.
-COMMENT_COLUMN_MAX = 30
+# The instruction-comment column of the transcription (see `Routine.text`). It is fixed, so that
+# a changed or added block does not re-align the comments of the others; code that reaches it
+# (the round calls, and the longer expressions of the inversion blocks) takes its comment two
+# spaces after the code.
+COMMENT_COLUMN = 32
 
 # Blocks whose instruction stream Semolina's generator (`pasta_mul-armv8.pl`) emitted as a
 # prologue, a loop body repeated a fixed number of times, and an epilogue. The body is
@@ -317,6 +318,14 @@ def imm(tok):
     return eval(s)
 
 
+def literal(tok, shift=0):
+    """An immediate operand as a Lean literal, in the radix of the source, so that a hex
+    constant reads in the transcription as it does in the assembly; `shift` is the `lsl`
+    amount of a shifted immediate."""
+    value = imm(tok) << shift
+    return hex(value) if tok.lstrip("#").startswith("0x") else str(value)
+
+
 class Emitter(gen.Emitter):
     """AArch64 instruction decoder backed by the shared binding and liveness IR."""
 
@@ -332,7 +341,7 @@ class Emitter(gen.Emitter):
         if tok == "xzr":
             return "0"
         if tok.startswith("#"):
-            return str(imm(tok))
+            return literal(tok)
         if tok in ("c", "fl") and self.flags != tok:
             raise ValueError(f"{tok} read while the flags are not in that form")
         if tok not in self.known:
@@ -356,7 +365,7 @@ class Emitter(gen.Emitter):
         if len(toks) == 3 and toks[1] == "lsl":
             k = imm(toks[2])
             if toks[0].startswith("#"):
-                b = str(imm(toks[0]) * 2**k)
+                b = literal(toks[0], k)
                 return b, (b,)
             b = self.read(toks[0])
             return f"(lsl {b} {k})", (b, k)
@@ -1186,15 +1195,7 @@ namespace PastaCurves.AArch64
 """,
     ]
     routines = all_routines()
-    # One comment column for the whole file: two spaces past the widest ordinary `let`. Lines
-    # longer than COMMENT_COLUMN_MAX are outliers (the round calls) and do not set the column.
-    column = 2 + max(
-        len(code)
-        for r in routines
-        for code, _ in r.lines
-        if code is not None and len(code) <= COMMENT_COLUMN_MAX
-    )
-    parts.append("\n".join(r.text(column) for r in routines))
+    parts.append("\n".join(r.text(COMMENT_COLUMN) for r in routines))
     parts.append("\nend PastaCurves.AArch64\n")
     return "".join(parts)
 

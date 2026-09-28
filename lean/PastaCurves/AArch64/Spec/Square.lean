@@ -100,7 +100,7 @@ theorem sqrMont_conclude {a0 a1 a2 a3 ka z0 z1 z2 z3 c0 dz0 dz1 dz2 r0 r1 r2 r3 
     (lz1 : z1 + 2^64 * dz1 + modulus.l1 + 1 = a1 + 2^64 + dz0)
     (lz2 : z2 + 2^64 * dz2 + 0 + 1 = a2 + 2^64 + dz1)
     (lz3 : z3 + 2^64 * c0 + q4 + 1 = a3 + 2^64 + dz2)
-    (hq4 : q4 = 4611686018427387904) (hshape : modulus.l2 = 0 ∧ modulus.l3 = 2^62) (hc1 : c0 ≤ 1)
+    (hq4 : q4 = 0x4000000000000000) (hshape : modulus.l2 = 0 ∧ modulus.l3 = 2^62) (hc1 : c0 ≤ 1)
     (bz0 : z0 < 2^64) (bz1 : z1 < 2^64) (bz2 : z2 < 2^64) (bz3 : z3 < 2^64)
     (br0 : r0 < 2^64) (br1 : r1 < 2^64) (br2 : r2 < 2^64) (br3 : r3 < 2^64)
     (er0 : r0 = if c0 = 0 then a0 else z0) (er1 : r1 = if c0 = 0 then a1 else z1)
@@ -1323,7 +1323,7 @@ theorem sqrMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   -- END candidate
   -- q_4: mov q,#0x4000000000000000
   extract_lets -merge +onlyGivenNames q_4 at hr
-  have e_q_4 : q_4 = 4611686018427387904 := rfl
+  have e_q_4 : q_4 = 0x4000000000000000 := rfl
   clear_value q_4
   have b_q_4 : q_4 < 2^64 := by rw [e_q_4]; decide
   -- z0_5: subs z0,a0,p0
