@@ -139,7 +139,7 @@ theorem amontredBlock_spec (F : PastaField) (t : Signed5) (modulus : Limbs) (inv
   clear e_t3_1 e_c_3
   -- w_3: mov w,#0x800000000000000
   extract_lets -merge +onlyGivenNames w_3 at hres
-  have e_w_3 : w_3 = 576460752303423488 := rfl
+  have e_w_3 : w_3 = 0x800000000000000 := rfl
   clear_value w_3
   have b_w_3 : w_3 < 2^64 := by rw [e_w_3]; decide
   -- t4_1: adc t4,t4,w

@@ -83,19 +83,19 @@ theorem or_low_high (x k m : ℕ) (hx : x < 2^k) : x ||| 2^k * m = 2^k * m + x :
 
 /-- The packing of a low word: its low 20 bits with `-2^41` (resp. `-2^62`) in two's complement. -/
 theorem pack_f_word (f : ℕ) :
-    ((orrw (andw f 1048575) 18446741874686296064 : ℕ) : ℤ) = (f % 2^20 - 2^41) % 2^64 := by
+    ((orrw (andw f 0xfffff) 0xfffffe0000000000 : ℕ) : ℤ) = (f % 2^20 - 2^41) % 2^64 := by
   unfold orrw andw
-  rw [show (1048575 : ℕ) = 2^20 - 1 by norm_num, Nat.and_two_pow_sub_one_eq_mod,
-    show (18446741874686296064 : ℕ) = 2^20 * (2^21 * (2^23 - 1)) by norm_num,
+  rw [show (0xfffff : ℕ) = 2^20 - 1 by norm_num, Nat.and_two_pow_sub_one_eq_mod,
+    show (0xfffffe0000000000 : ℕ) = 2^20 * (2^21 * (2^23 - 1)) by norm_num,
     or_low_high _ _ _ (Nat.mod_lt _ (by norm_num))]
   push_cast
   omega
 
 theorem pack_g_word (g : ℕ) :
-    ((orrw (andw g 1048575) 13835058055282163712 : ℕ) : ℤ) = (g % 2^20 - 2^62) % 2^64 := by
+    ((orrw (andw g 0xfffff) 0xc000000000000000 : ℕ) : ℤ) = (g % 2^20 - 2^62) % 2^64 := by
   unfold orrw andw
-  rw [show (1048575 : ℕ) = 2^20 - 1 by norm_num, Nat.and_two_pow_sub_one_eq_mod,
-    show (13835058055282163712 : ℕ) = 2^20 * (2^42 * 3) by norm_num,
+  rw [show (0xfffff : ℕ) = 2^20 - 1 by norm_num, Nat.and_two_pow_sub_one_eq_mod,
+    show (0xc000000000000000 : ℕ) = 2^20 * (2^42 * 3) by norm_num,
     or_low_high _ _ _ (Nat.mod_lt _ (by norm_num))]
   push_cast
   omega
@@ -131,13 +131,13 @@ disturbance away, as Lemma 7 does with the opposite sign. -/
 theorem decode20 (w : ℕ) (W φ u v : ℤ) (hw : (w : ℤ) = W % 2^64)
     (hW : W = φ - 2^21 * u - 2^42 * v) (hφ : |φ| < 2^20)
     (hu : -(2 : ℤ)^20 < u ∧ u ≤ 2^20) (hv : -(2 : ℤ)^20 < v ∧ v ≤ 2^20) :
-    ((sbfx (addw w 1048576) 21 21 : ℕ) : ℤ) = (-u) % 2^64 ∧
-      ((asr (addw w (addw 1048576 (lsl 1048576 21))) 42 : ℕ) : ℤ) = (-v) % 2^64 := by
+    ((sbfx (addw w 0x100000) 21 21 : ℕ) : ℤ) = (-u) % 2^64 ∧
+      ((asr (addw w (addw 0x100000 (lsl 0x100000 21))) 42 : ℕ) : ℤ) = (-v) % 2^64 := by
   rw [abs_lt] at hφ
   have hw64 : w < 2^64 := by omega
-  have hc : addw 1048576 (lsl 1048576 21) = 2^20 + 2^41 := by decide
+  have hc : addw 0x100000 (lsl 0x100000 21) = 2^20 + 2^41 := by decide
   rw [hc]
-  have ha1 : addw w 1048576 = (w + 2^20) % 2^64 := rfl
+  have ha1 : addw w 0x100000 = (w + 2^20) % 2^64 := rfl
   have ha2 : addw w (2^20 + 2^41) = (w + (2^20 + 2^41)) % 2^64 := rfl
   unfold sbfx asr
   rw [ha1, ha2]
@@ -150,13 +150,13 @@ theorem decode20 (w : ℕ) (W φ u v : ℤ) (hw : (w : ℤ) = W % 2^64)
 theorem decode19 (w : ℕ) (W φ u v : ℤ) (hw : (w : ℤ) = W % 2^64)
     (hW : W = φ - 2^22 * u - 2^43 * v) (hφ : |φ| < 2^20)
     (hu : -(2 : ℤ)^19 < u ∧ u ≤ 2^19) (hv : -(2 : ℤ)^19 < v ∧ v ≤ 2^19) :
-    ((sbfx (addw w 1048576) 22 21 : ℕ) : ℤ) = (-u) % 2^64 ∧
-      ((asr (addw w (addw 1048576 (lsl 1048576 21))) 43 : ℕ) : ℤ) = (-v) % 2^64 := by
+    ((sbfx (addw w 0x100000) 22 21 : ℕ) : ℤ) = (-u) % 2^64 ∧
+      ((asr (addw w (addw 0x100000 (lsl 0x100000 21))) 43 : ℕ) : ℤ) = (-v) % 2^64 := by
   rw [abs_lt] at hφ
   have hw64 : w < 2^64 := by omega
-  have hc : addw 1048576 (lsl 1048576 21) = 2^20 + 2^41 := by decide
+  have hc : addw 0x100000 (lsl 0x100000 21) = 2^20 + 2^41 := by decide
   rw [hc]
-  have ha1 : addw w 1048576 = (w + 2^20) % 2^64 := rfl
+  have ha1 : addw w 0x100000 = (w + 2^20) % 2^64 := rfl
   have ha2 : addw w (2^20 + 2^41) = (w + (2^20 + 2^41)) % 2^64 := rfl
   unfold sbfx asr
   rw [ha1, ha2]
@@ -261,24 +261,24 @@ theorem divstep59Block_spec (two_delta f0 g0 : ℕ) (s : State) (hsf : s.f % 2 =
   have b_g : g < 2^64 := by rw [e_g]; exact hg0
   -- pf: and pf,f,#0xfffff
   extract_lets -merge +onlyGivenNames pf at hres
-  have e_pf : pf = andw f 1048575 := rfl
+  have e_pf : pf = andw f 0xfffff := rfl
   clear_value pf
-  have b_pf : pf < 2^64 := by rw [e_pf]; exact andw_lt f 1048575 b_f (by decide)
+  have b_pf : pf < 2^64 := by rw [e_pf]; exact andw_lt f 0xfffff b_f (by decide)
   -- pf_1: orr pf,pf,#0xfffffe0000000000
   extract_lets -merge +onlyGivenNames pf_1 at hres
-  have e_pf_1 : pf_1 = orrw pf 18446741874686296064 := rfl
+  have e_pf_1 : pf_1 = orrw pf 0xfffffe0000000000 := rfl
   clear_value pf_1
-  have b_pf_1 : pf_1 < 2^64 := by rw [e_pf_1]; exact orrw_lt pf 18446741874686296064 b_pf (by decide)
+  have b_pf_1 : pf_1 < 2^64 := by rw [e_pf_1]; exact orrw_lt pf 0xfffffe0000000000 b_pf (by decide)
   -- pg: and pg,g,#0xfffff
   extract_lets -merge +onlyGivenNames pg at hres
-  have e_pg : pg = andw g 1048575 := rfl
+  have e_pg : pg = andw g 0xfffff := rfl
   clear_value pg
-  have b_pg : pg < 2^64 := by rw [e_pg]; exact andw_lt g 1048575 b_g (by decide)
+  have b_pg : pg < 2^64 := by rw [e_pg]; exact andw_lt g 0xfffff b_g (by decide)
   -- pg_1: orr pg,pg,#0xc000000000000000
   extract_lets -merge +onlyGivenNames pg_1 at hres
-  have e_pg_1 : pg_1 = orrw pg 13835058055282163712 := rfl
+  have e_pg_1 : pg_1 = orrw pg 0xc000000000000000 := rfl
   clear_value pg_1
-  have b_pg_1 : pg_1 < 2^64 := by rw [e_pg_1]; exact orrw_lt pg 13835058055282163712 b_pg (by decide)
+  have b_pg_1 : pg_1 < 2^64 := by rw [e_pg_1]; exact orrw_lt pg 0xc000000000000000 b_pg (by decide)
   -- fl: tst pg,#1
   extract_lets -merge +onlyGivenNames fl at hres
   have e_fl : fl = tstFlags (andw pg_1 1) := rfl
@@ -681,9 +681,9 @@ theorem divstep59Block_spec (two_delta f0 g0 : ℕ) (s : State) (hsf : s.f % 2 =
   clear_value pg_21
   -- a00: add a00,pf,#0x100,lsl #12
   extract_lets -merge +onlyGivenNames a00 at hres
-  have e_a00 : a00 = addw pf_21 1048576 := rfl
+  have e_a00 : a00 = addw pf_21 0x100000 := rfl
   clear_value a00
-  have b_a00 : a00 < 2^64 := by rw [e_a00]; exact addw_lt pf_21 1048576
+  have b_a00 : a00 < 2^64 := by rw [e_a00]; exact addw_lt pf_21 0x100000
   -- a00_1: sbfx a00,a00,#21,#21
   extract_lets -merge +onlyGivenNames a00_1 at hres
   have e_a00_1 : a00_1 = sbfx a00 21 21 := rfl
@@ -691,7 +691,7 @@ theorem divstep59Block_spec (two_delta f0 g0 : ℕ) (s : State) (hsf : s.f % 2 =
   have b_a00_1 : a00_1 < 2^64 := by rw [e_a00_1]; exact sbfx_lt a00 21 21 b_a00
   -- a11: mov a11,#0x100000
   extract_lets -merge +onlyGivenNames a11 at hres
-  have e_a11 : a11 = 1048576 := rfl
+  have e_a11 : a11 = 0x100000 := rfl
   clear_value a11
   have b_a11 : a11 < 2^64 := by rw [e_a11]; decide
   -- a11_1: add a11,a11,a11,lsl #21
@@ -711,9 +711,9 @@ theorem divstep59Block_spec (two_delta f0 g0 : ℕ) (s : State) (hsf : s.f % 2 =
   have b_a01_1 : a01_1 < 2^64 := by rw [e_a01_1]; exact asr_lt a01 42 b_a01
   -- a10: add a10,pg,#0x100,lsl #12
   extract_lets -merge +onlyGivenNames a10 at hres
-  have e_a10 : a10 = addw pg_21 1048576 := rfl
+  have e_a10 : a10 = addw pg_21 0x100000 := rfl
   clear_value a10
-  have b_a10 : a10 < 2^64 := by rw [e_a10]; exact addw_lt pg_21 1048576
+  have b_a10 : a10 < 2^64 := by rw [e_a10]; exact addw_lt pg_21 0x100000
   -- a10_1: sbfx a10,a10,#21,#21
   extract_lets -merge +onlyGivenNames a10_1 at hres
   have e_a10_1 : a10_1 = sbfx a10 21 21 := rfl
@@ -771,24 +771,24 @@ theorem divstep59Block_spec (two_delta f0 g0 : ℕ) (s : State) (hsf : s.f % 2 =
   have b_g_2 : g_2 < 2^64 := by rw [e_g_2]; exact asr_lt pg_22 20 b_pg_22
   -- pf_23: and pf,f,#0xfffff
   extract_lets -merge +onlyGivenNames pf_23 at hres
-  have e_pf_23 : pf_23 = andw f_2 1048575 := rfl
+  have e_pf_23 : pf_23 = andw f_2 0xfffff := rfl
   clear_value pf_23
-  have b_pf_23 : pf_23 < 2^64 := by rw [e_pf_23]; exact andw_lt f_2 1048575 b_f_2 (by decide)
+  have b_pf_23 : pf_23 < 2^64 := by rw [e_pf_23]; exact andw_lt f_2 0xfffff b_f_2 (by decide)
   -- pf_24: orr pf,pf,#0xfffffe0000000000
   extract_lets -merge +onlyGivenNames pf_24 at hres
-  have e_pf_24 : pf_24 = orrw pf_23 18446741874686296064 := rfl
+  have e_pf_24 : pf_24 = orrw pf_23 0xfffffe0000000000 := rfl
   clear_value pf_24
-  have b_pf_24 : pf_24 < 2^64 := by rw [e_pf_24]; exact orrw_lt pf_23 18446741874686296064 b_pf_23 (by decide)
+  have b_pf_24 : pf_24 < 2^64 := by rw [e_pf_24]; exact orrw_lt pf_23 0xfffffe0000000000 b_pf_23 (by decide)
   -- pg_23: and pg,g,#0xfffff
   extract_lets -merge +onlyGivenNames pg_23 at hres
-  have e_pg_23 : pg_23 = andw g_2 1048575 := rfl
+  have e_pg_23 : pg_23 = andw g_2 0xfffff := rfl
   clear_value pg_23
-  have b_pg_23 : pg_23 < 2^64 := by rw [e_pg_23]; exact andw_lt g_2 1048575 b_g_2 (by decide)
+  have b_pg_23 : pg_23 < 2^64 := by rw [e_pg_23]; exact andw_lt g_2 0xfffff b_g_2 (by decide)
   -- pg_24: orr pg,pg,#0xc000000000000000
   extract_lets -merge +onlyGivenNames pg_24 at hres
-  have e_pg_24 : pg_24 = orrw pg_23 13835058055282163712 := rfl
+  have e_pg_24 : pg_24 = orrw pg_23 0xc000000000000000 := rfl
   clear_value pg_24
-  have b_pg_24 : pg_24 < 2^64 := by rw [e_pg_24]; exact orrw_lt pg_23 13835058055282163712 b_pg_23 (by decide)
+  have b_pg_24 : pg_24 < 2^64 := by rw [e_pg_24]; exact orrw_lt pg_23 0xc000000000000000 b_pg_23 (by decide)
   -- fl_20: tst pg,#1
   extract_lets -merge +onlyGivenNames fl_20 at hres
   have e_fl_20 : fl_20 = tstFlags (andw pg_24 1) := rfl
@@ -1191,9 +1191,9 @@ theorem divstep59Block_spec (two_delta f0 g0 : ℕ) (s : State) (hsf : s.f % 2 =
   clear_value pg_44
   -- b00: add b00,pf,#0x100,lsl #12
   extract_lets -merge +onlyGivenNames b00 at hres
-  have e_b00 : b00 = addw pf_44 1048576 := rfl
+  have e_b00 : b00 = addw pf_44 0x100000 := rfl
   clear_value b00
-  have b_b00 : b00 < 2^64 := by rw [e_b00]; exact addw_lt pf_44 1048576
+  have b_b00 : b00 < 2^64 := by rw [e_b00]; exact addw_lt pf_44 0x100000
   -- b00_1: sbfx b00,b00,#21,#21
   extract_lets -merge +onlyGivenNames b00_1 at hres
   have e_b00_1 : b00_1 = sbfx b00 21 21 := rfl
@@ -1201,7 +1201,7 @@ theorem divstep59Block_spec (two_delta f0 g0 : ℕ) (s : State) (hsf : s.f % 2 =
   have b_b00_1 : b00_1 < 2^64 := by rw [e_b00_1]; exact sbfx_lt b00 21 21 b_b00
   -- b11: mov b11,#0x100000
   extract_lets -merge +onlyGivenNames b11 at hres
-  have e_b11 : b11 = 1048576 := rfl
+  have e_b11 : b11 = 0x100000 := rfl
   clear_value b11
   have b_b11 : b11 < 2^64 := by rw [e_b11]; decide
   -- b11_1: add b11,b11,b11,lsl #21
@@ -1221,9 +1221,9 @@ theorem divstep59Block_spec (two_delta f0 g0 : ℕ) (s : State) (hsf : s.f % 2 =
   have b_b01_1 : b01_1 < 2^64 := by rw [e_b01_1]; exact asr_lt b01 42 b_b01
   -- b10: add b10,pg,#0x100,lsl #12
   extract_lets -merge +onlyGivenNames b10 at hres
-  have e_b10 : b10 = addw pg_44 1048576 := rfl
+  have e_b10 : b10 = addw pg_44 0x100000 := rfl
   clear_value b10
-  have b_b10 : b10 < 2^64 := by rw [e_b10]; exact addw_lt pg_44 1048576
+  have b_b10 : b10 < 2^64 := by rw [e_b10]; exact addw_lt pg_44 0x100000
   -- b10_1: sbfx b10,b10,#21,#21
   extract_lets -merge +onlyGivenNames b10_1 at hres
   have e_b10_1 : b10_1 = sbfx b10 21 21 := rfl
@@ -1281,24 +1281,24 @@ theorem divstep59Block_spec (two_delta f0 g0 : ℕ) (s : State) (hsf : s.f % 2 =
   have b_g_4 : g_4 < 2^64 := by rw [e_g_4]; exact asr_lt pg_45 20 b_pg_45
   -- pf_46: and pf,f,#0xfffff
   extract_lets -merge +onlyGivenNames pf_46 at hres
-  have e_pf_46 : pf_46 = andw f_4 1048575 := rfl
+  have e_pf_46 : pf_46 = andw f_4 0xfffff := rfl
   clear_value pf_46
-  have b_pf_46 : pf_46 < 2^64 := by rw [e_pf_46]; exact andw_lt f_4 1048575 b_f_4 (by decide)
+  have b_pf_46 : pf_46 < 2^64 := by rw [e_pf_46]; exact andw_lt f_4 0xfffff b_f_4 (by decide)
   -- pf_47: orr pf,pf,#0xfffffe0000000000
   extract_lets -merge +onlyGivenNames pf_47 at hres
-  have e_pf_47 : pf_47 = orrw pf_46 18446741874686296064 := rfl
+  have e_pf_47 : pf_47 = orrw pf_46 0xfffffe0000000000 := rfl
   clear_value pf_47
-  have b_pf_47 : pf_47 < 2^64 := by rw [e_pf_47]; exact orrw_lt pf_46 18446741874686296064 b_pf_46 (by decide)
+  have b_pf_47 : pf_47 < 2^64 := by rw [e_pf_47]; exact orrw_lt pf_46 0xfffffe0000000000 b_pf_46 (by decide)
   -- pg_46: and pg,g,#0xfffff
   extract_lets -merge +onlyGivenNames pg_46 at hres
-  have e_pg_46 : pg_46 = andw g_4 1048575 := rfl
+  have e_pg_46 : pg_46 = andw g_4 0xfffff := rfl
   clear_value pg_46
-  have b_pg_46 : pg_46 < 2^64 := by rw [e_pg_46]; exact andw_lt g_4 1048575 b_g_4 (by decide)
+  have b_pg_46 : pg_46 < 2^64 := by rw [e_pg_46]; exact andw_lt g_4 0xfffff b_g_4 (by decide)
   -- pg_47: orr pg,pg,#0xc000000000000000
   extract_lets -merge +onlyGivenNames pg_47 at hres
-  have e_pg_47 : pg_47 = orrw pg_46 13835058055282163712 := rfl
+  have e_pg_47 : pg_47 = orrw pg_46 0xc000000000000000 := rfl
   clear_value pg_47
-  have b_pg_47 : pg_47 < 2^64 := by rw [e_pg_47]; exact orrw_lt pg_46 13835058055282163712 b_pg_46 (by decide)
+  have b_pg_47 : pg_47 < 2^64 := by rw [e_pg_47]; exact orrw_lt pg_46 0xc000000000000000 b_pg_46 (by decide)
   -- fl_40: tst pg,#1
   extract_lets -merge +onlyGivenNames fl_40 at hres
   have e_fl_40 : fl_40 = tstFlags (andw pg_47 1) := rfl
@@ -1721,9 +1721,9 @@ theorem divstep59Block_spec (two_delta f0 g0 : ℕ) (s : State) (hsf : s.f % 2 =
   clear_value pg_66
   -- b00_2: add b00,pf,#0x100,lsl #12
   extract_lets -merge +onlyGivenNames b00_2 at hres
-  have e_b00_2 : b00_2 = addw pf_66 1048576 := rfl
+  have e_b00_2 : b00_2 = addw pf_66 0x100000 := rfl
   clear_value b00_2
-  have b_b00_2 : b00_2 < 2^64 := by rw [e_b00_2]; exact addw_lt pf_66 1048576
+  have b_b00_2 : b00_2 < 2^64 := by rw [e_b00_2]; exact addw_lt pf_66 0x100000
   -- b00_3: sbfx b00,b00,#22,#21
   extract_lets -merge +onlyGivenNames b00_3 at hres
   have e_b00_3 : b00_3 = sbfx b00_2 22 21 := rfl
@@ -1731,7 +1731,7 @@ theorem divstep59Block_spec (two_delta f0 g0 : ℕ) (s : State) (hsf : s.f % 2 =
   have b_b00_3 : b00_3 < 2^64 := by rw [e_b00_3]; exact sbfx_lt b00_2 22 21 b_b00_2
   -- b11_4: mov b11,#0x100000
   extract_lets -merge +onlyGivenNames b11_4 at hres
-  have e_b11_4 : b11_4 = 1048576 := rfl
+  have e_b11_4 : b11_4 = 0x100000 := rfl
   clear_value b11_4
   have b_b11_4 : b11_4 < 2^64 := by rw [e_b11_4]; decide
   -- b11_5: add b11,b11,b11,lsl #21
@@ -1751,9 +1751,9 @@ theorem divstep59Block_spec (two_delta f0 g0 : ℕ) (s : State) (hsf : s.f % 2 =
   have b_b01_3 : b01_3 < 2^64 := by rw [e_b01_3]; exact asr_lt b01_2 43 b_b01_2
   -- b10_2: add b10,pg,#0x100,lsl #12
   extract_lets -merge +onlyGivenNames b10_2 at hres
-  have e_b10_2 : b10_2 = addw pg_66 1048576 := rfl
+  have e_b10_2 : b10_2 = addw pg_66 0x100000 := rfl
   clear_value b10_2
-  have b_b10_2 : b10_2 < 2^64 := by rw [e_b10_2]; exact addw_lt pg_66 1048576
+  have b_b10_2 : b10_2 < 2^64 := by rw [e_b10_2]; exact addw_lt pg_66 0x100000
   -- b10_3: sbfx b10,b10,#22,#21
   extract_lets -merge +onlyGivenNames b10_3 at hres
   have e_b10_3 : b10_3 = sbfx b10_2 22 21 := rfl

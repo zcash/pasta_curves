@@ -60,7 +60,7 @@ theorem condSubBlock_spec (value modulus : Limbs) (hv : value.Bounded) (hm : mod
   have b_p1 : p1 < 2^64 := by rw [e_p1]; exact hm.2.1
   -- q: mov q,#0x4000000000000000
   extract_lets -merge +onlyGivenNames q at hres
-  have e_q : q = 4611686018427387904 := rfl
+  have e_q : q = 0x4000000000000000 := rfl
   clear_value q
   have b_q : q < 2^64 := by rw [e_q]; decide
   -- t0: subs t0,r0,p0
