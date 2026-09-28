@@ -202,6 +202,33 @@ class MacroTests(unittest.TestCase):
                 required_options={"pure", "nomem", "nostack"},
             )
 
+    def test_block_function_is_the_top_level_one(self):
+        # A trait implementation's method of the same name, which forwards to the block, is
+        # indented and so not the block; a second top-level definition is an error.
+        block = (
+            "fn f(mut a: u64) -> [u64; 1] {\n"
+            "    unsafe {\n"
+            '        asm!("mov {a}, {a}", a = inout(reg) a, options(pure, nomem, nostack));\n'
+            "    }\n"
+            "    [a]\n"
+            "}\n"
+        )
+        forwarding = (
+            "impl Blocks for Backend {\n"
+            "    fn f(a: u64) -> [u64; 1] {\n"
+            "        f(a)\n"
+            "    }\n"
+            "}\n"
+        )  # fmt: skip
+        parsed = asm_source.parse_function(
+            block + forwarding, "f", ["a"], 1, required_options={"pure", "nomem", "nostack"}
+        )
+        self.assertEqual(len(parsed.instructions), 1)
+        with self.assertRaisesRegex(asm_source.GenerationError, "expected exactly one `fn f\\(`"):
+            asm_source.parse_function(
+                block + block, "f", ["a"], 1, required_options={"pure", "nomem", "nostack"}
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

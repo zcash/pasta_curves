@@ -30,7 +30,8 @@ jobs:
       # dorny/paths-filter compiles each rule to its own picomatch matcher and ORs them, so a
       # change is Lean-relevant iff some changed file is outside the set that cannot affect
       # the formalization, or is one of the crate's sources that the generator reads (the
-      # backend's blocks and tests, and the field types' constants), or is this workflow.
+      # backend's blocks and tests, the field types' constants, and the known answers in
+      # `src/test_fields.rs`), or is this workflow.
       # Note this is NOT the sequential-negation semantics of GitHub's own `on.paths` engine.
       - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
         id: filter
@@ -40,6 +41,7 @@ jobs:
               - '!{book/**,benches/**,sage/**,src/**,.github/**,scripts/**,Cargo.toml,Cargo.lock,rust-toolchain.toml,*.md,LICENSE-*,ruff.toml,katex-header.html}'
               - 'src/asm/**'
               - 'src/fields/**'
+              - 'src/test_fields.rs'
               - '.github/workflows/lean.yml'
 
   build:
