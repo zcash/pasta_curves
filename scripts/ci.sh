@@ -8,11 +8,14 @@
 #
 # Usage, from anywhere in the checkout: scripts/ci.sh
 # LAKE selects the lake that builds the formalization (default: `lake` from PATH, which
-# should be the elan-managed one; see AGENTS.md).
+# should be the elan-managed one; see AGENTS.md). PYTHON selects the interpreter that runs the
+# generator and the checkers (default: `python3` from PATH).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 LAKE=${LAKE:-lake}
+PYTHON=${PYTHON:-python3}
+export PYTHON PYTHONDONTWRITEBYTECODE=1
 skipped=""
 
 step() { printf '\n==> %s\n' "$1"; }
@@ -170,7 +173,7 @@ step "the transcription and the proof skeletons are current"
 lean/scripts/check.sh
 
 step "the export-axiom checker's own tests"
-(cd lean && python3 -m unittest discover -s scripts -p 'test_check_export_axioms.py')
+(cd lean && "$PYTHON" -m unittest discover -s scripts -p 'test_check_export_axioms.py')
 
 step "nanoda re-check"
 lean4export=lean/work/lean4export/.lake/build/bin/lean4export
