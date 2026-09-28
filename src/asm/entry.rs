@@ -247,9 +247,9 @@ pub fn from_mont(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
 ///
 /// # Safety
 ///
-/// `x` must be canonical. This is debug-asserted. The machine-checked proofs in `lean/` cover the
-/// algorithm on words (`montInv_spec`); the proofs that the blocks compute the word-level
-/// functions are not present.
+/// `x` must be canonical. This is debug-asserted. Under that precondition the machine-checked
+/// proofs in `lean/` establish the result (`invert_entry_spec`, from `montInv_spec` on words and
+/// the six block proofs).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, `inv` must be correctly derived
 /// from it, and `v0` must be `2^562 mod p`, the starting value of the coefficient `v`, which
