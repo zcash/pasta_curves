@@ -2,8 +2,9 @@
 
 Assembly backends for the crate's Pasta (Pallas and Vesta) field arithmetic. The module provides
 AArch64 and x86-64 backends for modular addition and subtraction, Montgomery multiplication and
-squaring, a repeated-squaring chain, and conversion out of Montgomery form, and an AArch64 backend
-for constant-time inversion.
+squaring, a repeated-squaring chain, and conversion out of Montgomery form, and the AArch64 blocks
+of the constant-time inversion. The inversion's driver, `src/inversion.rs`, runs those blocks on
+AArch64, and the same blocks in portable Rust (`src/inversion/portable.rs`) on every other target.
 
 ## Provenance
 
@@ -80,9 +81,12 @@ The squaring blocks and the conversion out of Montgomery form make the same canc
 Where the module has a backend, `cargo test --release --features asm` runs known-answer tests of the
 entry points for both fields and replays the reference vectors recorded from the AArch64 assembly;
 in a debug build it also checks that the operand assertions fire outside the contracts. The
-inversion's blocks are also tested one by one against an integer model of the algorithm. Without
-the `asm` feature, on unsupported platforms, or with `--cfg pasta_curves_noasm`, the backend has
-no tests to run. `scripts/ci.sh` runs every check CI runs.
+inversion's blocks are tested one by one against an integer model of the algorithm, and the
+inversion against known answers, the identity `x · x^-1 = 1`, and the field types' own inverse,
+over the assembly blocks on AArch64 and over the portable blocks everywhere. Without the `asm`
+feature, on unsupported platforms, or with `--cfg pasta_curves_noasm`, the backend has no tests to
+run, and the inversion's tests over the portable blocks are the ones that run. `scripts/ci.sh` runs
+every check CI runs.
 
 ## Formal verification
 
@@ -90,8 +94,9 @@ no tests to run. `scripts/ci.sh` runs every check CI runs.
 their correctness. The model is at the instruction level. Individual blocks of assembly are proven;
 from those, each of the six Montgomery entry points is proved at either Pasta field, under the
 condition that the entry point asserts. The inversion's algorithm is proved on words
-(`montInv_spec`), each of its six blocks is proved to compute its word-level function, and `invert`
-is proved at either field from their composition (`invert_entry_spec`). The transcription is
-generated from the module's own inline blocks, CI regenerates and diffs it, and the independent
-`nanoda` implementation of the Lean kernel re-checks the build. See
-[`lean/README.md`](../../lean/README.md).
+(`montInv_spec`), each of its six AArch64 blocks is proved to compute its word-level function, and
+`invert` over those blocks is proved at either field from their composition (`invert_entry_spec`).
+The portable blocks are not modelled; they are checked against the same known answers as the
+assembly blocks. The transcription is generated from the module's own inline blocks, CI regenerates
+and diffs it, and the independent `nanoda` implementation of the Lean kernel re-checks the build.
+See [`lean/README.md`](../../lean/README.md).
