@@ -233,14 +233,15 @@ pub fn from_mont(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
 
 /// Inverts a canonical Montgomery residue for a Pasta modulus, in constant time.
 ///
-/// Returns the canonical `z` with `x * z ≡ 2^512 (mod p)`: for `x` the Montgomery form of a
-/// nonzero residue `X`, `z` is the Montgomery form of `X^-1`; for `x = 0` it is `0`. The
-/// algorithm is the serial variant of Bernstein, Chen, Harrison, Huang, Maxwell, Wang, Wuille,
-/// and Yang, "Accelerating and verifying constant-time modular inversion" (EUROCRYPT 2026), as in
-/// s2n-bignum's `bignum_montinv_p256`: 590 half-delta divsteps in ten rounds of 59, computed on
-/// packed words, with the coefficients reduced by one Montgomery word per round. It runs a fixed
-/// sequence of register-only blocks, so its timing does not depend on `x`. The design and the
-/// correctness argument are in `book/src/design/inversion.md`.
+/// Returns the canonical `z` with `x * z ≡ 2^512 (mod p)`: for `x` the Montgomery form of a nonzero
+/// residue `X`, `z` is the Montgomery form of `X^-1`; for `x = 0` it is `0`, so a caller that needs
+/// an optional inverse checks for zero separately. The algorithm is the serial variant of
+/// Bernstein, Chen, Harrison, Huang, Maxwell, Wang, Wuille, and Yang, "Accelerating and verifying
+/// constant-time modular inversion" (EUROCRYPT 2026), as in s2n-bignum's `bignum_montinv_p256`: 590
+/// half-delta divsteps in ten rounds of 59, computed on packed words, with the coefficients reduced
+/// by one Montgomery word per round. It runs a fixed sequence of register-only blocks, so its
+/// timing does not depend on `x`. The design and the correctness argument are in
+/// `book/src/design/inversion.md`.
 ///
 /// Outputs are canonical.
 ///
