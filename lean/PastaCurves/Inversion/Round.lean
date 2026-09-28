@@ -17,10 +17,12 @@ set_option exponentiation.threshold 400
 
 namespace PastaCurves
 
+/-- The limbs of a natural number are bounded. -/
 theorem Limbs.ofNat_bounded (n : ℕ) : (Limbs.ofNat n).Bounded := by
   unfold Limbs.ofNat Limbs.Bounded
   refine ⟨?_, ?_, ?_, ?_⟩ <;> exact Nat.mod_lt _ (by norm_num)
 
+/-- Below `2^256`, the limbs of a number give it back. -/
 theorem Limbs.toNat_ofNat (n : ℕ) (h : n < 2^256) : (Limbs.ofNat n).toNat = n := by
   simp only [Limbs.ofNat, Limbs.toNat]
   omega
@@ -32,6 +34,7 @@ theorem PastaField.two_pow_le_modulus (F : PastaField) : 2^254 ≤ F.modulus.toN
   rw [h2, h3]
   omega
 
+/-- The modulus is below `2^255`, by its shape. -/
 theorem PastaField.modulus_lt (F : PastaField) : F.modulus.toNat < 2^255 :=
   Limbs.toNat_lt_of_shape F.modulus F.bounded F.shape
 
@@ -63,10 +66,12 @@ structure Signed5 where
   l3 : ℕ
   l4 : ℕ
 
+/-- The integer that the five words represent. -/
 def Signed5.toInt (x : Signed5) : ℤ :=
   x.l0 + 2^64 * x.l1 + 2^128 * x.l2 + 2^192 * x.l3
     + 2^256 * (if x.l4 < 2^63 then (x.l4 : ℤ) else (x.l4 : ℤ) - 2^64)
 
+/-- Every word is below `2^64`. -/
 def Signed5.Bounded (x : Signed5) : Prop :=
   x.l0 < 2^64 ∧ x.l1 < 2^64 ∧ x.l2 < 2^64 ∧ x.l3 < 2^64 ∧ x.l4 < 2^64
 
@@ -77,10 +82,12 @@ def Signed5.ofNat (n : ℕ) : Signed5 :=
 /-- The five words of an integer, in two's complement modulo `2^320`. -/
 def Signed5.ofInt (z : ℤ) : Signed5 := Signed5.ofNat (z % 2^320).toNat
 
+/-- The five words of a natural number are bounded. -/
 theorem Signed5.ofNat_bounded (n : ℕ) : (Signed5.ofNat n).Bounded := by
   unfold Signed5.ofNat Signed5.Bounded
   refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> exact Nat.mod_lt _ (by norm_num)
 
+/-- The five words of an integer are bounded. -/
 theorem Signed5.ofInt_bounded (z : ℤ) : (Signed5.ofInt z).Bounded := Signed5.ofNat_bounded _
 
 /-- The encoding is faithful below `2^319` in absolute value. -/
@@ -190,6 +197,7 @@ theorem amontredZ_spec (F : PastaField) (t : ℤ) (ht : |t| < 2^315) :
 def amontred (t : Signed5) (modulus : Limbs) (inv : ℕ) : Limbs :=
   Limbs.ofNat (amontredZ t.toInt modulus.toNat inv).toNat
 
+/-- Lemma 10 on words: the reduction is bounded, below `2p`, and congruent to `t / 2^64`. -/
 theorem amontred_spec (F : PastaField) (t : Signed5) (htv : |t.toInt| < 2^315) :
     (amontred t F.modulus F.inv).Bounded ∧
       (amontred t F.modulus F.inv).toNat < 2 * F.modulus.toNat ∧
@@ -234,6 +242,8 @@ theorem amontredZ_row (F : PastaField) (a b : ℤ) (d e : Limbs) (hd : d.Bounded
   refine ⟨Limbs.ofNat_bounded _, by omega, ?_⟩
   rw [hnat]; exact h4
 
+/-- Both reduced rows of `updateDE` are bounded and below `2p`, each congruent to its row over
+`2^64`, under the row-sum bound. -/
 theorem updateDE_spec (F : PastaField) (M : Mat2) (d e : Limbs)
     (hd : d.Bounded) (he : e.Bounded)
     (hM : |M.u| + |M.v| ≤ 2^59 ∧ |M.q| + |M.r| ≤ 2^59) :
@@ -256,6 +266,7 @@ def finalD (M : Mat2) (signWord : ℕ) (d e : Limbs) (modulus : Limbs) (inv : �
   let t' := amontredZ t modulus.toNat inv
   Limbs.ofNat (if t' < modulus.toNat then t' else t' - modulus.toNat).toNat
 
+/-- The last round's `d` is canonical and congruent to the signed row over `2^64`. -/
 theorem finalD_spec (F : PastaField) (M : Mat2) (signWord : ℕ) (d e : Limbs)
     (hd : d.Bounded) (he : e.Bounded) (hM : |M.u| + |M.v| ≤ 2^59) :
     (finalD M signWord d e F.modulus F.inv).Bounded ∧

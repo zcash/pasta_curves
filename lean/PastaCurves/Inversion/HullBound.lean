@@ -37,11 +37,22 @@ def L : ℚ := 3047 / 2048
 /-- The initial scale: the triangle `0 ≤ y ≤ x ≤ 1` scaled by `stretch` lies in `H1`. -/
 def stretch : ℚ := 2753 / 4096
 
+/-- The shrink factor is positive, for the side conditions of the scalings. -/
 theorem s_pos : 0 < s := by norm_num [s]
+
+/-- The shrink factor is below one, so that the scalings shrink. -/
 theorem s_lt_one : s < 1 := by norm_num [s]
+
+/-- The lattice scale is positive. -/
 theorem L_pos : 0 < L := by norm_num [L]
+
+/-- The initial scale is positive. -/
 theorem stretch_pos : 0 < stretch := by norm_num [stretch]
+
+/-- `2 s^2 ≥ 1`, so that dividing by it is a shrink. -/
 theorem two_s_sq_ge_one : 1 ≤ 2 * s^2 := by norm_num [s]
+
+/-- `2 s^2` is positive. -/
 theorem two_s_sq_pos : 0 < 2 * s^2 := mul_pos two_pos (pow_pos s_pos 2)
 
 /-! ## The regions and the certificate's facts -/
@@ -90,18 +101,29 @@ def W (H0 H1 : Region) (i : ℤ) (x y : ℚ) : Prop :=
 
 variable {H0 H1 : Region}
 
+/-- The scale factor is positive. -/
 theorem cf_pos (i : ℤ) : 0 < cf i := by unfold cf; split_ifs <;> norm_num
+
+/-- The scale factor is at most one, so that it shrinks. -/
 theorem cf_le_one (i : ℤ) : cf i ≤ 1 := by unfold cf; split_ifs <;> norm_num
+
+/-- The scale factor is `1` on the central levels. -/
 theorem cf_small {i : ℤ} (h1 : -2 ≤ i) (h2 : i ≤ 2) : cf i = 1 := by
   unfold cf; rw [if_pos ⟨h1, h2⟩]
+
+/-- The scale factor is `32/33` below the central levels. -/
 theorem cf_neg {i : ℤ} (h : i < -2) : cf i = 32 / 33 := by
   unfold cf; rw [if_neg (by omega)]
+
+/-- The scale factor is `32/33` above the central levels. -/
 theorem cf_big {i : ℤ} (h : 2 < i) : cf i = 32 / 33 := by
   unfold cf; rw [if_neg (by omega)]
 
+/-- `W` at level `-1` is `H0`. -/
 theorem W_neg_one (x y : ℚ) : W H0 H1 (-1) x y ↔ H0.mem x y := by
   unfold W; simp
 
+/-- `W` at a level `-k ≤ -2`, unfolded to its image of `H1`. -/
 theorem W_neg (k : ℕ) (hk : 2 ≤ k) (x y : ℚ) :
     W H0 H1 (-(k : ℤ)) x y ↔
       H1.mem (cf (-(k : ℤ)) * (x - 2 * y) * s ^ (k + 1)) (cf (-(k : ℤ)) * x * s ^ (k + 1) * 2 ^ k) := by
@@ -109,6 +131,7 @@ theorem W_neg (k : ℕ) (hk : 2 ≤ k) (x y : ℚ) :
   rw [if_neg (by omega), if_pos (by omega)]
   simp
 
+/-- `W` at a nonnegative level, unfolded to its image of `H1`. -/
 theorem W_nonneg (k : ℕ) (x y : ℚ) :
     W H0 H1 (k : ℤ) x y ↔ H1.mem (cf k * x * s ^ k) (cf k * y * (2 * s) ^ k) := by
   unfold W
@@ -136,6 +159,8 @@ the certified inclusion `inc_4s` (or `inc_3s`) followed by the shrink `32/33`; g
 further down replaces `2^i` by `2^(i-1)`, which is the midpoint of the previous map and the
 shrink by `1 / (2 s^2) ≤ 1`. -/
 
+/-- The map with the plus sign keeps `H1`: `inc_4s` with the shrink `32/33` at `n = 0`, then the
+midpoint with the shrunk point at each further level. -/
 theorem A_mem (hc : Certified H0 H1) (n : ℕ) (X Y : ℚ) (h : H1.mem X Y) :
     H1.mem ((X + Y / 2 ^ (n + 3)) / (2 * s ^ 2)) (Y / (2 * s ^ 2)) := by
   induction n with
@@ -149,6 +174,7 @@ theorem A_mem (hc : Certified H0 H1) (n : ℕ) (X Y : ℚ) (h : H1.mem X Y) :
     have := H1_mid _ _ _ _ ih hsh
     convert this using 1 <;> field_simp <;> ring
 
+/-- The map with the minus sign keeps `H1`, from `inc_3s` in the same way. -/
 theorem A'_mem (hc : Certified H0 H1) (n : ℕ) (X Y : ℚ) (h : H1.mem X Y) :
     H1.mem ((X - Y / 2 ^ (n + 3)) / (2 * s ^ 2)) (Y / (2 * s ^ 2)) := by
   induction n with
@@ -292,12 +318,15 @@ theorem w_transition1 (hc : Certified H0 H1) (i : ℤ) (x y : ℚ) (h : W H0 H1 
 /-- `i = δ - 1/2 = (two_delta - 1) / 2`. -/
 def idx (t : State) : ℤ := (t.two_delta - 1) / 2
 
+/-- For odd `two_delta`, the index determines `two_delta`. -/
 theorem idx_spec (t : State) (hd : t.two_delta % 2 = 1) : 2 * idx t + 1 = t.two_delta := by
   unfold idx; omega
 
+/-- A step keeps `two_delta` odd, so the index stays defined. -/
 theorem divstep_two_delta_odd (t : State) (hd : t.two_delta % 2 = 1) : (divstep t).two_delta % 2 = 1 := by
   unfold divstep; split_ifs <;> simp only <;> omega
 
+/-- `two_delta` stays odd through the iteration. -/
 theorem divsteps_two_delta_odd (n : ℕ) (t : State) (hd : t.two_delta % 2 = 1) : (divsteps n t).two_delta % 2 = 1 := by
   induction n generalizing t with
   | zero => simpa
@@ -532,6 +561,8 @@ theorem endtoend (hc : Certified H0 H1) (f g : ℤ) (M : ℚ) (hM : 0 < M) (hf :
 /-! ## The exponent bound -/
 
 set_option exponentiation.threshold 10000 in
+/-- The first half of the exponent bound, `2^4096 s^9437 ≤ 1`, from an integer inequality that
+the kernel evaluates. -/
 theorem big_one : (2 : ℚ) ^ 4096 * s ^ 9437 ≤ 1 := by
   have h : (2 : ℕ) ^ 4096 * 30902639 ^ 9437 ≤ 41749730 ^ 9437 := by decide
   have h' : ((2 : ℕ) ^ 4096 * 30902639 ^ 9437 : ℚ) ≤ (41749730 ^ 9437 : ℕ) := by exact_mod_cast h
@@ -541,6 +572,7 @@ theorem big_one : (2 : ℚ) ^ 4096 * s ^ 9437 ≤ 1 := by
   exact h'
 
 set_option exponentiation.threshold 10000 in
+/-- The second half of the exponent bound, `s ≤ (L · stretch)^4096`, likewise. -/
 theorem big_two : s ≤ (L * stretch) ^ 4096 := by
   have h : (30902639 : ℕ) * 8388608 ^ 4096 ≤ 41749730 * 8388391 ^ 4096 := by decide
   have h' : ((30902639 : ℕ) * 8388608 ^ 4096 : ℚ) ≤ (41749730 * 8388391 ^ 4096 : ℕ) := by

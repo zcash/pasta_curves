@@ -47,12 +47,15 @@ def divsteps (n : ℕ) (s : State) : State := divstep^[n] s
 
 @[simp] theorem divsteps_zero (s : State) : divsteps 0 s = s := rfl
 
+/-- Peeling the first step off `n + 1` steps. -/
 theorem divsteps_succ (n : ℕ) (s : State) : divsteps (n + 1) s = divsteps n (divstep s) :=
   Function.iterate_succ_apply divstep n s
 
+/-- Peeling the last step off `n + 1` steps. -/
 theorem divsteps_succ' (n : ℕ) (s : State) : divsteps (n + 1) s = divstep (divsteps n s) :=
   Function.iterate_succ_apply' divstep n s
 
+/-- Steps compose: `m` steps then `n` more. -/
 theorem divsteps_add (m n : ℕ) (s : State) : divsteps (m + n) s = divsteps n (divsteps m s) := by
   unfold divsteps
   rw [Nat.add_comm]
@@ -66,8 +69,10 @@ structure Mat2 where
   r : ℤ
   deriving DecidableEq
 
+/-- The identity matrix. -/
 def Mat2.one : Mat2 := ⟨1, 0, 0, 1⟩
 
+/-- The matrix product. -/
 def Mat2.mul (m n : Mat2) : Mat2 :=
   ⟨m.u * n.u + m.v * n.q, m.u * n.v + m.v * n.r, m.q * n.u + m.r * n.q, m.q * n.v + m.r * n.r⟩
 
@@ -80,8 +85,11 @@ def M : ℕ → State → Mat2
   | 0, _ => Mat2.one
   | n + 1, s => (M n (divstep s)).mul (T s)
 
+/-- The definition of `M` at `n + 1` as a rewrite rule: the first step's matrix on the right of
+the rest. -/
 theorem M_succ (n : ℕ) (s : State) : M (n + 1) s = (M n (divstep s)).mul (T s) := rfl
 
+/-- A step keeps `f` odd: the new `f` is `f` or the odd `g`. -/
 theorem divstep_f_odd (s : State) (hf : s.f % 2 = 1) : (divstep s).f % 2 = 1 := by
   unfold divstep
   split_ifs with h
@@ -99,6 +107,7 @@ theorem divstep_eq (s : State) (hf : s.f % 2 = 1) :
     rcases Int.emod_two_eq_zero_or_one s.g with h2 | h2 <;>
       simp only [h2, zero_mul, one_mul, add_zero] <;> constructor <;> first | trivial | omega
 
+/-- `f` stays odd through the iteration. -/
 theorem divsteps_f_odd (n : ℕ) (s : State) (hf : s.f % 2 = 1) : (divsteps n s).f % 2 = 1 := by
   induction n generalizing s with
   | zero => simpa
@@ -198,11 +207,13 @@ theorem half_emod {a b m : ℤ} (ha : 2 ∣ a) (hb : 2 ∣ b) (h : a % (2 * m) =
   rw [Int.mul_ediv_cancel_left _ (by norm_num), Int.mul_ediv_cancel_left _ (by norm_num)]
   omega
 
+/-- A congruence modulo `2^(n + 1)` gives one modulo `2`. -/
 theorem emod_two_of_emod_pow {a b : ℤ} (n : ℕ) (h : a % 2^(n + 1) = b % 2^(n + 1)) :
     a % 2 = b % 2 := by
   have h2 : (2 : ℤ) ∣ 2^(n + 1) := dvd_pow_self 2 (Nat.succ_ne_zero n)
   rw [← Int.emod_emod_of_dvd a h2, h, Int.emod_emod_of_dvd b h2]
 
+/-- A congruence modulo `2^(n + 1)` gives one modulo `2^n`. -/
 theorem emod_pow_of_emod_pow_succ {a b : ℤ} (n : ℕ) (h : a % 2^(n + 1) = b % 2^(n + 1)) :
     a % 2^n = b % 2^n := by
   have h2 : (2 : ℤ)^n ∣ 2^(n + 1) := pow_dvd_pow 2 (Nat.le_succ n)
@@ -262,11 +273,14 @@ theorem divsteps_local (n : ℕ) (s s' : State) (hf0 : s.f % 2 = 1) (hd : s.two_
 
 /-! ## The determinant, the inverse identity, and the end state -/
 
+/-- The determinant. -/
 def Mat2.det (m : Mat2) : ℤ := m.u * m.r - m.v * m.q
 
+/-- The determinant is multiplicative. -/
 theorem Mat2.det_mul (m n : Mat2) : (m.mul n).det = m.det * n.det := by
   simp only [Mat2.mul, Mat2.det]; ring
 
+/-- A step matrix has determinant `2`, twice the paper's unimodular step. -/
 theorem T_det (s : State) : (T s).det = 2 := by
   unfold T; split_ifs <;> simp [Mat2.det]
 
@@ -301,13 +315,16 @@ theorem f_dvd_of_g_eq_zero (n : ℕ) (s : State) (hf : s.f % 2 = 1) (hg : (divst
 
 /-! ## The half-open entry range -/
 
+/-- Associativity. -/
 theorem Mat2.mul_assoc (a b c : Mat2) : (a.mul b).mul c = a.mul (b.mul c) := by
   simp only [Mat2.mul, Mat2.mk.injEq]
   refine ⟨?_, ?_, ?_, ?_⟩ <;> ring
 
+/-- The identity is a left unit. -/
 theorem Mat2.one_mul (a : Mat2) : Mat2.one.mul a = a := by
   simp [Mat2.mul, Mat2.one]
 
+/-- The identity is a right unit. -/
 theorem Mat2.mul_one (a : Mat2) : a.mul Mat2.one = a := by
   simp [Mat2.mul, Mat2.one]
 
