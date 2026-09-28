@@ -34,6 +34,8 @@ open Inversion (State divstep divsteps M packedStart mul_word addw_word pack_f_w
 -- BEGIN divstep59Block_spec lemmas
 /-! ## Words -/
 
+/-- `madd` on words carrying `X`, `Y`, and `Z` carries `X * Y + Z`: the third batch accumulates its
+matrix products through it. -/
 theorem madd_word (x y z : ℕ) (X Y Z : ℤ) (hx : (x : ℤ) = X % 2^64) (hy : (y : ℤ) = Y % 2^64)
     (hz : (z : ℤ) = Z % 2^64) : ((madd x y z : ℕ) : ℤ) = (X * Y + Z) % 2^64 := by
   have h : ((madd x y z : ℕ) : ℤ) = ((x : ℤ) * y + z) % 2^64 := by
@@ -41,6 +43,7 @@ theorem madd_word (x y z : ℕ) (X Y Z : ℤ) (hx : (x : ℤ) = X % 2^64) (hy : 
   rw [h, hx, hy, hz]
   exact ((Int.mod_modEq X _).mul (Int.mod_modEq Y _)).add (Int.mod_modEq Z _)
 
+/-- `mneg` carries `-(X * Y)`: it restores the sign of a product of two negated entries. -/
 theorem mneg_word (x y : ℕ) (X Y : ℤ) (hx : (x : ℤ) = X % 2^64) (hy : (y : ℤ) = Y % 2^64) :
     ((mneg x y : ℕ) : ℤ) = (-(X * Y)) % 2^64 := by
   have h : ((mneg x y : ℕ) : ℤ) = (-((x : ℤ) * y)) % 2^64 := by
@@ -50,6 +53,7 @@ theorem mneg_word (x y : ℕ) (X Y : ℤ) (hx : (x : ℤ) = X % 2^64) (hy : (y :
   rw [h, hx, hy]
   exact ((Int.mod_modEq X _).mul (Int.mod_modEq Y _)).neg
 
+/-- `msub` carries `Z - X * Y`: subtracting the product of a negated entry restores its sign. -/
 theorem msub_word (x y z : ℕ) (X Y Z : ℤ) (hx : (x : ℤ) = X % 2^64) (hy : (y : ℤ) = Y % 2^64)
     (hz : (z : ℤ) = Z % 2^64) : ((msub x y z : ℕ) : ℤ) = (Z - X * Y) % 2^64 := by
   have h : ((msub x y z : ℕ) : ℤ) = ((z : ℤ) - (x : ℤ) * y) % 2^64 := by

@@ -81,20 +81,27 @@ theorem Limbs.toNat_lt_of_shape (modulus : Limbs) (hm : modulus.Bounded)
 The generated skeletons of the inversion's block proofs bound each instruction's result below
 `2^64` by one of these lemmas. -/
 
+/-- The skeleton's bound for an `add` result, by the reduction modulo `2^64`. -/
 theorem addw_lt (a b : Nat) : addw a b < 2^64 := Nat.mod_lt _ (by decide)
 
+/-- The bound for a `sub` result, by the reduction. -/
 theorem subw_lt (a b : Nat) : subw a b < 2^64 := Nat.mod_lt _ (by decide)
 
+/-- The bound for a `neg` result, by the reduction. -/
 theorem negw_lt (a : Nat) : negw a < 2^64 := Nat.mod_lt _ (by decide)
 
+/-- The bound for an `extr` result, by the reduction. -/
 theorem extr_lt (hi lo k : Nat) : extr hi lo k < 2^64 := Nat.mod_lt _ (by decide)
 
+/-- The bound for an `and` result: no bit above the second operand's. -/
 theorem andw_lt (a b : Nat) (_ha : a < 2^64) (hb : b < 2^64) : andw a b < 2^64 :=
   Nat.and_lt_two_pow a hb
 
+/-- The bound for an `orr` result: no bit above either operand's. -/
 theorem orrw_lt (a b : Nat) (ha : a < 2^64) (hb : b < 2^64) : orrw a b < 2^64 :=
   Nat.or_lt_two_pow ha hb
 
+/-- The bound for an `eor` result: no bit above either operand's. -/
 theorem eorw_lt (a b : Nat) (ha : a < 2^64) (hb : b < 2^64) : eorw a b < 2^64 :=
   Nat.xor_lt_two_pow ha hb
 
@@ -107,6 +114,7 @@ theorem div_two_pow_lt (a k : Nat) (ha : a < 2^64) : a / 2^k < 2^(64 - k) := by
   · have h : (2 : Nat)^64 = 2^k * 2^(64 - k) := by rw [← pow_add]; congr 1; omega
     exact Nat.div_lt_of_lt_mul (h ▸ ha)
 
+/-- The bound for an `asr` result: both branches of the shift, by `div_two_pow_lt`. -/
 theorem asr_lt (a k : Nat) (ha : a < 2^64) : asr a k < 2^64 := by
   have h := div_two_pow_lt a k ha
   have hle : (2 : Nat)^(64 - k) ≤ 2^64 := Nat.pow_le_pow_right (by decide) (by omega)

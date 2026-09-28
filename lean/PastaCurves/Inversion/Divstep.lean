@@ -402,19 +402,25 @@ theorem M_entry_range (n : ℕ) (s : State) :
 
 /-! ## The parity and the size of `two_delta` -/
 
+/-- A step keeps the parity of `two_delta`: the new `two_delta` is `2 ± two_delta`. -/
 theorem divstep_two_delta_emod_two (s : State) : (divstep s).two_delta % 2 = s.two_delta % 2 := by
   unfold divstep; split_ifs <;> dsimp only <;> omega
 
+/-- So `two_delta` stays odd through every batch, as the step theorems on words require. -/
 theorem divsteps_two_delta_emod_two (n : ℕ) (s : State) : (divsteps n s).two_delta % 2 = s.two_delta % 2 := by
   induction n generalizing s with
   | zero => rfl
   | succ n ih => rw [divsteps_succ, ih, divstep_two_delta_emod_two]
 
+/-- A step grows the magnitude of `two_delta` by at most `2`: the new `two_delta` is
+`2 ± two_delta`. -/
 theorem divstep_two_delta_abs_le (s : State) : |(divstep s).two_delta| ≤ |s.two_delta| + 2 := by
   have h1 := le_abs_self s.two_delta
   have h2 := neg_abs_le s.two_delta
   unfold divstep; split_ifs <;> dsimp only <;> rw [abs_le] <;> constructor <;> omega
 
+/-- After `n` steps the magnitude of `two_delta` has grown by at most `2n`: the bound that keeps the
+`two_delta` word of a block small. -/
 theorem divsteps_two_delta_abs_le (n : ℕ) (s : State) : |(divsteps n s).two_delta| ≤ |s.two_delta| + 2 * n := by
   induction n generalizing s with
   | zero => simp
@@ -450,12 +456,16 @@ theorem divstep_neg (s : State) (hf : s.f % 2 = 1) :
     refine ⟨trivial, trivial, ?_⟩
     rcases Int.emod_two_eq_zero_or_one s.g with h2 | h2 <;> rw [h2] <;> omega
 
+/-- The symmetry iterated: `n` steps on the negated `f`, `g` are the negation of `n` steps, with
+the same `two_delta`. -/
 theorem divsteps_neg (n : ℕ) (s : State) (hf : s.f % 2 = 1) :
     divsteps n ⟨s.two_delta, -s.f, -s.g⟩ = ⟨(divsteps n s).two_delta, -(divsteps n s).f, -(divsteps n s).g⟩ := by
   induction n generalizing s with
   | zero => rfl
   | succ n ih => rw [divsteps_succ, divsteps_succ, divstep_neg s hf, ih _ (divstep_f_odd s hf)]
 
+/-- The `n`-step matrix is unchanged by negating `f` and `g`: a block that runs a batch on negated
+words reads the true matrix off it. -/
 theorem M_neg (n : ℕ) (s : State) (hf : s.f % 2 = 1) : M n ⟨s.two_delta, -s.f, -s.g⟩ = M n s := by
   induction n generalizing s with
   | zero => rfl
