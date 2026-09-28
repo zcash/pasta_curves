@@ -611,16 +611,6 @@ def divstepLast (st : DivstepState) : DivstepState :=
   let pg := asr pg 1            -- asr pg,pg,#1
   ⟨d, pf, pg, fl⟩
 
-/-- The result of `divstep59Block`: the new `d` and the entries of the 59-step matrix, each a
-two's-complement word. -/
-structure Divstep59Result where
-  d : Nat
-  m00 : Nat
-  m01 : Nat
-  m10 : Nat
-  m11 : Nat
-  deriving DecidableEq, Repr
-
 /-- The inline `asm!` block of `divstep59`: 59 half-delta divsteps on the low words `f0` and `g0` of
 `f` and `g` at `d`, as three packed batches of 20, 20, and 19 steps in which the matrix coefficients
 ride in the upper bits of the two words, with the two matrix products between and after the batches.
@@ -1003,19 +993,6 @@ def divstep59Block (d f0 g0 : Nat) : Divstep59Result :=
   let m10 := msub b11 c10 pf    -- msub m10,b11,c10,pf
   let m11 := msub b11 c11 pg    -- msub m11,b11,c11,pg
   ⟨d, m00, m01, m10, m11⟩
-
-/-- The result of `signMagBlock`: the magnitudes `m00` to `m11` of the matrix entries and their sign
-masks `s00` to `s11`. -/
-structure SignMag where
-  m00 : Nat
-  m01 : Nat
-  m10 : Nat
-  m11 : Nat
-  s00 : Nat
-  s01 : Nat
-  s10 : Nat
-  s11 : Nat
-  deriving DecidableEq, Repr
 
 /-- The inline `asm!` block of `sign_mag`: the sign-magnitude form of the four entries of a
 transition matrix, each entry's magnitude and its sign as a mask (all ones when negative, else

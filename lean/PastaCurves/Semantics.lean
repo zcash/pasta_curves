@@ -85,4 +85,27 @@ def Bounded (x : Signed5) : Prop :=
 
 end Signed5
 
+/-- The result of a backend's `divstep59` block: the new `d` and the entries of the 59-step
+matrix, each a two's-complement word. -/
+structure Divstep59Result where
+  d : Nat
+  m00 : Nat
+  m01 : Nat
+  m10 : Nat
+  m11 : Nat
+  deriving DecidableEq, Repr
+
+/-- The result of a backend's `sign_mag` block: the magnitudes `m00` to `m11` of the matrix
+entries and their sign masks `s00` to `s11`. -/
+structure SignMag where
+  m00 : Nat
+  m01 : Nat
+  m10 : Nat
+  m11 : Nat
+  s00 : Nat
+  s01 : Nat
+  s10 : Nat
+  s11 : Nat
+  deriving DecidableEq, Repr
+
 end PastaCurves
