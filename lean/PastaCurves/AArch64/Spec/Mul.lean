@@ -1081,7 +1081,7 @@ theorem mulMont_spec (lhs rhs modulus : Limbs) (inv : Nat) (hlhs : lhs.Bounded)
   -- END final shift
   -- q_4: mov q,#0x4000000000000000
   extract_lets -merge +onlyGivenNames q_4 at hr
-  have e_q_4 : q_4 = 4611686018427387904 := rfl
+  have e_q_4 : q_4 = 0x4000000000000000 := rfl
   clear_value q_4
   have b_q_4 : q_4 < 2^64 := by rw [e_q_4]; decide
   -- t0_2: subs t0,r0,p0
