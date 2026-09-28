@@ -42,6 +42,41 @@ theorem signMag_word (z : ℤ) (hz : |z| < 2^63) (m : ℕ) (hm : (m : ℤ) = z %
     rw [if_neg h0, if_neg h0, if_neg (not_lt.mpr hnn)]
     refine ⟨?_, rfl⟩
     omega
+
+/-- The sign-magnitude representation of an integer that the row blocks take: the magnitude `m`
+with the mask `s` clear for `a = m`, or set for `a = -m`. Zero has both forms, which is what the
+last round's masking by the sign word needs. -/
+def SignMagRep (m s : ℕ) (a : ℤ) : Prop := (s = 0 ∧ (m : ℤ) = a) ∨ (s = 2^64 - 1 ∧ (m : ℤ) = -a)
+
+theorem SignMagRep.of_natAbs (a : ℤ) : SignMagRep a.natAbs (signMask a) a := by
+  unfold SignMagRep signMask
+  rcases lt_or_ge a 0 with h | h
+  · right; rw [if_pos h, Int.natCast_natAbs, abs_of_neg h]; exact ⟨rfl, rfl⟩
+  · left; rw [if_neg (not_lt.mpr h), Int.natCast_natAbs, abs_of_nonneg h]; exact ⟨rfl, rfl⟩
+
+/-- Flipping the mask by the all-ones word negates the represented integer. -/
+theorem SignMagRep.eor_ones (m s : ℕ) (a : ℤ) (h : SignMagRep m s a) :
+    SignMagRep m (eorw s (2^64 - 1)) (-a) := by
+  unfold SignMagRep at h ⊢
+  rcases h with ⟨hs, hm⟩ | ⟨hs, hm⟩
+  · right; rw [hs, eorw, Nat.zero_xor]; exact ⟨rfl, by rw [hm, neg_neg]⟩
+  · left; rw [hs, eorw, Nat.xor_self]; exact ⟨rfl, hm⟩
+
+theorem SignMagRep.eor_zero (m s : ℕ) (a : ℤ) (h : SignMagRep m s a) :
+    SignMagRep m (eorw s 0) a := by
+  rwa [eorw, Nat.xor_zero]
+
+theorem SignMagRep.lt (m s : ℕ) (a : ℤ) (h : SignMagRep m s a) (ha : |a| < 2^64) :
+    m < 2^64 ∧ s < 2^64 := by
+  rw [abs_lt] at ha
+  rcases h with ⟨hs, hm⟩ | ⟨hs, hm⟩ <;> constructor <;> omega
+
+/-- The magnitude of a represented integer is its absolute value. -/
+theorem SignMagRep.natCast_eq_abs (m s : ℕ) (a : ℤ) (h : SignMagRep m s a) : (m : ℤ) = |a| := by
+  rcases h with ⟨-, hm⟩ | ⟨-, hm⟩
+  · rw [hm, abs_of_nonneg (by omega)]
+  · rw [hm, abs_of_nonpos (by omega)]
+
 -- END signMagBlock_spec lemmas
 
 -- BEGIN signMagBlock_spec statement

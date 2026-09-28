@@ -8,12 +8,11 @@ import PastaCurves.Inversion.Round
 /-!
 # Correctness of the inversion's `d`, `e` row block
 
-See the parent module's documentation for details. The block forms `a d + b e` as a five-word
-signed value from the magnitudes and sign masks of `a` and `b`: each word of `d` is
-complemented by the mask, the products are accumulated, and the two's-complement corrections
-(`|a|` in the low word, `-|a|` in the top word for a negative `a`, likewise for `b`) turn the
-products of complements into the signed products. The row bound `|a| + |b| ≤ 2^63` keeps every
-column's carry within the next word.
+See the parent module's documentation for details. The block forms `a d + b e` as a five-word signed
+value from the sign-magnitude forms of `a` and `b`: each word of `d` is complemented by the mask,
+the products are accumulated, and the two's-complement corrections (`|a|` in the low word, `-|a|` in
+the top word for a negative `a`, likewise for `b`) turn the products of complements into the signed
+products. The row bound `|a| + |b| ≤ 2^63` keeps every column's carry within the next word.
 -/
 
 set_option exponentiation.threshold 400
@@ -40,15 +39,19 @@ subtracting `2^256 |z|` in the top word leaves `-|z| x = z x`. When `z` is nonne
 is zero, the words are unchanged, and both corrections vanish. This is that identity for one
 side of a row, so the block proof only accounts for the carries. -/
 theorem row_side (z : ℤ) (hz : |z| < 2^64) (x : Limbs) (hx : x.Bounded) (m s : ℕ)
-    (hm : m = z.natAbs) (hs : s = signMask z) :
+    (hrep : SignMagRep m s z) :
     ((eorw x.l0 s + 2^64 * eorw x.l1 s + 2^128 * eorw x.l2 s + 2^192 * eorw x.l3 s : ℕ) : ℤ)
         * m + (andw m s : ℤ) - 2^256 * (andw s m : ℤ) = z * x.toNat := by
   obtain ⟨h0, h1, h2, h3⟩ := hx
-  have hmz : (m : ℤ) = |z| := by rw [hm, Int.natCast_natAbs]
-  have hm64 : m < 2^64 := by rw [abs_lt] at hz; zify; rw [hmz]; rw [abs_lt]; exact hz
+  obtain ⟨hm64, -⟩ := hrep.lt _ _ _ hz
   unfold Limbs.toNat
-  rcases lt_or_ge z 0 with hneg | hnn
-  · rw [hs, signMask, if_pos hneg]
+  rcases hrep with ⟨hs, hm⟩ | ⟨hs, hm⟩
+  · subst hs
+    simp only [eorw, andw, Nat.xor_zero, Nat.and_zero, Nat.zero_and]
+    push_cast
+    rw [← hm]
+    ring
+  · subst hs
     have a1 : andw m (2^64 - 1) = m := by
       unfold andw; rw [Nat.and_two_pow_sub_one_eq_mod, Nat.mod_eq_of_lt hm64]
     have a2 : andw (2^64 - 1) m = m := by rw [andw, Nat.and_comm]; exact a1
@@ -57,16 +60,10 @@ theorem row_side (z : ℤ) (hz : |z| < 2^64) (x : Limbs) (hx : x.Bounded) (m s :
         = 2^256 - 1 - (x.l0 + 2^64 * x.l1 + 2^128 * x.l2 + 2^192 * x.l3) := by
       rw [eorw_ones _ h0, eorw_ones _ h1, eorw_ones _ h2, eorw_ones _ h3]; omega
     rw [hsum, a1, a2]
-    rw [abs_of_neg hneg] at hmz
     push_cast
-    rw [hmz]
+    rw [hm]
     ring
-  · rw [hs, signMask, if_neg (not_lt.mpr hnn)]
-    simp only [eorw, andw, Nat.xor_zero, Nat.and_zero, Nat.zero_and]
-    rw [abs_of_nonneg hnn] at hmz
-    push_cast
-    rw [hmz]
-    ring
+
 -- END deRowBlock_spec lemmas
 
 -- BEGIN deRowBlock_spec statement
@@ -75,19 +72,18 @@ The row bound `|a| + |b| ≤ 2^63` is what keeps every column's carry within the
 rows of a 59-step matrix are at most `2^59`. `row_side` supplies the sign handling. -/
 theorem deRowBlock_spec (a b : ℤ) (d e : Limbs) (m0 m1 s0 s1 : Nat)
     (hd : d.Bounded) (he : e.Bounded) (hab : |a| + |b| ≤ 2^63)
-    (hm0' : m0 = a.natAbs) (hm1' : m1 = b.natAbs)
-    (hs0' : s0 = signMask a) (hs1' : s1 = signMask b) :
+    (hrep0 : SignMagRep m0 s0 a) (hrep1 : SignMagRep m1 s1 b) :
     ∀ res, res = deRowBlock d e m0 m1 s0 s1 →
       res.Bounded ∧ res.toInt = a * d.toNat + b * e.toNat := by
   intro res hres
   have ha0 := abs_nonneg a
   have hb0 := abs_nonneg b
-  have hm0z : (m0 : ℤ) = |a| := by rw [hm0', Int.natCast_natAbs]
-  have hm1z : (m1 : ℤ) = |b| := by rw [hm1', Int.natCast_natAbs]
+  have hm0z : (m0 : ℤ) = |a| := hrep0.natCast_eq_abs _ _ _
+  have hm1z : (m1 : ℤ) = |b| := hrep1.natCast_eq_abs _ _ _
   have hm0 : m0 < 2^64 := by omega
   have hm1 : m1 < 2^64 := by omega
-  have hs0 : s0 < 2^64 := by rw [hs0']; unfold signMask; split_ifs <;> omega
-  have hs1 : s1 < 2^64 := by rw [hs1']; unfold signMask; split_ifs <;> omega
+  have hs0 : s0 < 2^64 := (hrep0.lt _ _ _ (by omega)).2
+  have hs1 : s1 < 2^64 := (hrep1.lt _ _ _ (by omega)).2
 -- END deRowBlock_spec statement
   -- generated skeleton for `deRowBlock`: do not edit between the annotations
   unfold deRowBlock at hres
@@ -510,10 +506,8 @@ theorem deRowBlock_spec (a b : ℤ) (d e : Limbs) (m0 m1 s0 s1 : Nat)
   subst hres
   -- BEGIN conclusion
   -- The two sides on the integers, in the block's words.
-  have hA := row_side a (by omega) d hd m0' s0' (by rw [e_m0']; exact hm0')
-    (by rw [e_s0']; exact hs0')
-  have hB := row_side b (by omega) e he m1' s1' (by rw [e_m1']; exact hm1')
-    (by rw [e_s1']; exact hs1')
+  have hA := row_side a (by omega) d hd m0' s0' (by rw [e_m0', e_s0']; exact hrep0)
+  have hB := row_side b (by omega) e he m1' s1' (by rw [e_m1', e_s1']; exact hrep1)
   rw [← e_d0, ← e_d1, ← e_d2, ← e_d3, ← e_w_1, ← e_w_5, ← e_w_9, ← e_w_13, ← e_lo, ← e_t4] at hA
   rw [← e_e0, ← e_e1, ← e_e2, ← e_e3, ← e_w_3, ← e_w_7, ← e_w_11, ← e_w_15, ← e_w, ← e_lo_8] at hB
   -- The row bound on the magnitudes: the low corrections add without a carry, and each high

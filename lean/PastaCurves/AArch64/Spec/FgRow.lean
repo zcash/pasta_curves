@@ -30,48 +30,45 @@ theorem Signed5.l4_of_abs_lt (x : Signed5) (hx : x.Bounded) (hv : |x.toInt| < 2^
 /-- `row_side` for a five-word signed `x`: the sign word of `x`, complemented by the mask of `z`,
 selects the top correction, which is `|z|` exactly when `z x` is negative. -/
 theorem row_side5 (z : ℤ) (hz : |z| < 2^64) (x : Signed5) (hx : x.Bounded)
-    (hx4 : x.l4 = 0 ∨ x.l4 = 2^64 - 1) (m s : ℕ) (hm : m = z.natAbs) (hs : s = signMask z) :
+    (hx4 : x.l4 = 0 ∨ x.l4 = 2^64 - 1) (m s : ℕ) (hrep : SignMagRep m s z) :
     ((eorw x.l0 s + 2^64 * eorw x.l1 s + 2^128 * eorw x.l2 s + 2^192 * eorw x.l3 s : ℕ) : ℤ)
         * m + (andw m s : ℤ) - 2^256 * (andw (eorw x.l4 s) m : ℤ) = z * x.toInt := by
   obtain ⟨h0, h1, h2, h3, h4⟩ := hx
-  have hmz : (m : ℤ) = |z| := by rw [hm, Int.natCast_natAbs]
-  have hm64 : m < 2^64 := by rw [abs_lt] at hz; zify; rw [hmz]; rw [abs_lt]; exact hz
+  obtain ⟨hm64, -⟩ := hrep.lt _ _ _ hz
   have a1 : andw m (2^64 - 1) = m := by
     unfold andw; rw [Nat.and_two_pow_sub_one_eq_mod, Nat.mod_eq_of_lt hm64]
   have a2 : andw (2^64 - 1) m = m := by rw [andw, Nat.and_comm]; exact a1
   have a3 : andw 0 m = 0 := Nat.zero_and m
   have hones : (2 : ℕ)^64 - 1 < 2^64 := by omega
   unfold Signed5.toInt
-  rcases lt_or_ge z 0 with hneg | hnn
-  · rw [hs, signMask, if_pos hneg]
+  rcases hrep with ⟨hs, hm⟩ | ⟨hs, hm⟩
+  · subst hs
+    have a0 : andw m 0 = 0 := Nat.and_zero m
+    simp only [eorw, Nat.xor_zero]
+    rw [a0]
+    rcases hx4 with h4' | h4'
+    · rw [h4', a3, if_pos (by omega)]
+      push_cast
+      rw [hm]
+      ring
+    · rw [h4', a2, if_neg (by omega)]
+      push_cast
+      rw [hm]
+      ring
+  · subst hs
     have hsum : ((eorw x.l0 (2^64 - 1) + 2^64 * eorw x.l1 (2^64 - 1)
         + 2^128 * eorw x.l2 (2^64 - 1) + 2^192 * eorw x.l3 (2^64 - 1) : ℕ) : ℤ)
         = 2^256 - 1 - (x.l0 + 2^64 * x.l1 + 2^128 * x.l2 + 2^192 * x.l3) := by
       rw [eorw_ones _ h0, eorw_ones _ h1, eorw_ones _ h2, eorw_ones _ h3]; omega
     rw [hsum, a1]
-    rw [abs_of_neg hneg] at hmz
     rcases hx4 with h4' | h4'
     · rw [h4', eorw_ones 0 (by norm_num), Nat.sub_zero, a2, if_pos (by omega)]
       push_cast
-      rw [hmz]
+      rw [hm]
       ring
     · rw [h4', eorw_ones _ hones, Nat.sub_self, a3, if_neg (by omega)]
       push_cast
-      rw [hmz]
-      ring
-  · rw [hs, signMask, if_neg (not_lt.mpr hnn)]
-    have a0 : andw m 0 = 0 := Nat.and_zero m
-    simp only [eorw, Nat.xor_zero]
-    rw [a0]
-    rw [abs_of_nonneg hnn] at hmz
-    rcases hx4 with h4' | h4'
-    · rw [h4', a3, if_pos (by omega)]
-      push_cast
-      rw [hmz]
-      ring
-    · rw [h4', a2, if_neg (by omega)]
-      push_cast
-      rw [hmz]
+      rw [hm]
       ring
 
 /-- The shift of a five-word signed value right by `59`, as the block does it: four `extr`s and an
@@ -102,25 +99,24 @@ theorem shift59_spec (d0 d1 d2 d3 d4 : ℕ) (h0 : d0 < 2^64) (h1 : d1 < 2^64) (h
 
 -- BEGIN fgRowBlock_spec statement
 /-- The row `(a f + b g) / 2^59` of `updateFG`, rounded down, in five words. The inputs are bounded
-five-word values below `2^256` in magnitude, as the rounds maintain, and the row bound
-`|a| + |b| ≤ 2^63` keeps every column's carry within the next word and the unshifted value within
-`2^319`. -/
+five-word values below `2^256` in magnitude, as the rounds maintain; the matrix entries come in
+their sign-magnitude forms; and the row bound `|a| + |b| ≤ 2^63` keeps every column's carry within
+the next word and the unshifted value within `2^319`. -/
 theorem fgRowBlock_spec (a b : ℤ) (f g : Signed5) (m0 m1 s0 s1 : Nat)
     (hf : f.Bounded) (hg : g.Bounded) (hfv : |f.toInt| < 2^256) (hgv : |g.toInt| < 2^256)
     (hab : |a| + |b| ≤ 2^63)
-    (hm0' : m0 = a.natAbs) (hm1' : m1 = b.natAbs)
-    (hs0' : s0 = signMask a) (hs1' : s1 = signMask b) :
+    (hrep0 : SignMagRep m0 s0 a) (hrep1 : SignMagRep m1 s1 b) :
     ∀ res, res = fgRowBlock f g m0 m1 s0 s1 →
       res.Bounded ∧ res.toInt = (a * f.toInt + b * g.toInt) / 2^59 := by
   intro res hres
   have ha0 := abs_nonneg a
   have hb0 := abs_nonneg b
-  have hm0z : (m0 : ℤ) = |a| := by rw [hm0', Int.natCast_natAbs]
-  have hm1z : (m1 : ℤ) = |b| := by rw [hm1', Int.natCast_natAbs]
+  have hm0z : (m0 : ℤ) = |a| := hrep0.natCast_eq_abs _ _ _
+  have hm1z : (m1 : ℤ) = |b| := hrep1.natCast_eq_abs _ _ _
   have hm0 : m0 < 2^64 := by omega
   have hm1 : m1 < 2^64 := by omega
-  have hs0 : s0 < 2^64 := by rw [hs0']; unfold signMask; split_ifs <;> omega
-  have hs1 : s1 < 2^64 := by rw [hs1']; unfold signMask; split_ifs <;> omega
+  have hs0 : s0 < 2^64 := (hrep0.lt _ _ _ (by omega)).2
+  have hs1 : s1 < 2^64 := (hrep1.lt _ _ _ (by omega)).2
 -- END fgRowBlock_spec statement
   -- generated skeleton for `fgRowBlock`: do not edit between the annotations
   unfold fgRowBlock at hres
@@ -590,10 +586,8 @@ theorem fgRowBlock_spec (a b : ℤ) (f g : Signed5) (m0 m1 s0 s1 : Nat)
   -- The two sides on the integers, in the block's words.
   have hf4 := Signed5.l4_of_abs_lt f hf hfv
   have hg4 := Signed5.l4_of_abs_lt g hg hgv
-  have hA := row_side5 a (by omega) f hf hf4 m0' s0' (by rw [e_m0']; exact hm0')
-    (by rw [e_s0']; exact hs0')
-  have hB := row_side5 b (by omega) g hg hg4 m1' s1' (by rw [e_m1']; exact hm1')
-    (by rw [e_s1']; exact hs1')
+  have hA := row_side5 a (by omega) f hf hf4 m0' s0' (by rw [e_m0', e_s0']; exact hrep0)
+  have hB := row_side5 b (by omega) g hg hg4 m1' s1' (by rw [e_m1', e_s1']; exact hrep1)
   rw [← e_f0, ← e_f1, ← e_f2, ← e_f3, ← e_f4, ← e_w_1, ← e_w_5, ← e_w_9, ← e_w_13, ← e_lo, ← e_t4,
     ← e_t4_1] at hA
   rw [← e_g0, ← e_g1, ← e_g2, ← e_g3, ← e_g4, ← e_w_3, ← e_w_7, ← e_w_11, ← e_w_15, ← e_w, ← e_lo_8,

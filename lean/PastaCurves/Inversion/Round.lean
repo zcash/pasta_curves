@@ -27,6 +27,35 @@ theorem Limbs.toNat_ofNat (n : ℕ) (h : n < 2^256) : (Limbs.ofNat n).toNat = n 
   simp only [Limbs.ofNat, Limbs.toNat]
   omega
 
+/-- A bounded five-word value is determined by the integer it represents. -/
+theorem Signed5.ext_of_toInt (x y : Signed5) (hx : x.Bounded) (hy : y.Bounded)
+    (h : x.toInt = y.toInt) : x = y := by
+  obtain ⟨hx0, hx1, hx2, hx3, hx4⟩ := hx
+  obtain ⟨hy0, hy1, hy2, hy3, hy4⟩ := hy
+  unfold Signed5.toInt at h
+  have e0 : x.l0 = y.l0 := by split_ifs at h <;> omega
+  have e1 : x.l1 = y.l1 := by split_ifs at h <;> omega
+  have e2 : x.l2 = y.l2 := by split_ifs at h <;> omega
+  have e3 : x.l3 = y.l3 := by split_ifs at h <;> omega
+  have e4 : x.l4 = y.l4 := by split_ifs at h <;> omega
+  calc x = ⟨x.l0, x.l1, x.l2, x.l3, x.l4⟩ := rfl
+    _ = ⟨y.l0, y.l1, y.l2, y.l3, y.l4⟩ := by rw [e0, e1, e2, e3, e4]
+    _ = y := rfl
+
+/-- A bounded four-limb value is determined by the natural number it represents. -/
+theorem Limbs.ext_of_toNat (x y : Limbs) (hx : x.Bounded) (hy : y.Bounded)
+    (h : x.toNat = y.toNat) : x = y := by
+  obtain ⟨hx0, hx1, hx2, hx3⟩ := hx
+  obtain ⟨hy0, hy1, hy2, hy3⟩ := hy
+  unfold Limbs.toNat at h
+  have e0 : x.l0 = y.l0 := by omega
+  have e1 : x.l1 = y.l1 := by omega
+  have e2 : x.l2 = y.l2 := by omega
+  have e3 : x.l3 = y.l3 := by omega
+  calc x = ⟨x.l0, x.l1, x.l2, x.l3⟩ := rfl
+    _ = ⟨y.l0, y.l1, y.l2, y.l3⟩ := by rw [e0, e1, e2, e3]
+    _ = y := rfl
+
 /-- The modulus is at least `2^254`, by its shape. -/
 theorem PastaField.two_pow_le_modulus (F : PastaField) : 2^254 ≤ F.modulus.toNat := by
   obtain ⟨h2, h3⟩ := F.shape
