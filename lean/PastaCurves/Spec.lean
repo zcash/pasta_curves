@@ -1,4 +1,5 @@
 import PastaCurves.Compositions
+import PastaCurves.Tactic.WordStep
 import Mathlib.Data.Nat.ModEq
 import Mathlib.Tactic.Ring
 
@@ -6,7 +7,7 @@ import Mathlib.Tactic.Ring
 # Generic arithmetic and limb lemmas
 
 These results are independent of any instruction transcription and are shared by architecture-
-specific correctness proofs.
+specific correctness proofs, which also take the skeleton step tactic `word_step` from here.
 -/
 
 namespace PastaCurves
@@ -53,6 +54,11 @@ theorem subc_carry_cases (a b cin c : Nat) (hc : c = (a + 2^64 - b - (1 - cin)) 
 
 /-- `lsl #62` and `lsr #2` split a limb at its second bit. -/
 theorem lsl62_lsr2_split (a : Nat) : a * 2^62 % 2^64 + 2^64 * (a / 2^2) = a * 2^62 := by omega
+
+/-- The skeleton's bound for a conditional select, from the bounds of its two arms. -/
+theorem ite_lt {c : Prop} [Decidable c] {a b n : Nat} (ha : a < n) (hb : b < n) :
+    (if c then a else b) < n := by
+  split <;> assumption
 -- END skeleton lemmas
 
 -- BEGIN modEq_of_add_mul

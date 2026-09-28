@@ -38,252 +38,157 @@ theorem amontredBlock_spec (F : PastaField) (t : Signed5) (modulus : Limbs) (inv
   unfold amontredBlock at hr
   lift_lets -merge at hr
   -- t0: argument
-  extract_lets -merge +onlyGivenNames t0 at hr
-  have e_t0 : t0 = t.l0 := rfl
-  clear_value t0
-  have b_t0 : t0 < 2^64 := by rw [e_t0]; exact ht.1
+  word_step t0 := t.l0 using ht.1
   -- t1: argument
-  extract_lets -merge +onlyGivenNames t1 at hr
-  have e_t1 : t1 = t.l1 := rfl
-  clear_value t1
-  have b_t1 : t1 < 2^64 := by rw [e_t1]; exact ht.2.1
+  word_step t1 := t.l1 using ht.2.1
   -- t2: argument
-  extract_lets -merge +onlyGivenNames t2 at hr
-  have e_t2 : t2 = t.l2 := rfl
-  clear_value t2
-  have b_t2 : t2 < 2^64 := by rw [e_t2]; exact ht.2.2.1
+  word_step t2 := t.l2 using ht.2.2.1
   -- t3: argument
-  extract_lets -merge +onlyGivenNames t3 at hr
-  have e_t3 : t3 = t.l3 := rfl
-  clear_value t3
-  have b_t3 : t3 < 2^64 := by rw [e_t3]; exact ht.2.2.2.1
+  word_step t3 := t.l3 using ht.2.2.2.1
   -- t4: argument
-  extract_lets -merge +onlyGivenNames t4 at hr
-  have e_t4 : t4 = t.l4 := rfl
-  clear_value t4
-  have b_t4 : t4 < 2^64 := by rw [e_t4]; exact ht.2.2.2.2
+  word_step t4 := t.l4 using ht.2.2.2.2
   -- p0: argument
-  extract_lets -merge +onlyGivenNames p0 at hr
-  have e_p0 : p0 = modulus.l0 := rfl
-  clear_value p0
-  have b_p0 : p0 < 2^64 := by rw [e_p0]; exact hm.1
+  word_step p0 := modulus.l0 using hm.1
   -- p1: argument
-  extract_lets -merge +onlyGivenNames p1 at hr
-  have e_p1 : p1 = modulus.l1 := rfl
-  clear_value p1
-  have b_p1 : p1 < 2^64 := by rw [e_p1]; exact hm.2.1
+  word_step p1 := modulus.l1 using hm.2.1
   -- inv': argument
-  extract_lets -merge +onlyGivenNames inv' at hr
-  have e_inv' : inv' = inv := rfl
-  clear_value inv'
-  have b_inv' : inv' < 2^64 := by rw [e_inv']; exact hinv_lt
+  word_step inv' := inv using hinv_lt
   -- w: lsl w,p0,#61
-  extract_lets -merge +onlyGivenNames w at hr
-  have e_w : w = p0 * 2^61 % 2^64 := rfl
-  clear_value w
-  have b_w : w < 2^64 := by rw [e_w]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step w := p0 * 2^61 % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   -- t0_1: adds t0,t0,w
-  extract_lets -merge +onlyGivenNames s t0_1 c at hr
-  have e_t0_1 : t0_1 = (t0 + w + 0) % 2^64 := rfl
-  have e_c : c = (t0 + w + 0) / 2^64 := rfl
-  clear_value s t0_1 c
+  word_step s, t0_1 := (t0 + w + 0) % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _),
+      c := (t0 + w + 0) / 2^64
   have l_t0_1 : t0_1 + 2^64 * c = t0 + w + 0 := by
     rw [e_t0_1, e_c]; exact Nat.mod_add_div _ _
-  have b_t0_1 : t0_1 < 2^64 := by rw [e_t0_1]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
   have b_c : c ≤ 1 := by
     rw [e_c]; exact addc_carry_le_one t0 w 0 b_t0 b_w (by decide)
   clear e_t0_1 e_c
   -- w_1: extr w,p1,p0,#3
-  extract_lets -merge +onlyGivenNames w_1 at hr
-  have e_w_1 : w_1 = extr p1 p0 3 := rfl
-  clear_value w_1
-  have b_w_1 : w_1 < 2^64 := by rw [e_w_1]; exact extr_lt p1 p0 3
+  word_step w_1 := extr p1 p0 3 using extr_lt p1 p0 3
   -- t1_1: adcs t1,t1,w
-  extract_lets -merge +onlyGivenNames s_1 t1_1 c_1 at hr
-  have e_t1_1 : t1_1 = (t1 + w_1 + c) % 2^64 := rfl
-  have e_c_1 : c_1 = (t1 + w_1 + c) / 2^64 := rfl
-  clear_value s_1 t1_1 c_1
+  word_step s_1, t1_1 := (t1 + w_1 + c) % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _),
+      c_1 := (t1 + w_1 + c) / 2^64
   have l_t1_1 : t1_1 + 2^64 * c_1 = t1 + w_1 + c := by
     rw [e_t1_1, e_c_1]; exact Nat.mod_add_div _ _
-  have b_t1_1 : t1_1 < 2^64 := by rw [e_t1_1]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
   have b_c_1 : c_1 ≤ 1 := by
     rw [e_c_1]; exact addc_carry_le_one t1 w_1 c b_t1 b_w_1 b_c
   clear e_t1_1 e_c_1
   -- w_2: lsr w,p1,#3
-  extract_lets -merge +onlyGivenNames w_2 at hr
-  have e_w_2 : w_2 = p1 / 2^3 := rfl
-  clear_value w_2
+  word_step w_2 := p1 / 2^3
   have b_w_2 : w_2 < 2^61 := by
     rw [e_w_2]; exact Nat.div_lt_of_lt_mul (lt_of_lt_of_eq b_p1 (by norm_num))
   -- t2_1: adcs t2,t2,w
-  extract_lets -merge +onlyGivenNames s_2 t2_1 c_2 at hr
-  have e_t2_1 : t2_1 = (t2 + w_2 + c_1) % 2^64 := rfl
-  have e_c_2 : c_2 = (t2 + w_2 + c_1) / 2^64 := rfl
-  clear_value s_2 t2_1 c_2
+  word_step s_2, t2_1 := (t2 + w_2 + c_1) % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _),
+      c_2 := (t2 + w_2 + c_1) / 2^64
   have l_t2_1 : t2_1 + 2^64 * c_2 = t2 + w_2 + c_1 := by
     rw [e_t2_1, e_c_2]; exact Nat.mod_add_div _ _
-  have b_t2_1 : t2_1 < 2^64 := by rw [e_t2_1]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
   have b_c_2 : c_2 ≤ 1 := by
     rw [e_c_2]; exact addc_carry_le_one t2 w_2 c_1 b_t2 (lt_of_lt_of_le b_w_2 (by norm_num)) b_c_1
   clear e_t2_1 e_c_2
   -- t3_1: adcs t3,t3,xzr
-  extract_lets -merge +onlyGivenNames s_3 t3_1 c_3 at hr
-  have e_t3_1 : t3_1 = (t3 + 0 + c_2) % 2^64 := rfl
-  have e_c_3 : c_3 = (t3 + 0 + c_2) / 2^64 := rfl
-  clear_value s_3 t3_1 c_3
+  word_step s_3, t3_1 := (t3 + 0 + c_2) % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _),
+      c_3 := (t3 + 0 + c_2) / 2^64
   have l_t3_1 : t3_1 + 2^64 * c_3 = t3 + 0 + c_2 := by
     rw [e_t3_1, e_c_3]; exact Nat.mod_add_div _ _
-  have b_t3_1 : t3_1 < 2^64 := by rw [e_t3_1]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
   have b_c_3 : c_3 ≤ 1 := by
     rw [e_c_3]; exact addc_carry_le_one t3 0 c_2 b_t3 (by decide) b_c_2
   clear e_t3_1 e_c_3
   -- w_3: mov w,#0x800000000000000
-  extract_lets -merge +onlyGivenNames w_3 at hr
-  have e_w_3 : w_3 = 0x800000000000000 := rfl
-  clear_value w_3
-  have b_w_3 : w_3 < 2^64 := by rw [e_w_3]; decide
+  word_step w_3 := 0x800000000000000 using (by decide)
   -- t4_1: adc t4,t4,w
-  extract_lets -merge +onlyGivenNames t4_1 at hr
-  have e_t4_1 : t4_1 = (t4 + w_3 + c_3) % 2^64 := rfl
-  clear_value t4_1
-  have b_t4_1 : t4_1 < 2^64 := by rw [e_t4_1]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step t4_1 := (t4 + w_3 + c_3) % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   obtain ⟨k_t4_1, b_k_t4_1, l_t4_1⟩ :
       ∃ k, k ≤ 1 ∧ t4_1 + 2^64 * k = t4 + w_3 + c_3 :=
     ⟨(t4 + w_3 + c_3) / 2^64, addc_carry_le_one t4 w_3 c_3 b_t4 b_w_3 b_c_3,
       by rw [e_t4_1]; exact Nat.mod_add_div _ _⟩
   clear e_t4_1
   -- q: mul q,t0,inv
-  extract_lets -merge +onlyGivenNames q at hr
-  have e_q : q = t0_1 * inv' % 2^64 := rfl
-  clear_value q
-  have b_q : q < 2^64 := by rw [e_q]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step q := t0_1 * inv' % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   -- hi: umulh hi,q,p0
-  extract_lets -merge +onlyGivenNames hi at hr
-  have e_hi : hi = q * p0 / 2^64 := rfl
-  clear_value hi
-  have p_hi : q * p0 < 2^64 * 2^64 := Nat.mul_lt_mul'' b_q b_p0
-  have b_hi : hi < 2^64 := by rw [e_hi]; exact Nat.div_lt_of_lt_mul p_hi
+  word_step hi := q * p0 / 2^64 using Nat.div_lt_of_lt_mul (Nat.mul_lt_mul'' b_q b_p0)
   obtain ⟨lo_hi, b_lo_hi, d_hi⟩ :
       ∃ lo, lo < 2^64 ∧ lo + 2^64 * hi = q * p0 :=
     ⟨q * p0 % 2^64, Nat.mod_lt _ (Nat.two_pow_pos _),
       by rw [e_hi]; exact Nat.mod_add_div _ _⟩
   clear e_hi
   -- lo: mul lo,q,p1
-  extract_lets -merge +onlyGivenNames lo at hr
-  have e_lo : lo = q * p1 % 2^64 := rfl
-  clear_value lo
-  have b_lo : lo < 2^64 := by rw [e_lo]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step lo := q * p1 % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   -- w_4: umulh w,q,p1
-  extract_lets -merge +onlyGivenNames w_4 at hr
-  have e_w_4 : w_4 = q * p1 / 2^64 := rfl
-  clear_value w_4
-  have p_w_4 : q * p1 < 2^64 * 2^64 := Nat.mul_lt_mul'' b_q b_p1
-  have b_w_4 : w_4 < 2^64 := by rw [e_w_4]; exact Nat.div_lt_of_lt_mul p_w_4
+  word_step w_4 := q * p1 / 2^64 using Nat.div_lt_of_lt_mul (Nat.mul_lt_mul'' b_q b_p1)
   have d_w_4 : lo + 2^64 * w_4 = q * p1 := by
     rw [e_lo, e_w_4]; exact Nat.mod_add_div _ _
   clear e_lo e_w_4
   -- l3: lsl l3,q,#62
-  extract_lets -merge +onlyGivenNames l3 at hr
-  have e_l3 : l3 = q * 2^62 % 2^64 := rfl
-  clear_value l3
-  have b_l3 : l3 < 2^64 := by rw [e_l3]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step l3 := q * 2^62 % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   have sh_l3 : l3 + 2^64 * (q / 2^2) = q * 2^62 := by
     rw [e_l3]; exact lsl62_lsr2_split _
   -- h3: lsr h3,q,#2
-  extract_lets -merge +onlyGivenNames h3 at hr
-  have e_h3 : h3 = q / 2^2 := rfl
-  clear_value h3
+  word_step h3 := q / 2^2
   have b_h3 : h3 < 2^62 := by
     rw [e_h3]; exact Nat.div_lt_of_lt_mul (lt_of_lt_of_eq b_q (by norm_num))
   -- c_4: subs xzr,t0,#1
-  extract_lets -merge +onlyGivenNames c_4 at hr
-  have e_c_4 : c_4 = (t0_1 + 2^64 - 1 - (1 - 1)) / 2^64 := rfl
-  clear_value c_4
+  word_step c_4 := (t0_1 + 2^64 - 1 - (1 - 1)) / 2^64
   have b_c_4 : c_4 ≤ 1 := by rw [e_c_4]; exact subc_carry_le_one t0_1 1 1 b_t0_1
   have l_c_4 : (c_4 = 1 ∧ 1 + 1 ≤ t0_1 + 1) ∨ (c_4 = 0 ∧ t0_1 + 1 < 1 + 1) :=
     subc_carry_cases t0_1 1 1 _ e_c_4 b_t0_1 (by decide) (by decide)
   clear e_c_4
   -- t1_2: adcs t1,t1,hi
-  extract_lets -merge +onlyGivenNames s_4 t1_2 c_5 at hr
-  have e_t1_2 : t1_2 = (t1_1 + hi + c_4) % 2^64 := rfl
-  have e_c_5 : c_5 = (t1_1 + hi + c_4) / 2^64 := rfl
-  clear_value s_4 t1_2 c_5
+  word_step s_4, t1_2 := (t1_1 + hi + c_4) % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _),
+      c_5 := (t1_1 + hi + c_4) / 2^64
   have l_t1_2 : t1_2 + 2^64 * c_5 = t1_1 + hi + c_4 := by
     rw [e_t1_2, e_c_5]; exact Nat.mod_add_div _ _
-  have b_t1_2 : t1_2 < 2^64 := by rw [e_t1_2]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
   have b_c_5 : c_5 ≤ 1 := by
     rw [e_c_5]; exact addc_carry_le_one t1_1 hi c_4 b_t1_1 b_hi b_c_4
   clear e_t1_2 e_c_5
   -- t2_2: adcs t2,t2,w
-  extract_lets -merge +onlyGivenNames s_5 t2_2 c_6 at hr
-  have e_t2_2 : t2_2 = (t2_1 + w_4 + c_5) % 2^64 := rfl
-  have e_c_6 : c_6 = (t2_1 + w_4 + c_5) / 2^64 := rfl
-  clear_value s_5 t2_2 c_6
+  word_step s_5, t2_2 := (t2_1 + w_4 + c_5) % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _),
+      c_6 := (t2_1 + w_4 + c_5) / 2^64
   have l_t2_2 : t2_2 + 2^64 * c_6 = t2_1 + w_4 + c_5 := by
     rw [e_t2_2, e_c_6]; exact Nat.mod_add_div _ _
-  have b_t2_2 : t2_2 < 2^64 := by rw [e_t2_2]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
   have b_c_6 : c_6 ≤ 1 := by
     rw [e_c_6]; exact addc_carry_le_one t2_1 w_4 c_5 b_t2_1 b_w_4 b_c_5
   clear e_t2_2 e_c_6
   -- t3_2: adcs t3,t3,l3
-  extract_lets -merge +onlyGivenNames s_6 t3_2 c_7 at hr
-  have e_t3_2 : t3_2 = (t3_1 + l3 + c_6) % 2^64 := rfl
-  have e_c_7 : c_7 = (t3_1 + l3 + c_6) / 2^64 := rfl
-  clear_value s_6 t3_2 c_7
+  word_step s_6, t3_2 := (t3_1 + l3 + c_6) % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _),
+      c_7 := (t3_1 + l3 + c_6) / 2^64
   have l_t3_2 : t3_2 + 2^64 * c_7 = t3_1 + l3 + c_6 := by
     rw [e_t3_2, e_c_7]; exact Nat.mod_add_div _ _
-  have b_t3_2 : t3_2 < 2^64 := by rw [e_t3_2]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
   have b_c_7 : c_7 ≤ 1 := by
     rw [e_c_7]; exact addc_carry_le_one t3_1 l3 c_6 b_t3_1 b_l3 b_c_6
   clear e_t3_2 e_c_7
   -- t4_2: adc t4,t4,h3
-  extract_lets -merge +onlyGivenNames t4_2 at hr
-  have e_t4_2 : t4_2 = (t4_1 + h3 + c_7) % 2^64 := rfl
-  clear_value t4_2
-  have b_t4_2 : t4_2 < 2^64 := by rw [e_t4_2]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step t4_2 := (t4_1 + h3 + c_7) % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   obtain ⟨k_t4_2, b_k_t4_2, l_t4_2⟩ :
       ∃ k, k ≤ 1 ∧ t4_2 + 2^64 * k = t4_1 + h3 + c_7 :=
     ⟨(t4_1 + h3 + c_7) / 2^64, addc_carry_le_one t4_1 h3 c_7 b_t4_1 (lt_of_lt_of_le b_h3 (by norm_num)) b_c_7,
       by rw [e_t4_2]; exact Nat.mod_add_div _ _⟩
   clear e_t4_2
   -- t1_3: adds t1,t1,lo
-  extract_lets -merge +onlyGivenNames s_7 t1_3 c_8 at hr
-  have e_t1_3 : t1_3 = (t1_2 + lo + 0) % 2^64 := rfl
-  have e_c_8 : c_8 = (t1_2 + lo + 0) / 2^64 := rfl
-  clear_value s_7 t1_3 c_8
+  word_step s_7, t1_3 := (t1_2 + lo + 0) % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _),
+      c_8 := (t1_2 + lo + 0) / 2^64
   have l_t1_3 : t1_3 + 2^64 * c_8 = t1_2 + lo + 0 := by
     rw [e_t1_3, e_c_8]; exact Nat.mod_add_div _ _
-  have b_t1_3 : t1_3 < 2^64 := by rw [e_t1_3]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
   have b_c_8 : c_8 ≤ 1 := by
     rw [e_c_8]; exact addc_carry_le_one t1_2 lo 0 b_t1_2 b_lo (by decide)
   clear e_t1_3 e_c_8
   -- t2_3: adcs t2,t2,xzr
-  extract_lets -merge +onlyGivenNames s_8 t2_3 c_9 at hr
-  have e_t2_3 : t2_3 = (t2_2 + 0 + c_8) % 2^64 := rfl
-  have e_c_9 : c_9 = (t2_2 + 0 + c_8) / 2^64 := rfl
-  clear_value s_8 t2_3 c_9
+  word_step s_8, t2_3 := (t2_2 + 0 + c_8) % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _),
+      c_9 := (t2_2 + 0 + c_8) / 2^64
   have l_t2_3 : t2_3 + 2^64 * c_9 = t2_2 + 0 + c_8 := by
     rw [e_t2_3, e_c_9]; exact Nat.mod_add_div _ _
-  have b_t2_3 : t2_3 < 2^64 := by rw [e_t2_3]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
   have b_c_9 : c_9 ≤ 1 := by
     rw [e_c_9]; exact addc_carry_le_one t2_2 0 c_8 b_t2_2 (by decide) b_c_8
   clear e_t2_3 e_c_9
   -- t3_3: adcs t3,t3,xzr
-  extract_lets -merge +onlyGivenNames s_9 t3_3 c_10 at hr
-  have e_t3_3 : t3_3 = (t3_2 + 0 + c_9) % 2^64 := rfl
-  have e_c_10 : c_10 = (t3_2 + 0 + c_9) / 2^64 := rfl
-  clear_value s_9 t3_3 c_10
+  word_step s_9, t3_3 := (t3_2 + 0 + c_9) % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _),
+      c_10 := (t3_2 + 0 + c_9) / 2^64
   have l_t3_3 : t3_3 + 2^64 * c_10 = t3_2 + 0 + c_9 := by
     rw [e_t3_3, e_c_10]; exact Nat.mod_add_div _ _
-  have b_t3_3 : t3_3 < 2^64 := by rw [e_t3_3]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
   have b_c_10 : c_10 ≤ 1 := by
     rw [e_c_10]; exact addc_carry_le_one t3_2 0 c_9 b_t3_2 (by decide) b_c_9
   clear e_t3_3 e_c_10
   -- t4_3: adc t4,t4,xzr
-  extract_lets -merge +onlyGivenNames t4_3 at hr
-  have e_t4_3 : t4_3 = (t4_2 + 0 + c_10) % 2^64 := rfl
-  clear_value t4_3
-  have b_t4_3 : t4_3 < 2^64 := by rw [e_t4_3]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  word_step t4_3 := (t4_2 + 0 + c_10) % 2^64 using Nat.mod_lt _ (Nat.two_pow_pos _)
   obtain ⟨k_t4_3, b_k_t4_3, l_t4_3⟩ :
       ∃ k, k ≤ 1 ∧ t4_3 + 2^64 * k = t4_2 + 0 + c_10 :=
     ⟨(t4_2 + 0 + c_10) / 2^64, addc_carry_le_one t4_2 0 c_10 b_t4_2 (by decide) b_c_10,

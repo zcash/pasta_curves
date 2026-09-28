@@ -1056,32 +1056,25 @@ class SkeletonBackend(gen.SkeletonBackend):
                 lin_proof = f"subc_lin {a} {b} {cin} {context.lt64(b)} {context.le1(cin)}"
                 carry_proof = f"subc_carry_le_one {a} {b} {cin} {context.lt64(a)}"
             context.eq(xn, f"{val} % 2^64")
+            context.bound(xn, "Nat.mod_lt _ (Nat.two_pow_pos _)")
             if dead_carry:
-                context.lines.append(
-                    f"  have b_{xn} : {xn} < 2^64 := by rw [e_{xn}]; "
-                    "exact Nat.mod_lt _ (Nat.two_pow_pos _)"
-                )
                 context.lines.append(f"  obtain ⟨{cn}, b_{cn}, l_{xn}⟩ :")
                 context.lines.append(f"      ∃ k, k ≤ 1 ∧ {lin.replace(cn, 'k')} :=")
                 context.lines.append(f"    ⟨{val} / 2^64, {carry_proof},")
                 context.lines.append(f"      by rw [e_{xn}]; exact {lin_proof}⟩")
                 context.lines.append(f"  clear e_{xn}")
                 context.ren[entries[i + 1]["name"]] = xn
-                context.bnd[xn] = f"b_{xn}"
                 context.consumed = 2
             else:
                 context.eq(cn, f"{val} / 2^64")
                 context.lines.append(f"  have l_{xn} : {lin} := by")
                 context.lines.append(f"    rw [e_{xn}, e_{cn}]; exact {lin_proof}")
-                context.lines.append(
-                    f"  have b_{xn} : {xn} < 2^64 := by rw [e_{xn}]; exact Nat.mod_lt _ (Nat.two_pow_pos _)"
-                )
                 context.lines.append(f"  have b_{cn} : {cn} ≤ 1 := by")
                 context.lines.append(f"    rw [e_{cn}]; exact {carry_proof}")
                 context.lines.append(f"  clear e_{xn} e_{cn}")
                 context.ren[entries[i + 1]["name"]] = xn
                 context.ren[entries[i + 2]["name"]] = cn
-                context.bnd[xn], context.bnd[cn] = f"b_{xn}", f"b_{cn}"
+                context.bnd[cn] = f"b_{cn}"
                 context.unit_bound.add(cn)
                 context.consumed = 3
             return True
@@ -1109,8 +1102,7 @@ class SkeletonBackend(gen.SkeletonBackend):
 
         def bounded(expr, proof):
             context.eq(nm, expr)
-            context.lines.append(f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact {proof}")
-            context.bnd[nm] = f"b_{nm}"
+            context.bound(nm, proof)
             return True
 
         if kind == "lsl":

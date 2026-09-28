@@ -107,6 +107,7 @@ PastaCurves/Primality.lean               the two Pasta primes, certified
 PastaCurves/FieldTypes.lean              GENERATED: the field types' constants, checked
 PastaCurves/KnownAnswers.lean            GENERATED: the backend tests' known answers, checked
 PastaCurves/Spec.lean                    shared arithmetic and limb lemmas
+PastaCurves/Tactic/WordStep.lean         `word_step`, one instruction's step of a generated block proof
 PastaCurves/Vectors.lean                 GENERATED: the reference vectors inside the contracts
 ../test-vectors/pasta_mul-armv8-vectors.txt   the hardware outputs the vectors are generated from
 PastaCurves/VectorCheck.lean             a backend's routines, and the vectors it fails
@@ -193,17 +194,19 @@ liveness.
 
 The proofs in `Spec.lean` follow the chains instruction by instruction, and their mechanical part is
 generated too (`scripts/gen.py --skeleton <arch>:<block>`). The skeleton unfolds the block in the
-hypothesis that names its result. Then, for every instruction, it extracts that instruction's `let`s
-from the hypothesis under unique names, records the defining equation of the result (by `rfl`, in
-`%`/`/` form), makes the locals opaque with `clear_value`, and derives from the equation the facts
-that later steps need (the carry-chain equation `x + 2^64 * c = a + b + cin`, the range facts, the
-product decomposition `lo + 2^64 * hi = a * b`), each an instance of one lemma, clearing the `%`/`/`
-equation when nothing later needs it. The hand-written parts are the theorem statements and the
-`-- BEGIN ... -- END` annotation blocks between instructions. An annotation block states the
-Montgomery round invariant that holds at that point and derives it from the facts it names.
-`scripts/gen.py --check-spec` strips the annotation blocks and requires the rest of the proof to be
-the current skeleton, so an edit to an `asm!` block regenerates the skeleton and the check fails
-loudly until the annotations are moved.
+hypothesis that names its result. Then, for every instruction, one `word_step` (the tactic of
+`Tactic/WordStep.lean`) extracts that instruction's `let`s from the hypothesis under unique names,
+records the defining equation of the result (by `rfl`, in `%`/`/` form), makes the locals opaque
+with `clear_value`, and proves the result's bound below `2^64` by the lemma that the generator
+names. The lines after the step derive from the equation the other facts that later steps need (the
+carry-chain equation `x + 2^64 * c = a + b + cin`, a carry's bound by `1`, the product decomposition
+`lo + 2^64 * hi = a * b`), each an instance of one lemma, clearing the `%`/`/` equation when nothing
+later needs it. The hand-written parts are the theorem statements and the `-- BEGIN ... -- END`
+annotation blocks between instructions. An annotation block states the Montgomery round invariant
+that holds at that point and derives it from the facts it names. `scripts/gen.py --check-spec`
+strips the annotation blocks and requires the rest of the proof to be the current skeleton, so an
+edit to an `asm!` block regenerates the skeleton and the check fails loudly until the annotations
+are moved.
 
 Three measurements fixed this shape. `omega` given a whole reduction round at once, or
 given the cancellation fact with its `%` terms still in it, runs for minutes without
