@@ -55,25 +55,10 @@ end PastaCurves
 
 namespace PastaCurves.Inversion
 
-/-! ## Five-word signed values -/
+/-! ## Five-word signed values
 
-/-- Five words, the top one carrying the sign: the value is
-`l0 + 2^64 l1 + 2^128 l2 + 2^192 l3 + 2^256 · (signed l4)`. -/
-structure Signed5 where
-  l0 : ℕ
-  l1 : ℕ
-  l2 : ℕ
-  l3 : ℕ
-  l4 : ℕ
-
-/-- The integer that the five words represent. -/
-def Signed5.toInt (x : Signed5) : ℤ :=
-  x.l0 + 2^64 * x.l1 + 2^128 * x.l2 + 2^192 * x.l3
-    + 2^256 * (if x.l4 < 2^63 then (x.l4 : ℤ) else (x.l4 : ℤ) - 2^64)
-
-/-- Every word is below `2^64`. -/
-def Signed5.Bounded (x : Signed5) : Prop :=
-  x.l0 < 2^64 ∧ x.l1 < 2^64 ∧ x.l2 < 2^64 ∧ x.l3 < 2^64 ∧ x.l4 < 2^64
+`Signed5`, its value `toInt`, and `Bounded` are in `PastaCurves/Semantics.lean`, beside `Limbs`,
+since the transcribed blocks take and return them. -/
 
 /-- The five words of a natural number; bits at and above `2^320` are dropped. -/
 def Signed5.ofNat (n : ℕ) : Signed5 :=
