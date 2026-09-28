@@ -4,7 +4,7 @@ Copyright (c) 2026 the pasta_curves contributors (the transcription and the proo
 -/
 import PastaCurves.AArch64.Spec.Words
 import PastaCurves.AArch64.Transcription
-import PastaCurves.Inversion.Packed
+import PastaCurves.Inversion.PackedWords
 
 /-!
 # Correctness of the inversion's packed divstep
@@ -26,7 +26,7 @@ take the bound as the hypothesis `hG'`, and the batch proof supplies it for ever
 
 namespace PastaCurves.AArch64
 
-open Inversion (State divstep)
+open Inversion (State divstep divstep_words_even divstep_words_swap divstep_words_add)
 
 -- BEGIN divstep lemmas
 /-- `cmp d, xzr`: `N` is the sign bit of `d`, and `V` is clear. -/
@@ -62,10 +62,12 @@ theorem andw_two_eq_zero_iff (x : ℕ) : andw x 2 = 0 ↔ x / 2 % 2 = 0 := by
 
 /-- The step on words, from its instruction equations: the new `d`, `f`, and `g` words carry the
 divstep of `s`, and bit 1 of the unhalved `g` word is the parity of the new `g`. The three cases are
-the divstep's: `g` even, the swap when `d > 0`, and the addition when `d < 0`. -/
+the divstep's: `g` even, the swap when `d > 0`, and the addition when `d < 0`. In each, the
+conditional instructions' values are read off the flags, and the shared case lemma of
+`Inversion/PackedWords.lean` does the arithmetic. -/
 theorem divstep_words (s : State) (hf : s.f % 2 = 1) (hd : s.d % 2 = 1) (hD : |s.d| < 2^62)
     (hG : |s.g| < 2^63) (hG' : |(divstep s).g| < 2^62)
-    (d pf pg : ℕ) (fl : Flags) (b_d : d < 2^64) (b_pf : pf < 2^64) (b_pg : pg < 2^64)
+    (d pf pg : ℕ) (fl : Flags) (b_d : d < 2^64) (b_pf : pf < 2^64)
     (hd' : (d : ℤ) = s.d % 2^64) (hf' : (pf : ℤ) = s.f % 2^64) (hg' : (pg : ℤ) = s.g % 2^64)
     (hfz : fl.z = if s.g % 2 = 0 then 1 else 0)
     (t : ℕ) (fl_1 : Flags) (d_1 t_1 pf_1 pg_1 d_2 pg_2 : ℕ)
@@ -74,17 +76,10 @@ theorem divstep_words (s : State) (hf : s.f % 2 = 1) (hd : s.d % 2 = 1) (hD : |s
     (e_d_2 : d_2 = addw d_1 2) (e_pg_2 : pg_2 = asr pg_1 1) :
     (d_2 : ℤ) = (divstep s).d % 2^64 ∧ (pf_1 : ℤ) = (divstep s).f % 2^64 ∧
       (pg_2 : ℤ) = (divstep s).g % 2^64 ∧ (pg_1 / 2 % 2 = 0 ↔ (divstep s).g % 2 = 0) := by
-  rw [abs_lt] at hD hG hG'
+  obtain ⟨hDl, hDu⟩ := abs_lt.mp hD
   obtain ⟨hcn, hcv⟩ := cmpFlags_zero d b_d
-  have hpg1 : pg_1 = (pg + t_1) % 2^64 := e_pg_1
-  have hd2 : d_2 = (d_1 + 2) % 2^64 := e_d_2
-  have hpg2 : pg_2 = if pg_1 < 2^63 then pg_1 / 2 else pg_1 / 2 + 2^63 := by
-    rw [e_pg_2]; unfold asr; norm_num [regMod]
   rcases Int.emod_two_eq_zero_or_one s.g with hg0 | hg1
   · -- `g` even: no swap, `d + 2`, and `g / 2`.
-    have hne : ¬ (0 < s.d ∧ s.g % 2 = 1) := by omega
-    simp only [divstep, if_neg hne] at hG' ⊢
-    simp only [hg0, zero_mul, add_zero] at hG' ⊢
     have hz1 : fl.z = 1 := by rw [hfz, if_pos hg0]
     have ht : t = 0 := by rw [e_t, cselNe, hz1]; simp
     have hfl1 : fl_1 = immFlags 8 := by rw [e_fl_1, ccmpNe, hz1]; simp
@@ -92,29 +87,21 @@ theorem divstep_words (s : State) (hf : s.f % 2 = 1) (hd : s.d % 2 = 1) (hD : |s
     have hd1 : d_1 = d := by rw [e_d_1, cnegGe, if_neg hge]
     have ht1 : t_1 = 0 := by rw [e_t_1, cnegGe, if_neg hge, ht]
     have hpf1 : pf_1 = pf := by rw [e_pf_1, cselGe, if_neg hge]
-    rw [hd2, hd1, hpf1, hpg2, hpg1, ht1]
-    refine ⟨by omega, hf', ?_, ?_⟩
-    · split_ifs <;> omega
-    · omega
+    exact divstep_words_even s hd hG d pf pg hd' hf' hg' hg0 t_1 d_1 pf_1 pg_1 d_2 pg_2 ht1 hd1
+      hpf1 e_pg_1 e_d_2 e_pg_2
   · rcases lt_or_ge 0 s.d with hdpos | hdnp
     · -- The swap: `2 - d`, `f := g`, and `(g - f) / 2`.
       have hsw : 0 < s.d ∧ s.g % 2 = 1 := ⟨hdpos, hg1⟩
-      simp only [divstep, if_pos hsw] at hG' ⊢
       have hz0 : fl.z = 0 := by rw [hfz, if_neg (by omega)]
       have ht : t = pf := by rw [e_t, cselNe, hz0]; simp
       have hfl1 : fl_1 = cmpFlags d 0 := by rw [e_fl_1, ccmpNe, hz0]; simp
       have hge : fl_1.n = fl_1.v := by rw [hfl1, hcn, hcv]; omega
-      have hd1 : d_1 = (2^64 - d) % 2^64 := by rw [e_d_1, cnegGe, if_pos hge]; rfl
-      have ht1 : t_1 = (2^64 - pf) % 2^64 := by rw [e_t_1, cnegGe, if_pos hge, ht]; rfl
+      have hd1 : d_1 = negw d := by rw [e_d_1, cnegGe, if_pos hge]
+      have ht1 : t_1 = negw pf := by rw [e_t_1, cnegGe, if_pos hge, ht]
       have hpf1 : pf_1 = pg := by rw [e_pf_1, cselGe, if_pos hge]
-      rw [hd2, hd1, hpf1, hpg2, hpg1, ht1]
-      refine ⟨by omega, hg', ?_, ?_⟩
-      · split_ifs <;> omega
-      · omega
+      exact divstep_words_swap s hf hd hG' d pf pg b_d b_pf hd' hf' hg' hsw t_1 d_1 pf_1 pg_1
+        d_2 pg_2 ht1 hd1 hpf1 e_pg_1 e_d_2 e_pg_2
     · -- The addition: `d + 2`, `f`, and `(g + f) / 2`.
-      have hne : ¬ (0 < s.d ∧ s.g % 2 = 1) := by omega
-      simp only [divstep, if_neg hne] at hG' ⊢
-      simp only [hg1, one_mul] at hG' ⊢
       have hz0 : fl.z = 0 := by rw [hfz, if_neg (by omega)]
       have ht : t = pf := by rw [e_t, cselNe, hz0]; simp
       have hfl1 : fl_1 = cmpFlags d 0 := by rw [e_fl_1, ccmpNe, hz0]; simp
@@ -122,10 +109,8 @@ theorem divstep_words (s : State) (hf : s.f % 2 = 1) (hd : s.d % 2 = 1) (hD : |s
       have hd1 : d_1 = d := by rw [e_d_1, cnegGe, if_neg hge]
       have ht1 : t_1 = pf := by rw [e_t_1, cnegGe, if_neg hge, ht]
       have hpf1 : pf_1 = pf := by rw [e_pf_1, cselGe, if_neg hge]
-      rw [hd2, hd1, hpf1, hpg2, hpg1, ht1]
-      refine ⟨by omega, hf', ?_, ?_⟩
-      · split_ifs <;> omega
-      · omega
+      exact divstep_words_add s hf hd hD hG' d pf pg hd' hf' hg' hg1 hdnp t_1 d_1 pf_1 pg_1 d_2
+        pg_2 ht1 hd1 hpf1 e_pg_1 e_d_2 e_pg_2
 -- END divstep lemmas
 
 -- BEGIN divstepRound_spec statement
@@ -211,7 +196,7 @@ theorem divstepRound_spec (st : DivstepState) (hst : st.Bounded) (s : State)
   have b_pg_2 : pg_2 < 2^64 := by rw [e_pg_2]; exact asr_lt pg_1 1 b_pg_1
   subst hr
   -- BEGIN conclusion
-  obtain ⟨h1, h2, h3, h4⟩ := divstep_words s hf hd hD hG hG' d pf pg fl b_d b_pf b_pg
+  obtain ⟨h1, h2, h3, h4⟩ := divstep_words s hf hd hD hG hG' d pf pg fl b_d b_pf
     (by rw [e_d]; exact ed) (by rw [e_pf]; exact ef) (by rw [e_pg]; exact eg)
     (by rw [e_fl]; exact hz) t fl_1 d_1 t_1 pf_1 pg_1 d_2 pg_2 e_t e_fl_1 e_d_1 e_t_1 e_pf_1
     e_pg_1 e_d_2 e_pg_2
@@ -297,7 +282,7 @@ theorem divstepLast_spec (st : DivstepState) (hst : st.Bounded) (s : State)
   have b_pg_2 : pg_2 < 2^64 := by rw [e_pg_2]; exact asr_lt pg_1 1 b_pg_1
   subst hr
   -- BEGIN conclusion
-  obtain ⟨h1, h2, h3, -⟩ := divstep_words s hf hd hD hG hG' d pf pg fl b_d b_pf b_pg
+  obtain ⟨h1, h2, h3, -⟩ := divstep_words s hf hd hD hG hG' d pf pg fl b_d b_pf
     (by rw [e_d]; exact ed) (by rw [e_pf]; exact ef) (by rw [e_pg]; exact eg)
     (by rw [e_fl]; exact hz) t fl_1 d_1 t_1 pf_1 pg_1 d_2 pg_2 e_t e_fl_1 e_d_1 e_t_1 e_pf_1
     e_pg_1 e_d_2 e_pg_2
