@@ -3,14 +3,15 @@ import PastaCurves.Semantics
 /-!
 # AArch64 instruction semantics for the Pasta Montgomery routines
 
-The subset of AArch64 that the crate's routines and inline blocks use. The Montgomery blocks
-use `mul`, `umulh`, `adds`/`adcs`/`adc`, `subs`/`sbcs`, `lsl`/`lsr` by an immediate, `csel` on
-the `lo` and `cs` conditions, and `mov`. The inversion blocks add the flag-setting `tst`, `cmp`,
-and `ccmp`, the conditional `csel`, `cneg`, and `csetm` on the `ne`, `ge`, and `mi` conditions,
-the flagless `add`, `sub`, and `neg`, the multiply-accumulates `madd`, `msub`, and `mneg`, the
-signed shifts `asr` and `sbfx`, `extr`, and the bitwise `and`, `orr`, and `eor`. Loads and
-stores are not modelled as memory operations: the generated programs read their operand limbs
-where the assembly loads them and return the limbs the assembly stores.
+The subset of AArch64 that the crate's routines and inline blocks use. The Montgomery blocks use
+`mul`, `umulh`, `adds`/`adcs`/`adc`, `subs`/`sbcs`, `lsl`/`lsr` by an immediate, `csel` on the `lo`
+and `cs` conditions, and `mov`. The inversion blocks add the flag-setting `tst`, `cmp`, and `ccmp`,
+the conditional `csel`, `cneg`, and `csetm` on the `ne`, `ge`, and `mi` conditions, the
+multiply-accumulates `madd`, `msub`, and `mneg`, and the signed bitfield extract `sbfx`; the
+flagless `add`, `sub`, and `neg`, the signed shift `asr`, `extr`, and the bitwise `and`, `orr`, and
+`eor` are in `PastaCurves/Semantics.lean`, shared with the other architectures. Loads and stores are
+not modelled as memory operations: the generated programs read their operand limbs where the
+assembly loads them and return the limbs the assembly stores.
 
 Registers hold natural numbers below `2^64`; a signed quantity is its two's-complement word, and
 the signed operations are spelled out on that word (`asr`, `sbfx`, `negw`). The flags are
@@ -40,16 +41,7 @@ def cselLo (c x y : Nat) : Nat := if c = 0 then x else y
 /-- `csel d, x, y, cs`: `x` when the carry is set, else `y`. -/
 def cselCs (c x y : Nat) : Nat := if c = 0 then y else x
 
-/-! ## Flagless arithmetic and the signed operations -/
-
-/-- `add` without flags: the low 64 bits of the sum. -/
-def addw (a b : Nat) : Nat := (a + b) % regMod
-
-/-- `sub` without flags: the low 64 bits of the difference. -/
-def subw (a b : Nat) : Nat := (a + regMod - b) % regMod
-
-/-- `neg`: the two's-complement negation. -/
-def negw (a : Nat) : Nat := (regMod - a) % regMod
+/-! ## The multiply-accumulates and the signed bitfield extract -/
 
 /-- `madd d, a, b, c`: the low 64 bits of `a * b + c`. -/
 def madd (a b c : Nat) : Nat := (a * b + c) % regMod
@@ -60,26 +52,10 @@ def msub (a b c : Nat) : Nat := (c + regMod - a * b % regMod) % regMod
 /-- `mneg d, a, b`: the low 64 bits of `-(a * b)`. -/
 def mneg (a b : Nat) : Nat := (regMod - a * b % regMod) % regMod
 
-/-- `asr` by an immediate `k`, `0 < k < 64`: the floor of the signed value over `2^k`, as a
-word. For a negative word the high `k` bits of the result are set. -/
-def asr (a k : Nat) : Nat := if a < 2^63 then a / 2^k else a / 2^k + (regMod - 2^(64 - k))
-
 /-- `sbfx d, a, #lsb, #w`: the `w`-bit field of `a` at bit `lsb`, sign-extended. -/
 def sbfx (a lsb w : Nat) : Nat :=
   let field := a / 2^lsb % 2^w
   if field < 2^(w - 1) then field else field + (regMod - 2^w)
-
-/-- `extr d, hi, lo, #k`: bits `k` to `k + 63` of the double word `hi : lo`. -/
-def extr (hi lo k : Nat) : Nat := (lo / 2^k + hi * 2^(64 - k)) % regMod
-
-/-- `and`. -/
-def andw (a b : Nat) : Nat := a &&& b
-
-/-- `orr`. -/
-def orrw (a b : Nat) : Nat := a ||| b
-
-/-- `eor`. -/
-def eorw (a b : Nat) : Nat := a ^^^ b
 
 /-! ## The four flags and the conditions on them -/
 
