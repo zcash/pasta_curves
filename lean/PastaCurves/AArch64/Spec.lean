@@ -13,6 +13,7 @@ import PastaCurves.AArch64.Spec.DeRow
 import PastaCurves.AArch64.Spec.FgRow
 import PastaCurves.AArch64.Spec.Divstep
 import PastaCurves.AArch64.Spec.Divstep59
+import PastaCurves.AArch64.Spec.Invert
 
 /-!
 # Correctness of the transcribed Pasta Montgomery blocks
