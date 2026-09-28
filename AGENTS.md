@@ -97,14 +97,16 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 The `asm` module provides assembly backends for the Pasta field arithmetic. It contains an
 AArch64 backend and an x86-64 backend: Montgomery multiplication and squaring, and modular
 addition and subtraction, as inline `asm!` blocks, and a repeated-squaring chain and conversion
-out of Montgomery form composed from them. It is the one part of the crate that allows unsafe
-code. Its priorities are those of the crate: **correctness, constant-time behaviour, and
-performance**, in that order.
+out of Montgomery form composed from them; and, on AArch64, a constant-time inversion composed
+from six more blocks. It is the one part of the crate that allows unsafe code. Its priorities
+are those of the crate: **correctness, constant-time behaviour, and performance**, in that
+order.
 
-The routines are transcriptions of Supranational's Semolina v0.1.4 (see `src/asm/README.md`).
-The instruction streams are the object of machine-checked correctness proofs, so a change to
-an instruction is a change to a specification: keep the transcription, its documentation, and
-the proofs in step, and do not "improve" the assembly in passing.
+The Montgomery routines are transcriptions of Supranational's Semolina v0.1.4, and the
+inversion's blocks are adapted from s2n-bignum's `bignum_montinv_p256` (see
+`src/asm/README.md`). The instruction streams are the object of machine-checked correctness
+proofs, so a change to an instruction is a change to a specification: keep the transcription,
+its documentation, and the proofs in step, and do not "improve" the assembly in passing.
 
 With the `asm` feature, the module provides a backend on `target_arch = "aarch64"`, and on
 `target_arch = "x86_64"` with 64-bit pointers except on Apple targets (see `src/asm/README.md`).

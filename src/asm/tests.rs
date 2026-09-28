@@ -33,30 +33,35 @@ fn is_canonical_borrow_chain() {
 }
 
 /// One field's constants, from its field type, and known answers.
-struct Field {
-    modulus: Limbs,
+pub(super) struct Field {
+    pub(super) modulus: Limbs,
     /// `-modulus[0]^-1 mod 2^64`.
-    inv: u64,
+    pub(super) inv: u64,
     /// `R = 2^256 mod p`, the Montgomery form of `1`.
-    r: Limbs,
+    pub(super) r: Limbs,
     /// `2R mod p`.
-    two_r: Limbs,
+    pub(super) two_r: Limbs,
     /// `3R mod p`.
-    three_r: Limbs,
+    pub(super) three_r: Limbs,
     /// `R^2 mod p`.
-    r2: Limbs,
+    pub(super) r2: Limbs,
     /// `R^3 mod p`.
-    r3: Limbs,
+    pub(super) r3: Limbs,
     /// `mul(R2, R3) = R^4 mod p`.
-    r4: Limbs,
+    pub(super) r4: Limbs,
     /// `sqr_n_mul(R2, 2, R3) = R^7 mod p`.
-    r7: Limbs,
+    pub(super) r7: Limbs,
     /// `mul(p - 1, p - 1)`.
-    pm1_sq: Limbs,
+    pub(super) pm1_sq: Limbs,
     /// `p - 2`.
-    pm2: Limbs,
+    pub(super) pm2: Limbs,
     /// `from_mont` of the all-ones input, `(2^256 - 1) R^-1 mod p`.
-    from_mont_ones: Limbs,
+    pub(super) from_mont_ones: Limbs,
+    /// `2^562 mod p`, the starting `v` of `invert`.
+    pub(super) v0: Limbs,
+    /// Inputs and outputs of `invert`: `7R`, `0`, `1`, `p - 1`, and a small value, from the
+    /// integer model of the algorithm.
+    pub(super) inversions: [(Limbs, Limbs); 5],
 }
 
 /// The Pallas base field (`pasta_curves::Fp`).
@@ -107,6 +112,34 @@ const FP: Field = Field {
         0x75a6de91c8d4fcc3,
         0x8f34d6691037659a,
         0x1e0e3b00e1dd872a,
+    ],
+    v0: [
+        0x9a5f583ce5084635,
+        0x4f417e233776c195,
+        0x74634b1a733f7785,
+        0x1c51de5ea66f0f25,
+    ],
+    inversions: [
+        (
+            [0xd83bd700ffffffe5, 0x628ddd6b04e1ba16, 0xfffffffffffffffc, 0x3fffffffffffffff],
+            [0x8398bdd8b6db6db7, 0xbbc0f148939d4828, 0xdb6db6db6db6db6d, 0x2db6db6db6db6db6],
+        ),
+        (
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+        ),
+        (
+            [0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x8c78ecb30000000f, 0xd7d30dbd8b0de0e7, 0x7797a99bc3c95d18, 0x096d41af7b9cb714],
+        ),
+        (
+            [0x992d30ed00000000, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000],
+            [0x0cb44439fffffff2, 0x4a738b3e7e3f1834, 0x886856643c36a2e7, 0x3692be50846348eb],
+        ),
+        (
+            [0xfc962fc962fc9630, 0x369d0369d0369cd2, 0x0000000000000000, 0x0000000000000000],
+            [0x33912c173eb52b5e, 0x8094d7a33b979988, 0x4c1c894cf5cc5f05, 0x2d05c75a616fc8d4],
+        ),
     ],
 };
 
@@ -159,18 +192,67 @@ const FQ: Field = Field {
         0xa86f41a73faf20ec,
         0x20857622e89b86ac,
     ],
+    v0: [
+        0xa3efbd8ee5083303,
+        0xfbadea62cefef7a1,
+        0xd6418abb493f6cf9,
+        0x2aa5feb88c401333,
+    ],
+    inversions: [
+        (
+            [0x34853384ffffffe5, 0x628ddd6afd5230a2, 0xfffffffffffffffc, 0x3fffffffffffffff],
+            [0x81c0fd04b6db6db7, 0xbbc0f14893a785d6, 0xdb6db6db6db6db6d, 0x2db6db6db6db6db6],
+        ),
+        (
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+        ),
+        (
+            [0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0xfc9678ff0000000f, 0x67bb433d891a16e3, 0x7fae231004ccf590, 0x096d41af7ccfdaa9],
+        ),
+        (
+            [0x8c46eb2100000000, 0x224698fc0994a8dd, 0x0000000000000000, 0x4000000000000000],
+            [0x8fb07221fffffff2, 0xba8b55be807a91f9, 0x8051dceffb330a6f, 0x3692be5083302556],
+        ),
+        (
+            [0xfc962fc962fc9630, 0x369d0369d0369cd2, 0x0000000000000000, 0x0000000000000000],
+            [0xe5c6fb7bddd0cf4b, 0x65ee805e3b7d0d89, 0x7562671be840d861, 0x1253ce66fd1d1868],
+        ),
+    ],
 };
 
-const FIELDS: [&Field; 2] = [&FP, &FQ];
+pub(super) const FIELDS: [&Field; 2] = [&FP, &FQ];
 
 const ONE: Limbs = [1, 0, 0, 0];
-const ZERO: Limbs = [0, 0, 0, 0];
+pub(super) const ZERO: Limbs = [0, 0, 0, 0];
 
 /// `p - 1`; `modulus[0]` is odd, so the subtraction does not borrow.
-fn p_minus_1(f: &Field) -> Limbs {
+pub(super) fn p_minus_1(f: &Field) -> Limbs {
     let mut limbs = f.modulus;
     limbs[0] -= 1;
     limbs
+}
+
+/// `base` to the power `exponent` by square-and-multiply, over the given Montgomery squaring and
+/// multiplication, from `one`, the Montgomery form of `1`.
+fn portable_pow(
+    base: Limbs,
+    exponent: &Limbs,
+    one: Limbs,
+    square: impl Fn(Limbs) -> Limbs,
+    mul: impl Fn(Limbs, Limbs) -> Limbs,
+) -> Limbs {
+    let mut result = one;
+    for limb in exponent.iter().rev() {
+        for i in (0..64).rev() {
+            result = square(result);
+            if (limb >> i) & 1 == 1 {
+                result = mul(result, base);
+            }
+        }
+    }
+    result
 }
 
 /// The known answers above that are not the field types' own constants, recomputed on the same
@@ -193,6 +275,16 @@ fn known_answers_match_the_portable_arithmetic() {
             assert_eq!(portable_mul(pm1, pm1), f.pm1_sq);
             // `from_mont` of the all-ones input: its Montgomery product with the residue `1`.
             assert_eq!(portable_mul([u64::MAX; 4], ONE), f.from_mont_ones);
+            // `v0` is the integer `2^562 mod p`, the canonical integer of `2R` to the 562nd power.
+            let pow = |base: Limbs, exponent: &Limbs| {
+                portable_pow(base, exponent, f.r, portable_square, portable_mul)
+            };
+            assert_eq!(portable_mul(pow(f.two_r, &[562, 0, 0, 0]), ONE), f.v0);
+            // Each inversion's output is the Montgomery form of the inverse of the element whose
+            // Montgomery form is its input: the input to the power `p - 2`.
+            for (x, z) in &f.inversions {
+                assert_eq!(pow(*x, &f.pm2), *z, "{x:x?}");
+            }
         }};
     }
     check!(Fp, &FP);
