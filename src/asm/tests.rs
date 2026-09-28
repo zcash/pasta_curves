@@ -62,6 +62,8 @@ pub(super) struct Field {
     /// Inputs and outputs of `invert`: `7R`, `0`, `1`, `p - 1`, and a small value, from the
     /// integer model of the algorithm.
     pub(super) inversions: [(Limbs, Limbs); 5],
+    /// The Montgomery inverse by the field type's portable arithmetic, independent of the backend.
+    pub(super) portable_inverse: fn(&Limbs) -> Limbs,
 }
 
 /// The Pallas base field (`pasta_curves::Fp`).
@@ -141,6 +143,7 @@ const FP: Field = Field {
             [0x33912c173eb52b5e, 0x8094d7a33b979988, 0x4c1c894cf5cc5f05, 0x2d05c75a616fc8d4],
         ),
     ],
+    portable_inverse: fp_inverse,
 };
 
 /// The Vesta base field (`pasta_curves::Fq`).
@@ -220,6 +223,7 @@ const FQ: Field = Field {
             [0xe5c6fb7bddd0cf4b, 0x65ee805e3b7d0d89, 0x7562671be840d861, 0x1253ce66fd1d1868],
         ),
     ],
+    portable_inverse: fq_inverse,
 };
 
 pub(super) const FIELDS: [&Field; 2] = [&FP, &FQ];
@@ -255,6 +259,24 @@ fn portable_pow(
     result
 }
 
+/// The Montgomery inverse of the Montgomery residue `x` by `Fp`'s inherent `const fn`s, which never
+/// use the backend: `x` to the power `p - 2`.
+fn fp_inverse(x: &Limbs) -> Limbs {
+    use crate::fields::Fp;
+    let square = |y: Limbs| Fp::square(&Fp(y)).0;
+    let mul = |y: Limbs, z: Limbs| Fp::mul(&Fp(y), &Fp(z)).0;
+    portable_pow(*x, &FP.pm2, FP.r, square, mul)
+}
+
+/// The Montgomery inverse of the Montgomery residue `x` by `Fq`'s inherent `const fn`s, which never
+/// use the backend: `x` to the power `p - 2`.
+fn fq_inverse(x: &Limbs) -> Limbs {
+    use crate::fields::Fq;
+    let square = |y: Limbs| Fq::square(&Fq(y)).0;
+    let mul = |y: Limbs, z: Limbs| Fq::mul(&Fq(y), &Fq(z)).0;
+    portable_pow(*x, &FQ.pm2, FQ.r, square, mul)
+}
+
 /// The known answers above that are not the field types' own constants, recomputed on the same
 /// limbs by the field types' inherent `const fn`s, which never use the backend.
 #[test]
@@ -283,7 +305,7 @@ fn known_answers_match_the_portable_arithmetic() {
             // Each inversion's output is the Montgomery form of the inverse of the element whose
             // Montgomery form is its input: the input to the power `p - 2`.
             for (x, z) in &f.inversions {
-                assert_eq!(pow(*x, &f.pm2), *z, "{x:x?}");
+                assert_eq!((f.portable_inverse)(x), *z, "{x:x?}");
             }
         }};
     }
