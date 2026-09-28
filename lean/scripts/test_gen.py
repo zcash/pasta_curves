@@ -1022,6 +1022,34 @@ const FP: Field = Field {
         )
 
 
+class InversionPairTests(unittest.TestCase):
+    """The inversion pairs of the backend tests, read for `KnownAnswers.lean`."""
+
+    SOURCE = """
+const FP: Field = Field {
+    inversions: [
+        (
+            [0x1, 0x2, 0x3, 0x4],
+            [0x5, 0x6, 0x7, 0x8],
+        ),
+    ],
+};
+"""
+
+    def test_pairs_are_read_in_order(self):
+        self.assertEqual(gen.parse_inversions(self.SOURCE), [("FP", 0, [1, 2, 3, 4], [5, 6, 7, 8])])
+
+    def test_a_pair_that_is_not_two_four_limb_values_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "not two four-limb values"):
+            gen.parse_inversions(self.SOURCE.replace("0x3, 0x4]", "0x3]"))
+
+    def test_each_pair_becomes_one_kernel_checked_example(self):
+        rendered = gen.render_known_answers(
+            self.SOURCE.replace("inversions", "two_r: [0x1, 0x2, 0x3, 0x4,],\n    inversions")
+        )
+        self.assertIn("z < p ∧ (x*z) % p = (if x = 0 then 0 else R^2 % p)", rendered)
+
+
 class FieldTypeTests(unittest.TestCase):
     """The field types' constants, read for `FieldTypes.lean`."""
 

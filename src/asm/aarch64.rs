@@ -637,8 +637,6 @@ macro_rules! divstep {
 /// together. Between batches the next low words are the matrix rows applied
 /// to the current ones, shifted right by the batch's step count.
 #[inline(always)]
-// Called only by its test until the inversion's driver composes it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn divstep59(mut two_delta: u64, f0: u64, g0: u64) -> [u64; 5] {
     let (u, v, q, r): (u64, u64, u64, u64);
     // SAFETY: straight-line register-only arithmetic; no memory access, no
@@ -833,8 +831,6 @@ pub(super) fn divstep59(mut two_delta: u64, f0: u64, g0: u64) -> [u64; 5] {
 /// `-2^63` has no magnitude as a word; the 59-step matrices' entries are below
 /// `2^59` in magnitude.
 #[inline(always)]
-// Called only by its test until the inversion's driver composes it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn sign_mag(mut u: u64, mut v: u64, mut q: u64, mut r: u64) -> [u64; 8] {
     let (su, sv, sq, sr): (u64, u64, u64, u64);
     // SAFETY: register-only arithmetic with declared inputs and outputs;
@@ -879,8 +875,6 @@ pub(super) fn sign_mag(mut u: u64, mut v: u64, mut q: u64, mut r: u64) -> [u64; 
 /// it is stored, the top word arithmetically. It is s2n-bignum's `f`/`g` update
 /// on named registers, one row at a time.
 #[inline(always)]
-// Called only by its test until the inversion's driver composes it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn fg_row(f: &[u64; 5], g: &[u64; 5], m0: u64, m1: u64, s0: u64, s1: u64) -> [u64; 5] {
     let (t0, t1, t2, t3, t4): (u64, u64, u64, u64, u64);
     // SAFETY: register-only arithmetic with declared inputs and outputs;
@@ -985,8 +979,6 @@ pub(super) fn fg_row(f: &[u64; 5], g: &[u64; 5], m0: u64, m1: u64, s0: u64, s1: 
 /// It is s2n-bignum's coefficient accumulation on named registers, one row at a
 /// time.
 #[inline(always)]
-// Called only by its test until the inversion's driver composes it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn de_row(d: &Limbs, e: &Limbs, m0: u64, m1: u64, s0: u64, s1: u64) -> [u64; 5] {
     let (t0, t1, t2, t3, t4): (u64, u64, u64, u64, u64);
     // SAFETY: register-only arithmetic with declared inputs and outputs;
@@ -1083,8 +1075,6 @@ pub(super) fn de_row(d: &Limbs, e: &Limbs, m0: u64, m1: u64, s0: u64, s1: u64) -
 /// adding `w · p` is the cancellation step of `mul`, with the low word's carry
 /// taken from `s0` being nonzero.
 #[inline(always)]
-// Called only by its test until the inversion's driver composes it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn amontred(t: &[u64; 5], modulus: &Limbs, inv: u64) -> Limbs {
     let (o0, o1, o2, o3): (u64, u64, u64, u64);
     // SAFETY: register-only arithmetic with declared inputs and outputs;
@@ -1147,8 +1137,6 @@ pub(super) fn amontred(t: &[u64; 5], modulus: &Limbs, inv: u64) -> Limbs {
 /// Montgomery blocks, with the modulus shape `modulus[2] = 0`,
 /// `modulus[3] = 2^62`.
 #[inline(always)]
-// Called only by its test until the inversion's driver composes it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn cond_sub(r: &Limbs, modulus: &Limbs) -> Limbs {
     let [mut r0, mut r1, mut r2, mut r3] = *r;
     // SAFETY: register-only arithmetic with declared inputs and outputs;
@@ -1179,6 +1167,45 @@ pub(super) fn cond_sub(r: &Limbs, modulus: &Limbs) -> Limbs {
         );
     }
     [r0, r1, r2, r3]
+}
+
+/// The constant-time inversion in Montgomery form: for a canonical `x`, the
+/// canonical `z` with `x · z ≡ 2^512 (mod p)`, and `0` for `x = 0`.
+///
+/// The composition of the blocks that `lean/PastaCurves/Inversion/Model.lean`'s
+/// `montInvModel` specifies. From `(two_delta, f, g, d, e) = (1, p, x, 0, e0)`, with
+/// `e0 = 2^562 mod p`, nine rounds each run `divstep59` on the low words of
+/// `f` and `g`, take the matrix's sign-magnitude form, update `f` and `g` by
+/// its two rows, and combine `d` and `e` by the two rows, each combination
+/// reduced by `amontred`. The invariant after round `i` is
+/// `(f, g) ≡ x · 2^(5i - 562) · (d, e) (mod p)`. The tenth round computes only
+/// `d`, with the sign of the new `f` (which is `±1`, `g` being `0`) folded into
+/// the row's masks, and reduces strictly. That sign is the top bit of the low
+/// word of `u · f + v · g`, since that sum is `2^59 · f'`.
+#[inline]
+pub(super) fn invert(x: &Limbs, modulus: &Limbs, inv: u64, e0: &Limbs) -> Limbs {
+    let mut two_delta: u64 = 1;
+    let mut f = [modulus[0], modulus[1], modulus[2], modulus[3], 0];
+    let mut g = [x[0], x[1], x[2], x[3], 0];
+    let mut d: Limbs = [0; 4];
+    let mut e: Limbs = *e0;
+    for _ in 0..9 {
+        let [two_delta_new, u, v, q, r] = divstep59(two_delta, f[0], g[0]);
+        two_delta = two_delta_new;
+        let [u, v, q, r, su, sv, sq, sr] = sign_mag(u, v, q, r);
+        let f_new = fg_row(&f, &g, u, v, su, sv);
+        g = fg_row(&f, &g, q, r, sq, sr);
+        f = f_new;
+        let td = de_row(&d, &e, u, v, su, sv);
+        let te = de_row(&d, &e, q, r, sq, sr);
+        d = amontred(&td, modulus, inv);
+        e = amontred(&te, modulus, inv);
+    }
+    let [_, u, v, q, r] = divstep59(two_delta, f[0], g[0]);
+    let sign = ((f[0].wrapping_mul(u).wrapping_add(g[0].wrapping_mul(v))) as i64 >> 63) as u64;
+    let [u, v, _, _, su, sv, _, _] = sign_mag(u, v, q, r);
+    let t = de_row(&d, &e, u, v, su ^ sign, sv ^ sign);
+    cond_sub(&amontred(&t, modulus, inv), modulus)
 }
 
 #[cfg(test)]
@@ -1528,6 +1555,89 @@ mod tests {
             let x: Limbs = row[0..4].try_into().expect("four words");
             let modulus: Limbs = row[4..8].try_into().expect("four words");
             assert_eq!(cond_sub(&x, &modulus), row[8..12]);
+        }
+    }
+
+    // The inversion's entry point, over this backend's blocks.
+    use crate::asm::tests::{FIELDS, Field, ZERO, p_minus_1};
+    use crate::asm::{invert, is_canonical, mul, sub};
+
+    /// `z = invert(x)` is canonical and is the Montgomery inverse of a nonzero `x`:
+    /// `mul(x, z) = R`, and inverting `z` gives `x` back.
+    fn check_inverse(f: &Field, x: &Limbs) {
+        let z = invert(x, &f.modulus, f.inv, &f.e0);
+        assert!(is_canonical(&z, &f.modulus), "{x:x?}");
+        assert_eq!(mul(x, &z, &f.modulus, f.inv), f.r, "{x:x?}");
+        assert_eq!(invert(&z, &f.modulus, f.inv, &f.e0), *x, "{x:x?}");
+    }
+
+    /// `invert` reproduces the integer model of the algorithm on the recorded inputs, which include
+    /// `0`. In a debug build the test also checks that the assertion fires on a non-canonical input.
+    #[test]
+    fn invert_known_answers() {
+        for f in FIELDS {
+            for (x, z) in &f.inversions {
+                assert_eq!(invert(x, &f.modulus, f.inv, &f.e0), *z);
+                if *x != ZERO {
+                    check_inverse(f, x);
+                }
+            }
+            #[cfg(all(debug_assertions, panic = "unwind"))]
+            {
+                let panic = std::panic::catch_unwind(|| invert(&f.modulus, &f.modulus, f.inv, &f.e0))
+                    .expect_err("the debug assertion of invert's contract did not fire");
+                let message = panic
+                    .downcast_ref::<&str>()
+                    .expect("the assertion's message is a string literal");
+                assert!(message.contains("requires a canonical input"), "{message}");
+            }
+        }
+    }
+
+    /// The small values `1` to `256` and their negatives `p - 1` down to `p - 256`, the powers of
+    /// two up to `2^253`, and `R`, `R^2`, and `R^3`.
+    #[test]
+    fn invert_small_and_near_modulus() {
+        for f in FIELDS {
+            for k in 1..=256u64 {
+                check_inverse(f, &[k, 0, 0, 0]);
+                check_inverse(f, &sub(&ZERO, &[k, 0, 0, 0], &f.modulus));
+            }
+            for k in 0..254 {
+                let mut x = ZERO;
+                x[k / 64] = 1 << (k % 64);
+                check_inverse(f, &x);
+            }
+            for x in [f.r, f.r2, f.r3] {
+                check_inverse(f, &x);
+            }
+        }
+    }
+
+    /// Random inputs: uniform values below `2^64`; uniform values below `2^254`; values between
+    /// `2^254` and `p`, whose top limb is `2^62` and whose limb 1 is below the modulus's; and values
+    /// within a random 64-bit distance below `p - 1`.
+    #[test]
+    fn invert_random() {
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for f in FIELDS {
+            let pm1 = p_minus_1(f);
+            for _ in 0..128 {
+                let below_2_64 = [next(), 0, 0, 0];
+                check_inverse(f, &below_2_64);
+                let below_2_254 = [next(), next(), next(), next() >> 2];
+                check_inverse(f, &below_2_254);
+                let above_2_254 = [next(), next() % f.modulus[1], 0, 1 << 62];
+                check_inverse(f, &above_2_254);
+                let near_p = sub(&pm1, &[next(), 0, 0, 0], &f.modulus);
+                check_inverse(f, &near_p);
+            }
         }
     }
 }

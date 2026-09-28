@@ -350,6 +350,7 @@ KNOWN_ANSWER_SPECS = {
         "the conversion of the all-ones input, `(2^256 - 1) R^-1 mod p`",
         "x < p ∧ (x*R) % p = (2^256 - 1) % p",
     ),
+    "e0": ("`2^562 mod p`, the starting `e` of `invert`", "x = 2^562 % p"),
 }
 
 # The `Field` constants of `src/asm/tests.rs`, by Rust name, as `Fields.lean` names the field.
@@ -393,6 +394,28 @@ def parse_known_answers(text):
     return out
 
 
+def parse_inversions(text):
+    """The `inversions` pairs of the `Field` constants in the tests, as (constant, index, input
+    limbs, output limbs) tuples, in source order."""
+    out = []
+    for m in re.finditer(r"const (\w+): Field = Field \{(.*?)\n\};", text, re.DOTALL):
+        name, body = m.group(1), m.group(2)
+        block = re.search(r"inversions: \[(.*?)\n    \],", body, re.DOTALL)
+        if block is None:
+            continue
+        pairs = re.findall(r"\(\s*\[([^\]]*)\],\s*\[([^\]]*)\],?\s*\)", block.group(1))
+        if not pairs:
+            raise ValueError(f"{KNOWN_ANSWERS}: {name}.inversions has no pairs")
+        for i, (x, z) in enumerate(pairs):
+            limbs = [[int(v, 16) for v in re.findall(r"0x[0-9a-fA-F]+", w)] for w in (x, z)]
+            if any(len(w) != 4 for w in limbs):
+                raise ValueError(
+                    f"{KNOWN_ANSWERS}: {name}.inversions[{i}] is not two four-limb values"
+                )
+            out.append((name, i, limbs[0], limbs[1]))
+    return out
+
+
 def render_known_answers(text):
     """One kernel-checked example per literal known answer of the backend tests."""
     out = [KNOWN_ANSWERS_INTRODUCTION]
@@ -405,6 +428,18 @@ def render_known_answers(text):
         # The limbs on a line of their own keep every line within the repository's width.
         out.append(f"    let x := Limbs.toNat\n      ⟨{literal}⟩\n")
         out.append(f"    {prop} := by\n  decide +kernel\n\n")
+    for name, i, x, z in parse_inversions(text):
+        lean_field = KNOWN_ANSWER_FIELDS[name]
+        out.append(
+            f"-- `{name}.inversions[{i}]`: `invert` maps `x` to `z`, the Montgomery inverse.\n"
+        )
+        out.append(f"example : let p := {lean_field}.modulus.toNat\n")
+        for var, limbs in (("x", x), ("z", z)):
+            literal = ", ".join(f"0x{limb:016x}" for limb in limbs)
+            out.append(f"    let {var} := Limbs.toNat\n      ⟨{literal}⟩\n")
+        out.append(
+            "    z < p ∧ (x*z) % p = (if x = 0 then 0 else R^2 % p) := by\n  decide +kernel\n\n"
+        )
     out.append("end PastaCurves.KnownAnswers\n")
     return "".join(out)
 
