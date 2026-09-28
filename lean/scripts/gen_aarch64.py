@@ -264,10 +264,10 @@ INLINE_ROUTINES = [
         "cond_sub",
         "condSubBlock",
         (
-            "The inline `asm!` block of `cond_sub`: the subtraction of the modulus from `r`, kept "
-            "unless it borrows. For `r < 2p` the result is `r mod p`."
+            "The inline `asm!` block of `cond_sub`: the subtraction of the modulus from `value`, kept "
+            "unless it borrows. For `value < 2p` the result is `value mod p`."
         ),
-        (("r", "Limbs"), ("modulus", "Limbs")),
+        (("value", "Limbs"), ("modulus", "Limbs")),
     ),
 ]
 
@@ -356,14 +356,18 @@ class Emitter(gen.Emitter):
 
     def operand(self, toks, text):
         """A second source operand: a register or immediate, optionally shifted left by an
-        immediate (`b, lsl #k`), as an expression."""
+        immediate (`b, lsl #k`), as an expression and as the operands of its fact: the register
+        or immediate alone, or the shifted register and its shift."""
         if len(toks) == 1:
-            return self.read(toks[0])
+            b = self.read(toks[0])
+            return b, (b,)
         if len(toks) == 3 and toks[1] == "lsl":
             k = imm(toks[2])
             if toks[0].startswith("#"):
-                return str(imm(toks[0]) * 2**k)
-            return f"(lsl {self.read(toks[0])} {k})"
+                b = str(imm(toks[0]) * 2**k)
+                return b, (b,)
+            b = self.read(toks[0])
+            return f"(lsl {b} {k})", (b, k)
         raise ValueError(f"unsupported operand: {text}")
 
     def step(self, op, t, text):
@@ -454,8 +458,10 @@ class Emitter(gen.Emitter):
                 self.bind(t[0], "s.1", text, reads=("s",), fact=("fst",), note=f"  `-> {t[0]}")
                 self.bind("c", "s.2", text, reads=("s",), fact=("snd",), note="  `-> carry")
         elif op == "add":
-            a, b = self.read(t[1]), self.operand(t[2:], text)
-            self.bind(t[0], f"addw {a} {b}", text, fact=("addw", a, b))
+            a = self.read(t[1])
+            b, fact_ops = self.operand(t[2:], text)
+            kind = "addw" if len(fact_ops) == 1 else "addw_lsl"
+            self.bind(t[0], f"addw {a} {b}", text, fact=(kind, a, *fact_ops))
         elif op == "sub":
             a, b = self.read(t[1]), self.read(t[2])
             self.bind(t[0], f"subw {a} {b}", text, fact=("subw", a, b))
@@ -928,7 +934,9 @@ def macro_routines(e, ins, origins, config, result, arg_fields):
         re_ = Emitter(ins)
         sarg = cfg["arg"]
         for r, f in zip(regs, fields):
-            re_.bind(r, f"{sarg}.{f}", "argument", reads=(), load=True, fact=("load", sarg, f))
+            # The flags field has no bound; its fact only records the equation.
+            kind = "load_flags" if f == "fl" else "load"
+            re_.bind(r, f"{sarg}.{f}", "argument", reads=(), load=True, fact=(kind, sarg, f))
         re_.entries += [dict(en) for en in entries]
         re_.flags = "fl" if "fl" in bound or "fl" in live_in else None
         re_.cur_reads = set()
@@ -1083,6 +1091,67 @@ class SkeletonBackend(gen.SkeletonBackend):
             context.lines.append(f"  clear e_{nm}")
             context.bnd[nm] = f"b_{nm}"
             context.unit_bound.add(nm)
+            return True
+        # The inversion's instructions: each result's defining equation is kept, since the
+        # annotations reason from it, and its bound below `2^64` is an instance of a lemma of
+        # `AArch64/Spec/Words.lean`; a flag-setting instruction has only its equation.
+        nm = context.name
+
+        def bounded(expr, proof):
+            context.eq(nm, expr)
+            context.lines.append(f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact {proof}")
+            context.bnd[nm] = f"b_{nm}"
+            return True
+
+        if kind == "lsl":
+            a, k = ops
+            if k == 62:
+                return False  # the shared skeleton pairs it with the matching `lsr`
+            return bounded(f"{a} * 2^{k} % 2^64", "Nat.mod_lt _ (Nat.two_pow_pos _)")
+        if kind in ("addw", "subw", "madd", "msub", "mneg", "negw", "extr"):
+            args = " ".join(str(o) for o in ops)
+            return bounded(f"{kind} {args}", f"{kind}_lt {args}")
+        if kind == "addw_lsl":
+            a, b, k = ops
+            return bounded(f"addw {a} (lsl {b} {k})", f"addw_lt {a} (lsl {b} {k})")
+        if kind in ("and", "orr", "eor"):
+            a, b = ops
+            fn = f"{kind}w"
+            return bounded(f"{fn} {a} {b}", f"{fn}_lt {a} {b} {context.lt64(a)} {context.lt64(b)}")
+        if kind == "asr":
+            a, k = ops
+            return bounded(f"asr {a} {k}", f"asr_lt {a} {k} {context.lt64(a)}")
+        if kind == "sbfx":
+            a, lsb, w = ops
+            return bounded(f"sbfx {a} {lsb} {w}", f"sbfx_lt {a} {lsb} {w} {context.lt64(a)}")
+        if kind in ("csel_ne", "csel_ge"):
+            fl, a, b = ops
+            fn = "cselNe" if kind == "csel_ne" else "cselGe"
+            return bounded(
+                f"{fn} {fl} {a} {b}", f"{fn}_lt {fl} {a} {b} {context.lt64(a)} {context.lt64(b)}"
+            )
+        if kind in ("cneg_ge", "cneg_mi"):
+            fl, a = ops
+            fn = "cnegGe" if kind == "cneg_ge" else "cnegMi"
+            return bounded(f"{fn} {fl} {a}", f"{fn}_lt {fl} {a} {context.lt64(a)}")
+        if kind == "csetm_mi":
+            (fl,) = ops
+            return bounded(f"csetmMi {fl}", f"csetmMi_lt {fl}")
+        if kind == "load_flags":
+            arg, field = ops
+            context.eq(nm, f"{arg}.{field}")
+            return True
+        if kind == "tst":
+            a, b = ops
+            context.eq(nm, f"tstFlags (andw {a} {b})")
+            return True
+        if kind == "cmp":
+            a, b = ops
+            context.eq(nm, f"cmpFlags {a} {b}")
+            return True
+        if kind == "ccmp_ne":
+            fl, a, b, nzcv = ops
+            context.eq(nm, f"ccmpNe {fl} {a} {b} {nzcv}")
             return True
         return False
 
