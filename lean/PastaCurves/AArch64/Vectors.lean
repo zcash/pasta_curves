@@ -443,4 +443,43 @@ theorem amontred_vectors_reproduced : amontredFailures = [] := by decide +kernel
 #guard_msgs in
 #eval amontredFailures
 
+/-! ## The conditional subtraction block -/
+
+/-- A value below `2p`, the field, and the expected canonical value, as in the crate's
+`cond_sub_known_answers`. -/
+def condSubVectors : List (Limbs × PastaField × Limbs) := [
+  (⟨0x8398bdd8b6db6db7, 0xbbc0f148939d4828, 0xdb6db6db6db6db6d, 0x2db6db6db6db6db6⟩, pallasBase,
+    ⟨0x8398bdd8b6db6db7, 0xbbc0f148939d4828, 0xdb6db6db6db6db6d, 0x2db6db6db6db6db6⟩),
+  (⟨0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000⟩, pallasBase,
+    ⟨0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000⟩),
+  (⟨0x8c78ecb30000000f, 0xd7d30dbd8b0de0e7, 0x7797a99bc3c95d18, 0x096d41af7b9cb714⟩, pallasBase,
+    ⟨0x8c78ecb30000000f, 0xd7d30dbd8b0de0e7, 0x7797a99bc3c95d18, 0x096d41af7b9cb714⟩),
+  (⟨0x0cb44439fffffff2, 0x4a738b3e7e3f1834, 0x886856643c36a2e7, 0x3692be50846348eb⟩, pallasBase,
+    ⟨0x0cb44439fffffff2, 0x4a738b3e7e3f1834, 0x886856643c36a2e7, 0x3692be50846348eb⟩),
+  (⟨0x33912c173eb52b5e, 0x8094d7a33b979988, 0x4c1c894cf5cc5f05, 0x2d05c75a616fc8d4⟩, pallasBase,
+    ⟨0x33912c173eb52b5e, 0x8094d7a33b979988, 0x4c1c894cf5cc5f05, 0x2d05c75a616fc8d4⟩),
+  (⟨0x81c0fd04b6db6db7, 0xbbc0f14893a785d6, 0xdb6db6db6db6db6d, 0x2db6db6db6db6db6⟩, vestaBase,
+    ⟨0x81c0fd04b6db6db7, 0xbbc0f14893a785d6, 0xdb6db6db6db6db6d, 0x2db6db6db6db6db6⟩),
+  (⟨0x8c46eb2100000001, 0x224698fc0994a8dd, 0x0000000000000000, 0x4000000000000000⟩, vestaBase,
+    ⟨0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000⟩),
+  (⟨0xfc9678ff0000000f, 0x67bb433d891a16e3, 0x7fae231004ccf590, 0x096d41af7ccfdaa9⟩, vestaBase,
+    ⟨0xfc9678ff0000000f, 0x67bb433d891a16e3, 0x7fae231004ccf590, 0x096d41af7ccfdaa9⟩),
+  (⟨0x8fb07221fffffff2, 0xba8b55be807a91f9, 0x8051dceffb330a6f, 0x3692be5083302556⟩, vestaBase,
+    ⟨0x8fb07221fffffff2, 0xba8b55be807a91f9, 0x8051dceffb330a6f, 0x3692be5083302556⟩),
+  (⟨0xe5c6fb7bddd0cf4b, 0x65ee805e3b7d0d89, 0x7562671be840d861, 0x1253ce66fd1d1868⟩, vestaBase,
+    ⟨0xe5c6fb7bddd0cf4b, 0x65ee805e3b7d0d89, 0x7562671be840d861, 0x1253ce66fd1d1868⟩)]
+
+/-- The indices of the vectors that the block's transcription does not reproduce. -/
+def condSubFailures : List Nat :=
+  (List.range condSubVectors.length).filter fun i =>
+    match condSubVectors[i]? with
+    | some (r, F, z) => condSubBlock r F.modulus != z
+    | none => false
+
+theorem condSub_vectors_reproduced : condSubFailures = [] := by decide +kernel
+
+/-- info: [] -/
+#guard_msgs in
+#eval condSubFailures
+
 end PastaCurves.AArch64

@@ -260,6 +260,15 @@ INLINE_ROUTINES = [
         ),
         (("t", "Signed5"), ("modulus", "Limbs"), ("inv", "Nat")),
     ),
+    RoutineConfig(
+        "cond_sub",
+        "condSubBlock",
+        (
+            "The inline `asm!` block of `cond_sub`: the subtraction of the modulus from `r`, kept "
+            "unless it borrows. For `r < 2p` the result is `r mod p`."
+        ),
+        (("r", "Limbs"), ("modulus", "Limbs")),
+    ),
 ]
 
 # The macro arms (see `asm_source.parse_macros`) that are transcribed as round definitions,
