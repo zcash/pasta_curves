@@ -56,4 +56,33 @@ def Bounded (x : Limbs) : Prop := x.l0 < 2^64 ∧ x.l1 < 2^64 ∧ x.l2 < 2^64 �
 
 end Limbs
 
+/-- Five words, the top one carrying the sign: the value is
+`l0 + 2^64 l1 + 2^128 l2 + 2^192 l3 + 2^256 · (signed l4)`. The shape of the inversion's
+signed intermediate values (`f`, `g`, and the row combinations of `u` and `v`). -/
+structure Signed5 where
+  /-- Word of weight `2^0`. -/
+  l0 : Nat
+  /-- Word of weight `2^64`. -/
+  l1 : Nat
+  /-- Word of weight `2^128`. -/
+  l2 : Nat
+  /-- Word of weight `2^192`. -/
+  l3 : Nat
+  /-- Word of weight `2^256`, read as a two's-complement word. -/
+  l4 : Nat
+  deriving DecidableEq, Repr
+
+namespace Signed5
+
+/-- The integer that the five words represent. -/
+def toInt (x : Signed5) : Int :=
+  x.l0 + 2^64 * x.l1 + 2^128 * x.l2 + 2^192 * x.l3
+    + 2^256 * (if x.l4 < 2^63 then (x.l4 : Int) else (x.l4 : Int) - 2^64)
+
+/-- Every word is below `2^64`. -/
+def Bounded (x : Signed5) : Prop :=
+  x.l0 < 2^64 ∧ x.l1 < 2^64 ∧ x.l2 < 2^64 ∧ x.l3 < 2^64 ∧ x.l4 < 2^64
+
+end Signed5
+
 end PastaCurves
