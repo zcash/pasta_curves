@@ -72,6 +72,8 @@ BOUND_HYPS = {
 }
 INV_BOUND_HYP = "hinv_lt"
 SKELETON_WIDTH = 100
+# A literal operand in a transcription: decimal, or hex as the assembly wrote it.
+LITERAL = re.compile(r"[0-9]+|0x[0-9a-f]+")
 
 
 class Emitter:
@@ -648,7 +650,7 @@ def skeleton(routine):
         return None
 
     def lt64(op):  # a proof that the operand is below 2^64
-        if re.fullmatch(r"[0-9]+", op):
+        if LITERAL.fullmatch(op):
             return "(by decide)"
         direct = expression_bound(op)
         if direct:
@@ -658,7 +660,7 @@ def skeleton(routine):
         return bnd[op]
 
     def le1(op):  # a proof that the carry operand is at most 1
-        if re.fullmatch(r"[0-9]+", op):
+        if LITERAL.fullmatch(op):
             return "(by decide)"
         return bnd[op]
 
@@ -727,7 +729,7 @@ def skeleton(routine):
             (a,) = ops
             eq(nm, a)
             direct = expression_bound(a)
-            proof = "decide" if re.fullmatch(r"[0-9]+", a) else f"exact {direct or lt64(a)}"
+            proof = "decide" if LITERAL.fullmatch(a) else f"exact {direct or lt64(a)}"
             lines.append(f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; {proof}")
             bnd[nm] = f"b_{nm}"
         elif kind == "mul":

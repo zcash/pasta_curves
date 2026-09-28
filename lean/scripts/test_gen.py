@@ -278,7 +278,7 @@ class AArch64FlagFormTests(unittest.TestCase):
                 "addw pg t",
                 "addw d 2",
                 "asr pg 1",
-                "addw pf 1048576",
+                "addw pf 0x100000",
                 "sbfx m 21 21",
                 "addw m (lsl m 21)",
                 "cmpFlags m 0",
