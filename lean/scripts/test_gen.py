@@ -19,6 +19,37 @@ import gen_aarch64
 import gen_x86_64
 
 
+def word_step_groups(skeleton):
+    """The names that each `word_step` of a skeleton extracts, in order: a step's items are
+    separated by commas outside brackets, and continue over its indented continuation lines."""
+
+    def names(step):
+        found, depth, item = [], 0, ""
+        for char in step + ",":
+            if char in "([⟨{":
+                depth += 1
+            elif char in ")]⟩}":
+                depth -= 1
+            if char == "," and depth == 0:
+                found.append(item.split()[0])
+                item = ""
+            else:
+                item += char
+        return found
+
+    groups, step = [], None
+    for line in list(skeleton) + [""]:
+        if step is not None and line.startswith("      "):
+            step += " " + line.strip()
+            continue
+        if step is not None:
+            groups.append(names(step))
+            step = None
+        if line.startswith("  word_step "):
+            step = line[len("  word_step ") :].removeprefix("-clear ")
+    return groups
+
+
 class DeclarationTests(unittest.TestCase):
     def test_inout_discard_and_named_outputs_are_parsed(self):
         discarded = gen_x86_64.parse_declaration("z3 = inout(reg) product[3] => _,")
@@ -688,32 +719,29 @@ class X86RealSourceTests(unittest.TestCase):
                 prepared = gen_x86_64.SKELETON_BACKEND.prepare(
                     routine.emitter, routine.emitter.entries
                 )
-                extracted, current = [], None
-                for line in gen.skeleton(routine):
-                    if line.startswith("  extract_lets -merge +onlyGivenNames "):
-                        current = line[len("  extract_lets -merge +onlyGivenNames ") :]
-                    elif current is not None:
-                        current += " " + line.strip()
-                    if current is not None and current.endswith(" at hr"):
-                        extracted += current[: -len(" at hr")].split()
-                        current = None
+                groups = word_step_groups(gen.skeleton(routine))
+                extracted = [name for group in groups for name in group]
                 self.assertEqual(sorted(extracted), sorted(prepared.names))
                 self.assertEqual(len(extracted), len(set(extracted)))
-        square_lo = "\n".join(gen.skeleton(routines["squareLo"]))
-        self.assertIn("extract_lets -merge +onlyGivenNames s_2 z4_1 cf_5 at hr", square_lo)
+        square_lo_lines = gen.skeleton(routines["squareLo"])
+        square_lo = "\n".join(square_lo_lines)
+        self.assertIn(["s_2", "z4_1", "cf_5"], word_step_groups(square_lo_lines))
         self.assertNotIn("obtain ⟨cf_5, b_cf_5, l_z4_1⟩", square_lo)
 
         mul_round_routine = routines["mulMontRound"]
-        mul_round = "\n".join(gen.skeleton(mul_round_routine))
+        mul_round_lines = gen.skeleton(mul_round_routine)
+        mul_round = "\n".join(mul_round_lines)
         # The factored round is rendered like every other block: an instruction's pair wrapper
         # and its two projections, extracted together, and read under their own names.
-        self.assertIn("extract_lets -merge +onlyGivenNames m s2 s1_1 at hr", mul_round)
-        self.assertIn("extract_lets -merge +onlyGivenNames s r0_1 cf_1 at hr", mul_round)
-        self.assertIn("have e_r0_1 : r0_1 = (addc r0 s1_1 cf).1 := rfl", mul_round)
-        self.assertIn("have e_cf_1 : cf_1 = (addc r0 s1_1 cf).2 := rfl", mul_round)
+        self.assertIn(["m", "s2", "s1_1"], word_step_groups(mul_round_lines))
+        self.assertIn(["s", "r0_1", "cf_1"], word_step_groups(mul_round_lines))
+        self.assertIn("r0_1 := (addc r0 s1_1 cf).1 using", mul_round)
+        self.assertIn("cf_1 := (addc r0 s1_1 cf).2", mul_round)
         # The round's and the calling block's local definitions stay transparent.
-        self.assertNotIn("clear_value", mul_round)
-        self.assertNotIn("clear_value", "\n".join(gen.skeleton(routines["mulMont"])))
+        for lines in (mul_round_lines, gen.skeleton(routines["mulMont"])):
+            steps = [line for line in lines if line.startswith("  word_step")]
+            self.assertTrue(steps)
+            self.assertTrue(all(line.startswith("  word_step -clear ") for line in steps))
         helper_text = "\n".join(code for code, _ in mul_round_routine.lines)
         self.assertIn("let m := mulx b lhs.l0", helper_text)
         self.assertIn("let s := addc r0 s1 cf", helper_text)
@@ -726,11 +754,12 @@ class X86RealSourceTests(unittest.TestCase):
         self.assertTrue(any("mulx rdx modulus.l1" in expr for expr in expressions[quotient_index:]))
         self.assertFalse(any("mulx b modulus.l1" in expr for expr in expressions[quotient_index:]))
 
-        from_mont = "\n".join(gen.skeleton(routines["fromMont"]))
-        self.assertIn("extract_lets -merge +onlyGivenNames n z0_1 cf at hr", from_mont)
-        self.assertIn("have e_z0_1 : z0_1 = (neg z0).1 := rfl", from_mont)
-        self.assertIn("have e_cf : cf = (neg z0).2 := rfl", from_mont)
-        self.assertIn("clear_value", from_mont)
+        from_mont_lines = gen.skeleton(routines["fromMont"])
+        from_mont = "\n".join(from_mont_lines)
+        self.assertIn(["n", "z0_1", "cf"], word_step_groups(from_mont_lines))
+        self.assertIn("z0_1 := (neg z0).1 using", from_mont)
+        self.assertIn("cf := (neg z0).2", from_mont)
+        self.assertIn("\n  word_step n,", from_mont)
 
     def test_all_x86_routines_and_factored_round_generate_shared_skeletons(self):
         routines = gen_x86_64.all_routines()
@@ -822,8 +851,8 @@ class SharedGeneratorTests(unittest.TestCase):
             )
 
         skeleton = "\n".join(gen.skeleton(routine(StubBackend())))
-        self.assertIn("have e_x : x = lhs.l0 := rfl", skeleton)
-        self.assertIn("have e_y : y = stub x := rfl", skeleton)
+        self.assertIn("  word_step x := lhs.l0 using hlhs.1\n", skeleton)
+        self.assertIn("  word_step y := stub x\n", skeleton)
         self.assertIn("have b_y : y < 2^64 := by sorry", skeleton)
         with self.assertRaisesRegex(ValueError, "unsupported skeleton fact stub"):
             gen.skeleton(routine(gen.SkeletonBackend()))
