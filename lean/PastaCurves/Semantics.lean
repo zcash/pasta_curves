@@ -30,6 +30,37 @@ def lsl (a k : Nat) : Nat := a * 2^k % regMod
 /-- `lsr` by an immediate. -/
 def lsr (a k : Nat) : Nat := a / 2^k
 
+/-! ## Flagless word arithmetic, the signed shifts, and the bitwise operations
+
+The inversion's blocks use these on every architecture; they are named after the AArch64 mnemonics,
+like `lsl` and `lsr`. A signed quantity is its two's-complement word, and the signed operations are
+spelled out on that word. -/
+
+/-- `add` without flags: the low 64 bits of the sum. -/
+def addw (a b : Nat) : Nat := (a + b) % regMod
+
+/-- `sub` without flags: the low 64 bits of the difference. -/
+def subw (a b : Nat) : Nat := (a + regMod - b) % regMod
+
+/-- `neg`: the two's-complement negation. -/
+def negw (a : Nat) : Nat := (regMod - a) % regMod
+
+/-- `asr` by an immediate `k`, `0 < k < 64`: the floor of the signed value over `2^k`, as a
+word. For a negative word the high `k` bits of the result are set. -/
+def asr (a k : Nat) : Nat := if a < 2^63 then a / 2^k else a / 2^k + (regMod - 2^(64 - k))
+
+/-- `extr d, hi, lo, #k`: bits `k` to `k + 63` of the double word `hi : lo`. -/
+def extr (hi lo k : Nat) : Nat := (lo / 2^k + hi * 2^(64 - k)) % regMod
+
+/-- `and`. -/
+def andw (a b : Nat) : Nat := a &&& b
+
+/-- `orr`. -/
+def orrw (a b : Nat) : Nat := a ||| b
+
+/-- `eor`. -/
+def eorw (a b : Nat) : Nat := a ^^^ b
+
 /-- Four little-endian 64-bit limbs, the shape of every operand of the routines. -/
 structure Limbs where
   /-- Limb of weight `2^0`. -/
