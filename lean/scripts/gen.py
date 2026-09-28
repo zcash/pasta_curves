@@ -635,11 +635,16 @@ def skeleton(routine):
     def r(op):  # operand as written in the entry, renamed to its SSA name at that point
         return ren.get(op, op)
 
+    def bound_hyp(arg):
+        """The theorem's `Bounded` hypothesis on argument `arg`: as `BOUND_HYPS` names it, else
+        `h<arg>`."""
+        return BOUND_HYPS.get(arg, f"h{arg}")
+
     def expression_bound(op):
         field = re.fullmatch(r"(\w+)\.(l[0-7])", op)
-        if field and field.group(1) in BOUND_HYPS:
+        if field and field.group(1) in routine.arg_fields:
             arg, limb = field.groups()
-            return f"{BOUND_HYPS[arg]}.{proj(arg, limb, routine.arg_fields)}"
+            return f"{bound_hyp(arg)}.{proj(arg, limb, routine.arg_fields)}"
         return None
 
     def lt64(op):  # a proof that the operand is below 2^64
@@ -703,7 +708,7 @@ def skeleton(routine):
             pass
         elif kind == "load":
             arg, field = ops
-            hyp = BOUND_HYPS[arg]
+            hyp = bound_hyp(arg)
             eq(nm, f"{arg}.{field}")
             lines.append(
                 f"  have b_{nm} : {nm} < 2^64 := by rw [e_{nm}]; exact {hyp}.{proj(arg, field, routine.arg_fields)}"
