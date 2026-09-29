@@ -26,8 +26,20 @@
 //!   receives by $\omega \mapsto \lambda$. One digit string instead of two,
 //!   so an addition is paid once per column rather than twice.
 //!
-//! [`Recoding`] names the shape the two share, and one conformance suite runs
-//! against both.
+//! # Using it
+//!
+//! Both modules expose the same four entry points, one per call shape. Each
+//! shares whatever the shape lets it share, so none of them asks the caller
+//! to assemble the precomputation:
+//!
+//! |                 | one scalar    | many scalars    |
+//! |-----------------|---------------|-----------------|
+//! | **one point**   | [`mul`]       | [`mul_scalars`] |
+//! | **many points** | [`batch_mul`] | [`mul_pairs`]   |
+//!
+//! [`batch_mul`] is the wallet-scanning shape, and the one `glv_eisenstein`
+//! optimises hardest: a shared scalar means one recoding and one fused
+//! column ladder across every point.
 //!
 //! This module evaluates its two half-width multiplications against a shared
 //! table of odd multiples of $P$ and $\phi(P)$.
@@ -70,7 +82,7 @@ use group::CurveAffine as _;
 use crate::arithmetic::{CurveExt, VartimeField, mac, sbb};
 use crate::{pallas, vesta};
 
-pub(crate) mod private {
+mod private {
     use crate::arithmetic::{CurveAffine, CurveExt};
 
     /// The field of a curve's affine coordinates.
@@ -104,12 +116,6 @@ pub(crate) mod private {
             crate::vesta::Affine::from_xy_unchecked(x, y)
         }
     }
-
-    /// Seals [`super::Recoding`], so that its method set can grow without
-    /// breaking downstream code. The recodings are verified in-crate against
-    /// the Sage derivations.
-    pub trait SealedRecoding {}
-    impl SealedRecoding for super::Wnaf4 {}
 }
 
 /// The affine point $(x, y)$ of `C`, without checking that it is on the
@@ -160,9 +166,13 @@ pub(crate) fn affine_from_xy_unchecked<C: GlvParams>(
 /// lookup, is the $|G| = 2$ case of what
 /// `crate::glv_eisenstein` does with the six curve automorphisms.
 ///
-/// The trait is sealed. It exists to pin the contract and to let one
-/// conformance suite run against both recodings, not to admit new ones.
-pub trait Recoding<C>: private::SealedRecoding
+/// Internal: it exists to pin the contract and to let one conformance suite
+/// run against both recodings, not as a surface for callers.
+// `recode`, `table` and `batch_tables` are the conformance suite's surface:
+// production code reaches those operations through the inherent methods, and
+// generic trait methods that are never instantiated cost nothing.
+#[allow(dead_code)]
+pub(crate) trait Recoding<C>
 where
     C: GlvParams,
 {
@@ -291,6 +301,51 @@ pub(crate) mod conformance {
         }
     }
 
+    /// A batch of affine results, as every plural entry point returns.
+    type Affines<C> = alloc::vec::Vec<<C as crate::arithmetic::CurveExt>::AffineExt>;
+
+    /// One point against many scalars.
+    pub(crate) type MulScalars<C> =
+        fn(&C, &[<C as crate::arithmetic::CurveExt>::ScalarExt]) -> Affines<C>;
+
+    /// Many points against many scalars.
+    pub(crate) type MulPairs<C> =
+        fn(&[(C, <C as crate::arithmetic::CurveExt>::ScalarExt)]) -> Affines<C>;
+
+    /// The plural entry points are elementwise the singular one. They exist
+    /// only to share the precomputation, so sharing must not change a value.
+    ///
+    /// Taken as function pointers because these are free functions, one pair
+    /// per module, rather than methods of [`Recoding`].
+    pub(crate) fn plural_matches_singular<C>(
+        points: &[C],
+        ks: &[C::ScalarExt],
+        mul_scalars: MulScalars<C>,
+        mul_pairs: MulPairs<C>,
+    ) where
+        C: GlvParams,
+    {
+        assert!(mul_scalars(&points[0], &[]).is_empty());
+        assert!(mul_pairs(&[]).is_empty());
+
+        let got = mul_scalars(&points[0], ks);
+        assert_eq!(got.len(), ks.len());
+        for (got, k) in got.iter().zip(ks) {
+            assert_eq!(*got, (points[0] * *k).to_affine());
+        }
+
+        let pairs: alloc::vec::Vec<(C, C::ScalarExt)> = points
+            .iter()
+            .zip(ks.iter().cycle())
+            .map(|(p, k)| (*p, *k))
+            .collect();
+        let got = mul_pairs(&pairs);
+        assert_eq!(got.len(), pairs.len());
+        for (got, (p, k)) in got.iter().zip(&pairs) {
+            assert_eq!(*got, (*p * *k).to_affine());
+        }
+    }
+
     /// A recoding is a function of `k` alone, so it survives reuse across
     /// points. This is what makes `Recoded`/`Decomposed` worth exposing.
     pub(crate) fn recoding_is_reusable<C, R>(points: &[C], k: &C::ScalarExt)
@@ -308,7 +363,7 @@ pub(crate) mod conformance {
 /// The recoding [`crate::glv`] performs: two independent width-4 wNAF digit
 /// strings, one per GLV half, sharing a column index.
 #[derive(Clone, Copy, Debug)]
-pub struct Wnaf4;
+pub(crate) struct Wnaf4;
 
 impl<C> Recoding<C> for Wnaf4
 where
@@ -723,6 +778,90 @@ fn wnaf_digits(a: u128, negate: bool) -> ([i8; MAX_WNAF_DIGITS], usize) {
         k >>= 1;
     }
     (digits, n)
+}
+
+/// One-shot `k * p` through the split wNAF recoding: variable-time in `k`,
+/// identical in value to `p * k` (including `p` = identity).
+///
+/// The same call shape as `crate::glv_eisenstein::mul`, so the two
+/// recodings are interchangeable at the call site.
+pub fn mul<C>(p: &C, k: &C::ScalarExt) -> C
+where
+    C: GlvParams,
+{
+    p.mul_glv(k)
+}
+
+/// `k * p` for every `p`, building the per-point tables with one shared
+/// field inversion and recoding the scalar once, then returning affine
+/// results.
+///
+/// The same call shape as `crate::glv_eisenstein::batch_mul`. That one is
+/// faster on a large batch, because it also shares an inversion across the
+/// ladder itself; this one exists so a caller can pick the recoding without
+/// changing anything else. Identity inputs are handled.
+pub fn batch_mul<C>(points: &[C], k: &C::ScalarExt) -> Vec<C::AffineExt>
+where
+    C: GlvParams,
+{
+    if points.is_empty() {
+        return Vec::new();
+    }
+    let decomposed = Decomposed::new(k);
+    let proj: Vec<C> = Table::batch(points)
+        .iter()
+        .map(|t| t.mul_decomposed(&decomposed))
+        .collect();
+    normalize(&proj)
+}
+
+/// `k * p` for every `k`, against one point.
+///
+/// The table is built once and reused across the scalars, and the results
+/// share a single field inversion on the way back to affine.
+pub fn mul_scalars<C>(p: &C, ks: &[C::ScalarExt]) -> Vec<C::AffineExt>
+where
+    C: GlvParams,
+{
+    if ks.is_empty() {
+        return Vec::new();
+    }
+    let table = Table::new(p);
+    let proj: Vec<C> = ks.iter().map(|k| table.mul(k)).collect();
+    normalize(&proj)
+}
+
+/// `k * p` for every `(p, k)` pair.
+///
+/// The per-point tables are built with one shared field inversion, and the
+/// results share another on the way back to affine. Neither the point nor
+/// the scalar is shared, so each pair still walks its own ladder; use
+/// [`batch_mul`] instead when the scalar is common to every point, which is
+/// the cheaper shape.
+pub fn mul_pairs<C>(pairs: &[(C, C::ScalarExt)]) -> Vec<C::AffineExt>
+where
+    C: GlvParams,
+{
+    if pairs.is_empty() {
+        return Vec::new();
+    }
+    let points: Vec<C> = pairs.iter().map(|(p, _)| *p).collect();
+    let proj: Vec<C> = Table::batch(&points)
+        .iter()
+        .zip(pairs)
+        .map(|(t, (_, k))| t.mul(k))
+        .collect();
+    normalize(&proj)
+}
+
+/// One shared inversion back to affine.
+fn normalize<C>(proj: &[C]) -> Vec<C::AffineExt>
+where
+    C: GlvParams,
+{
+    let mut affine = alloc::vec![C::AffineExt::identity(); proj.len()];
+    C::batch_normalize(proj, &mut affine);
+    affine
 }
 
 #[cfg(test)]
@@ -1368,6 +1507,51 @@ pub(crate) mod tests {
             check::<vesta::Point, Wnaf4>(&VESTA_VECTORS);
         }
 
+        /// All four free entry points agree with the vectors, in both
+        /// modules, so every shape a caller actually reaches for is covered.
+        #[test]
+        fn free_functions_match_vectors() {
+            use group::Curve as _;
+
+            let g = <pallas::Point as group::Group>::generator();
+            let ks: Vec<<pallas::Point as CurveExt>::ScalarExt> = PALLAS_VECTORS
+                .iter()
+                .map(|(k, _, _)| from_limbs(k))
+                .collect();
+            let want: Vec<<pallas::Point as CurveExt>::AffineExt> = PALLAS_VECTORS
+                .iter()
+                .map(|(_, x, y)| {
+                    <pallas::Point as CurveExt>::AffineExt::from_xy_unchecked(
+                        from_limbs(x),
+                        from_limbs(y),
+                    )
+                })
+                .collect();
+            let pairs: Vec<_> = ks.iter().map(|k| (g, *k)).collect();
+
+            for (k, want) in ks.iter().zip(&want) {
+                assert_eq!(super::super::mul(&g, k).to_affine(), *want);
+                assert_eq!(super::super::batch_mul(&[g], k), alloc::vec![*want]);
+            }
+            assert_eq!(super::super::mul_scalars(&g, &ks), want);
+            assert_eq!(super::super::mul_pairs(&pairs), want);
+
+            #[cfg(feature = "glv-eisenstein")]
+            {
+                use crate::glv_eisenstein as eis;
+                for (k, want) in ks.iter().zip(&want) {
+                    assert_eq!(
+                        eis::mul(&g, k).to_affine(),
+                        *want,
+                        "the two modules' free `mul` must agree"
+                    );
+                    assert_eq!(eis::batch_mul(&[g], k), alloc::vec![*want]);
+                }
+                assert_eq!(eis::mul_scalars(&g, &ks), want);
+                assert_eq!(eis::mul_pairs(&pairs), want);
+            }
+        }
+
         #[test]
         fn pallas_wnaf_batch() {
             check_batch::<pallas::Point, Wnaf4>(&PALLAS_BATCH_K, &PALLAS_BATCH);
@@ -1597,6 +1781,12 @@ pub(crate) mod tests {
                             law::zero_and_negation::<$curve, Wnaf4>(&p, &a);
                             law::batch_matches_solo::<$curve, Wnaf4>(&ps, &a);
                             law::recoding_is_reusable::<$curve, Wnaf4>(&ps, &a);
+                            law::plural_matches_singular::<$curve>(
+                                &ps,
+                                &[a, b, a + b],
+                                super::super::mul_scalars,
+                                super::super::mul_pairs,
+                            );
                         }
 
                         /// For all P != O, k: P.mul_glv(k) == P * k.

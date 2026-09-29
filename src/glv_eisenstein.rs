@@ -103,6 +103,20 @@
 //! checks the stored shape by collapsing the 48 table entries under
 //! $\varphi$ (which fixes $y$) and negation (which fixes $x$).
 //!
+//! # Using it
+//!
+//! The same four entry points [`crate::glv`] exposes, one per call shape:
+//!
+//! |                 | one scalar    | many scalars    |
+//! |-----------------|---------------|-----------------|
+//! | **one point**   | [`mul`]       | [`mul_scalars`] |
+//! | **many points** | [`batch_mul`] | [`mul_pairs`]   |
+//!
+//! [`batch_mul`] is the shape this module optimises hardest: one shared
+//! scalar means one recoding and, above [`BATCH_AFFINE_THRESHOLD`], an
+//! affine ladder that fuses each column's doubling and addition and shares
+//! one inversion across every point.
+//!
 //! # References
 //!
 //! - R. P. Gallant, R. J. Lambert, S. A. Vanstone, "Faster Point Multiplication
@@ -130,7 +144,7 @@ use ff::{Field, WithSmallOrderMulGroup};
 
 use crate::{
     arithmetic::{Coordinates, CurveAffine, VartimeField},
-    glv::{GlvParams, Recoding, affine_from_xy_unchecked, decompose, private::SealedRecoding},
+    glv::{GlvParams, Recoding, affine_from_xy_unchecked, decompose},
 };
 
 /// The field of `C`'s affine coordinates, in which every table entry and
@@ -141,9 +155,7 @@ type AffineBase<C> = <<C as crate::arithmetic::CurveExt>::AffineExt as CurveAffi
 /// Eisenstein integers, in place of [`crate::glv`]'s two independent
 /// width-4 wNAFs.
 #[derive(Clone, Copy, Debug)]
-pub struct EisensteinNaf3;
-
-impl SealedRecoding for EisensteinNaf3 {}
+pub(crate) struct EisensteinNaf3;
 
 impl<C> Recoding<C> for EisensteinNaf3
 where
@@ -1071,6 +1083,55 @@ where
     Table::batch_mul(&Table::batch(points), &Recoded::new(k))
 }
 
+/// `k * p` for every `k`, against one point.
+///
+/// The table is built once and reused across the scalars, and the results
+/// share a single field inversion on the way back to affine.
+pub fn mul_scalars<C>(p: &C, ks: &[C::ScalarExt]) -> Vec<C::AffineExt>
+where
+    C: GlvParams,
+{
+    if ks.is_empty() {
+        return Vec::new();
+    }
+    let table = Table::new(p);
+    let proj: Vec<C> = ks.iter().map(|k| table.mul(k)).collect();
+    normalize(&proj)
+}
+
+/// `k * p` for every `(p, k)` pair.
+///
+/// The per-point tables are built with one shared field inversion, and the
+/// results share another on the way back to affine. Neither the point nor
+/// the scalar is shared, so each pair walks its own ladder and the fused
+/// affine batch ladder does not apply; use [`batch_mul`] instead when the
+/// scalar is common to every point, which is the cheaper shape.
+pub fn mul_pairs<C>(pairs: &[(C, C::ScalarExt)]) -> Vec<C::AffineExt>
+where
+    C: GlvParams,
+{
+    if pairs.is_empty() {
+        return Vec::new();
+    }
+    let points: Vec<C> = pairs.iter().map(|(p, _)| *p).collect();
+    let proj: Vec<C> = Table::batch(&points)
+        .iter()
+        .zip(pairs)
+        .map(|(t, (_, k))| t.mul(k))
+        .collect();
+    normalize(&proj)
+}
+
+/// One shared inversion back to affine.
+fn normalize<C>(proj: &[C]) -> Vec<C::AffineExt>
+where
+    C: GlvParams,
+{
+    let mut affine = alloc::vec![C::AffineExt::identity(); proj.len()];
+    C::batch_normalize(proj, &mut affine);
+    affine
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1809,6 +1870,12 @@ mod tests {
                             law::zero_and_negation::<$curve, EisensteinNaf3>(&p, &a);
                             law::batch_matches_solo::<$curve, EisensteinNaf3>(&ps, &a);
                             law::recoding_is_reusable::<$curve, EisensteinNaf3>(&ps, &a);
+                            law::plural_matches_singular::<$curve>(
+                                &ps,
+                                &[a, b, a + b],
+                                super::super::mul_scalars,
+                                super::super::mul_pairs,
+                            );
                         }
 
                         /// The two recodings agree, on every point and scalar.

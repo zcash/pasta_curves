@@ -118,6 +118,89 @@ fn bench<C: GlvParams>(c: &mut Criterion, name: &str) {
         );
     }
     group.finish();
+
+    entry_points::<C>(c, name);
+}
+
+/// The four public entry points, one per call shape, timed the way a user
+/// calls them: nothing hoisted out, because hiding the precomputation is
+/// what they are for. Both modules appear against each shape, so the choice
+/// of recoding can be made per shape rather than in general.
+fn entry_points<C: GlvParams>(c: &mut Criterion, name: &str) {
+    let mut group = c.benchmark_group(format!("{name} entry points"));
+
+    let k = (C::ScalarExt::from(0x9E37_79B9_7F4A_7C15u64).square()
+        + C::ScalarExt::from(0x0123_4567_89AB_CDEFu64))
+    .square();
+    let p = C::generator() * (k + C::ScalarExt::ONE);
+
+    group.bench_function("mul wNAF (one point, one scalar)", |b| {
+        b.iter(|| glv::mul(&p, &k))
+    });
+    group.bench_function("mul Eisenstein (one point, one scalar)", |b| {
+        b.iter(|| glv_eisenstein::mul(&p, &k))
+    });
+
+    for size in [16usize, 64, 256] {
+        let points: Vec<C> = (1..=size as u64)
+            .map(|i| C::generator() * (k + C::ScalarExt::from(i)))
+            .collect();
+        let scalars: Vec<C::ScalarExt> = (1..=size as u64)
+            .map(|i| k + C::ScalarExt::from(i))
+            .collect();
+        let pairs: Vec<(C, C::ScalarExt)> = points
+            .iter()
+            .copied()
+            .zip(scalars.iter().copied())
+            .collect();
+
+        for (label, f) in [
+            (
+                "batch_mul wNAF (N points, one scalar)",
+                glv::batch_mul::<C> as fn(&[C], &C::ScalarExt) -> Vec<C::AffineExt>,
+            ),
+            (
+                "batch_mul Eisenstein (N points, one scalar)",
+                glv_eisenstein::batch_mul::<C>,
+            ),
+        ] {
+            group.bench_with_input(BenchmarkId::new(label, size), &size, |b, _| {
+                b.iter(|| f(&points, &k))
+            });
+        }
+
+        for (label, f) in [
+            (
+                "mul_scalars wNAF (one point, N scalars)",
+                glv::mul_scalars::<C> as fn(&C, &[C::ScalarExt]) -> Vec<C::AffineExt>,
+            ),
+            (
+                "mul_scalars Eisenstein (one point, N scalars)",
+                glv_eisenstein::mul_scalars::<C>,
+            ),
+        ] {
+            group.bench_with_input(BenchmarkId::new(label, size), &size, |b, _| {
+                b.iter(|| f(&p, &scalars))
+            });
+        }
+
+        for (label, f) in [
+            (
+                "mul_pairs wNAF (N points, N scalars)",
+                glv::mul_pairs::<C> as fn(&[(C, C::ScalarExt)]) -> Vec<C::AffineExt>,
+            ),
+            (
+                "mul_pairs Eisenstein (N points, N scalars)",
+                glv_eisenstein::mul_pairs::<C>,
+            ),
+        ] {
+            group.bench_with_input(BenchmarkId::new(label, size), &size, |b, _| {
+                b.iter(|| f(&pairs))
+            });
+        }
+    }
+
+    group.finish();
 }
 
 criterion_group!(benches, criterion_benchmark);
