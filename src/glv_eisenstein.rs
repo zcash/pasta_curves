@@ -130,16 +130,14 @@ use ff::{Field, WithSmallOrderMulGroup};
 
 use crate::{
     arithmetic::{Coordinates, CurveAffine, VartimeField},
-    glv::{GlvParams, Recoding, decompose, private::SealedRecoding},
+    glv::{GlvParams, Recoding, decompose},
 };
 
 /// The recoding this module performs: one joint width-3 NAF over the
 /// Eisenstein integers, in place of [`crate::glv`]'s two independent
 /// width-4 wNAFs.
 #[derive(Clone, Copy, Debug)]
-pub struct EisensteinNaf3;
-
-impl SealedRecoding for EisensteinNaf3 {}
+pub(crate) struct EisensteinNaf3;
 
 impl<C> Recoding<C> for EisensteinNaf3
 where

@@ -26,8 +26,18 @@
 //!   receives by $\omega \mapsto \lambda$. One digit string instead of two,
 //!   so an addition is paid once per column rather than twice.
 //!
-//! [`Recoding`] names the shape the two share, and one conformance suite runs
-//! against both.
+//! # Using it
+//!
+//! Both modules expose the same two entry points, so choosing a recoding is a
+//! change of import and nothing else:
+//!
+//! - [`mul`] for one point against one scalar;
+//! - [`batch_mul`] for many points against one shared scalar, which is the
+//!   wallet-scanning shape and the one `glv_eisenstein` optimises hardest.
+//!
+//! For the shapes those two do not cover, one point against many scalars, or
+//! many of each, build the pieces and reuse them: a [`Table`] per point, a
+//! [`Decomposed`] per scalar, and [`Table::mul_decomposed`] for each pair.
 //!
 //! This module evaluates its two half-width multiplications against a shared
 //! table of odd multiples of $P$ and $\phi(P)$.
@@ -70,18 +80,12 @@ use group::CurveAffine as _;
 use crate::arithmetic::{CurveExt, VartimeField, mac, sbb};
 use crate::{pallas, vesta};
 
-pub(crate) mod private {
+mod private {
     /// Seals [`super::GlvParams`]: the lattice constants are curve-specific
     /// and verified in-crate; external implementations are not supported.
     pub trait Sealed {}
     impl Sealed for crate::pallas::Point {}
     impl Sealed for crate::vesta::Point {}
-
-    /// Seals [`super::Recoding`], so that its method set can grow without
-    /// breaking downstream code. The recodings are verified in-crate against
-    /// the Sage derivations.
-    pub trait SealedRecoding {}
-    impl SealedRecoding for super::Wnaf4 {}
 }
 
 /// How a GLV-split scalar is expanded into digit columns, together with the
@@ -121,9 +125,13 @@ pub(crate) mod private {
 /// lookup, is the $|G| = 2$ case of what
 /// `crate::glv_eisenstein` does with the six curve automorphisms.
 ///
-/// The trait is sealed. It exists to pin the contract and to let one
-/// conformance suite run against both recodings, not to admit new ones.
-pub trait Recoding<C>: private::SealedRecoding
+/// Internal: it exists to pin the contract and to let one conformance suite
+/// run against both recodings, not as a surface for callers.
+// `recode`, `table` and `batch_tables` are the conformance suite's surface:
+// production code reaches those operations through the inherent methods, and
+// generic trait methods that are never instantiated cost nothing.
+#[allow(dead_code)]
+pub(crate) trait Recoding<C>
 where
     C: GlvParams,
 {
@@ -269,7 +277,7 @@ pub(crate) mod conformance {
 /// The recoding [`crate::glv`] performs: two independent width-4 wNAF digit
 /// strings, one per GLV half, sharing a column index.
 #[derive(Clone, Copy, Debug)]
-pub struct Wnaf4;
+pub(crate) struct Wnaf4;
 
 impl<C> Recoding<C> for Wnaf4
 where
@@ -684,6 +692,43 @@ fn wnaf_digits(a: u128, negate: bool) -> ([i8; MAX_WNAF_DIGITS], usize) {
         k >>= 1;
     }
     (digits, n)
+}
+
+/// One-shot `k * p` through the split wNAF recoding: variable-time in `k`,
+/// identical in value to `p * k` (including `p` = identity).
+///
+/// The same call shape as `crate::glv_eisenstein::mul`, so the two
+/// recodings are interchangeable at the call site.
+pub fn mul<C>(p: &C, k: &C::ScalarExt) -> C
+where
+    C: GlvParams,
+{
+    p.mul_glv(k)
+}
+
+/// `k * p` for every `p`, building the per-point tables with one shared
+/// field inversion and recoding the scalar once, then returning affine
+/// results.
+///
+/// The same call shape as `crate::glv_eisenstein::batch_mul`. That one is
+/// faster on a large batch, because it also shares an inversion across the
+/// ladder itself; this one exists so a caller can pick the recoding without
+/// changing anything else. Identity inputs are handled.
+pub fn batch_mul<C>(points: &[C], k: &C::ScalarExt) -> Vec<C::AffineExt>
+where
+    C: GlvParams,
+{
+    if points.is_empty() {
+        return Vec::new();
+    }
+    let decomposed = Decomposed::new(k);
+    let proj: Vec<C> = Table::batch(points)
+        .iter()
+        .map(|t| t.mul_decomposed(&decomposed))
+        .collect();
+    let mut affine = alloc::vec![C::AffineExt::identity(); proj.len()];
+    C::batch_normalize(&proj, &mut affine);
+    affine
 }
 
 #[cfg(test)]
@@ -1325,6 +1370,35 @@ pub(crate) mod tests {
         #[test]
         fn vesta_wnaf() {
             check::<vesta::Point, Wnaf4>(&VESTA_VECTORS);
+        }
+
+        /// The free entry points agree with the vectors too, so the shape a
+        /// caller actually reaches for is covered.
+        #[test]
+        fn free_functions_match_vectors() {
+            use group::Curve as _;
+            for (k, x, y) in PALLAS_VECTORS.iter() {
+                let k: <pallas::Point as CurveExt>::ScalarExt = from_limbs(k);
+                let g = <pallas::Point as group::Group>::generator();
+                let want = <pallas::Point as CurveExt>::AffineExt::from_xy_unchecked(
+                    from_limbs(x),
+                    from_limbs(y),
+                );
+                assert_eq!(super::super::mul(&g, &k).to_affine(), want);
+                assert_eq!(super::super::batch_mul(&[g], &k), alloc::vec![want]);
+                #[cfg(feature = "glv-eisenstein")]
+                {
+                    assert_eq!(
+                        crate::glv_eisenstein::mul(&g, &k).to_affine(),
+                        want,
+                        "the two modules' free `mul` must agree"
+                    );
+                    assert_eq!(
+                        crate::glv_eisenstein::batch_mul(&[g], &k),
+                        alloc::vec![want]
+                    );
+                }
+            }
         }
 
         #[test]
