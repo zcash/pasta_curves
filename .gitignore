@@ -5,3 +5,4 @@
 /lean/.lake
 /lean/work
 __pycache__/
+/proptest-regressions
