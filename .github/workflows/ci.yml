@@ -89,6 +89,25 @@ jobs:
       - name: Build benchmarks
         run: cargo build --benches --all-features
 
+  sage:
+    name: Verify GLV constants
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sage
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        run: pipx install uv==0.12.19
+      - name: Verify the GLV short basis and Babai constants
+        run: uv run --locked sage glv_constants.sage
+      - name: Verify the GLV boundary-scalar witnesses
+        run: uv run --locked sage glv_boundary_scalars.sage
+      - name: Verify the Eisenstein GLV recoding
+        run: uv run --locked sage glv_eisenstein.sage
+
   book:
     name: Book tests
     runs-on: ubuntu-latest
@@ -150,6 +169,7 @@ jobs:
       - test-32-bit
       - no-std
       - bitrot
+      - sage
     # `always()` is load-bearing: without it this job is skipped when a
     # needed job fails, and GitHub treats a skipped required check as
     # satisfied.
