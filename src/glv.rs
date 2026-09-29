@@ -46,11 +46,50 @@ use crate::arithmetic::{CurveExt, VartimeField, mac, sbb};
 use crate::{pallas, vesta};
 
 mod private {
+    use crate::arithmetic::{CurveAffine, CurveExt};
+
+    /// The field of a curve's affine coordinates.
+    pub type AffineBase<C> = <<C as CurveExt>::AffineExt as CurveAffine>::Base;
+
     /// Seals [`super::GlvParams`]: the lattice constants are curve-specific
     /// and verified in-crate; external implementations are not supported.
-    pub trait Sealed {}
-    impl Sealed for crate::pallas::Point {}
-    impl Sealed for crate::vesta::Point {}
+    ///
+    /// It also carries the unchecked affine constructor that the GLV ladders
+    /// need generically. Keeping it on this private trait, rather than on the
+    /// public `CurveAffine`, adds nothing to the public API and leaves that
+    /// trait's implementors unaffected.
+    pub trait Sealed: CurveExt {
+        /// The affine point $(x, y)$, without checking that it is on the
+        /// curve; $(0, 0)$ yields the identity.
+        ///
+        /// `CurveAffine::from_xy` is the checked alternative, but it costs
+        /// about 85ns against 4ns, and a windowed ladder does one such lookup
+        /// per addition.
+        fn affine_from_xy_unchecked(x: AffineBase<Self>, y: AffineBase<Self>) -> Self::AffineExt;
+    }
+
+    impl Sealed for crate::pallas::Point {
+        fn affine_from_xy_unchecked(x: AffineBase<Self>, y: AffineBase<Self>) -> Self::AffineExt {
+            crate::pallas::Affine::from_xy_unchecked(x, y)
+        }
+    }
+
+    impl Sealed for crate::vesta::Point {
+        fn affine_from_xy_unchecked(x: AffineBase<Self>, y: AffineBase<Self>) -> Self::AffineExt {
+            crate::vesta::Affine::from_xy_unchecked(x, y)
+        }
+    }
+}
+
+/// The affine point $(x, y)$ of `C`, without checking that it is on the
+/// curve; $(0, 0)$ yields the identity. The caller must pass coordinates that
+/// its own curve arithmetic produced.
+#[cfg(feature = "glv-eisenstein")]
+pub(crate) fn affine_from_xy_unchecked<C: GlvParams>(
+    x: private::AffineBase<C>,
+    y: private::AffineBase<C>,
+) -> C::AffineExt {
+    <C as private::Sealed>::affine_from_xy_unchecked(x, y)
 }
 
 /// Per-curve GLV constants: a short basis for the lattice
