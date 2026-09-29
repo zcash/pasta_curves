@@ -5,8 +5,10 @@ version = "0.6.0"
 authors = [
     "Sean Bowe",
     "Ying Tong Lai",
-    "Daira-Emma Hopwood <daira@zodl.com>",
+    "Daira-Emma Hopwood <daira@jacaranda.org>",
     "Jack Grigg <jack@zodl.com>",
+    "Kris Nuttycombe <kris@nutty.land>",
+    "Danny Willems <danny@badaas.be>",
 ]
 edition = "2024"
 rust-version = "1.85"
