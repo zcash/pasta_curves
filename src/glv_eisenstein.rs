@@ -160,8 +160,15 @@ where
         Table::batch(points)
     }
 
-    fn mul(table: &Self::Table, digits: &Self::Digits) -> C {
-        table.mul_recoded(digits)
+    fn columns(digits: &Self::Digits) -> usize {
+        digits.len
+    }
+
+    fn add_column(table: &Self::Table, digits: &Self::Digits, i: usize, acc: &mut C) {
+        let d = digits.digits[i];
+        if d != ZERO_DIGIT {
+            *acc += table.digit_point(d);
+        }
     }
 }
 
@@ -628,19 +635,7 @@ where
     /// Exactly one point addition per nonzero column, and one doubling per
     /// column after the first.
     pub fn mul_recoded(&self, k: &Recoded<C>) -> C {
-        let mut acc = C::identity();
-        for i in (0..k.len).rev() {
-            // `acc` is still the identity on the first iteration; skip the
-            // wasted doubling.
-            if i + 1 < k.len {
-                acc = acc.double();
-            }
-            let d = k.digits[i];
-            if d != ZERO_DIGIT {
-                acc += self.digit_point(d);
-            }
-        }
-        acc
+        <EisensteinNaf3 as Recoding<C>>::mul(self, k)
     }
 
     /// The affine coordinates of the point a packed nonzero digit names, with

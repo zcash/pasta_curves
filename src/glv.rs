@@ -103,6 +103,24 @@ pub(crate) mod private {
 /// - `recode` is a function of `k` alone, so a recoding may be built once and
 ///   reused across points.
 ///
+/// # Both tables are the same construction
+///
+/// The two recodings look unlike each other and are not. A digit set carries
+/// a group of cheap symmetries, the table stores one point per ORBIT, and the
+/// lookup applies the group element it dropped. When the action is free the
+/// table is exactly `|digits| / |G|` points:
+///
+/// |                  | group `G`   | digits                       | stored |
+/// |------------------|-------------|------------------------------|--------|
+/// | [`Wnaf4`]        | $\{\pm 1\}$ | $\pm 1, \pm 3, \pm 5, \pm 7$ | 4      |
+/// | `EisensteinNaf3` | $\mu_6$     | the 48 odd classes           | 8      |
+///
+/// Freeness is what makes the saving exactly $|G|$: $-d \neq d$ for odd $d$,
+/// just as no nonidentity unit fixes an odd class. So the familiar
+/// signed-digit trick, storing only positive multiples and negating on
+/// lookup, is the $|G| = 2$ case of what
+/// `crate::glv_eisenstein` does with the six curve automorphisms.
+///
 /// The trait is sealed. It exists to pin the contract and to let one
 /// conformance suite run against both recodings, not to admit new ones.
 pub trait Recoding<C>: private::SealedRecoding
@@ -124,8 +142,37 @@ where
     /// Builds tables for many points, sharing one field inversion.
     fn batch_tables(points: &[C]) -> Vec<Self::Table>;
 
+    /// Number of digit columns in a recoding.
+    ///
+    /// Hidden: the per-column interface exists so that [`Recoding::mul`] can
+    /// be written once, not for callers to drive a ladder by hand.
+    #[doc(hidden)]
+    fn columns(digits: &Self::Digits) -> usize;
+
+    /// Adds column `i`'s contribution to the accumulator, which is nothing at
+    /// all for a zero column.
+    #[doc(hidden)]
+    fn add_column(table: &Self::Table, digits: &Self::Digits, i: usize, acc: &mut C);
+
     /// Walks the ladder: the point the digits name, against that table.
-    fn mul(table: &Self::Table, digits: &Self::Digits) -> C;
+    ///
+    /// This is Horner's rule, right to left, and it is the same fold for
+    /// every recoding: an accumulator doubled once per column, with that
+    /// column's contribution added in. Only [`Recoding::add_column`] differs,
+    /// so the loop is provided here rather than written per implementation.
+    fn mul(table: &Self::Table, digits: &Self::Digits) -> C {
+        let len = Self::columns(digits);
+        let mut acc = C::identity();
+        for i in (0..len).rev() {
+            // `acc` is still the identity on the first iteration; skip the
+            // wasted doubling.
+            if i + 1 < len {
+                acc = acc.double();
+            }
+            Self::add_column(table, digits, i, &mut acc);
+        }
+        acc
+    }
 }
 
 /// The laws every [`Recoding`] must satisfy, as functions the per-curve
@@ -243,8 +290,13 @@ where
         Table::batch(points)
     }
 
-    fn mul(table: &Self::Table, digits: &Self::Digits) -> C {
-        table.mul_decomposed(digits)
+    fn columns(digits: &Self::Digits) -> usize {
+        digits.len
+    }
+
+    fn add_column(table: &Self::Table, digits: &Self::Digits, i: usize, acc: &mut C) {
+        Table::add_digit(acc, &table.t1, digits.digits1[i]);
+        Table::add_digit(acc, &table.t2, digits.digits2[i]);
     }
 }
 
@@ -551,17 +603,7 @@ where
     /// shared-doubling ladder over the GLV split. Identical to `P * k`
     /// (tested).
     pub fn mul_decomposed(&self, k: &Decomposed<C>) -> C {
-        let mut acc = C::identity();
-        for i in (0..k.len).rev() {
-            // `acc` is still the identity on the first iteration; skip the
-            // wasted doubling.
-            if i + 1 < k.len {
-                acc = acc.double();
-            }
-            Self::add_digit(&mut acc, &self.t1, k.digits1[i]);
-            Self::add_digit(&mut acc, &self.t2, k.digits2[i]);
-        }
-        acc
+        <Wnaf4 as Recoding<C>>::mul(self, k)
     }
 
     /// Adds `d * B` to `acc`, where `table` holds `{1, 3, 5, 7} * B` and `d`
