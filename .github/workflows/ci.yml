@@ -14,7 +14,17 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
-        features: [--all-features, --no-default-features]
+        features:
+          - --all-features
+          - --no-default-features
+          # `glv` without `glv-eisenstein`: neither of the two above builds
+          # it, and a doc link that only breaks in this combination has
+          # already slipped through once.
+          - --no-default-features --features glv
+          # `glv-eisenstein` on its own. `--all-features` only ever builds it
+          # alongside `bits` and `sqrt-table`, so this is the minimal
+          # configuration the module actually runs in.
+          - --no-default-features --features glv-eisenstein
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
