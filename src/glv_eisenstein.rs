@@ -160,14 +160,17 @@ where
     type Digits = Recoded<C>;
     type Table = Table<C>;
 
+    #[cfg(test)]
     fn recode(k: &C::ScalarExt) -> Self::Digits {
         Recoded::new(k)
     }
 
+    #[cfg(test)]
     fn table(p: &C) -> Self::Table {
         Table::new(p)
     }
 
+    #[cfg(test)]
     fn batch_tables(points: &[C]) -> Vec<Self::Table> {
         Table::batch(points)
     }

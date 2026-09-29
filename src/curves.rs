@@ -40,14 +40,13 @@ macro_rules! new_curve_impl {
         }
 
         impl $name {
-            const fn curve_constant_a() -> $base {
-                $base::from_raw($a_raw)
-            }
+            impl_curve_constant_a!($base, $a_raw, $curve_type);
 
             const fn curve_constant_b() -> $base {
                 $base::from_raw($b_raw)
             }
 
+            #[cfg(feature = "alloc")]
             fn is_identity_vartime(&self) -> bool {
                 self.z.is_zero_vartime()
             }
@@ -842,6 +841,23 @@ macro_rules! new_curve_impl {
             fn name() -> alloc::string::String {
                 ec_gpu::name!()
             }
+        }
+    };
+}
+
+/// `a` is read by the `alloc`-gated trait impls in every instantiation, and by
+/// the general `double` in those with `a != 0`. So for a curve with `a = 0` it
+/// is dead without `alloc`, which is a distinction no `cfg` can draw.
+macro_rules! impl_curve_constant_a {
+    ($base:ident, $a_raw:expr, special_a0_b5) => {
+        #[cfg(feature = "alloc")]
+        const fn curve_constant_a() -> $base {
+            $base::from_raw($a_raw)
+        }
+    };
+    ($base:ident, $a_raw:expr, general) => {
+        const fn curve_constant_a() -> $base {
+            $base::from_raw($a_raw)
         }
     };
 }

@@ -129,10 +129,6 @@ mod private {
 ///
 /// Internal: it exists to pin the contract and to let one conformance suite
 /// run against both recodings, not as a surface for callers.
-// `recode`, `table` and `batch_tables` are the conformance suite's surface:
-// production code reaches those operations through the inherent methods, and
-// generic trait methods that are never instantiated cost nothing.
-#[allow(dead_code)]
 pub(crate) trait Recoding<C>
 where
     C: GlvParams,
@@ -144,12 +140,21 @@ where
     type Table;
 
     /// Recodes a scalar, independently of any point.
+    /// Only the conformance suite calls this: production code reaches the
+    /// same operation through the inherent method.
+    #[cfg(test)]
     fn recode(k: &C::ScalarExt) -> Self::Digits;
 
     /// Builds the table for one point.
+    /// Only the conformance suite calls this: production code reaches the
+    /// same operation through the inherent method.
+    #[cfg(test)]
     fn table(p: &C) -> Self::Table;
 
     /// Builds tables for many points, sharing one field inversion.
+    /// Only the conformance suite calls this: production code reaches the
+    /// same operation through the inherent method.
+    #[cfg(test)]
     fn batch_tables(points: &[C]) -> Vec<Self::Table>;
 
     /// Number of digit columns in a recoding.
@@ -333,14 +338,17 @@ where
     type Digits = Decomposed<C>;
     type Table = Table<C>;
 
+    #[cfg(test)]
     fn recode(k: &C::ScalarExt) -> Self::Digits {
         Decomposed::new(k)
     }
 
+    #[cfg(test)]
     fn table(p: &C) -> Self::Table {
         Table::new(p)
     }
 
+    #[cfg(test)]
     fn batch_tables(points: &[C]) -> Vec<Self::Table> {
         Table::batch(points)
     }

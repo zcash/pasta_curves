@@ -81,6 +81,10 @@ where
 
 /// An internal trait that exposes additional operations related to calculating square roots of
 /// prime-order finite fields.
+///
+/// Only `SqrtTables` consumes this, so without `sqrt-table` the trait and both
+/// its methods are dead code.
+#[cfg(feature = "sqrt-table")]
 pub(crate) trait SqrtTableHelpers: ff::PrimeField {
     /// Raise this field element to the power $(t-1)/2$.
     ///
