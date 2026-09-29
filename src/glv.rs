@@ -45,12 +45,182 @@ use group::CurveAffine as _;
 use crate::arithmetic::{CurveExt, VartimeField, mac, sbb};
 use crate::{pallas, vesta};
 
-mod private {
+pub(crate) mod private {
     /// Seals [`super::GlvParams`]: the lattice constants are curve-specific
     /// and verified in-crate; external implementations are not supported.
     pub trait Sealed {}
     impl Sealed for crate::pallas::Point {}
     impl Sealed for crate::vesta::Point {}
+
+    /// Seals [`super::Recoding`], so that its method set can grow without
+    /// breaking downstream code. The recodings are verified in-crate against
+    /// the Sage derivations.
+    pub trait SealedRecoding {}
+    impl SealedRecoding for super::Wnaf4 {}
+}
+
+/// How a GLV-split scalar is expanded into digit columns, together with the
+/// table of points those digits index.
+///
+/// `decompose` answers the first half of a GLV multiplication, turning `k`
+/// into a pair of half-width integers. It says nothing about the second half,
+/// which is how that pair becomes digits, and there is more than one answer:
+/// [`Wnaf4`] recodes the two halves as independent width-4 wNAFs, while
+/// [`crate::glv_eisenstein::EisensteinNaf3`] recodes them jointly as one
+/// width-3 NAF over the Eisenstein integers. This trait is the shape they
+/// share, so the laws below can be stated once.
+///
+/// Implementations must satisfy, for every `k` and every non-identity `P`:
+///
+/// - `mul(&table(P), &recode(k)) == P * k`, the identity included;
+/// - `batch_tables(ps)[i] == table(&ps[i])`, so batching is only a shared
+///   inversion and never a different answer;
+/// - `recode` is a function of `k` alone, so a recoding may be built once and
+///   reused across points.
+///
+/// The trait is sealed. It exists to pin the contract and to let one
+/// conformance suite run against both recodings, not to admit new ones.
+pub trait Recoding<C>: private::SealedRecoding
+where
+    C: GlvParams,
+{
+    /// The recoded scalar: the digit columns the ladder walks.
+    type Digits;
+
+    /// The precomputed multiples of `P` that the digits index.
+    type Table;
+
+    /// Recodes a scalar, independently of any point.
+    fn recode(k: &C::ScalarExt) -> Self::Digits;
+
+    /// Builds the table for one point.
+    fn table(p: &C) -> Self::Table;
+
+    /// Builds tables for many points, sharing one field inversion.
+    fn batch_tables(points: &[C]) -> Vec<Self::Table>;
+
+    /// Walks the ladder: the point the digits name, against that table.
+    fn mul(table: &Self::Table, digits: &Self::Digits) -> C;
+}
+
+/// The laws every [`Recoding`] must satisfy, as functions the per-curve
+/// property tests in this module and in [`crate::glv_eisenstein`] both run.
+///
+/// Stating them once is the point of the trait: the two recodings share no
+/// ladder code, so without a common suite nothing forces them to mean the
+/// same thing by "reuse gives the same answer".
+#[cfg(test)]
+pub(crate) mod conformance {
+    use ff::PrimeField;
+    use proptest::prelude::*;
+
+    use super::{GlvParams, Recoding};
+
+    /// Scalars drawn as four uniform `u64` limbs widened through
+    /// `from_uniform_bytes`, so the whole field is reachable without modular
+    /// bias. Shared with [`crate::glv_eisenstein`]'s property tests.
+    pub(crate) fn scalar_strategy<F>() -> impl Strategy<Value = F>
+    where
+        F: PrimeField + ff::FromUniformBytes<64>,
+    {
+        proptest::array::uniform4(any::<u64>()).prop_map(|limbs| {
+            let mut bytes = [0u8; 64];
+            for (i, l) in limbs.iter().enumerate() {
+                bytes[i * 8..(i + 1) * 8].copy_from_slice(&l.to_le_bytes());
+            }
+            F::from_uniform_bytes(&bytes)
+        })
+    }
+
+    /// The defining law: the ladder computes `k * P`.
+    pub(crate) fn agrees_with_mul<C, R>(p: &C, k: &C::ScalarExt)
+    where
+        C: GlvParams,
+        R: Recoding<C>,
+    {
+        assert_eq!(R::mul(&R::table(p), &R::recode(k)), *p * *k);
+    }
+
+    /// Multiplication is additive in the scalar, so the recoding cannot be
+    /// merely self-consistent: it has to respect the group structure.
+    pub(crate) fn additive_in_scalar<C, R>(p: &C, a: &C::ScalarExt, b: &C::ScalarExt)
+    where
+        C: GlvParams,
+        R: Recoding<C>,
+    {
+        let t = R::table(p);
+        let sum = R::mul(&t, &R::recode(&(*a + *b)));
+        let parts = R::mul(&t, &R::recode(a)) + R::mul(&t, &R::recode(b));
+        assert_eq!(sum, parts, "mul is not additive in the scalar");
+    }
+
+    /// Zero and negation, which the additive law alone does not pin.
+    pub(crate) fn zero_and_negation<C, R>(p: &C, k: &C::ScalarExt)
+    where
+        C: GlvParams,
+        R: Recoding<C>,
+    {
+        let t = R::table(p);
+        assert!(bool::from(
+            R::mul(&t, &R::recode(&<C::ScalarExt as ff::Field>::ZERO)).is_identity()
+        ));
+        let both = R::mul(&t, &R::recode(k)) + R::mul(&t, &R::recode(&(-*k)));
+        assert!(bool::from(both.is_identity()), "k*P + (-k)*P is not O");
+    }
+
+    /// Batching is a shared inversion, never a different answer.
+    pub(crate) fn batch_matches_solo<C, R>(points: &[C], k: &C::ScalarExt)
+    where
+        C: GlvParams,
+        R: Recoding<C>,
+    {
+        let digits = R::recode(k);
+        for (t, p) in R::batch_tables(points).iter().zip(points) {
+            assert_eq!(R::mul(t, &digits), R::mul(&R::table(p), &digits));
+        }
+    }
+
+    /// A recoding is a function of `k` alone, so it survives reuse across
+    /// points. This is what makes `Recoded`/`Decomposed` worth exposing.
+    pub(crate) fn recoding_is_reusable<C, R>(points: &[C], k: &C::ScalarExt)
+    where
+        C: GlvParams,
+        R: Recoding<C>,
+    {
+        let shared = R::recode(k);
+        for p in points {
+            assert_eq!(R::mul(&R::table(p), &shared), *p * *k);
+        }
+    }
+}
+
+/// The recoding [`crate::glv`] performs: two independent width-4 wNAF digit
+/// strings, one per GLV half, sharing a column index.
+#[derive(Clone, Copy, Debug)]
+pub struct Wnaf4;
+
+impl<C> Recoding<C> for Wnaf4
+where
+    C: GlvParams,
+{
+    type Digits = Decomposed<C>;
+    type Table = Table<C>;
+
+    fn recode(k: &C::ScalarExt) -> Self::Digits {
+        Decomposed::new(k)
+    }
+
+    fn table(p: &C) -> Self::Table {
+        Table::new(p)
+    }
+
+    fn batch_tables(points: &[C]) -> Vec<Self::Table> {
+        Table::batch(points)
+    }
+
+    fn mul(table: &Self::Table, digits: &Self::Digits) -> C {
+        table.mul_decomposed(digits)
+    }
 }
 
 /// Per-curve GLV constants: a short basis for the lattice
@@ -951,19 +1121,7 @@ mod tests {
         use proptest::prelude::*;
 
         use super::*;
-
-        fn scalar_strategy<F>() -> impl Strategy<Value = F>
-        where
-            F: PrimeField + ff::FromUniformBytes<64>,
-        {
-            proptest::array::uniform4(any::<u64>()).prop_map(|limbs| {
-                let mut bytes = [0u8; 64];
-                for (i, l) in limbs.iter().enumerate() {
-                    bytes[i * 8..(i + 1) * 8].copy_from_slice(&l.to_le_bytes());
-                }
-                F::from_uniform_bytes(&bytes)
-            })
-        }
+        use crate::glv::conformance::scalar_strategy;
 
         macro_rules! glv_pbt {
             ($mod_name:ident, $curve:ty) => {
@@ -973,6 +1131,24 @@ mod tests {
                     type Scalar = <$curve as CurveExt>::ScalarExt;
 
                     proptest! {
+                        /// The shared `Recoding` laws, for this module's
+                        /// width-4 wNAF recoding.
+                        #[test]
+                        fn recoding_laws(
+                            s in scalar_strategy::<Scalar>(),
+                            a in scalar_strategy::<Scalar>(),
+                            b in scalar_strategy::<Scalar>(),
+                        ) {
+                            use crate::glv::conformance as law;
+                            let p = <$curve>::generator() * (s + Scalar::ONE);
+                            let ps = [p, p.double(), p + <$curve>::generator()];
+                            law::agrees_with_mul::<$curve, Wnaf4>(&p, &a);
+                            law::additive_in_scalar::<$curve, Wnaf4>(&p, &a, &b);
+                            law::zero_and_negation::<$curve, Wnaf4>(&p, &a);
+                            law::batch_matches_solo::<$curve, Wnaf4>(&ps, &a);
+                            law::recoding_is_reusable::<$curve, Wnaf4>(&ps, &a);
+                        }
+
                         /// For all P != O, k: P.mul_glv(k) == P * k.
                         #[test]
                         fn mul_glv_matches_mul(

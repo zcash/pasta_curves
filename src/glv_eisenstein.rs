@@ -130,8 +130,40 @@ use ff::{Field, WithSmallOrderMulGroup};
 
 use crate::{
     arithmetic::{Coordinates, CurveAffine, VartimeField},
-    glv::{GlvParams, decompose},
+    glv::{GlvParams, Recoding, decompose, private::SealedRecoding},
 };
+
+/// The recoding this module performs: one joint width-3 NAF over the
+/// Eisenstein integers, in place of [`crate::glv`]'s two independent
+/// width-4 wNAFs.
+#[derive(Clone, Copy, Debug)]
+pub struct EisensteinNaf3;
+
+impl SealedRecoding for EisensteinNaf3 {}
+
+impl<C> Recoding<C> for EisensteinNaf3
+where
+    C: GlvParams,
+{
+    type Digits = Recoded<C>;
+    type Table = Table<C>;
+
+    fn recode(k: &C::ScalarExt) -> Self::Digits {
+        Recoded::new(k)
+    }
+
+    fn table(p: &C) -> Self::Table {
+        Table::new(p)
+    }
+
+    fn batch_tables(points: &[C]) -> Vec<Self::Table> {
+        Table::batch(points)
+    }
+
+    fn mul(table: &Self::Table, digits: &Self::Digits) -> C {
+        table.mul_recoded(digits)
+    }
+}
 
 /// The orbit representatives $r_0, \dots, r_7$, as coefficient pairs
 /// $(a, b)$ meaning $a + b\omega$.
@@ -1743,4 +1775,83 @@ mod tests {
 
     eisenstein_tests!(pallas_tests, crate::pallas::Point);
     eisenstein_tests!(vesta_tests, crate::vesta::Point);
+
+    /// Property-based tests. The shared `Recoding` laws for this module's
+    /// recoding, and a differential check against `glv`'s: the two share no
+    /// ladder code and no digit representation, so agreeing on every scalar
+    /// is real evidence rather than a tautology.
+    mod pbt {
+        use group::Group;
+        use proptest::prelude::*;
+
+        use super::*;
+        use crate::arithmetic::CurveExt;
+        use crate::glv::{Wnaf4, conformance as law, conformance::scalar_strategy};
+
+        macro_rules! eisenstein_pbt {
+            ($mod_name:ident, $curve:ty) => {
+                mod $mod_name {
+                    use super::*;
+
+                    type Scalar = <$curve as CurveExt>::ScalarExt;
+
+                    proptest! {
+                        /// The shared laws, for the Eisenstein recoding.
+                        #[test]
+                        fn recoding_laws(
+                            s in scalar_strategy::<Scalar>(),
+                            a in scalar_strategy::<Scalar>(),
+                            b in scalar_strategy::<Scalar>(),
+                        ) {
+                            let p = <$curve>::generator() * (s + Scalar::ONE);
+                            let ps = [p, p.double(), p + <$curve>::generator()];
+                            law::agrees_with_mul::<$curve, EisensteinNaf3>(&p, &a);
+                            law::additive_in_scalar::<$curve, EisensteinNaf3>(&p, &a, &b);
+                            law::zero_and_negation::<$curve, EisensteinNaf3>(&p, &a);
+                            law::batch_matches_solo::<$curve, EisensteinNaf3>(&ps, &a);
+                            law::recoding_is_reusable::<$curve, EisensteinNaf3>(&ps, &a);
+                        }
+
+                        /// The two recodings agree, on every point and scalar.
+                        #[test]
+                        fn agrees_with_wnaf(
+                            s in scalar_strategy::<Scalar>(),
+                            k in scalar_strategy::<Scalar>(),
+                        ) {
+                            let p = <$curve>::generator() * (s + Scalar::ONE);
+                            let eis = <EisensteinNaf3 as Recoding<$curve>>::mul(
+                                &<EisensteinNaf3 as Recoding<$curve>>::table(&p),
+                                &<EisensteinNaf3 as Recoding<$curve>>::recode(&k),
+                            );
+                            let wnaf = <Wnaf4 as Recoding<$curve>>::mul(
+                                &<Wnaf4 as Recoding<$curve>>::table(&p),
+                                &<Wnaf4 as Recoding<$curve>>::recode(&k),
+                            );
+                            prop_assert_eq!(eis, wnaf);
+                            prop_assert_eq!(eis, p * k);
+                        }
+
+                        /// The batch path, against the per-point ladder.
+                        #[test]
+                        fn batch_mul_matches_solo(
+                            s in scalar_strategy::<Scalar>(),
+                            k in scalar_strategy::<Scalar>(),
+                        ) {
+                            let g = <$curve>::generator();
+                            let base = g * (s + Scalar::ONE);
+                            let pts: Vec<$curve> =
+                                (0..5u64).map(|i| base + g * Scalar::from(i)).collect();
+                            let got = batch_mul(&pts, &k);
+                            for (out, p) in got.iter().zip(&pts) {
+                                prop_assert_eq!(<$curve>::from(*out), *p * k);
+                            }
+                        }
+                    }
+                }
+            };
+        }
+
+        eisenstein_pbt!(pallas_pbt, crate::pallas::Point);
+        eisenstein_pbt!(vesta_pbt, crate::vesta::Point);
+    }
 }
