@@ -771,6 +771,10 @@ macro_rules! new_curve_impl {
                 CtOption::new(p, p.is_on_curve())
             }
 
+            fn from_xy_unchecked(x: Self::Base, y: Self::Base) -> Self {
+                $name_affine { x, y }
+            }
+
             fn a() -> Self::Base {
                 $name::curve_constant_a()
             }

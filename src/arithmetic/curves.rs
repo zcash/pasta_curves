@@ -34,8 +34,11 @@ pub trait CurveExt:
     /// The base field over which this elliptic curve is constructed.
     type Base: ff::WithSmallOrderMulGroup<3> + VartimeField;
     /// The affine version of the curve
-    type AffineExt: CurveAffine<CurveExt = Self, ScalarExt = <Self as CurveExt>::ScalarExt>
-        + Mul<Self::ScalarExt, Output = Self>
+    type AffineExt: CurveAffine<
+            CurveExt = Self,
+            ScalarExt = <Self as CurveExt>::ScalarExt,
+            Base = <Self as CurveExt>::Base,
+        > + Mul<Self::ScalarExt, Output = Self>
         + for<'r> Mul<Self::ScalarExt, Output = Self>;
 
     /// CURVE_ID used for hash-to-curve.
@@ -134,6 +137,10 @@ pub trait CurveAffine:
     /// Obtains a point given $(x, y)$, failing if it is not on the
     /// curve.
     fn from_xy(x: Self::Base, y: Self::Base) -> CtOption<Self>;
+
+    /// Obtains a point given $(x, y)$ without checking that it is on the
+    /// curve. $(0, 0)$ yields the identity.
+    fn from_xy_unchecked(x: Self::Base, y: Self::Base) -> Self;
 
     /// Returns whether or not this element is on the curve; should
     /// always be true unless an "unchecked" API was used.
