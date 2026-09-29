@@ -177,6 +177,25 @@ fn p_minus_1(f: &Field) -> Limbs {
     limbs
 }
 
+/// The constants above are copies of the field types' own, so that a known answer here says
+/// something about the fields the crate computes in: check that they agree.
+#[test]
+fn constants_match_the_field_types() {
+    use crate::fields::{fp, fq};
+
+    assert_eq!(FP.modulus, fp::MODULUS.0);
+    assert_eq!(FP.inv, fp::INV);
+    assert_eq!(FP.r, fp::R.0);
+    assert_eq!(FP.r2, fp::R2.0);
+    assert_eq!(FP.r3, fp::R3.0);
+
+    assert_eq!(FQ.modulus, fq::MODULUS.0);
+    assert_eq!(FQ.inv, fq::INV);
+    assert_eq!(FQ.r, fq::R.0);
+    assert_eq!(FQ.r2, fq::R2.0);
+    assert_eq!(FQ.r3, fq::R3.0);
+}
+
 #[test]
 fn add_known_answers() {
     for f in FIELDS {

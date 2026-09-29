@@ -103,7 +103,7 @@ impl ConditionallySelectable for Fq {
 
 /// Constant representing the modulus
 /// q = 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001
-const MODULUS: Fq = Fq([
+pub(crate) const MODULUS: Fq = Fq([
     0x8c46eb2100000001,
     0x224698fc0994a8dd,
     0x0,
@@ -184,10 +184,10 @@ impl<T: ::core::borrow::Borrow<Fq>> ::core::iter::Product<T> for Fq {
 }
 
 /// INV = -(q^{-1} mod 2^64) mod 2^64
-const INV: u64 = 0x8c46eb20ffffffff;
+pub(crate) const INV: u64 = 0x8c46eb20ffffffff;
 
 /// R = 2^256 mod q
-const R: Fq = Fq([
+pub(crate) const R: Fq = Fq([
     0x5b2b3e9cfffffffd,
     0x992c350be3420567,
     0xffffffffffffffff,
@@ -195,7 +195,7 @@ const R: Fq = Fq([
 ]);
 
 /// R^2 = 2^512 mod q
-const R2: Fq = Fq([
+pub(crate) const R2: Fq = Fq([
     0xfc9678ff0000000f,
     0x67bb433d891a16e3,
     0x7fae231004ccf590,
@@ -203,7 +203,7 @@ const R2: Fq = Fq([
 ]);
 
 /// R^3 = 2^768 mod q
-const R3: Fq = Fq([
+pub(crate) const R3: Fq = Fq([
     0x008b421c249dae4c,
     0xe13bda50dba41326,
     0x88fececb8e15cb63,
