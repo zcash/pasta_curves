@@ -6,6 +6,42 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `pasta_curves::glv_eisenstein` module, behind the new `glv-eisenstein`
+  feature flag. An alternative recoding for the same GLV split that
+  `pasta_curves::glv` performs: the pair `(k1, k2)` becomes a single width-3
+  NAF over the Eisenstein integers `Z[w] = Z[X]/(X^2 + X + 1)` rather than two
+  independent width-4 wNAFs. The unit group `mu_6` is exactly the six
+  automorphisms of a `j`-invariant-0 curve and acts freely on the 48 odd
+  residue classes mod 8, so eight stored points reach every digit. The ladder
+  drops from ~51.2 point additions to ~38.4, at most one per column, for a
+  table costing 7 additions instead of 4. Like `glv` it is variable-time in
+  the scalar, so only for scalars that are not secret. Verified against the
+  curves by `sage/glv_eisenstein.sage`.
+
+  `Table::batch`, and `batch_mul` for many points against one shared scalar,
+  both work in affine coordinates with a single field inversion shared per
+  step instead of normalizing afterwards; `batch_mul` additionally fuses each
+  column's doubling and addition into one Eisentrager-Lauter-Montgomery step
+  and returns affine results. The inversion is
+  `VartimeField::invert_vartime`, and `batch_mul` falls back to the
+  projective ladder below `BATCH_AFFINE_THRESHOLD`, so it is never slower;
+  `Table::batch_mul_affine` takes the affine ladder whatever the size. A
+  scalar recoded once is a `Recoded`, which may be reused across points.
+### Changed
+- `pasta_curves::arithmetic`:
+  - Changes to `CurveExt` trait:
+    - The `AffineExt` associated type now additionally requires
+      `Base = <Self as CurveExt>::Base`, so generic code can pass coordinates
+      between a curve's projective and affine forms. Every real curve already
+      satisfies this; it was simply never stated.
+  - Changes to `CurveAffine` trait:
+    - Added `CurveAffine::from_xy_unchecked`, the trait counterpart of the
+      inherent constructor of the same name, alongside the existing
+      `CurveAffine::from_xy`. Generic code building points from coordinates it
+      has already validated cannot afford `from_xy`: the on-curve check costs
+      about 85ns against 4ns, which over a windowed ladder's digit lookups is
+      larger than the saving the window buys.
 
 ## [0.6.0] - 2026-09-25
 ### Added
