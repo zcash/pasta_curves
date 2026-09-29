@@ -14,7 +14,17 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
-        features: [--all-features, --no-default-features]
+        features:
+          - --all-features
+          - --no-default-features
+          # `glv` without `glv-eisenstein`: neither of the two above builds
+          # it, and a doc link that only breaks in this combination has
+          # already slipped through once.
+          - --no-default-features --features glv
+          # `glv-eisenstein` on its own. `--all-features` only ever builds it
+          # alongside `bits` and `sqrt-table`, so this is the minimal
+          # configuration the module actually runs in.
+          - --no-default-features --features glv-eisenstein
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -23,6 +33,26 @@ jobs:
         run: cargo test --verbose --release ${{ matrix.features }}
       - name: Verify working directory is clean
         run: git diff --exit-code
+
+  test-debug-assertions:
+    name: Test with debug assertions on ${{ matrix.features }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - --all-features
+          - --no-default-features --features glv
+          - --no-default-features --features glv-eisenstein
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The `test` job runs `--release`, which compiles `debug_assert!` out.
+      # The GLV recodings state their bound and divisibility invariants that
+      # way, so without this they are never evaluated on a 64-bit target.
+      - name: Run tests
+        run: cargo test --verbose ${{ matrix.features }}
 
   test-32-bit:
     name: Test on i686-unknown-linux-gnu with ${{ matrix.features }}
@@ -168,6 +198,7 @@ jobs:
     # remain visible as their own separately-required checks.
     needs:
       - test
+      - test-debug-assertions
       - test-32-bit
       - no-std
       - bitrot
