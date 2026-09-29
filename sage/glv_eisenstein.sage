@@ -109,6 +109,22 @@ UNIT_PAIRS = [(1, 0), (0, 1), (-1, -1), (-1, 0), (0, -1), (1, 1)]
 assert [K(u[0]) + K(u[1]) * w for u in UNIT_PAIRS] == UNITS, "pair model of mu_6"
 assert rotate((1, 0)) == (0, 1) and rotate(rotate(rotate((1, 0)))) == (1, 0)
 
+# Why the modulus is 8: it is 2^w for the window width w = 3, and the width
+# is what fixes it, not anything about Z[w]. A windowed recoding subtracts the
+# digit congruent to the residual mod 2^w; the residual is then divisible by
+# 2^w, so after shifting the next w - 1 columns are forced to zero. That run
+# of zeros is the whole source of the sparsity measured in step [7]. So the
+# digits have to be representatives of the odd classes mod 2^w: over Z that is
+# {+-1, +-3, ..., +-(2^(w-1) - 1)}, and over Z[w] it is the odd classes of
+# Z[w]/2^w. At w = 3 that is Z[w]/8.
+#
+# Why reducing is coordinate-wise: Z[w] is a free Z-module of rank 2 on
+# {1, w}, i.e. every element is a + b*w for a unique integer pair (a, b).
+# Multiplying by 8 respects that splitting, 8*Z[w] = 8Z + 8Z*w, so
+# Z[w]/8 = (Z/8) + (Z/8)*w and a class is a pair of residues. Uniqueness is
+# what makes this work: a + b*w = a' + b'*w mod 8 forces 8 | a - a' and
+# 8 | b - b' only because the coordinates cannot be rewritten. Hence 8^2 = 64
+# classes, indexed in the Rust source as (a & 7) * 8 + (b & 7).
 M = 8  # the modulus 2^w for width w = 3
 
 
@@ -119,6 +135,20 @@ def red(u):
 classes = [(a, b) for a in range(M) for b in range(M)]
 odd = [c for c in classes if not (c[0] % 2 == 0 and c[1] % 2 == 0)]
 assert len(classes) == 64 and len(odd) == 48
+
+# The odd classes are not just "the ones 2 does not divide": they are exactly
+# the unit group of Z[w]/8. Z[w]/8 is local with maximal ideal (2), because 2
+# is inert, so the non-units are the 4^2 = 16 multiples of 2 and 64 - 16 = 48
+# units remain. That is worth knowing because it makes the freeness below a
+# triviality rather than a computation: mu_6 is then a subgroup of order 6
+# inside a group of order 48, acting on it by translation, and translation is
+# free by cancellation. The orbits are its cosets and Lagrange gives the count
+# 48/6 = 8 directly.
+one = (1, 0)
+units = [c for c in classes if any(red(emul(c, d)) == one for d in classes)]
+assert set(units) == set(odd), "the odd classes are the units of Z[w]/8"
+assert all(red(emul(u, v)) in set(odd) for u in UNIT_PAIRS for v in odd)
+assert len({red(u) for u in UNIT_PAIRS}) == 6, "mu_6 injects into (Z[w]/8)^*"
 
 # FREENESS: every orbit has the full six elements. This is the fact that turns
 # 48 digits into 8 stored points, and it is what makes the Rust table small.
