@@ -1,11 +1,36 @@
 //! GLV (Gallant–Lambert–Vanstone) scalar multiplication for the Pasta curves.
 //!
-//! Both Pasta curves carry a cube-root endomorphism
+//! GLV is a **re-encoding** of the scalar, in two stages, and only the first
+//! is what the technique is named for.
+//!
+//! The **split**. Both Pasta curves carry a cube-root endomorphism
 //! $\phi(x, y) = (\zeta x, y)$ (exposed as [`CurveExt::endo`]), for which
-//! $\phi(P) = \lambda P$ with $\lambda$ = [`Scalar::ZETA`]. This module uses
-//! that structure to split a full-width scalar multiplication $k P$ into two
-//! half-width multiplications evaluated against a shared table of odd multiples
-//! of $P$ and $\phi(P)$.
+//! $\phi(P) = \lambda P$ with $\lambda$ = [`Scalar::ZETA`]. Because
+//! $\lambda^2 + \lambda + 1 = 0$, a full-width scalar can be rewritten as
+//! $k \equiv k_1 + k_2\lambda \pmod n$ with both halves near $\sqrt{n}$, so
+//! that $k P = k_1 P + k_2 \phi(P)$. Running both halves over one shared
+//! column loop halves the doublings. That is the whole of what the split
+//! buys, and it is independent of what comes next.
+//!
+//! The **digit expansion**. Turning that re-encoded scalar into columns a
+//! ladder can walk is a separate choice, and GLV says nothing about it. More
+//! than one answer works, and this crate carries two:
+//!
+//! - *This module*: two **independent** width-4 wNAF digit strings, one per
+//!   half, sharing a column index. An addition is paid whenever either string
+//!   is nonzero, so their densities add.
+//! - *`crate::glv_eisenstein`* (feature `glv-eisenstein`): one **joint**
+//!   width-3 NAF over the Eisenstein integers. It uses the fact that
+//!   $(k_1, k_2)$ is not two unrelated integers but the single element
+//!   $k_1 + k_2\omega$ of $\mathbb{Z}[\omega]$, which the scalar field
+//!   receives by $\omega \mapsto \lambda$. One digit string instead of two,
+//!   so an addition is paid once per column rather than twice.
+//!
+//! [`Recoding`] names the shape the two share, and one conformance suite runs
+//! against both.
+//!
+//! This module evaluates its two half-width multiplications against a shared
+//! table of odd multiples of $P$ and $\phi(P)$.
 //!
 //! This path is variable-time in the scalar (GLV decomposition plus wNAF
 //! recoding); the `_glv` naming distinguishes it from the native `Mul`
@@ -66,7 +91,7 @@ pub(crate) mod private {
 /// into a pair of half-width integers. It says nothing about the second half,
 /// which is how that pair becomes digits, and there is more than one answer:
 /// [`Wnaf4`] recodes the two halves as independent width-4 wNAFs, while
-/// [`crate::glv_eisenstein::EisensteinNaf3`] recodes them jointly as one
+/// `crate::glv_eisenstein::EisensteinNaf3` recodes them jointly as one
 /// width-3 NAF over the Eisenstein integers. This trait is the shape they
 /// share, so the laws below can be stated once.
 ///
@@ -232,7 +257,7 @@ where
 /// [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
 ///
 /// The base field is required to implement [`VartimeField`], so that
-/// [`crate::glv_eisenstein`]'s batch-affine ladder can reach the safegcd
+/// `crate::glv_eisenstein`'s batch-affine ladder can reach the safegcd
 /// inversion.
 ///
 /// This trait is sealed; it is implemented for [`pallas::Point`] and
