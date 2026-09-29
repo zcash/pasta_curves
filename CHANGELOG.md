@@ -28,6 +28,17 @@ and this project adheres to Rust's notion of
   projective ladder below `BATCH_AFFINE_THRESHOLD`, so it is never slower;
   `Table::batch_mul_affine` takes the affine ladder whatever the size. A
   scalar recoded once is a `Recoded`, which may be reused across points.
+- One free function per call shape, in both `pasta_curves::glv` and
+  `pasta_curves::glv_eisenstein`, so neither module asks the caller to
+  assemble the precomputation:
+  - `mul`, one point against one scalar.
+  - `batch_mul`, many points against one shared scalar, building the
+    per-point tables with a single field inversion.
+  - `mul_scalars`, one point against many scalars, building the table once
+    and sharing one inversion back to affine.
+  - `mul_pairs`, many points against many scalars, sharing one inversion to
+    build the tables and another back to affine.
+
 ### Changed
 - `pasta_curves::arithmetic`:
   - Changes to `CurveExt` trait:
