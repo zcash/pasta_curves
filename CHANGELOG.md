@@ -6,8 +6,21 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
 ### Added
+- `pasta_curves::glv_eisenstein` module, behind the new `glv-eisenstein`
+  feature flag: variable-time GLV scalar multiplication for Pallas and Vesta
+  with an Eisenstein-integer recoding of the scalar, faster than
+  `pasta_curves::glv`. Like `glv`, it is only for scalars that are not
+  secret. It provides:
+  - `Table`, the precomputation for one point, with `Table::new`,
+    `Table::batch` for many points, `Table::mul` and `Table::mul_recoded`.
+  - `Recoded`, a recoded scalar that can be reused across points.
+  - `Table::batch_mul` and `Table::batch_mul_affine`, multiplying the points
+    of many tables by one recoded scalar and returning affine points. From
+    `BATCH_AFFINE_THRESHOLD` points, `Table::batch_mul` switches to the
+    affine ladder that `Table::batch_mul_affine` always uses.
+  - `mul`, one point against one scalar, and `batch_mul`, many points
+    against one shared scalar.
 - `CurveAffine::batch_decode_vartime`, an `alloc`-gated default method that
   decodes public compressed points with one ordered `Option` result per input.
   It is further accelerated when `sqrt-table` is enabled.
