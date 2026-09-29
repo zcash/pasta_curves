@@ -5,15 +5,16 @@ version = "0.6.0"
 authors = [
     "Sean Bowe",
     "Ying Tong Lai",
-    "Daira-Emma Hopwood <daira@zodl.com>",
+    "Daira-Emma Hopwood <daira@jacaranda.org>",
     "Jack Grigg <jack@zodl.com>",
+    "Kris Nuttycombe <kris@nutty.land>",
+    "Danny Willems <danny@badaas.be>",
 ]
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/zcash/pasta_curves"
 documentation = "https://docs.rs/pasta_curves"
-readme = "README.md"
 
 [package.metadata.docs.rs]
 all-features = true
