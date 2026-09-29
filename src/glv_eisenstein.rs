@@ -1776,7 +1776,7 @@ mod tests {
     /// ladder code and no digit representation, so agreeing on every scalar
     /// is real evidence rather than a tautology.
     mod pbt {
-        use group::Group;
+        use group::{Curve, Group};
         use proptest::prelude::*;
 
         use super::*;
@@ -1826,19 +1826,46 @@ mod tests {
                             prop_assert_eq!(eis, p * k);
                         }
 
-                        /// The batch path, against the per-point ladder.
+                        /// Every batch path, against the native `Mul`: the
+                        /// dispatching `batch_mul`, the affine ladder forced,
+                        /// and the projective one. The size spans the
+                        /// table-build threshold, and a lane may be the
+                        /// identity, which is the case the affine chain has
+                        /// to route around.
                         #[test]
-                        fn batch_mul_matches_solo(
+                        fn batch_paths_match_native(
                             s in scalar_strategy::<Scalar>(),
                             k in scalar_strategy::<Scalar>(),
+                            n in 1usize..20,
+                            idle in proptest::option::of(0usize..20),
                         ) {
                             let g = <$curve>::generator();
                             let base = g * (s + Scalar::ONE);
-                            let pts: Vec<$curve> =
-                                (0..5u64).map(|i| base + g * Scalar::from(i)).collect();
-                            let got = batch_mul(&pts, &k);
-                            for (out, p) in got.iter().zip(&pts) {
-                                prop_assert_eq!(<$curve>::from(*out), *p * k);
+                            let mut pts: Vec<$curve> = (0..n as u64)
+                                .map(|i| base + g * Scalar::from(i))
+                                .collect();
+                            if let Some(i) = idle {
+                                if i < pts.len() {
+                                    pts[i] = <$curve>::identity();
+                                }
+                            }
+
+                            let want: Vec<_> =
+                                pts.iter().map(|p| (*p * k).to_affine()).collect();
+
+                            prop_assert_eq!(batch_mul(&pts, &k), want.clone());
+
+                            let tables = Table::batch(&pts);
+                            let recoded = Recoded::new(&k);
+                            prop_assert_eq!(
+                                Table::batch_mul_affine(&tables, &recoded),
+                                want.clone()
+                            );
+                            for (t, w) in tables.iter().zip(&want) {
+                                prop_assert_eq!(
+                                    t.mul_recoded(&recoded).to_affine(),
+                                    *w
+                                );
                             }
                         }
                     }
@@ -1848,5 +1875,78 @@ mod tests {
 
         eisenstein_pbt!(pallas_pbt, crate::pallas::Point);
         eisenstein_pbt!(vesta_pbt, crate::vesta::Point);
+    }
+
+    /// The same known-answer vectors `glv` checks, against this module's
+    /// recoding. They come from `sage/glv_test_vectors.sage`, so they pin the
+    /// answer rather than agreement between the two recodings.
+    mod vectors {
+        use crate::arithmetic::CurveAffine as _;
+        use crate::glv::tests::vectors::{
+            PALLAS_BATCH, PALLAS_BATCH_K, PALLAS_VECTORS, VESTA_BATCH, VESTA_BATCH_K,
+            VESTA_VECTORS, check, check_batch, from_limbs,
+        };
+
+        use super::*;
+
+        /// The batch vectors against every path this module can take to
+        /// them: the dispatching `batch_mul`, the affine ladder forced, and
+        /// the projective one forced. The expected points come from Sage and
+        /// are re-checked against the native `Mul` inside `check_batch`.
+        fn batch_paths<C>(k: &[u64; 4], vs: &[([u64; 4], [u64; 4], [u64; 4])])
+        where
+            C: GlvParams,
+            C::Base: ff::PrimeField,
+        {
+            check_batch::<C, EisensteinNaf3>(k, vs);
+
+            let k: C::ScalarExt = from_limbs(k);
+            let g = C::generator();
+            let points: Vec<C> = vs
+                .iter()
+                .map(|(s, ..)| g * from_limbs::<C::ScalarExt>(s))
+                .collect();
+            let want: Vec<C::AffineExt> = vs
+                .iter()
+                .map(|(_, x, y)| C::AffineExt::from_xy_unchecked(from_limbs(x), from_limbs(y)))
+                .collect();
+
+            assert_eq!(batch_mul(&points, &k), want, "batch_mul missed a lane");
+
+            let tables = Table::batch(&points);
+            let recoded = Recoded::new(&k);
+            assert_eq!(
+                Table::batch_mul_affine(&tables, &recoded),
+                want,
+                "the affine batch ladder missed a lane"
+            );
+            for (t, w) in tables.iter().zip(&want) {
+                assert_eq!(
+                    t.mul_recoded(&recoded).to_affine(),
+                    *w,
+                    "the projective ladder missed a lane"
+                );
+            }
+        }
+
+        #[test]
+        fn pallas_eisenstein() {
+            check::<crate::pallas::Point, EisensteinNaf3>(&PALLAS_VECTORS);
+        }
+
+        #[test]
+        fn vesta_eisenstein() {
+            check::<crate::vesta::Point, EisensteinNaf3>(&VESTA_VECTORS);
+        }
+
+        #[test]
+        fn pallas_eisenstein_batch() {
+            batch_paths::<crate::pallas::Point>(&PALLAS_BATCH_K, &PALLAS_BATCH);
+        }
+
+        #[test]
+        fn vesta_eisenstein_batch() {
+            batch_paths::<crate::vesta::Point>(&VESTA_BATCH_K, &VESTA_BATCH);
+        }
     }
 }

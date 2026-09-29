@@ -10,6 +10,10 @@ them in the exact shape of the Rust code so the two can be diffed:
 - `glv_boundary_scalars.sage` — the `*_BOUNDARY_SCALAR` witnesses used
   by the `babai_boundary_*` and `native_vs_glv_boundary_*` regression
   tests in `src/glv.rs`.
+- `glv_test_vectors.sage` - known-answer vectors for both recodings:
+  `k * G` on Pallas and Vesta for a fixed set of scalars, printed as the
+  `PALLAS_VECTORS` and `VESTA_VECTORS` tables in the `vectors` test
+  module of `src/glv.rs`, which `src/glv_eisenstein.rs` reuses.
 - `glv_eisenstein.sage`: the Eisenstein-integer recoding in
   `src/glv_eisenstein.rs`: the ring facts it rests on (2 inert in
   `Z[w]`, unit group `mu_6`), the free action of `mu_6` on the 48 odd

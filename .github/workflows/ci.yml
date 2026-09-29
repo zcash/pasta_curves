@@ -107,6 +107,8 @@ jobs:
         run: uv run --locked sage glv_boundary_scalars.sage
       - name: Verify the Eisenstein GLV recoding
         run: uv run --locked sage glv_eisenstein.sage
+      - name: Regenerate the GLV known-answer vectors
+        run: uv run --locked sage glv_test_vectors.sage
 
   book:
     name: Book tests
