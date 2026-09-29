@@ -1835,6 +1835,29 @@ mod tests {
     eisenstein_tests!(pallas_tests, crate::pallas::Point);
     eisenstein_tests!(vesta_tests, crate::vesta::Point);
 
+    /// This module's four entry points, for the shared corner-case suite.
+    fn entry_points<C>() -> crate::glv::conformance::EntryPoints<C>
+    where
+        C: GlvParams,
+    {
+        crate::glv::conformance::EntryPoints {
+            mul: super::mul,
+            batch_mul: super::batch_mul,
+            mul_scalars: super::mul_scalars,
+            mul_pairs: super::mul_pairs,
+        }
+    }
+
+    #[test]
+    fn corner_cases_pallas() {
+        crate::glv::conformance::corner_cases(&entry_points::<crate::pallas::Point>());
+    }
+
+    #[test]
+    fn corner_cases_vesta() {
+        crate::glv::conformance::corner_cases(&entry_points::<crate::vesta::Point>());
+    }
+
     /// Property-based tests. The shared `Recoding` laws for this module's
     /// recoding, and a differential check against `glv`'s: the two share no
     /// ladder code and no digit representation, so agreeing on every scalar

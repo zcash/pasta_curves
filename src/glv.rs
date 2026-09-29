@@ -278,11 +278,136 @@ pub(crate) mod conformance {
     pub(crate) type MulPairs<C> =
         fn(&[(C, <C as crate::arithmetic::CurveExt>::ScalarExt)]) -> Affines<C>;
 
+    /// A module's four free entry points, one per call shape.
+    ///
+    /// Gathered into a struct because they are free functions, one set per
+    /// module, rather than methods of [`Recoding`]: this is what lets a law
+    /// be stated once and run against both recodings.
+    pub(crate) struct EntryPoints<C: GlvParams> {
+        pub(crate) mul: fn(&C, &C::ScalarExt) -> C,
+        pub(crate) batch_mul: fn(&[C], &C::ScalarExt) -> Affines<C>,
+        pub(crate) mul_scalars: MulScalars<C>,
+        pub(crate) mul_pairs: MulPairs<C>,
+    }
+
+    /// The inputs a windowed ladder is most likely to get wrong, against
+    /// every entry point: the ends of the scalar range, the endomorphism's
+    /// own eigenvalue, the width the GLV split rounds at, the point at
+    /// infinity, and batches built entirely out of them.
+    ///
+    /// The property tests draw full-width scalars and nonidentity points, so
+    /// none of this is reachable from them: a uniform draw hits zero, one, or
+    /// the identity with probability around `2^-254`.
+    pub(crate) fn corner_cases<C>(f: &EntryPoints<C>)
+    where
+        C: GlvParams,
+    {
+        use ff::WithSmallOrderMulGroup as _;
+        use group::CurveAffine as _;
+
+        let zero = <C::ScalarExt as ff::Field>::ZERO;
+        let one = <C::ScalarExt as ff::Field>::ONE;
+        let lambda = C::ScalarExt::ZETA;
+        let scalars = [
+            zero,
+            one,
+            -one,
+            C::ScalarExt::from(2),
+            C::ScalarExt::from(3),
+            // 2^w exactly, for both modules' window widths.
+            C::ScalarExt::from(8),
+            C::ScalarExt::from(16),
+            lambda,
+            -lambda,
+            lambda + one,
+            C::ScalarExt::from(u64::MAX),
+            // The half-width boundary the decomposition rounds at.
+            C::ScalarExt::from_u128((1u128 << 127) - 1),
+            C::ScalarExt::from_u128(1u128 << 127),
+            C::ScalarExt::from_u128(1u128 << 127) + one,
+        ];
+
+        let g = C::generator();
+        let o = C::identity();
+        let points = [o, g, -g, g.double(), g * (lambda + C::ScalarExt::from(42))];
+        let o_affine = C::AffineExt::identity();
+
+        for p in points {
+            for k in scalars {
+                let want = p * k;
+                let affine = want.to_affine();
+
+                assert_eq!((f.mul)(&p, &k), want, "mul disagrees with the operator");
+
+                // Negating either argument negates the product, and both
+                // routes to `-kP` must agree.
+                assert_eq!((f.mul)(&p, &(-k)), -want, "mul by -k");
+                assert_eq!((f.mul)(&(-p), &k), -want, "mul of -P");
+                assert_eq!((f.mul)(&p, &k) + (f.mul)(&p, &(-k)), o, "kP + (-k)P");
+
+                // Every plural entry point, at length one.
+                assert_eq!((f.batch_mul)(&[p], &k), alloc::vec![affine], "batch_mul");
+                assert_eq!(
+                    (f.mul_scalars)(&p, &[k]),
+                    alloc::vec![affine],
+                    "mul_scalars"
+                );
+                assert_eq!((f.mul_pairs)(&[(p, k)]), alloc::vec![affine], "mul_pairs");
+            }
+        }
+
+        // Small multiples the ladder has to reproduce by construction, stated
+        // against the group operation rather than against `Mul`.
+        assert_eq!((f.mul)(&g, &C::ScalarExt::from(2)), g.double());
+        assert_eq!((f.mul)(&g, &C::ScalarExt::from(3)), g.double() + g);
+        assert_eq!((f.mul)(&g, &-one), -g, "(n-1)P must be -P");
+        assert_eq!((f.mul)(&g, &zero), o, "0P must be O");
+        assert_eq!((f.mul)(&o, &one), o, "1*O must be O");
+
+        // Batches made entirely of degenerate inputs. Every result is the
+        // identity, so the shared inversion faces nothing but zero
+        // z-coordinates and must not divide by one of them.
+        for got in [
+            (f.batch_mul)(&[o, o, o], &one),
+            (f.batch_mul)(&[g, -g, o], &zero),
+            (f.mul_scalars)(&o, &[one, -one, zero, lambda]),
+            (f.mul_pairs)(&[(o, one), (o, -one), (g, zero)]),
+        ] {
+            assert!(
+                got.iter().all(|q| *q == o_affine),
+                "a degenerate batch must normalize to identities",
+            );
+        }
+
+        // Identities interleaved with real points: the shared inversion has
+        // to skip the zero z without disturbing its neighbours.
+        let mixed = [o, g, o, g.double(), -g, o];
+        let k = lambda + C::ScalarExt::from(7);
+        for (got, p) in (f.batch_mul)(&mixed, &k).iter().zip(&mixed) {
+            assert_eq!(*got, (*p * k).to_affine(), "mixed batch_mul lane");
+        }
+        let pairs: alloc::vec::Vec<_> = mixed.iter().zip(scalars).map(|(p, k)| (*p, k)).collect();
+        for (got, (p, k)) in (f.mul_pairs)(&pairs).iter().zip(&pairs) {
+            assert_eq!(*got, (*p * *k).to_affine(), "mixed mul_pairs lane");
+        }
+        for (got, k) in (f.mul_scalars)(&o, &scalars).iter().zip(scalars) {
+            assert_eq!(*got, o_affine, "O against {k:?} must be O");
+        }
+
+        // The same scalars against points that are not the identity. Without
+        // this, a `mul_scalars` that reused one scalar for the whole slice
+        // survives: every other call here passes it a single-element slice,
+        // or passes the identity, where each answer is the identity whatever
+        // the scalar.
+        for p in [g, -g, g.double()] {
+            for (got, k) in (f.mul_scalars)(&p, &scalars).iter().zip(scalars) {
+                assert_eq!(*got, (p * k).to_affine(), "mul_scalars lane");
+            }
+        }
+    }
+
     /// The plural entry points are elementwise the singular one. They exist
     /// only to share the precomputation, so sharing must not change a value.
-    ///
-    /// Taken as function pointers because these are free functions, one pair
-    /// per module, rather than methods of [`Recoding`].
     pub(crate) fn plural_matches_singular<C>(
         points: &[C],
         ks: &[C::ScalarExt],
@@ -1576,6 +1701,29 @@ pub(crate) mod tests {
     #[test]
     fn edge_cases_vesta() {
         edge_case_matrix::<vesta::Point>();
+    }
+
+    /// This module's four entry points, for the shared corner-case suite.
+    fn entry_points<C>() -> conformance::EntryPoints<C>
+    where
+        C: GlvParams,
+    {
+        conformance::EntryPoints {
+            mul: super::mul,
+            batch_mul: super::batch_mul,
+            mul_scalars: super::mul_scalars,
+            mul_pairs: super::mul_pairs,
+        }
+    }
+
+    #[test]
+    fn corner_cases_pallas() {
+        conformance::corner_cases(&entry_points::<pallas::Point>());
+    }
+
+    #[test]
+    fn corner_cases_vesta() {
+        conformance::corner_cases(&entry_points::<vesta::Point>());
     }
 
     /// Loads a Pasta scalar from its four little-endian limbs.
