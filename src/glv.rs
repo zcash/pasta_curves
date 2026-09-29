@@ -2,14 +2,16 @@
 //!
 //! Both Pasta curves carry a cube-root endomorphism
 //! $\phi(x, y) = (\zeta x, y)$ (exposed as [`CurveExt::endo`]), for which
-//! $\phi(P) = \lambda P$ with $\lambda$ = `Scalar::ZETA`. This module uses that
-//! structure to split a full-width scalar multiplication $k P$ into two
+//! $\phi(P) = \lambda P$ with $\lambda$ = [`Scalar::ZETA`]. This module uses
+//! that structure to split a full-width scalar multiplication $k P$ into two
 //! half-width multiplications evaluated against a shared table of odd multiples
 //! of $P$ and $\phi(P)$.
 //!
 //! This path is variable-time in the scalar (GLV decomposition plus wNAF
 //! recoding); the `_glv` naming distinguishes it from the native `Mul`
 //! implementations, which are unchanged.
+//!
+//! [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
 //!
 //! # References
 //!
@@ -40,7 +42,7 @@ use ff::PrimeField;
 use ff::WithSmallOrderMulGroup;
 use group::CurveAffine as _;
 
-use crate::arithmetic::{CurveExt, mac, sbb};
+use crate::arithmetic::{CurveExt, VartimeField, mac, sbb};
 use crate::{pallas, vesta};
 
 mod private {
@@ -53,12 +55,19 @@ mod private {
 
 /// Per-curve GLV constants: a short basis for the lattice
 /// $\{(a, b) : a + b\lambda \equiv 0 \pmod n\}$ — where $n$ is the order of the
-/// group (equivalently the scalar field modulus) and $\lambda$ = `Scalar::ZETA`
-/// — together with the Babai rounding coefficients derived from that basis.
+/// group (equivalently the scalar field modulus) and $\lambda$ =
+/// [`Scalar::ZETA`] — together with the Babai rounding coefficients derived
+/// from that basis.
+///
+/// [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
+///
+/// The base field is required to implement [`VartimeField`], so that
+/// [`crate::glv_eisenstein`]'s batch-affine ladder can reach the safegcd
+/// inversion.
 ///
 /// This trait is sealed; it is implemented for [`pallas::Point`] and
 /// [`vesta::Point`].
-pub trait GlvParams: CurveExt + private::Sealed {
+pub trait GlvParams: CurveExt<Base: VartimeField> + private::Sealed {
     /// First short lattice vector `v1 = (V1A, -V1B_NEG)`.
     const V1A: u128;
     /// Magnitude of `v1`'s (negative) second component.
@@ -93,10 +102,12 @@ pub trait GlvParams: CurveExt + private::Sealed {
 /// this impl body verbatim.
 ///
 /// The `constants` test (see the module's test suite) re-verifies the short
-/// basis against Pallas's own $\lambda$ = `Scalar::ZETA` using field
+/// basis against Pallas's own $\lambda$ = [`Scalar::ZETA`] using field
 /// arithmetic alone, and the Babai coefficients `G1`/`G2` against their
 /// defining rounding using limb arithmetic alone; the `decompose` tests prove
 /// that the decomposition reconstructs `k`. A wrong constant cannot pass them.
+///
+/// [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
 impl GlvParams for pallas::Point {
     const V1A: u128 = 0x49e69d1640f049157fcae1c700000001;
     const V1B_NEG: u128 = 0x49e69d1640a899538cb1279300000000;
@@ -120,8 +131,10 @@ impl GlvParams for pallas::Point {
 
 /// As for Pallas, these constants are computed by `sage/glv_constants.sage`,
 /// and the `constants` and `decompose` tests re-verify them against Vesta's
-/// own $\lambda$ = `Scalar::ZETA` and the Babai coefficients' defining
+/// own $\lambda$ = [`Scalar::ZETA`] and the Babai coefficients' defining
 /// rounding.
+///
+/// [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
 impl GlvParams for vesta::Point {
     const V1A: u128 = 0x49e69d1640f049157fcae1c700000000;
     const V1B_NEG: u128 = 0x49e69d1640a899538cb1279300000001;
@@ -220,7 +233,10 @@ fn signed_halves(x: [u64; 4]) -> (bool, u128) {
 /// The four little-endian limbs of a Pasta scalar. (Pasta scalars have a
 /// 32-byte little-endian representation; the four 8-byte reads cover it
 /// exactly.)
-fn scalar_limbs<F: PrimeField>(k: &F) -> [u64; 4] {
+fn scalar_limbs<F>(k: &F) -> [u64; 4]
+where
+    F: PrimeField,
+{
     let bytes = k.to_repr();
     let bytes: &[u8] = bytes.as_ref();
     let mut limbs = [0u64; 4];
@@ -232,7 +248,10 @@ fn scalar_limbs<F: PrimeField>(k: &F) -> [u64; 4] {
 
 /// GLV split: `k = k1 + k2 * lambda (mod n)` with `|k1|`, `|k2|` strictly
 /// below `2^127`, each half returned as `(is_negative, magnitude)`.
-fn decompose<C: GlvParams>(k: &C::ScalarExt) -> ((bool, u128), (bool, u128)) {
+pub(crate) fn decompose<C>(k: &C::ScalarExt) -> ((bool, u128), (bool, u128))
+where
+    C: GlvParams,
+{
     let kl = scalar_limbs(k);
     let c1 = round_mul_shift(&C::G1, &kl);
     let c2 = round_mul_shift(&C::G2, &kl);
@@ -249,14 +268,20 @@ fn decompose<C: GlvParams>(k: &C::ScalarExt) -> ((bool, u128), (bool, u128)) {
 /// Build one with [`Table::new`], or many with one shared normalization via
 /// [`Table::batch`].
 #[derive(Clone, Copy, Debug)]
-pub struct Table<C: GlvParams> {
+pub struct Table<C>
+where
+    C: GlvParams,
+{
     /// `{1, 3, 5, 7} * P`
     t1: [C::AffineExt; 4],
     /// `{1, 3, 5, 7} * phi(P)`
     t2: [C::AffineExt; 4],
 }
 
-impl<C: GlvParams> Table<C> {
+impl<C> Table<C>
+where
+    C: GlvParams,
+{
     /// Builds the window for a single point (with no heap allocation, but
     /// one field inversion; amortize that with [`Table::batch`]).
     pub fn new(p: &C) -> Self {
@@ -364,7 +389,10 @@ impl<C: GlvParams> Table<C> {
 /// recoding out of a loop that multiplies the same scalar against many
 /// tables (e.g. one viewing key against a batch of ephemeral keys).
 #[derive(Clone, Debug)]
-pub struct Decomposed<C: GlvParams> {
+pub struct Decomposed<C>
+where
+    C: GlvParams,
+{
     digits1: [i8; MAX_WNAF_DIGITS],
     digits2: [i8; MAX_WNAF_DIGITS],
     /// Digit positions in use: the longer of the two halves' wNAF lengths.
@@ -373,7 +401,10 @@ pub struct Decomposed<C: GlvParams> {
     _curve: core::marker::PhantomData<C>,
 }
 
-impl<C: GlvParams> Decomposed<C> {
+impl<C> Decomposed<C>
+where
+    C: GlvParams,
+{
     /// Decomposes `k` and recodes both halves as width-4 wNAF digits, with
     /// each half's sign folded into its digits.
     pub fn new(k: &C::ScalarExt) -> Self {
@@ -463,7 +494,10 @@ mod tests {
     }
 
     /// Deterministic full-width scalars for the known-answer tests.
-    fn scalars<F: PrimeField>(n: u64) -> impl Iterator<Item = F> {
+    fn scalars<F>(n: u64) -> impl Iterator<Item = F>
+    where
+        F: PrimeField,
+    {
         (0..n).map(|i| {
             (F::from(0x9E37_79B9_7F4A_7C15u64 + i).square() + F::from(0x0123_4567_89AB_CDEFu64))
                 .square()
@@ -475,7 +509,10 @@ mod tests {
     /// using limb arithmetic only: `g` is that rounding if and only if
     /// `|2^384 * v - g * n| < n/2` (an exact tie is impossible: `n` is odd,
     /// so `n/2` is not an integer).
-    fn babai_coefficient_verify<C: GlvParams>(g: &[u64; 5], v: u128) {
+    fn babai_coefficient_verify<C>(g: &[u64; 5], v: u128)
+    where
+        C: GlvParams,
+    {
         // n = (n - 1) + 1, with n - 1 read out of the field type as -1.
         // n is odd, so n - 1 is even and adding the 1 back cannot carry.
         let mut n = scalar_limbs(&-C::ScalarExt::ONE);
@@ -530,10 +567,15 @@ mod tests {
     }
 
     /// The short-basis lattice relations, re-verified against the curve's
-    /// own lambda (= `Scalar::ZETA`) using field arithmetic only:
+    /// own lambda (= [`Scalar::ZETA`]) using field arithmetic only:
     ///   V1A - V1B_NEG*lambda == 0  and  V2A + V2B*lambda == 0  (mod n),
     /// plus the Babai coefficients G1/G2 against their defining rounding.
-    fn constants_verify<C: GlvParams>() {
+    ///
+    /// [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
+    fn constants_verify<C>()
+    where
+        C: GlvParams,
+    {
         let lambda = C::ScalarExt::ZETA;
         let from = C::ScalarExt::from_u128;
         assert_eq!(from(C::V1A), from(C::V1B_NEG) * lambda, "v1 not in lattice");
@@ -544,7 +586,10 @@ mod tests {
 
     /// The endomorphism / lambda pairing on the real curve, on the same
     /// projective `endo` the table build relies on: `phi(P) == ZETA * P`.
-    fn endo_map_is_lambda<C: GlvParams>() {
+    fn endo_map_is_lambda<C>()
+    where
+        C: GlvParams,
+    {
         let g = C::generator();
         for k in scalars::<C::ScalarExt>(64) {
             let p = g * k;
@@ -559,7 +604,10 @@ mod tests {
     /// The algebraic gate: k1 + k2*lambda == k (mod n) with both halves at most
     /// 2^127, for full-width scalars and the edge cases. Wrong GLV
     /// constants cannot pass this.
-    fn decompose_reconstructs<C: GlvParams>() {
+    fn decompose_reconstructs<C>()
+    where
+        C: GlvParams,
+    {
         let lambda = C::ScalarExt::ZETA;
         let check = |k: C::ScalarExt| {
             let ((neg1, a1), (neg2, a2)) = decompose::<C>(&k);
@@ -582,7 +630,10 @@ mod tests {
     }
 
     /// Table-based multiplication matches the group's native `Mul`.
-    fn table_mul_matches_group_mul<C: GlvParams>() {
+    fn table_mul_matches_group_mul<C>()
+    where
+        C: GlvParams,
+    {
         let g = C::generator();
         for (i, k) in scalars::<C::ScalarExt>(64).enumerate() {
             let p = g * (k + C::ScalarExt::from(i as u64 + 1));
@@ -594,7 +645,10 @@ mod tests {
     }
 
     /// One-shot `mul_glv` matches the native operator.
-    fn mul_glv_matches_operator<C: GlvParams>() {
+    fn mul_glv_matches_operator<C>()
+    where
+        C: GlvParams,
+    {
         let g = C::generator();
         for k in scalars::<C::ScalarExt>(64) {
             let p = g * (k + C::ScalarExt::ONE);
@@ -603,7 +657,10 @@ mod tests {
     }
 
     /// The batched table build equals the solo build, point by point.
-    fn batch_tables_equal_solo<C: GlvParams>() {
+    fn batch_tables_equal_solo<C>()
+    where
+        C: GlvParams,
+    {
         let g = C::generator();
         let points: Vec<C> = scalars::<C::ScalarExt>(16)
             .map(|k| g * (k + C::ScalarExt::ONE))
@@ -623,7 +680,10 @@ mod tests {
     }
 
     /// Identity tables work both alone and alongside non-identity tables.
-    fn identity_tables<C: GlvParams>() {
+    fn identity_tables<C>()
+    where
+        C: GlvParams,
+    {
         let identity = C::identity();
         let generator = C::generator();
         let k = C::ScalarExt::from(0xDEAD_BEEFu64);
@@ -642,7 +702,10 @@ mod tests {
 
     /// A reused [`Decomposed`] gives the same products as decomposing
     /// per-multiplication.
-    fn decomposed_reuse_matches_fresh<C: GlvParams>() {
+    fn decomposed_reuse_matches_fresh<C>()
+    where
+        C: GlvParams,
+    {
         let g = C::generator();
         let k = scalars::<C::ScalarExt>(1).next().unwrap();
         let decomposed = Decomposed::<C>::new(&k);
@@ -705,7 +768,10 @@ mod tests {
     /// `decompose`): the additive/multiplicative identities and their
     /// negations, lambda and its neighbours (the decomposition's own axis), and
     /// the half-width boundary where k1/k2 magnitudes live.
-    fn edge_case_matrix<C: GlvParams>() {
+    fn edge_case_matrix<C>()
+    where
+        C: GlvParams,
+    {
         let lambda = C::ScalarExt::ZETA;
         let edge_scalars = [
             C::ScalarExt::ZERO,
@@ -744,7 +810,10 @@ mod tests {
     }
 
     /// Loads a Pasta scalar from its four little-endian limbs.
-    fn scalar_from_limbs<F: PrimeField>(limbs: [u64; 4]) -> F {
+    fn scalar_from_limbs<F>(limbs: [u64; 4]) -> F
+    where
+        F: PrimeField,
+    {
         let mut bytes = [0u8; 32];
         for (chunk, limb) in bytes.chunks_exact_mut(8).zip(limbs.iter()) {
             chunk.copy_from_slice(&limb.to_le_bytes());
@@ -782,7 +851,10 @@ mod tests {
     ///
     /// With the shipped constants the witness must behave like any other
     /// scalar; the second half of the test pins its boundary geometry.
-    fn babai_boundary_witness<C: GlvParams>(limbs: [u64; 4]) {
+    fn babai_boundary_witness<C>(limbs: [u64; 4])
+    where
+        C: GlvParams,
+    {
         let k = scalar_from_limbs::<C::ScalarExt>(limbs);
         assert_eq!(
             scalar_limbs(&k),
@@ -852,7 +924,10 @@ mod tests {
     /// right; the broken invariant is the observable, not a wrong point.)
     /// On the pre-`babai_coefficient_verify` code, this test alone
     /// detects the flip; nothing else in that suite did.
-    fn native_vs_glv_boundary<C: GlvParams>(limbs: [u64; 4]) {
+    fn native_vs_glv_boundary<C>(limbs: [u64; 4])
+    where
+        C: GlvParams,
+    {
         let k = scalar_from_limbs::<C::ScalarExt>(limbs);
         let p = C::generator() * (k + C::ScalarExt::ONE);
         assert_eq!(p.mul_glv(&k), p * k, "GLV must agree with native Mul");
@@ -877,7 +952,10 @@ mod tests {
 
         use super::*;
 
-        fn scalar_strategy<F: PrimeField + ff::FromUniformBytes<64>>() -> impl Strategy<Value = F> {
+        fn scalar_strategy<F>() -> impl Strategy<Value = F>
+        where
+            F: PrimeField + ff::FromUniformBytes<64>,
+        {
             proptest::array::uniform4(any::<u64>()).prop_map(|limbs| {
                 let mut bytes = [0u8; 64];
                 for (i, l) in limbs.iter().enumerate() {
