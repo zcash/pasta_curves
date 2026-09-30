@@ -22,14 +22,14 @@ from asm_source import Declaration, GenerationError, ParsedFunction
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "src/asm/x86_64.rs"
-OUTPUT = ROOT / "lean/PastaAsm/X86_64/Transcription.lean"
+OUTPUT = ROOT / "lean/PastaCurves/X86_64/Transcription.lean"
 PASTA_HIGH_LIMB = 1 << 62
 
 HEADER = """/-
 Copyright Supranational LLC (the routines, transcribed from Semolina v0.1.4).
 Copyright (c) 2026 the pasta_curves contributors (the transcription).
 -/
-import PastaAsm.X86_64.Semantics
+import PastaCurves.X86_64.Semantics
 
 /-!
 # The crate's inline x86-64 Pasta field blocks, transcribed
@@ -49,14 +49,14 @@ written it. The fixed RDX operand, 32-bit `:e` XOR-zero idiom, operand outputs, 
 Rust return-tuple order are parsed from the source rather than inferred here.
 -/
 
-namespace PastaAsm.X86_64
+namespace PastaCurves.X86_64
 
 -- A mechanical transcription intentionally retains dead architectural results.
 set_option linter.unusedVariables false
 
 """
 
-FOOTER = "\nend PastaAsm.X86_64\n"
+FOOTER = "\nend PastaCurves.X86_64\n"
 
 
 @dataclasses.dataclass(frozen=True)

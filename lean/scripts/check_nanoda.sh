@@ -23,7 +23,7 @@ LAKE=${LAKE:-lake}
 
 # The export root: the package's root module, which imports every other module (checked
 # below), so a module cannot silently drop out of the re-check.
-ROOTS=(PastaAsm)
+ROOTS=(PastaCurves)
 
 python3 scripts/check_export_coverage.py "${ROOTS[@]}"
 

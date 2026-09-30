@@ -26,8 +26,8 @@ def main():
     if not roots:
         print("usage: check_export_coverage.py <root-module>...", file=sys.stderr)
         return 2
-    files = [Path("PastaAsm.lean")]
-    files += sorted(Path("PastaAsm").rglob("*.lean"))
+    files = [Path("PastaCurves.lean")]
+    files += sorted(Path("PastaCurves").rglob("*.lean"))
     imports = {module_name(f): set(IMPORT.findall(f.read_text())) for f in files}
     reachable, todo = set(), list(roots)
     while todo:

@@ -144,7 +144,7 @@ backend, update these conditions and keep doc-only fallback bodies non-executabl
 
 ## The Lean formalization (`lean`)
 
-`lean/` is a Lake package (`PastaAsm`) with shared definitions and architecture-specific
+`lean/` is a Lake package (`PastaCurves`) with shared definitions and architecture-specific
 submodules. Its instruction-level models contribute to assuring the backend's routines'
 correctness; see `lean/README.md` for the implemented coverage, trust story, theorems and their
 caveats, and how those theorems are proven. All architectures use the same formalization

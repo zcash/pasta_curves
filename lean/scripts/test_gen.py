@@ -817,7 +817,7 @@ class SkeletonCheckerTests(unittest.TestCase):
             self.assertIn("cannot read proof file", diagnostics.getvalue())
 
     def test_manifest_selects_existing_files_and_rejects_mismatched(self):
-        add_path = gen.ROOT / "lean/PastaAsm/X86_64/Spec/Add.lean"
+        add_path = gen.ROOT / "lean/PastaCurves/X86_64/Spec/Add.lean"
         available = gen.architecture_routines()
         for name, (arch, expected_names) in gen.SPEC_MANIFEST.items():
             with self.subTest(path=name):

@@ -3,10 +3,10 @@
 
 Reads the inline `asm!` blocks in `src/asm/aarch64.rs` and `src/asm/x86_64.rs`, and writes
 
-- `lean/PastaAsm/<Architecture>/Transcription.lean`: each block as a Lean definition over
+- `lean/PastaCurves/<Architecture>/Transcription.lean`: each block as a Lean definition over
   its instruction semantics, one `let` per instruction result, in the block's order,
   with the instruction as a trailing comment;
-- `lean/PastaAsm/<Architecture>/Vectors.lean`: one kernel-checked example per line of
+- `lean/PastaCurves/<Architecture>/Vectors.lean`: one kernel-checked example per line of
   `test-vectors/pasta_mul-armv8-vectors.txt` whose operands are inside the backend's
   contracts, the outputs of the real routines on an Apple M-series machine.
 
@@ -245,9 +245,9 @@ def in_public_contract(op, key, operands):
     raise ValueError(f"unknown operation {op}")
 
 
-OUT_VECTORS = ROOT / "lean/PastaAsm/Vectors.lean"
+OUT_VECTORS = ROOT / "lean/PastaCurves/Vectors.lean"
 
-VECTORS_INTRODUCTION = """import PastaAsm.Fields
+VECTORS_INTRODUCTION = """import PastaCurves.Fields
 
 /-!
 # Reference vectors for the transcribed blocks
@@ -266,7 +266,7 @@ and the expected result. The fields are `pallasBase` and `vestaBase` from `Field
 crate's constants for its `Fp` (the Pallas base field) and `Fq` (the Vesta base field).
 -/
 
-namespace PastaAsm
+namespace PastaCurves
 
 """
 
@@ -319,7 +319,7 @@ def render_vector_data(lines):
     n = sum(len(entries) for entries in rows.values())
     omitted = ", ".join(f"{k} {op}" for op, k in sorted(skipped.items())) or "none"
     out.append(
-        f"-- {n} vectors; omitted as outside the public contracts: {omitted}.\n\nend PastaAsm\n"
+        f"-- {n} vectors; omitted as outside the public contracts: {omitted}.\n\nend PastaCurves\n"
     )
     return "".join(out)
 
@@ -327,7 +327,7 @@ def render_vector_data(lines):
 # --- the backend tests' known answers -----------------------------------------------------
 
 KNOWN_ANSWERS = ROOT / "src/asm/tests.rs"
-OUT_KNOWN_ANSWERS = ROOT / "lean/PastaAsm/KnownAnswers.lean"
+OUT_KNOWN_ANSWERS = ROOT / "lean/PastaCurves/KnownAnswers.lean"
 
 # The known answers that `src/asm/tests.rs` writes as literals, by field name: what each one is,
 # as a Lean proposition about its value `x` at the field's modulus `p`. A literal with any other
@@ -351,7 +351,7 @@ KNOWN_ANSWER_SPECS = {
 # The `Field` constants of `src/asm/tests.rs`, by Rust name, as `Fields.lean` names the field.
 KNOWN_ANSWER_FIELDS = {"FP": "pallasBase", "FQ": "vestaBase"}
 
-KNOWN_ANSWERS_INTRODUCTION = """import PastaAsm.Fields
+KNOWN_ANSWERS_INTRODUCTION = """import PastaCurves.Fields
 
 /-!
 # The backend tests' known answers
@@ -364,7 +364,7 @@ evaluation. `lean/scripts/check.sh` regenerates this file and fails if it differ
 changed in the tests is checked here too.
 -/
 
-namespace PastaAsm.KnownAnswers
+namespace PastaCurves.KnownAnswers
 
 """
 
@@ -401,13 +401,13 @@ def render_known_answers(text):
         # The limbs on a line of their own keep every line within the repository's width.
         out.append(f"    let x := Limbs.toNat\n      ⟨{literal}⟩\n")
         out.append(f"    {prop} := by\n  decide +kernel\n\n")
-    out.append("end PastaAsm.KnownAnswers\n")
+    out.append("end PastaCurves.KnownAnswers\n")
     return "".join(out)
 
 
 # --- the field types' constants -----------------------------------------------------------
 
-OUT_FIELD_TYPES = ROOT / "lean/PastaAsm/FieldTypes.lean"
+OUT_FIELD_TYPES = ROOT / "lean/PastaCurves/FieldTypes.lean"
 
 # The field types' source files, as `Fields.lean` names their fields.
 FIELD_TYPE_SOURCES = {"fp": "pallasBase", "fq": "vestaBase"}
@@ -415,7 +415,7 @@ FIELD_TYPE_SOURCES = {"fp": "pallasBase", "fq": "vestaBase"}
 # The Montgomery constants of a field type: the power of `R` that each one is, mod `p`.
 FIELD_TYPE_POWERS = {"R": "R", "R2": "R^2", "R3": "R^3"}
 
-FIELD_TYPES_INTRODUCTION = """import PastaAsm.Fields
+FIELD_TYPES_INTRODUCTION = """import PastaCurves.Fields
 
 /-!
 # The field types' constants
@@ -428,7 +428,7 @@ them. The modulus and `INV` are checked against the fields of `Fields.lean`, and
 the field types is checked here too.
 -/
 
-namespace PastaAsm.FieldTypes
+namespace PastaCurves.FieldTypes
 
 """
 
@@ -468,7 +468,7 @@ def render_field_types(sources):
             out.append(f"example : let p := {lean_field}.modulus.toNat\n")
             out.append(f"    let x := Limbs.toNat\n      ⟨{', '.join(powers[name])}⟩\n")
             out.append(f"    x = {power} % p := by\n  decide +kernel\n\n")
-    out.append("end PastaAsm.FieldTypes\n")
+    out.append("end PastaCurves.FieldTypes\n")
     return "".join(out)
 
 
@@ -888,15 +888,15 @@ def generated_outputs():
 
 # Existing proof files only. None selects every generated routine of that architecture.
 SPEC_MANIFEST = {
-    "lean/PastaAsm/AArch64/Spec/Add.lean": ("AArch64", ("addMod",)),
-    "lean/PastaAsm/AArch64/Spec/Sub.lean": ("AArch64", ("subMod",)),
-    "lean/PastaAsm/AArch64/Spec/Mul.lean": ("AArch64", ("mulMont", "mulMontRound")),
-    "lean/PastaAsm/AArch64/Spec/Square.lean": ("AArch64", ("sqrMont",)),
-    "lean/PastaAsm/X86_64/Spec/Add.lean": ("X86_64", ("addMod",)),
-    "lean/PastaAsm/X86_64/Spec/Sub.lean": ("X86_64", ("subMod",)),
-    "lean/PastaAsm/X86_64/Spec/FromMont.lean": ("X86_64", ("fromMont",)),
-    "lean/PastaAsm/X86_64/Spec/Mul.lean": ("X86_64", ("mulMont", "mulMontRound")),
-    "lean/PastaAsm/X86_64/Spec/Square.lean": ("X86_64", ("squareLo", "squareHi")),
+    "lean/PastaCurves/AArch64/Spec/Add.lean": ("AArch64", ("addMod",)),
+    "lean/PastaCurves/AArch64/Spec/Sub.lean": ("AArch64", ("subMod",)),
+    "lean/PastaCurves/AArch64/Spec/Mul.lean": ("AArch64", ("mulMont", "mulMontRound")),
+    "lean/PastaCurves/AArch64/Spec/Square.lean": ("AArch64", ("sqrMont",)),
+    "lean/PastaCurves/X86_64/Spec/Add.lean": ("X86_64", ("addMod",)),
+    "lean/PastaCurves/X86_64/Spec/Sub.lean": ("X86_64", ("subMod",)),
+    "lean/PastaCurves/X86_64/Spec/FromMont.lean": ("X86_64", ("fromMont",)),
+    "lean/PastaCurves/X86_64/Spec/Mul.lean": ("X86_64", ("mulMont", "mulMontRound")),
+    "lean/PastaCurves/X86_64/Spec/Square.lean": ("X86_64", ("squareLo", "squareHi")),
 }
 
 # Missing proofs are tracked by routine, not by hypothetical files.
