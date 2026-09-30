@@ -55,6 +55,13 @@ example : let p := pallasBase.modulus.toNat
     x = p - 2 := by
   decide +kernel
 
+-- `FP.from_mont_ones`: the conversion of the all-ones input, `(2^256 - 1) R^-1 mod p`.
+example : let p := pallasBase.modulus.toNat
+    let x := Limbs.toNat
+      ⟨0xc9eda265ac589659, 0x75a6de91c8d4fcc3, 0x8f34d6691037659a, 0x1e0e3b00e1dd872a⟩
+    x < p ∧ (x*R) % p = (2^256 - 1) % p := by
+  decide +kernel
+
 -- `FQ.two_r`: `2R mod p`.
 example : let p := vestaBase.modulus.toNat
     let x := Limbs.toNat
@@ -95,6 +102,13 @@ example : let p := vestaBase.modulus.toNat
     let x := Limbs.toNat
       ⟨0x8c46eb20ffffffff, 0x224698fc0994a8dd, 0x0000000000000000, 0x4000000000000000⟩
     x = p - 2 := by
+  decide +kernel
+
+-- `FQ.from_mont_ones`: the conversion of the all-ones input, `(2^256 - 1) R^-1 mod p`.
+example : let p := vestaBase.modulus.toNat
+    let x := Limbs.toNat
+      ⟨0x2b2d474371e59083, 0x5bb8b7d46bcea6f2, 0xa86f41a73faf20ec, 0x20857622e89b86ac⟩
+    x < p ∧ (x*R) % p = (2^256 - 1) % p := by
   decide +kernel
 
 end PastaAsm.KnownAnswers

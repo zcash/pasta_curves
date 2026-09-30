@@ -55,6 +55,8 @@ struct Field {
     pm1_sq: Limbs,
     /// `p - 2`.
     pm2: Limbs,
+    /// `from_mont` of the all-ones input, `(2^256 - 1) R^-1 mod p`.
+    from_mont_ones: Limbs,
 }
 
 /// The Pallas base field (`pasta_curves::Fp`).
@@ -99,6 +101,12 @@ const FP: Field = Field {
         0x224698fc094cf91b,
         0x0000000000000000,
         0x4000000000000000,
+    ],
+    from_mont_ones: [
+        0xc9eda265ac589659,
+        0x75a6de91c8d4fcc3,
+        0x8f34d6691037659a,
+        0x1e0e3b00e1dd872a,
     ],
 };
 
@@ -145,6 +153,12 @@ const FQ: Field = Field {
         0x0000000000000000,
         0x4000000000000000,
     ],
+    from_mont_ones: [
+        0x2b2d474371e59083,
+        0x5bb8b7d46bcea6f2,
+        0xa86f41a73faf20ec,
+        0x20857622e89b86ac,
+    ],
 };
 
 const FIELDS: [&Field; 2] = [&FP, &FQ];
@@ -177,6 +191,8 @@ fn known_answers_match_the_portable_arithmetic() {
             assert_eq!(portable_mul(f.r2, f.r3), f.r4);
             assert_eq!(portable_mul(portable_square(portable_square(f.r2)), f.r3), f.r7);
             assert_eq!(portable_mul(pm1, pm1), f.pm1_sq);
+            // `from_mont` of the all-ones input: its Montgomery product with the residue `1`.
+            assert_eq!(portable_mul([u64::MAX; 4], ONE), f.from_mont_ones);
         }};
     }
     check!(Fp, &FP);
@@ -321,27 +337,10 @@ fn from_mont_known_answers() {
         assert_eq!(from_mont(&f.r, &f.modulus, f.inv), ONE);
         assert_eq!(from_mont(&f.r2, &f.modulus, f.inv), f.r);
         assert_eq!(from_mont(&ZERO, &f.modulus, f.inv), ZERO);
+        // `from_mont` accepts any four-limb value: the all-ones input is the
+        // extreme case of that contract, where the candidate is largest.
+        assert_eq!(from_mont(&[u64::MAX; 4], &f.modulus, f.inv), f.from_mont_ones);
     }
-    // `from_mont` accepts any four-limb value: the all-ones input is the
-    // extreme case of that contract, where the candidate is largest.
-    assert_eq!(
-        from_mont(&[u64::MAX; 4], &FP.modulus, FP.inv),
-        [
-            0xc9eda265ac589659,
-            0x75a6de91c8d4fcc3,
-            0x8f34d6691037659a,
-            0x1e0e3b00e1dd872a,
-        ]
-    );
-    assert_eq!(
-        from_mont(&[u64::MAX; 4], &FQ.modulus, FQ.inv),
-        [
-            0x2b2d474371e59083,
-            0x5bb8b7d46bcea6f2,
-            0xa86f41a73faf20ec,
-            0x20857622e89b86ac,
-        ]
-    );
 }
 
 /// The reference vectors: outputs of Semolina's `mul_mont_pasta`, `sqr_mont_pasta`, and

@@ -349,6 +349,10 @@ KNOWN_ANSWER_SPECS = {
         "the Montgomery square of `p-1`, `(p-1)^2 R^-1 mod p`",
         "x < p ∧ (x*R) % p = ((p-1) * (p-1)) % p",
     ),
+    "from_mont_ones": (
+        "the conversion of the all-ones input, `(2^256 - 1) R^-1 mod p`",
+        "x < p ∧ (x*R) % p = (2^256 - 1) % p",
+    ),
 }
 
 # The `Field` constants of `src/asm/tests.rs`, by Rust name, as `Fields.lean` names the field.
