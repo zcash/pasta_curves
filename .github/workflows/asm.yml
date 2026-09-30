@@ -2,6 +2,12 @@ name: Assembly backend
 
 # The checks specific to the assembly backend under `src/asm`; `ci.yml` builds and tests the
 # crate on Apple silicon, Ubuntu, and Windows in both feature configurations.
+#
+# Always triggers, so the required `Assembly backend CI` check is always reported (a workflow
+# skipped by `on.paths` would leave a required check pending and block merges). The jobs are
+# instead gated on a path filter computed inside the run, since they are irrelevant to a change
+# that provably cannot affect the crate's build. Erring toward running keeps a change from
+# dodging the checks by touching a file that the filter did not anticipate.
 
 on:
   push:
@@ -16,8 +22,31 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect backend-relevant changes
+    runs-on: ubuntu-latest
+    outputs:
+      asm: ${{ steps.filter.outputs.asm }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # dorny/paths-filter compiles each rule to its own picomatch matcher and ORs them, so a
+      # change is backend-relevant iff some changed file is outside the set that cannot affect
+      # the crate's build, or is this workflow. Note this is NOT the sequential-negation
+      # semantics of GitHub's own `on.paths` engine.
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
+        id: filter
+        with:
+          filters: |
+            asm:
+              - '!{book/**,lean/**,sage/**,.github/**,scripts/**,*.md,LICENSE-*,ruff.toml,katex-header.html}'
+              - '.github/workflows/asm.yml'
+
   test:
     name: Test the backend on ${{ matrix.os }}
+    needs: changes
+    if: needs.changes.outputs.asm == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -87,6 +116,8 @@ jobs:
 
   no-std:
     name: no_std, with no std to fall back on
+    needs: changes
+    if: needs.changes.outputs.asm == 'true'
     # `#![no_std]` keeps std out of the crate's own code, but the targets the
     # backend compiles on have a std to link, so build core from source instead
     # of using the sysroot: nothing that reaches for std can compile. The code
@@ -109,6 +140,8 @@ jobs:
 
   intel-macos:
     name: No backend on Intel macOS
+    needs: changes
+    if: needs.changes.outputs.asm == 'true'
     # Apple x86-64 targets reserve `rbp`, and so have fewer available registers
     # than the squaring blocks need; the `asm` module compiles out there instead
     # of failing to build.
@@ -134,3 +167,34 @@ jobs:
               exit 1
             fi
           done
+
+  asm-ci:
+    # The single stable check to mark as a required status check. It runs unless the workflow run
+    # was cancelled, and fails only if a job that ran failed. A run that a newer one cancels (two
+    # pushes in quick succession, as with stacked branches) reports nothing; the newer run reports
+    # instead. A failure in any leg of the test matrix fails `test` as a whole.
+    name: Assembly backend CI
+    needs: [changes, test, no-std, intel-macos]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on the jobs' results
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          RESULTS: >-
+            test=${{ needs.test.result }}
+            no-std=${{ needs.no-std.result }}
+            intel-macos=${{ needs.intel-macos.result }}
+        run: |
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "The changes-detection job did not succeed."
+            exit 1
+          fi
+          status=0
+          for result in $RESULTS; do
+            case "${result#*=}" in
+              success|skipped) echo "$result" ;;
+              *) echo "$result: failed"; status=1 ;;
+            esac
+          done
+          exit "$status"
