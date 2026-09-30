@@ -74,8 +74,10 @@ What is trusted, beyond Lean's kernel and standard axioms:
    multiplication by `1`; the examples cover the operands inside the proved contracts, where
    the blocks compute the same values.
 5. The field constants in `Fields.lean`, the modulus limbs and `inv` of the two Pasta base
-   fields as the crate's tests spell them: `decide` checks that the limbs encode the primes as
-   pasta_curves states them, and every vector is checked with them.
+   fields: `decide` checks that the limbs encode the primes as pasta_curves states them, and
+   every vector is checked with them. `FieldTypes.lean`, generated from `src/fields/fp.rs` and
+   `src/fields/fq.rs`, checks that they are the field types' `MODULUS` and `INV`, and that the
+   field types' `R`, `R2`, and `R3` are the powers of `R` they name.
 
 Not modelled formally: the compiler's handling of the blocks' operands, that is, the
 allocation of registers to the placeholders and the `options(pure, nomem, nostack)`
@@ -92,6 +94,7 @@ PastaAsm.lean                         root module, imports everything below
 PastaAsm/Semantics.lean               shared 64-bit arithmetic and limb representation
 PastaAsm/Compositions.lean            shared operand comparisons and contracts
 PastaAsm/Fields.lean                  the two fields and facts about their constants
+PastaAsm/FieldTypes.lean              GENERATED: the field types' constants, checked
 PastaAsm/KnownAnswers.lean            GENERATED: the backend tests' known-answer literals, checked
 PastaAsm/Spec.lean                    shared arithmetic and limb lemmas
 PastaAsm/Vectors.lean                 GENERATED: the reference vectors inside the contracts

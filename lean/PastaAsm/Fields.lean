@@ -37,9 +37,8 @@ structure PastaField where
   /-- `inv * p0 ≡ -1 (mod 2^64)`, which is what makes the Montgomery cancellation work. -/
   inv_spec : (inv * modulus.l0 + 1) % 2^64 = 0
 
-/-- The Pallas base field, `pasta_curves::Fp`: its `MODULUS` limbs and `INV`
-([`fp.rs` at `8ad85e9f`, lines 109 to 116](https://github.com/zcash/pasta_curves/blob/8ad85e9fab7929f6236960e472f432a4bd9ccd74/src/fields/fp.rs#L109-L116)
-and [line 191](https://github.com/zcash/pasta_curves/blob/8ad85e9fab7929f6236960e472f432a4bd9ccd74/src/fields/fp.rs#L191)). -/
+/-- The Pallas base field, `pasta_curves::Fp`: its `MODULUS` limbs and `INV` in `src/fields/fp.rs`,
+which `FieldTypes.lean` checks against these. -/
 def pallasBase : PastaField where
   modulus := ⟨0x992d30ed00000001, 0x224698fc094cf91b, 0, 0x4000000000000000⟩
   inv := 0x992d30ecffffffff
@@ -52,9 +51,8 @@ def pallasBase : PastaField where
 example : pallasBase.modulus.toNat =
     0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001 := by decide
 
-/-- The Vesta base field, `pasta_curves::Fq`: its `MODULUS` limbs and `INV`
-([`fq.rs` at `8ad85e9f`, lines 109 to 116](https://github.com/zcash/pasta_curves/blob/8ad85e9fab7929f6236960e472f432a4bd9ccd74/src/fields/fq.rs#L109-L116)
-and [line 191](https://github.com/zcash/pasta_curves/blob/8ad85e9fab7929f6236960e472f432a4bd9ccd74/src/fields/fq.rs#L191)). -/
+/-- The Vesta base field, `pasta_curves::Fq`: its `MODULUS` limbs and `INV` in `src/fields/fq.rs`,
+which `FieldTypes.lean` checks against these. -/
 def vestaBase : PastaField where
   modulus := ⟨0x8c46eb2100000001, 0x224698fc0994a8dd, 0, 0x4000000000000000⟩
   inv := 0x8c46eb20ffffffff

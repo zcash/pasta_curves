@@ -2,5 +2,6 @@
 # regenerates and diffs them.
 lean/PastaAsm/Vectors.lean linguist-generated=true
 lean/PastaAsm/KnownAnswers.lean linguist-generated=true
+lean/PastaAsm/FieldTypes.lean linguist-generated=true
 lean/PastaAsm/AArch64/Transcription.lean linguist-generated=true
 lean/PastaAsm/X86_64/Transcription.lean linguist-generated=true

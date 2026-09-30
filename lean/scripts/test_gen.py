@@ -878,5 +878,42 @@ const FP: Field = Field {
         )
 
 
+class FieldTypeTests(unittest.TestCase):
+    """The field types' constants, read for `FieldTypes.lean`."""
+
+    SOURCE = """
+pub(crate) const MODULUS: Fp = Fp([0x1, 0x2, 0x0, 0x4]);
+pub(crate) const INV: u64 = 0x5;
+pub(crate) const R: Fp = Fp([0x6, 0x7, 0x8, 0x9]);
+pub(crate) const R2: Fp = Fp([
+    0xa,
+    0xb,
+    0xc,
+    0xd,
+]);
+pub(crate) const R3: Fp = Fp([0xe, 0xf, 0x10, 0x11]);
+"""
+
+    def test_constants_are_read_as_the_source_spells_them(self):
+        modulus, inv, powers = gen.parse_field_type(self.SOURCE, "fp.rs")
+        self.assertEqual(modulus, ["0x1", "0x2", "0x0", "0x4"])
+        self.assertEqual(inv, "0x5")
+        self.assertEqual(powers["R2"], ["0xa", "0xb", "0xc", "0xd"])
+
+    def test_a_missing_constant_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "missing R3"):
+            gen.parse_field_type(self.SOURCE.replace("const R3", "const S3"), "fp.rs")
+        with self.assertRaisesRegex(ValueError, "missing INV"):
+            gen.parse_field_type(self.SOURCE.replace("const INV", "const NV"), "fp.rs")
+
+    def test_each_constant_becomes_one_example(self):
+        rendered = gen.render_field_types({"fp": self.SOURCE, "fq": self.SOURCE})
+        self.assertEqual(rendered.count("decide +kernel"), 6)
+        self.assertEqual(rendered.count("  decide\n"), 4)
+        self.assertIn("example : pallasBase.modulus =\n    ⟨0x1, 0x2, 0x0, 0x4⟩ := by\n", rendered)
+        self.assertIn("example : vestaBase.inv = 0x5 := by\n", rendered)
+        self.assertIn("      ⟨0xa, 0xb, 0xc, 0xd⟩\n    x = R^2 % p := by\n", rendered)
+
+
 if __name__ == "__main__":
     unittest.main()
