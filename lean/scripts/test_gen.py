@@ -539,6 +539,79 @@ class X86RealSourceTests(unittest.TestCase):
             "unsupported use of bound local r0",
         )
 
+    def test_x86_skeleton_extracts_every_retained_instruction_let(self):
+        routines = {routine.name: routine for routine in gen_x86_64.all_routines()}
+        # Every retained binding is extracted exactly once, equal values included (the three
+        # zeros of an `xor r, r`, a repeated `mov` from `rdx`), since merging is off.
+        for name in ("squareLo", "mulMontRound", "fromMont"):
+            with self.subTest(routine=name):
+                routine = routines[name]
+                prepared = gen_x86_64.SKELETON_BACKEND.prepare(
+                    routine.emitter, routine.emitter.entries
+                )
+                extracted, current = [], None
+                for line in gen.skeleton(routine):
+                    if line.startswith("  extract_lets -merge +onlyGivenNames "):
+                        current = line[len("  extract_lets -merge +onlyGivenNames ") :]
+                    elif current is not None:
+                        current += " " + line.strip()
+                    if current is not None and current.endswith(" at hr"):
+                        extracted += current[: -len(" at hr")].split()
+                        current = None
+                self.assertEqual(sorted(extracted), sorted(prepared.names))
+                self.assertEqual(len(extracted), len(set(extracted)))
+        square_lo = "\n".join(gen.skeleton(routines["squareLo"]))
+        self.assertIn("extract_lets -merge +onlyGivenNames s_2 z4_1 cf_5 at hr", square_lo)
+        self.assertNotIn("obtain ⟨cf_5, b_cf_5, l_z4_1⟩", square_lo)
+
+        mul_round_routine = routines["mulMontRound"]
+        mul_round = "\n".join(gen.skeleton(mul_round_routine))
+        # The factored round is rendered like every other block: an instruction's pair wrapper
+        # and its two projections, extracted together, and read under their own names.
+        self.assertIn("extract_lets -merge +onlyGivenNames m s2 s1_1 at hr", mul_round)
+        self.assertIn("extract_lets -merge +onlyGivenNames s r0_1 cf_1 at hr", mul_round)
+        self.assertIn("have e_r0_1 : r0_1 = (addc r0 s1_1 cf).1 := rfl", mul_round)
+        self.assertIn("have e_cf_1 : cf_1 = (addc r0 s1_1 cf).2 := rfl", mul_round)
+        # The round's and the calling block's local definitions stay transparent.
+        self.assertNotIn("clear_value", mul_round)
+        self.assertNotIn("clear_value", "\n".join(gen.skeleton(routines["mulMont"])))
+        helper_text = "\n".join(code for code, _ in mul_round_routine.lines)
+        self.assertIn("let m := mulx b lhs.l0", helper_text)
+        self.assertIn("let s := addc r0 s1 cf", helper_text)
+        self.assertIn("let r0 := s.1", helper_text)
+        self.assertIn("let cf := s.2", helper_text)
+        # The omitted entry load aliases RDX to b only until the source writes RDX again.
+        # Reduction products must use the rebound Montgomery quotient, never b.
+        expressions = [entry["expr"] for entry in mul_round_routine.emitter.entries]
+        quotient_index = expressions.index("mulLo rdx inv")
+        self.assertTrue(any("mulx rdx modulus.l1" in expr for expr in expressions[quotient_index:]))
+        self.assertFalse(any("mulx b modulus.l1" in expr for expr in expressions[quotient_index:]))
+
+        from_mont = "\n".join(gen.skeleton(routines["fromMont"]))
+        self.assertIn("extract_lets -merge +onlyGivenNames n z0_1 cf at hr", from_mont)
+        self.assertIn("have e_z0_1 : z0_1 = (neg z0).1 := rfl", from_mont)
+        self.assertIn("have e_cf : cf = (neg z0).2 := rfl", from_mont)
+        self.assertIn("clear_value", from_mont)
+
+    def test_all_x86_routines_and_factored_round_generate_shared_skeletons(self):
+        routines = gen_x86_64.all_routines()
+        self.assertEqual(
+            [routine.name for routine in routines],
+            ["addMod", "subMod", "mulMontRound", "mulMont", "squareLo", "squareHi", "fromMont"],
+        )
+        for routine in routines:
+            with self.subTest(routine=routine.name):
+                generated = gen.skeleton(routine)
+                self.assertEqual(
+                    generated[0],
+                    f"  -- generated skeleton for `{routine.name}`: do not edit between the annotations",
+                )
+                self.assertEqual(generated[-1], "  subst hr")
+                self.assertIs(
+                    gen.find_routine(f"X86_64:{routine.name}").emitter.__class__,
+                    routine.emitter.__class__,
+                )
+
 
 class SharedGeneratorTests(unittest.TestCase):
     def test_skeleton_hooks_are_backend_owned(self):
@@ -645,82 +718,9 @@ class SharedGeneratorTests(unittest.TestCase):
             retained.render(["result"]),
         )
 
-    def test_x86_skeleton_extracts_every_retained_instruction_let(self):
-        routines = {routine.name: routine for routine in gen_x86_64.all_routines()}
-        # Every retained binding is extracted exactly once, equal values included (the three
-        # zeros of an `xor r, r`, a repeated `mov` from `rdx`), since merging is off.
-        for name in ("squareLo", "mulMontRound", "fromMont"):
-            with self.subTest(routine=name):
-                routine = routines[name]
-                prepared = gen_x86_64.SKELETON_BACKEND.prepare(
-                    routine.emitter, routine.emitter.entries
-                )
-                extracted, current = [], None
-                for line in gen.skeleton(routine):
-                    if line.startswith("  extract_lets -merge +onlyGivenNames "):
-                        current = line[len("  extract_lets -merge +onlyGivenNames ") :]
-                    elif current is not None:
-                        current += " " + line.strip()
-                    if current is not None and current.endswith(" at hr"):
-                        extracted += current[: -len(" at hr")].split()
-                        current = None
-                self.assertEqual(sorted(extracted), sorted(prepared.names))
-                self.assertEqual(len(extracted), len(set(extracted)))
-        square_lo = "\n".join(gen.skeleton(routines["squareLo"]))
-        self.assertIn("extract_lets -merge +onlyGivenNames s_2 z4_1 cf_5 at hr", square_lo)
-        self.assertNotIn("obtain ⟨cf_5, b_cf_5, l_z4_1⟩", square_lo)
-
-        mul_round_routine = routines["mulMontRound"]
-        mul_round = "\n".join(gen.skeleton(mul_round_routine))
-        # The factored round is rendered like every other block: an instruction's pair wrapper
-        # and its two projections, extracted together, and read under their own names.
-        self.assertIn("extract_lets -merge +onlyGivenNames m s2 s1_1 at hr", mul_round)
-        self.assertIn("extract_lets -merge +onlyGivenNames s r0_1 cf_1 at hr", mul_round)
-        self.assertIn("have e_r0_1 : r0_1 = (addc r0 s1_1 cf).1 := rfl", mul_round)
-        self.assertIn("have e_cf_1 : cf_1 = (addc r0 s1_1 cf).2 := rfl", mul_round)
-        # The round's and the calling block's local definitions stay transparent.
-        self.assertNotIn("clear_value", mul_round)
-        self.assertNotIn("clear_value", "\n".join(gen.skeleton(routines["mulMont"])))
-        helper_text = "\n".join(code for code, _ in mul_round_routine.lines)
-        self.assertIn("let m := mulx b lhs.l0", helper_text)
-        self.assertIn("let s := addc r0 s1 cf", helper_text)
-        self.assertIn("let r0 := s.1", helper_text)
-        self.assertIn("let cf := s.2", helper_text)
-        # The omitted entry load aliases RDX to b only until the source writes RDX again.
-        # Reduction products must use the rebound Montgomery quotient, never b.
-        expressions = [entry["expr"] for entry in mul_round_routine.emitter.entries]
-        quotient_index = expressions.index("mulLo rdx inv")
-        self.assertTrue(any("mulx rdx modulus.l1" in expr for expr in expressions[quotient_index:]))
-        self.assertFalse(any("mulx b modulus.l1" in expr for expr in expressions[quotient_index:]))
-
-        from_mont = "\n".join(gen.skeleton(routines["fromMont"]))
-        self.assertIn("extract_lets -merge +onlyGivenNames n z0_1 cf at hr", from_mont)
-        self.assertIn("have e_z0_1 : z0_1 = (neg z0).1 := rfl", from_mont)
-        self.assertIn("have e_cf : cf = (neg z0).2 := rfl", from_mont)
-        self.assertIn("clear_value", from_mont)
-
     def test_transcription_snapshots_match_committed_files(self):
         self.assertEqual(gen_aarch64.gen_program(), gen_aarch64.OUT_PROGRAM.read_text())
         self.assertEqual(gen_x86_64.gen_program(), gen_x86_64.OUTPUT.read_text())
-
-    def test_all_x86_routines_and_factored_round_generate_shared_skeletons(self):
-        routines = gen_x86_64.all_routines()
-        self.assertEqual(
-            [routine.name for routine in routines],
-            ["addMod", "subMod", "mulMontRound", "mulMont", "squareLo", "squareHi", "fromMont"],
-        )
-        for routine in routines:
-            with self.subTest(routine=routine.name):
-                generated = gen.skeleton(routine)
-                self.assertEqual(
-                    generated[0],
-                    f"  -- generated skeleton for `{routine.name}`: do not edit between the annotations",
-                )
-                self.assertEqual(generated[-1], "  subst hr")
-                self.assertIs(
-                    gen.find_routine(f"X86_64:{routine.name}").emitter.__class__,
-                    routine.emitter.__class__,
-                )
 
     def test_round_argument_fields_are_routine_local(self):
         aarch_round = next(
