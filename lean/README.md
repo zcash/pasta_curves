@@ -92,6 +92,7 @@ PastaAsm.lean                         root module, imports everything below
 PastaAsm/Semantics.lean               shared 64-bit arithmetic and limb representation
 PastaAsm/Compositions.lean            shared operand comparisons and contracts
 PastaAsm/Fields.lean                  the two fields and facts about their constants
+PastaAsm/KnownAnswers.lean            GENERATED: the backend tests' known-answer literals, checked
 PastaAsm/Spec.lean                    shared arithmetic and limb lemmas
 PastaAsm/Vectors.lean                 GENERATED: the reference vectors inside the contracts
 ../test-vectors/pasta_mul-armv8-vectors.txt   the hardware outputs the vectors are generated from

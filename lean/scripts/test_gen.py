@@ -837,5 +837,46 @@ class SkeletonCheckerTests(unittest.TestCase):
             gen.parse_spec_manifest(f"AArch64:{add_path}")
 
 
+class KnownAnswerTests(unittest.TestCase):
+    """The known-answer literals of the backend tests, read for `KnownAnswers.lean`."""
+
+    SOURCE = """
+const FP: Field = Field {
+    modulus: fp::MODULUS.0,
+    two_r: [
+        0x1,
+        0x2,
+        0x3,
+        0x4,
+    ],
+};
+"""
+
+    def test_literals_are_read_in_order_and_references_skipped(self):
+        self.assertEqual(gen.parse_known_answers(self.SOURCE), [("FP", "two_r", [1, 2, 3, 4])])
+
+    def test_a_literal_without_a_definition_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "no known-answer definition"):
+            gen.parse_known_answers(self.SOURCE.replace("two_r", "five_r"))
+
+    def test_an_unknown_field_constant_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "unknown field constant"):
+            gen.parse_known_answers(self.SOURCE.replace("const FP", "const FR"))
+
+    def test_the_tests_have_literals(self):
+        with self.assertRaisesRegex(ValueError, "no known-answer literals"):
+            gen.parse_known_answers("")
+
+    def test_each_literal_becomes_one_kernel_checked_example(self):
+        rendered = gen.render_known_answers(self.SOURCE)
+        self.assertEqual(rendered.count("decide +kernel"), 1)
+        self.assertIn(
+            "let x := Limbs.toNat\n"
+            "      ⟨0x0000000000000001, 0x0000000000000002, 0x0000000000000003, "
+            "0x0000000000000004⟩\n",
+            rendered,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
