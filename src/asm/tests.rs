@@ -1,4 +1,5 @@
-//! Known-answer tests of the entry points, for both Pasta fields.
+//! Tests of the entry points, for both Pasta fields: known answers, the reference
+//! vectors, and a differential test against the portable arithmetic.
 //!
 //! The moduli and the Montgomery constants are the field types' own. The other
 //! expected values were computed independently with big-integer Montgomery
@@ -6,9 +7,9 @@
 //! the portable arithmetic. Every multiplication, squaring, and conversion case is
 //! also among the reference vectors recorded from the assembly on Apple M-series
 //! hardware, and agrees with it; the vectors have no addition, subtraction, or
-//! repeated-squaring cases. The differential tests against the portable arithmetic
-//! are `asm_matches_portable_arithmetic` and the `mul` tests beside it in
-//! `src/fields/fp.rs` and `src/fields/fq.rs`.
+//! repeated-squaring cases. The differential test compares every entry point with
+//! the portable arithmetic of the field types, on edge and pseudo-random operands,
+//! so it covers those routines too.
 
 use super::{Limbs, add, from_mont, sub};
 
@@ -176,6 +177,75 @@ fn known_answers_match_the_portable_arithmetic() {
             assert_eq!(portable_mul(f.r2, f.r3), f.r4);
             assert_eq!(portable_mul(portable_square(portable_square(f.r2)), f.r3), f.r7);
             assert_eq!(portable_mul(pm1, pm1), f.pm1_sq);
+        }};
+    }
+    check!(Fp, &FP);
+    check!(Fq, &FQ);
+}
+
+/// The entry points agree with the portable arithmetic of the field types, on edge operands and on
+/// pseudo-random ones. The portable arithmetic is the field types' inherent `const fn`s, which
+/// never use the backend, applied to the same Montgomery residues. The portable multiplication is
+/// exact whenever the product is below `2^256 p`, which holds whenever one operand is canonical, so
+/// it is the reference under both of the multiplication's contracts, and for `from_mont`, which
+/// multiplies by the residue `1`. The operands are canonical where a routine's contract asks for
+/// that; elsewhere they range over every four-limb value. Like the rest of this module's tests, the
+/// test is compiled only where the module has a backend, so it always compares the assembly with
+/// the portable code.
+#[test]
+fn entry_points_match_the_portable_arithmetic() {
+    use rand::{Rng, SeedableRng};
+    use rand_xorshift::XorShiftRng;
+
+    macro_rules! check {
+        ($field:ident, $f:expr) => {{
+            use crate::fields::$field;
+            let f = $f;
+            let portable_mul = |x: &Limbs, y: &Limbs| $field::mul(&$field(*x), &$field(*y)).0;
+            let portable_square = |x: &Limbs| $field::square(&$field(*x)).0;
+            let mut rng = XorShiftRng::from_seed([0x5a; 16]);
+            let random_any: [Limbs; 32] =
+                core::array::from_fn(|_| core::array::from_fn(|_| rng.next_u64()));
+            // The Montgomery forms of elements reduced from 512 random bits, close to uniform.
+            let random_canonical: [Limbs; 32] = core::array::from_fn(|_| {
+                $field::from_u512(core::array::from_fn(|_| rng.next_u64())).0
+            });
+
+            let high = [u64::MAX, u64::MAX, u64::MAX, (1 << 62) - 1];
+            let edge_canonical = [ZERO, ONE, f.r, p_minus_1(f), f.pm2, high];
+            let edge_any = [[u64::MAX; 4], f.modulus, [0, 0, 0, u64::MAX]];
+            let canonical = || edge_canonical.iter().chain(&random_canonical);
+            let any = || canonical().chain(&edge_any).chain(&random_any);
+
+            for a in canonical() {
+                assert_eq!(square(a, &f.modulus, f.inv), portable_square(a), "{a:x?}");
+                for b in canonical() {
+                    let sum = $field::add(&$field(*a), &$field(*b)).0;
+                    let difference = $field::sub(&$field(*a), &$field(*b)).0;
+                    assert_eq!(add(a, b, &f.modulus), sum, "{a:x?} {b:x?}");
+                    assert_eq!(sub(a, b, &f.modulus), difference, "{a:x?} {b:x?}");
+                }
+                for b in any() {
+                    let product = portable_mul(a, b);
+                    assert_eq!(mul(a, b, &f.modulus, f.inv), product, "{a:x?} {b:x?}");
+                    // The other contract: any left operand, with a canonical right operand
+                    // whose limbs 1 to 3 are at most `2^64 - 3`.
+                    if super::mul_contract(b, a, &f.modulus) {
+                        assert_eq!(mul(b, a, &f.modulus, f.inv), product, "{b:x?} {a:x?}");
+                    }
+                    let mut power = *a;
+                    for count in 0..4 {
+                        let expected = portable_mul(&power, b);
+                        let actual = sqr_n_mul(a, count, b, &f.modulus, f.inv);
+                        assert_eq!(actual, expected, "{a:x?} {count} {b:x?}");
+                        power = portable_square(&power);
+                    }
+                }
+            }
+            for a in any() {
+                let expected = portable_mul(a, &[1, 0, 0, 0]);
+                assert_eq!(from_mont(a, &f.modulus, f.inv), expected, "{a:x?}");
+            }
         }};
     }
     check!(Fp, &FP);

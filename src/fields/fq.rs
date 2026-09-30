@@ -281,7 +281,7 @@ impl Fq {
         self.add(self)
     }
 
-    fn from_u512(limbs: [u64; 8]) -> Fq {
+    pub(crate) fn from_u512(limbs: [u64; 8]) -> Fq {
         // We reduce an arbitrary 512-bit number by decomposing it into two 256-bit digits
         // with the higher bits multiplied by 2^256. Thus, we perform two reductions
         //
