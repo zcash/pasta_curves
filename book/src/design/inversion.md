@@ -225,13 +225,15 @@ and by Lemma 10 $(u_{i+1}, v_{i+1}) \equiv 2^{-64} M (u_i, v_i)$, so the right s
 $x \cdot 2^{5i - 562 - 59 + 64} (u_{i+1}, v_{i+1}) = x \cdot 2^{5(i+1) - 562} (u_{i+1}, v_{i+1})$.
 ∎ *In Lean:* `rounds_invariant` (`Model.lean`).
 
-**Theorem 12 (correctness).** Assume Theorem 5 for $b = 256$, and $0 < x < p$. After ten
-rounds (590 divsteps) $g_{10} = 0$, so $f_{10} = \pm 1$ by Lemma 4 ($\gcd(p, x) = 1$). By
-Lemma 11 with $i = 10$, $f_{10} \equiv x \cdot 2^{-512} u_{10}$, hence
+**Theorem 12 (correctness).** Assume Theorem 5 for $b = 256$, and $0 < x < p$. After ten rounds
+(590 divsteps) $g_{10} = 0$, so $f_{10} = \pm 1$ by Lemma 4 ($\gcd(p, x) = 1$). By Lemma 11 with
+$i = 10$, $f_{10} \equiv x \cdot 2^{-512} u_{10}$, hence
 $x \cdot (f_{10} u_{10}) \equiv 2^{512}$. The last round computes $u_{10}$ with the sign of
 $f_{10}$ folded into the matrix row, then reduces strictly; by Lemma 10 one conditional
 subtraction gives the canonical $z \equiv f_{10} u_{10}$, and $x z \equiv R^2$. In Montgomery
-terms, if $x = X R$ and $z = Z R$ then $X Z \equiv 1$. *In Lean:* `montInv_spec` (`Model.lean`).
+terms, if $x = X R$ and $z = Z R$ then $X Z \equiv 1$. *In Lean:* `montInv_spec` (`Model.lean`),
+with the primality of $p$, which it needs for $\gcd(p, x) = 1$, from the Pratt certificates of
+`lean/PastaCurves/Primality.lean`.
 
 For $x = 0$: by Lemma 4 every matrix is $\begin{bmatrix} 2^{59} & 0 \\ 0 & 1 \end{bmatrix}$, so
 $u$ stays $0$ through every round, and $z = 0$.
@@ -282,6 +284,4 @@ arithmetic: the ten inclusions (the eight above, the initial triangle, and the o
 
 ## 6. What is not covered here
 
-This page does not relate the algorithm to any implementation of it. The Lean correctness
-theorem takes the primality of $p$, which Theorem 12 needs for $\gcd(p, x) = 1$, as a
-hypothesis.
+This page does not relate the algorithm to any implementation of it.

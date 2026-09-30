@@ -77,7 +77,9 @@ What is trusted, beyond Lean's kernel and standard axioms:
    fields: `decide` checks that the limbs encode the primes as pasta_curves states them, and
    every vector is checked with them. `FieldTypes.lean`, generated from `src/fields/fp.rs` and
    `src/fields/fq.rs`, checks that they are the field types' `MODULUS` and `INV`, and that the
-   field types' `R`, `R2`, and `R3` are the powers of `R` they name.
+   field types' `R`, `R2`, and `R3` are the powers of `R` they name. The moduli are prime: the
+   kernel checks a Pratt certificate for each (`Primality.lean`, with the checker in
+   `Pratt.lean`).
 
 Not modelled formally: the compiler's handling of the blocks' operands, that is, the
 allocation of registers to the placeholders and the `options(pure, nomem, nostack)`
@@ -94,6 +96,8 @@ PastaCurves.lean                         root module, imports everything below
 PastaCurves/Semantics.lean               shared 64-bit arithmetic and limb representation
 PastaCurves/Compositions.lean            shared operand comparisons and contracts
 PastaCurves/Fields.lean                  the two fields and facts about their constants
+PastaCurves/Pratt.lean                   Pratt certificates: the checker and its soundness
+PastaCurves/Primality.lean               the two Pasta primes, certified
 PastaCurves/FieldTypes.lean              GENERATED: the field types' constants, checked
 PastaCurves/KnownAnswers.lean            GENERATED: the backend tests' known answers, checked
 PastaCurves/Spec.lean                    shared arithmetic and limb lemmas
