@@ -1,6 +1,3 @@
-// Copyright the pasta-asm contributors.
-// SPDX-License-Identifier: Apache-2.0
-
 // The crate denies unsafe code by default; the assembly backend is the one place that allows
 // it, and its safety argument is the operand contracts stated on each routine.
 #![allow(unsafe_code)]

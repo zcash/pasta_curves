@@ -185,12 +185,6 @@ def docstring(text, width=100):
 
 # --- reference vectors ------------------------------------------------------------------
 
-HEADER_VECTORS = """/-
-Copyright (c) 2026 the pasta-asm contributors.
-Released under the Apache License, Version 2.0, as described in the file LICENSE.
--/
-"""
-
 # The crate's two fields, by the vectors file's key, as `Fields.lean` names them.
 FIELDS = {"Fp": "pallasBase", "Fq": "vestaBase"}
 
@@ -312,7 +306,7 @@ def render_vector_data(lines):
             skipped[op] = skipped.get(op, 0) + 1
             continue
         rows[op].append((FIELDS[key], operands, r))
-    out = [HEADER_VECTORS, VECTORS_INTRODUCTION]
+    out = [VECTORS_INTRODUCTION]
     for op, (name, type_, doc) in VECTOR_LISTS.items():
         out.append(f"{docstring(doc)}\ndef {name} : {type_} := [\n")
         for i, (field, operands, r) in enumerate(rows[op]):

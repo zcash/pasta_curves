@@ -46,8 +46,7 @@ OUT_PROGRAM = Path("lean/PastaAsm/AArch64/Transcription.lean")
 
 HEADER = """/-
 Copyright Supranational LLC (the routines, transcribed from Semolina v0.1.4).
-Copyright (c) 2026 the pasta-asm contributors (the transcription).
-Released under the Apache License, Version 2.0, as described in the file LICENSE.
+Copyright (c) 2026 the pasta_curves contributors (the transcription).
 -/
 """
 

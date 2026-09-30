@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 the pasta-asm contributors.
-# SPDX-License-Identifier: Apache-2.0
 """Regression tests for fail-closed Rust surrounding-code parsing."""
 
 import re

@@ -1,6 +1,5 @@
 // Copyright Supranational LLC (the Montgomery routines, transcribed from Semolina v0.1.4).
-// Copyright the zakura-core and pasta-asm contributors (the transcription and wrappers).
-// SPDX-License-Identifier: Apache-2.0
+// Copyright the zakura-core and pasta_curves contributors (the transcription and wrappers).
 
 //! x86-64 backend for the Pasta fields.
 //!

@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 the pasta-asm contributors.
-# SPDX-License-Identifier: Apache-2.0
 """Architecture-specific x86-64 emitter for the unified Lean generator.
 
 The shared :mod:`asm_source` parser extracts and validates the Rust function, asm
@@ -29,8 +27,7 @@ PASTA_HIGH_LIMB = 1 << 62
 
 HEADER = """/-
 Copyright Supranational LLC (the routines, transcribed from Semolina v0.1.4).
-Copyright (c) 2026 the pasta-asm contributors (the transcription).
-Released under the Apache License, Version 2.0, as described in the file LICENSE.
+Copyright (c) 2026 the pasta_curves contributors (the transcription).
 -/
 import PastaAsm.X86_64.Semantics
 

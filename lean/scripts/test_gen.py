@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 the pasta-asm contributors.
-# SPDX-License-Identifier: Apache-2.0
 """Unit tests for shared asm parsing and architecture-specific generators."""
 
 import contextlib

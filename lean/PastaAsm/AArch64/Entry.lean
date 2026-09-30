@@ -1,7 +1,3 @@
-/-
-Copyright (c) 2026 the pasta-asm contributors.
-Released under the Apache License, Version 2.0, as described in the file LICENSE.
--/
 import PastaAsm.Fields
 import PastaAsm.Spec
 import PastaAsm.AArch64.Spec
