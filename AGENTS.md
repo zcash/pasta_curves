@@ -252,10 +252,7 @@ in one go; a check whose tool is not installed is skipped with a note on how to 
 
 ### Toolchain note
 
-`rust-toolchain.toml` pins the MSRV toolchain (currently **1.63.0**), whose old codegen
-is markedly slower — often *much* slower — than a current stable, on top of the release
-vs. debug gap above. For faster local iteration, run everything on a stable toolchain,
-e.g. `cargo +stable test --release --all-features`. CI runs both MSRV (for the required
+`rust-toolchain.toml` pins the MSRV toolchain. CI runs both MSRV (for the required
 checks) and beta/stable lint passes.
 
 ### Cross-platform / target coverage
