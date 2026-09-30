@@ -11,12 +11,12 @@ use lazy_static::lazy_static;
 #[cfg(feature = "bits")]
 use ff::{FieldBits, PrimeFieldBits};
 
-use crate::arithmetic::{SqrtTableHelpers, VartimeField, adc, mac, sbb};
+use crate::arithmetic::{VartimeField, adc, mac, sbb};
 #[cfg(feature = "deferred")]
 use crate::deferred::{DeferredField, Product};
 
 #[cfg(feature = "sqrt-table")]
-use crate::arithmetic::SqrtTables;
+use crate::arithmetic::{SqrtTableHelpers, SqrtTables};
 
 /// This represents an element of $\mathbb{F}_p$ where
 ///
@@ -849,6 +849,7 @@ lazy_static! {
     static ref FP_TABLES: SqrtTables<Fp> = SqrtTables::new(0x11BE, 1098);
 }
 
+#[cfg(feature = "sqrt-table")]
 impl SqrtTableHelpers for Fp {
     fn pow_by_t_minus1_over2(&self) -> Self {
         let r10 = self.square_runtime();
@@ -1054,6 +1055,7 @@ fn test_sqrt_32bit_overflow() {
     assert!((Fp::from(5)).sqrt().is_none().unwrap_u8() == 1);
 }
 
+#[cfg(feature = "sqrt-table")]
 #[test]
 fn test_pow_by_t_minus1_over2() {
     // NB: TWO_INV is standing in as a "random" field element

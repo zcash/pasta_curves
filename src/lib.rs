@@ -93,17 +93,15 @@ fn backend_name() {
 #[cfg(feature = "asm")]
 #[cfg(test)]
 mod asm_gate_tests {
-    use crate::BACKEND;
-
     if_asm_supported! {
-        fn backend_name() -> &'static str { BACKEND }
+        fn backend_name() -> &'static str { crate::BACKEND }
     }
     if_asm_unsupported! {
         fn backend_name() -> &'static str { "portable" }
     }
 
     fn selected_backend() -> bool {
-        if_asm_supported! {{ BACKEND != "portable" }}
+        if_asm_supported! {{ crate::BACKEND != "portable" }}
         if_asm_unsupported! {{ false }}
     }
 

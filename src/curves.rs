@@ -40,6 +40,8 @@ macro_rules! new_curve_impl {
         }
 
         impl $name {
+            // Without `alloc`, only the curves without a generator use it, in `double`.
+            #[cfg_attr(not(feature = "alloc"), allow(dead_code))]
             const fn curve_constant_a() -> $base {
                 $base::from_raw($a_raw)
             }
@@ -48,6 +50,7 @@ macro_rules! new_curve_impl {
                 $base::from_raw($b_raw)
             }
 
+            #[cfg(feature = "alloc")]
             fn is_identity_vartime(&self) -> bool {
                 self.z.is_zero_vartime()
             }
