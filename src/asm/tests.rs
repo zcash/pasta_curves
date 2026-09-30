@@ -1,15 +1,19 @@
-//! Known-answer tests of the six entry points, for both Pasta fields.
+//! Known-answer tests of the entry points, for both Pasta fields.
 //!
-//! The expected values were computed independently with big-integer Montgomery
-//! arithmetic (`a * b * 2^-256 mod p`) in Python, and the ones that are also
-//! among the reference vectors recorded from the assembly on Apple M-series
-//! hardware agree with those. The differential tests against the portable
-//! arithmetic are `asm_matches_portable_arithmetic` and the `mul` tests beside
-//! it in `src/fields/fp.rs` and `src/fields/fq.rs`.
+//! The moduli and the Montgomery constants are the field types' own. The other
+//! expected values were computed independently with big-integer Montgomery
+//! arithmetic (`a * b * 2^-256 mod p`) in Python, and a test checks each against
+//! the portable arithmetic. Every multiplication, squaring, and conversion case is
+//! also among the reference vectors recorded from the assembly on Apple M-series
+//! hardware, and agrees with it; the vectors have no addition, subtraction, or
+//! repeated-squaring cases. The differential tests against the portable arithmetic
+//! are `asm_matches_portable_arithmetic` and the `mul` tests beside it in
+//! `src/fields/fp.rs` and `src/fields/fq.rs`.
 
 use super::{Limbs, add, from_mont, sub};
 
 use super::{mul, sqr_n_mul, square};
+use crate::fields::{fp, fq};
 
 /// The borrow chain of `is_canonical` decides `value < modulus` at the limb boundaries.
 #[test]
@@ -27,7 +31,7 @@ fn is_canonical_borrow_chain() {
     assert!(super::is_canonical(&[0, 0, 0, 0], &m));
 }
 
-/// One field's constants and known answers.
+/// One field's constants, from its field type, and known answers.
 struct Field {
     modulus: Limbs,
     /// `-modulus[0]^-1 mod 2^64`.
@@ -54,19 +58,9 @@ struct Field {
 
 /// The Pallas base field (`pasta_curves::Fp`).
 const FP: Field = Field {
-    modulus: [
-        0x992d30ed00000001,
-        0x224698fc094cf91b,
-        0x0000000000000000,
-        0x4000000000000000,
-    ],
-    inv: 0x992d30ecffffffff,
-    r: [
-        0x34786d38fffffffd,
-        0x992c350be41914ad,
-        0xffffffffffffffff,
-        0x3fffffffffffffff,
-    ],
+    modulus: fp::MODULUS.0,
+    inv: fp::INV,
+    r: fp::R.0,
     two_r: [
         0xcfc3a984fffffff9,
         0x1011d11bbee5303e,
@@ -79,18 +73,8 @@ const FP: Field = Field {
         0xfffffffffffffffe,
         0x3fffffffffffffff,
     ],
-    r2: [
-        0x8c78ecb30000000f,
-        0xd7d30dbd8b0de0e7,
-        0x7797a99bc3c95d18,
-        0x096d41af7b9cb714,
-    ],
-    r3: [
-        0xf185a5993a9e10f9,
-        0xf6a68f3b6ac5b1d1,
-        0xdf8d1014353fd42c,
-        0x2ae309222d2d9910,
-    ],
+    r2: fp::R2.0,
+    r3: fp::R3.0,
     r4: [
         0x1dfc65f6ad0492ae,
         0x84379b4cc10e927b,
@@ -119,19 +103,9 @@ const FP: Field = Field {
 
 /// The Vesta base field (`pasta_curves::Fq`).
 const FQ: Field = Field {
-    modulus: [
-        0x8c46eb2100000001,
-        0x224698fc0994a8dd,
-        0x0000000000000000,
-        0x4000000000000000,
-    ],
-    inv: 0x8c46eb20ffffffff,
-    r: [
-        0x5b2b3e9cfffffffd,
-        0x992c350be3420567,
-        0xffffffffffffffff,
-        0x3fffffffffffffff,
-    ],
+    modulus: fq::MODULUS.0,
+    inv: fq::INV,
+    r: fq::R.0,
     two_r: [
         0x2a0f9218fffffff9,
         0x1011d11bbcef61f1,
@@ -144,18 +118,8 @@ const FQ: Field = Field {
         0xfffffffffffffffe,
         0x3fffffffffffffff,
     ],
-    r2: [
-        0xfc9678ff0000000f,
-        0x67bb433d891a16e3,
-        0x7fae231004ccf590,
-        0x096d41af7ccfdaa9,
-    ],
-    r3: [
-        0x008b421c249dae4c,
-        0xe13bda50dba41326,
-        0x88fececb8e15cb63,
-        0x07dd97a06e6792c8,
-    ],
+    r2: fq::R2.0,
+    r3: fq::R3.0,
     r4: [
         0x569bba29179df5c1,
         0xf7abe57547cfa14c,
@@ -194,23 +158,28 @@ fn p_minus_1(f: &Field) -> Limbs {
     limbs
 }
 
-/// The constants above are copies of the field types' own, so that a known answer here says
-/// something about the fields the crate computes in: check that they agree.
+/// The known answers above that are not the field types' own constants, recomputed on the same
+/// limbs by the field types' inherent `const fn`s, which never use the backend.
 #[test]
-fn constants_match_the_field_types() {
-    use crate::fields::{fp, fq};
-
-    assert_eq!(FP.modulus, fp::MODULUS.0);
-    assert_eq!(FP.inv, fp::INV);
-    assert_eq!(FP.r, fp::R.0);
-    assert_eq!(FP.r2, fp::R2.0);
-    assert_eq!(FP.r3, fp::R3.0);
-
-    assert_eq!(FQ.modulus, fq::MODULUS.0);
-    assert_eq!(FQ.inv, fq::INV);
-    assert_eq!(FQ.r, fq::R.0);
-    assert_eq!(FQ.r2, fq::R2.0);
-    assert_eq!(FQ.r3, fq::R3.0);
+fn known_answers_match_the_portable_arithmetic() {
+    macro_rules! check {
+        ($field:ident, $f:expr) => {{
+            use crate::fields::$field;
+            let f = $f;
+            let portable_add = |x: Limbs, y: Limbs| $field::add(&$field(x), &$field(y)).0;
+            let portable_mul = |x: Limbs, y: Limbs| $field::mul(&$field(x), &$field(y)).0;
+            let portable_square = |x: Limbs| $field::square(&$field(x)).0;
+            let pm1 = p_minus_1(f);
+            assert_eq!(portable_add(f.r, f.r), f.two_r);
+            assert_eq!(portable_add(f.two_r, f.r), f.three_r);
+            assert_eq!(portable_add(pm1, pm1), f.pm2);
+            assert_eq!(portable_mul(f.r2, f.r3), f.r4);
+            assert_eq!(portable_mul(portable_square(portable_square(f.r2)), f.r3), f.r7);
+            assert_eq!(portable_mul(pm1, pm1), f.pm1_sq);
+        }};
+    }
+    check!(Fp, &FP);
+    check!(Fq, &FQ);
 }
 
 #[test]
