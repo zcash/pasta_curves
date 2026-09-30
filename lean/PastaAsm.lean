@@ -12,7 +12,7 @@ import PastaAsm.AArch64
 import PastaAsm.X86_64
 
 /-!
-# The pasta-asm routines, formalized
+# The assembly routines, formalized
 
 Generic arithmetic is defined in the top-level `PastaAsm` modules. Architecture-specific
 transcriptions and proofs live under their corresponding namespaces.
