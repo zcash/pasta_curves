@@ -22,8 +22,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macos-latest is Apple silicon.
-        os: [ubuntu-24.04-arm, macos-latest, windows-11-arm]
+        # macos-latest is Apple silicon; ubuntu-latest and windows-latest are x86-64.
+        os: [ubuntu-24.04-arm, macos-latest, windows-11-arm, ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -33,6 +33,15 @@ jobs:
         # If GitHub ever moves macos-latest back to x86_64, the backend would
         # compile out and every check below would pass vacuously.
         run: test "$(uname -sm)" = "Darwin arm64"
+      - name: Confirm the x86-64 CPU has BMI2 and ADX
+        if: ${{ runner.arch == 'X64' }}
+        shell: bash
+        # The x86-64 blocks need both at run time and do not check for them, so
+        # without them the tests would fail on an illegal instruction.
+        run: |
+          features=$(rustc --print cfg -C target-cpu=native | tr -d '\r')
+          printf '%s\n' "$features" | grep -qx 'target_feature="bmi2"'
+          printf '%s\n' "$features" | grep -qx 'target_feature="adx"'
       - name: Test the backend (debug, with the debug assertions)
         run: cargo test --verbose --features asm 'asm::'
       - name: Confirm every test of the backend ran, in every profile
