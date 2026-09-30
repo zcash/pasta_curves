@@ -1582,13 +1582,11 @@ mod tests {
     /// within a random 64-bit distance below `p - 1`.
     #[test]
     fn invert_random() {
-        let mut state = 0x9e37_79b9_7f4a_7c15u64;
-        let mut next = || {
-            state ^= state << 13;
-            state ^= state >> 7;
-            state ^= state << 17;
-            state
-        };
+        use rand::{Rng, SeedableRng};
+        use rand_xorshift::XorShiftRng;
+
+        let mut rng = XorShiftRng::from_seed([0x5a; 16]);
+        let mut next = || rng.next_u64();
         for f in FIELDS {
             let pm1 = p_minus_1(f);
             for _ in 0..128 {
