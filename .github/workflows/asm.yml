@@ -87,10 +87,13 @@ jobs:
 
   no-std:
     name: no_std, with no std to fall back on
-    # `#![no_std]` keeps std out of the crate's own code, but the target the
-    # backend compiles on has a std to link, so build core from source instead
-    # of using the sysroot: nothing that reaches for std can compile.
-    runs-on: ubuntu-24.04-arm
+    # `#![no_std]` keeps std out of the crate's own code, but the targets the
+    # backend compiles on have a std to link, so build core from source instead
+    # of using the sysroot: nothing that reaches for std can compile. The code
+    # differs between the two backends and the portable fallback, so build
+    # each: AArch64, x86-64, and Intel macOS, which has no backend. A library
+    # build links nothing, so any host can build for all three.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -99,8 +102,10 @@ jobs:
         run: rustup toolchain install nightly --profile minimal --component rust-src
       - name: Build against core alone
         run: |
-          cargo +nightly build --verbose --release --no-default-features --features asm \
-            -Z build-std=core,compiler_builtins --target aarch64-apple-darwin
+          for target in aarch64-apple-darwin x86_64-unknown-linux-gnu x86_64-apple-darwin; do
+            cargo +nightly build --verbose --release --no-default-features --features asm \
+              -Z build-std=core,compiler_builtins --target "$target"
+          done
 
   intel-macos:
     name: No backend on Intel macOS

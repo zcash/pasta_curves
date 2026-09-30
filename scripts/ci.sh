@@ -89,19 +89,20 @@ if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ] ||
   with_assertions count --release
   count --release
 fi
-if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then
-  step "no_std: build against core alone, with no std to fall back on"
-  if rustup run nightly rustc --version >/dev/null 2>&1 &&
-     rustup component list --toolchain nightly --installed | grep -q '^rust-src'; then
+
+# Each backend, and the portable fallback (Intel macOS), built against core alone, with no std
+# to fall back on. A library build links nothing, so any host can build for every target.
+if rustup run nightly rustc --version >/dev/null 2>&1 &&
+   rustup component list --toolchain nightly --installed | grep -q '^rust-src'; then
+  for target in aarch64-apple-darwin x86_64-unknown-linux-gnu x86_64-apple-darwin; do
+    step "no_std: build against core alone for $target"
     cargo +nightly build --release --no-default-features --features asm \
-      -Z build-std=core,compiler_builtins --target aarch64-apple-darwin
-  else
-    skip "the no_std build" \
-      "  it needs a nightly toolchain with the library sources:
-    rustup toolchain install nightly --profile minimal --component rust-src"
-  fi
+      -Z build-std=core,compiler_builtins --target "$target"
+  done
 else
-  echo "host: $(uname -sm); the no_std build against core alone runs on AArch64 hosts only"
+  skip "the no_std builds" \
+    "  they need a nightly toolchain with the library sources:
+    rustup toolchain install nightly --profile minimal --component rust-src"
 fi
 
 # ---- Lints and documentation (lints-stable.yml, ci.yml) ----
