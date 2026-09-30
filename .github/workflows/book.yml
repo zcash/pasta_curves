@@ -1,15 +1,49 @@
 name: Pasta book
 
+# Always triggers, so the required `Pasta book CI` check is always reported (a
+# workflow skipped by `on.paths` would leave a required check pending and block
+# merges). The build and deployment are instead gated on a path filter computed
+# inside the run, since they are irrelevant to a change that does not touch what
+# the book is built from.
 on:
   push:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 permissions: {}
 
 jobs:
+  changes:
+    name: Detect book-relevant changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      book: ${{ steps.filter.outputs.book }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The book is built from `book/` and the root README, which
+      # `book/src/README.md` includes; a new include of another file must be
+      # added here.
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
+        id: filter
+        with:
+          filters: |
+            book:
+              - 'book/**'
+              - 'README.md'
+              - '.github/workflows/book.yml'
+
   build:
     name: Build the book
+    needs: changes
+    if: needs.changes.outputs.book == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -64,3 +98,29 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./book/book
+
+  book-ci:
+    # The single stable check to mark as a required status check. It always
+    # runs, so it always reports; it fails only if the book build actually
+    # failed.
+    name: Pasta book CI
+    needs: [changes, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on the build result
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "The changes-detection job did not succeed."
+            exit 1
+          fi
+          case "$BUILD_RESULT" in
+            success|skipped)
+              echo "Book build passed or was not required for this change." ;;
+            *)
+              echo "Book build result: $BUILD_RESULT."
+              exit 1 ;;
+          esac
