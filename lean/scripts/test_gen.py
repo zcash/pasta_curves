@@ -766,7 +766,7 @@ class SharedGeneratorTests(unittest.TestCase):
 class SkeletonCheckerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.routine = gen_x86_64.all_routines()[0]
+        cls.routine = gen.find_routine("X86_64:addMod")
         cls.skeleton = "\n".join(gen.skeleton(cls.routine)) + "\n"
 
     def check_text(self, text):
