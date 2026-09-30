@@ -11,8 +11,8 @@ computes only `d` with the sign of the final `f` folded in and reduces strictly.
 
 `rounds_invariant` is Lemma 11 at the word level: after `i` rounds the word state carries the
 true divstep state after `59 i` steps, and `f_i 2^562 ≡ x 2^(5 i) d_i`, `g_i 2^562 ≡ x 2^(5 i) e_i`
-modulo `p`. `montInv_spec` is Theorem 12, with the termination bound and the primality of `p` as
-hypotheses.
+modulo `p`. `montInv_spec` is Theorem 12, with the termination bound as a hypothesis; the
+primality of `p` is a fact of every `PastaField`.
 -/
 
 namespace PastaCurves
@@ -253,10 +253,10 @@ theorem rounds_invariant (F : PastaField) (x : Limbs) (hx : x.Bounded) (i : ℕ)
 /-! ## The theorem -/
 
 /-- Theorem 12: for a canonical input, the model returns the canonical Montgomery residue `z`
-with `x z ≡ R^2 (mod p)`, and zero for zero. The termination bound and the primality of `p`
-are hypotheses. -/
-theorem montInv_spec (F : PastaField) (hbound : TerminationBound 256)
-    (hprime : Nat.Prime F.modulus.toNat) (x : Limbs) (hx : x.Bounded)
+with `x z ≡ R^2 (mod p)`, and zero for zero. The termination bound is a hypothesis; the
+primality of `p` is `F.prime`. -/
+theorem montInv_spec (F : PastaField) (hbound : TerminationBound 256) (x : Limbs)
+    (hx : x.Bounded)
     (hxlt : x.toNat < F.modulus.toNat) :
     (montInvModel F x).Bounded ∧ (montInvModel F x).toNat < F.modulus.toNat ∧
       (x.toNat = 0 → montInvModel F x = Limbs.ofNat 0) ∧
@@ -330,7 +330,7 @@ theorem montInv_spec (F : PastaField) (hbound : TerminationBound 256)
       have h := Int.natAbs_dvd_natAbs.mpr hdp
       rwa [Int.natAbs_natCast] at h
     have hpm : t10.f = 1 ∨ t10.f = -1 := by
-      rcases Nat.Prime.eq_one_or_self_of_dvd hprime _ hnat with h1 | hp
+      rcases Nat.Prime.eq_one_or_self_of_dvd F.prime _ hnat with h1 | hp
       · rcases Int.natAbs_eq_iff.mp h1 with h | h
         · exact Or.inl (by rw [h]; rfl)
         · exact Or.inr (by rw [h]; rfl)
