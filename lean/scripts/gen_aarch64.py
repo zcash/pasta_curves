@@ -29,7 +29,7 @@ Run from the repository root:
 files.
 
 The script also generates the mechanical part of each block's correctness proof in
-`lean/PastaAsm/AArch64/Spec.lean`: `--skeleton NAME` prints it (see `skeleton`), and
+`lean/PastaAsm/AArch64/Spec.lean`: `--skeleton AArch64:NAME` prints it (see `skeleton`), and
 `--check-spec FILE` checks that FILE contains every block's skeleton verbatim once its
 `-- BEGIN ... -- END` annotation blocks are removed; the check script runs that too.
 Python 3.9+; stdlib only.

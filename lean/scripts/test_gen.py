@@ -758,9 +758,12 @@ class SharedGeneratorTests(unittest.TestCase):
         self.assertEqual(gen.proj("acc", "r4", aarch_round.arg_fields), "2.2.2.2.1")
         self.assertEqual(gen.proj("acc", "r4", x86_round.arg_fields), "2.2.2.2.1")
 
-    def test_bare_skeleton_lookup_retains_aarch64_legacy(self):
-        self.assertEqual(gen.find_routine("addMod").architecture, "AArch64")
+    def test_skeleton_lookup_names_the_architecture(self):
+        self.assertEqual(gen.find_routine("AArch64:addMod").architecture, "AArch64")
         self.assertEqual(gen.find_routine("X86_64:addMod").architecture, "X86_64")
+        # Both backends have an `addMod`, so a bare name would be ambiguous.
+        with self.assertRaisesRegex(ValueError, "expected ARCH:NAME, not addMod"):
+            gen.find_routine("addMod")
 
 
 class SkeletonCheckerTests(unittest.TestCase):

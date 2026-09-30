@@ -34,8 +34,7 @@ Run from the repository root:
 The script also generates the mechanical part of each block's correctness proof:
 `--skeleton ARCH:NAME` prints it (see `skeleton`), and `--check-spec FILE` checks that
 FILE contains its registered skeletons verbatim once its `-- BEGIN ... -- END` annotation
-blocks are removed; the check script runs that too. Bare skeleton names select AArch64
-for compatibility. Python 3.9+; stdlib only.
+blocks are removed; the check script runs that too. Python 3.9+; stdlib only.
 """
 
 import argparse
@@ -917,11 +916,10 @@ def architecture_routines():
 
 
 def find_routine(specification):
-    """Resolve ``ARCH:name``; legacy bare routine names continue to mean AArch64."""
-    if ":" in specification:
-        architecture, name = specification.split(":", 1)
-    else:
-        architecture, name = "AArch64", specification
+    """Resolve ``ARCH:NAME`` to its routine."""
+    if ":" not in specification:
+        raise ValueError(f"expected ARCH:NAME, not {specification}")
+    architecture, name = specification.split(":", 1)
     manifests = architecture_routines()
     if architecture not in manifests:
         raise ValueError(f"unknown architecture {architecture}")
@@ -1043,8 +1041,8 @@ def main(argv=None):
     )
     action.add_argument(
         "--skeleton",
-        metavar="[ARCH:]NAME",
-        help="print one proof skeleton (bare names retain legacy AArch64 meaning)",
+        metavar="ARCH:NAME",
+        help="print one proof skeleton",
     )
     action.add_argument(
         "--check-specs",
