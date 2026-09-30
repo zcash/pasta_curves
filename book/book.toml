@@ -4,9 +4,10 @@ authors = [
     "Sean Bowe",
     "Daira Hopwood",
     "Ying Tong Lai",
+    "Danny Willems",
+    "Kris Nuttycombe",
 ]
 language = "en"
-multilingual = false
 src = "src"
 title = "The Pasta Book"
 
