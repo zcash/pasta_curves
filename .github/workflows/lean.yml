@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       lean: ${{ steps.filter.outputs.lean }}
+      translation: ${{ steps.filter.outputs.translation }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -29,6 +30,11 @@ jobs:
       # backend's blocks and tests, the field types' constants, and the known answers in
       # `src/test_fields.rs`), or is this workflow.
       # Note this is NOT the sequential-negation semantics of GitHub's own `on.paths` engine.
+      # A change is relevant to the Aeneas translation iff some changed file:
+      # - is outside the set that cannot affect the crate's build;
+      # - is one of the files under `lean/` that the check uses: the translation, the pin, and
+      #   the two scripts; or
+      # - is this workflow.
       - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
         id: filter
         with:
@@ -38,6 +44,13 @@ jobs:
               - 'src/asm/**'
               - 'src/fields/**'
               - 'src/test_fields.rs'
+              - '.github/workflows/lean.yml'
+            translation:
+              - '!{book/**,lean/**,sage/**,.github/**,scripts/**,*.md,LICENSE-*,ruff.toml,katex-header.html}'
+              - 'lean/PastaCurves/Portable/**'
+              - 'lean/lakefile.toml'
+              - 'lean/scripts/fetch_aeneas.sh'
+              - 'lean/scripts/gen_portable.sh'
               - '.github/workflows/lean.yml'
 
   build:
@@ -49,12 +62,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Installs the toolchain from `lean/lean-toolchain`, fetches the Mathlib cache, and
-      # runs `lake build`; warnings fail the build.
+      # Installs the toolchain from `lean/lean-toolchain` and fetches the Mathlib cache; the
+      # build is the next step's.
       - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1.5.0
         with:
           lake-package-directory: lean
-          build-args: --wfail
+          build: "false"
+      # Warnings fail the build, except those in Aeneas' library, which the package requires
+      # but does not maintain; the test checks that a warning of the package's own is rejected.
+      - name: Build, with warnings outside Aeneas' library failing it
+        run: lean/scripts/build.sh
+      - name: Check that the build rejects a warning
+        run: lean/scripts/test_build.sh
 
   transcription:
     name: Transcription and proof skeletons are current
@@ -70,6 +89,23 @@ jobs:
       # generated parts of the proofs are the current skeletons.
       - name: Regenerate and compare
         run: lean/scripts/check.sh
+
+  translation:
+    name: The Aeneas translation is current
+    needs: changes
+    if: needs.changes.outputs.translation == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Downloads the Charon and Aeneas binaries that Aeneas' CI released for the pinned
+      # revision, checking the recorded SHA-256, and installs the nightly toolchain that
+      # Charon runs.
+      - name: Fetch Charon and Aeneas
+        run: lean/scripts/fetch_aeneas.sh
+      - name: Translate the portable blocks and compare
+        run: lean/scripts/gen_portable.sh --check
 
   checker-tests:
     name: The export-axiom checker's own tests
@@ -128,7 +164,7 @@ jobs:
     # was cancelled, and fails only if a job that ran failed. `nanoda` needs `build`, so it is
     # skipped with it.
     name: Lean CI
-    needs: [changes, build, transcription, checker-tests, nanoda]
+    needs: [changes, build, transcription, translation, checker-tests, nanoda]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -138,6 +174,7 @@ jobs:
           RESULTS: >-
             build=${{ needs.build.result }}
             transcription=${{ needs.transcription.result }}
+            translation=${{ needs.translation.result }}
             checker-tests=${{ needs.checker-tests.result }}
             nanoda=${{ needs.nanoda.result }}
         run: |

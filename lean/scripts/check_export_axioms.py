@@ -19,6 +19,19 @@ itself:
     from their propositional bridge axioms `Lean.ofReduceBool`/`Lean.ofReduceNat`
     above — and nothing in this repository consumes them.
 
+Aeneas' Lean library, which the translation of the portable inversion blocks imports,
+declares axioms of its own for opaque Rust items, and two of its tests leave `sorryAx` citations
+behind. A violation is accepted only when:
+
+  * its axiom is `sorryAx` and every citer is one of Aeneas' tests (an `Aeneas.` name with a
+    `Test` component); or
+  * its axiom is Aeneas' and every citer is in Aeneas.
+
+The export does not record the module of a declaration, so a check of the package's own
+sources makes sure none declares into the `Aeneas` namespace. With `--nanoda-config OUT`, a
+clean census writes nanoda's config to OUT, permitting Aeneas' axioms as well, since
+nanoda's strict mode rejects any declared axiom it is not told of.
+
 Failures come in two kinds, mirroring CompElliptic's `check_native_optin.py`:
 
   * VIOLATION (exit 1) — an undesired outcome in structurally well-formed data: a
@@ -43,12 +56,13 @@ them:
     single-pass citation propagation over the expression DAG cannot miss a forward or
     dangling reference.
 
-Usage: scripts/check_export_axioms.py [nanoda-config.json]
+Usage: scripts/check_export_axioms.py [--nanoda-config OUT] [nanoda-config.json]
 The export path is read from the config (single source of truth). Runs from the
 repository root.
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 from typing import NoReturn
@@ -112,12 +126,10 @@ def error(msg) -> NoReturn:
     sys.exit(2)
 
 
-def main():
-    config_path = Path(sys.argv[1] if len(sys.argv) > 1 else "scripts/nanoda-config.json")
-    config = json.loads(config_path.read_text())
-    permitted = set(config["permitted_axioms"])
-    export_path = Path(config["export_file_path"])
-
+def scan(export_path, targets):
+    """One pass over the export: the declared axioms, and for each of `targets` the
+    declarations that cite it and whether any expression cites it at all. Stops with an
+    ERROR on any structural surprise."""
     names = {}  # name id -> (prefix id, component)
 
     def resolve(i):
@@ -148,10 +160,11 @@ def main():
                 todo.extend(x)
         return out
 
+    target_components = {name.rsplit(".", 1)[-1] for name in targets}
     target_name_ids = {}  # name id -> target full name
     taint = {}  # expr id -> frozenset of target full names
     citers = {}  # target full name -> set of citing declaration names
-    const_cited = {t: False for t in TARGETS}
+    const_cited = {t: False for t in targets}
     declared_axioms = set()
     max_in = max_il = 0  # id 0: the reserved anonymous name / zero level
     max_ie = -1
@@ -176,9 +189,9 @@ def main():
                 if not (pre == 0 or pre < i):
                     error(f"name id {i} references non-earlier prefix {pre}")
                 names[i] = (pre, comp)
-                if comp in TARGET_COMPONENTS:
+                if comp in target_components:
                     full = resolve(i)
-                    if full in TARGETS:
+                    if full in targets:
                         target_name_ids[i] = full
             elif "ie" in o:
                 i = o["ie"]
@@ -256,19 +269,96 @@ def main():
     if not meta_seen:
         error("export has no meta line; format version unverified")
 
-    if declared_axioms != permitted:
-        unpermitted = sorted(declared_axioms - permitted)
-        undeclared = sorted(permitted - declared_axioms)
-        if unpermitted:
-            violation(f"axiom(s) declared but not permitted: {unpermitted}")
-        if undeclared:
-            violation(
-                f"permitted axiom(s) not declared in the export (stale census entry): {undeclared}"
-            )
+    return declared_axioms, citers, const_cited
 
+
+def is_aeneas(name):
+    """Whether a declaration counts as Aeneas' library's: its name is in the `Aeneas` namespace,
+    or is a private name of one of Aeneas' modules.
+
+    The export gives each declaration's name, type, and value, but not the module it was declared
+    in, so the name is what is checked. Any module can declare into the `Aeneas` namespace, so
+    `check_no_aeneas_declarations` checks that the package's own modules do not. That guards
+    against an accident, not against code written to evade it."""
+    return name.startswith(("Aeneas.", "_private.Aeneas."))
+
+
+# A `namespace Aeneas`, or a declaration whose name is in the `Aeneas` namespace, in the
+# package's own sources. A textual check: it catches the ways a module would declare into
+# `Aeneas` by accident, and is not a defence against malicious code.
+AENEAS_DECLARATION = re.compile(
+    r"^\s*(?:namespace\s+(?:_root_\.)?Aeneas\b"
+    r"|(?:@\[[^\]]*\]\s*)?(?:(?:private|protected|public|noncomputable|partial|unsafe|nonrec)\s+)*"
+    r"(?:def|theorem|lemma|abbrev|instance|structure|inductive|class|axiom|opaque)\s+"
+    r"(?:_root_\.)?Aeneas\.)",
+    re.MULTILINE,
+)
+
+
+def check_no_aeneas_declarations(sources):
+    """Report a violation for each place in `sources` (the package's own `.lean` files) that
+    declares into the `Aeneas` namespace, which would make `is_aeneas` wrongly vouch for it."""
+    for path in sorted(sources.rglob("*.lean")):
+        text = path.read_text()
+        for m in AENEAS_DECLARATION.finditer(text):
+            line = text.count("\n", 0, m.start()) + 1
+            violation(f"{path}:{line} declares into the `Aeneas` namespace: {m.group(0).strip()}")
+
+
+def is_aeneas_test(name):
+    """Whether a declaration is one of Aeneas' tests: in the `Aeneas` namespace, with a `Test`
+    component, like the inductives that `Aeneas.Data.ListN` checks the kernel rejects."""
+    return name.startswith("Aeneas.") and "Test" in name.split(".")[1:]
+
+
+def main():
+    args = sys.argv[1:]
+    nanoda_out = None
+    if args[:1] == ["--nanoda-config"]:
+        if len(args) < 2:
+            error("--nanoda-config needs an output path")
+        nanoda_out, args = Path(args[1]), args[2:]
+    config_path = Path(args[0] if args else "scripts/nanoda-config.json")
+    config = json.loads(config_path.read_text())
+    permitted = set(config["permitted_axioms"])
+    export_path = Path(config["export_file_path"])
+
+    # Run from `lean/`: the package's own modules are under `PastaCurves/`.
+    check_no_aeneas_declarations(Path("PastaCurves"))
+    declared_axioms, citers, const_cited = scan(export_path, TARGETS)
+    # The axioms that Aeneas' library declares and the permitted list does not name: a second
+    # scan finds their citers, which must all be Aeneas' own declarations.
+    aeneas_axioms = {a for a in declared_axioms - permitted if is_aeneas(a)}
+    if aeneas_axioms:
+        declared_axioms, citers, const_cited = scan(export_path, TARGETS | aeneas_axioms)
+
+    def citers_of(t):
+        """The declarations citing `t`, with `<expression>` for a citation that no declaration
+        reaches."""
+        found = set(citers.get(t, set()))
+        if const_cited.get(t) and not found:
+            found.add("<expression>")
+        return found
+
+    unpermitted = sorted(declared_axioms - permitted - aeneas_axioms)
+    undeclared = sorted(permitted - declared_axioms)
+    if unpermitted:
+        violation(f"axiom(s) declared but not permitted, and not Aeneas': {unpermitted}")
+    if undeclared:
+        violation(
+            f"permitted axiom(s) not declared in the export (stale census entry): {undeclared}"
+        )
+
+    for a in sorted(aeneas_axioms):
+        outside = sorted(c for c in citers_of(a) if not is_aeneas(c))
+        if outside:
+            violation(f"Aeneas' axiom '{a}' is cited outside Aeneas' library: {outside}")
     for t in sorted(UNREFERENCED):
-        if const_cited[t] or citers.get(t):
-            violation(f"'{t}' is cited by: {sorted(citers.get(t, {'<expression>'}))}")
+        # `sorryAx` may be cited by Aeneas' tests alone; the others by nothing.
+        allowed = is_aeneas_test if t == "sorryAx" else (lambda _: False)
+        outside = sorted(c for c in citers_of(t) if not allowed(c))
+        if outside:
+            violation(f"'{t}' is cited by: {outside}")
     for t, allowed in RESTRICTED.items():
         extra = citers.get(t, set()) - allowed
         if extra:
@@ -276,9 +366,10 @@ def main():
 
     # Print the full census whether or not anything was flagged: this is the actionable
     # state when a check above has flagged a stale or widened axiom list.
+    watched = TARGETS | aeneas_axioms
     print(f"export axiom census: {len(declared_axioms)} axiom(s) declared:")
     for a in sorted(declared_axioms):
-        cited = [] if a not in TARGETS else sorted(citers.get(a, set())) or ["nothing"]
+        cited = [] if a not in watched else sorted(citers_of(a)) or ["nothing"]
         note = f"  (cited by: {', '.join(cited)})" if cited else ""
         print(f"  {a}{note}")
 
@@ -291,6 +382,11 @@ def main():
                 file=sys.stderr,
             )
         sys.exit(1)
+    if nanoda_out is not None:
+        # nanoda's strict mode rejects any declared axiom it is not told of, so it is told of
+        # Aeneas', now that the census has checked that only Aeneas' library cites them.
+        config["permitted_axioms"] = config["permitted_axioms"] + sorted(aeneas_axioms)
+        nanoda_out.write_text(json.dumps(config, indent=4) + "\n")
     print("export axiom census: all checks passed")
 
 
