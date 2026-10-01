@@ -15,7 +15,10 @@
 # and the ones Lean core declares unconditionally). scripts/check_export_axioms.py closes
 # the remaining gap: the axioms that must be permitted because core declares them, but
 # must remain unused (`sorryAx` in particular), are checked to be cited by nothing, so a
-# `sorry` anywhere in the development fails here, and no `native_decide` is admitted.
+# `sorry` anywhere in the development fails here, and no `native_decide` is admitted. The
+# exceptions are Aeneas' library's: the axioms it declares may be cited by its own declarations,
+# and `sorryAx` by its tests. The census then writes the config nanoda runs with, which permits
+# those axioms too.
 set -euo pipefail
 
 LEAN4EXPORT=${1:?usage: check_nanoda.sh <lean4export-binary> <nanoda-binary>}
@@ -31,5 +34,6 @@ ROOTS=(PastaCurves)
 
 mkdir -p work
 "$LAKE" env "$LEAN4EXPORT" "${ROOTS[@]}" > work/export.ndjson
-"$PYTHON" scripts/check_export_axioms.py scripts/nanoda-config.json
-"$NANODA" scripts/nanoda-config.json
+"$PYTHON" scripts/check_export_axioms.py --nanoda-config work/nanoda-config.json \
+  scripts/nanoda-config.json
+"$NANODA" work/nanoda-config.json

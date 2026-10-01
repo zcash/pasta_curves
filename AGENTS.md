@@ -157,15 +157,23 @@ submodules. Its instruction-level models contribute to assuring the backend's ro
 correctness; see `lean/README.md` for the implemented coverage, trust story, theorems and their
 caveats, and how those theorems are proven. All architectures use the same formalization
 pipeline; adding another architecture extends its existing verification coverage and tooling.
-Build it from that directory with the elan-managed `lake` for its `lean-toolchain` (a `lake` of
-another Lean version corrupts the shared `.lake` cache):
+Build it with the elan-managed `lake` for its `lean-toolchain` (a `lake` of another Lean version
+corrupts the shared `.lake` cache); the scripts run from any directory:
 
 ```sh
-cd lean
-lake exe cache get          # Mathlib's prebuilt oleans, once
-lake build --wfail          # warnings fail the build, as in CI
-cd .. && lean/scripts/check.sh   # regenerate the transcription and check the skeletons
+lean/scripts/build.sh          # fetch Mathlib's cache, then lake build, as in CI
+lean/scripts/check.sh          # regenerate the transcription and check the skeletons
+lean/scripts/fetch_aeneas.sh   # fetch Charon and Aeneas, once per pinned release
+lean/scripts/gen_portable.sh   # regenerate the Aeneas translation; --check compares instead
 ```
+
+`lean/scripts/build.sh` fails the build on any warning, as `lake build --wfail` would, except
+for warnings in Aeneas' library. The package requires that library but does not maintain it,
+and Lake cannot exempt one package from `--wfail`.
+
+`lean/scripts/gen_portable.sh` runs the Charon and Aeneas binaries that `fetch_aeneas.sh` fetched.
+When the pin moves to another Aeneas release, it fails until `fetch_aeneas.sh` is run again; it
+never fetches by itself.
 
 - **Every architecture's `Transcription.lean` and the shared `Vectors.lean` are generated** by
   `lean/scripts/gen.py` from the Rust `asm!` blocks and the reference vectors. Never edit them
@@ -223,7 +231,7 @@ do not change these instructions or coverage documentation to legitimize an omis
   and proof skeletons, and run generator validation tests. Register every completed module in
   the root import closure so the independent-kernel export includes it. A passing `lake build`
   does not validate files that the build never imports.
-- Work in small self-contained commits, each building with `lake build --wfail` and passing
+- Work in small self-contained commits, each building with `lean/scripts/build.sh` and passing
   the relevant generation/skeleton tests. Intermediate coverage may be incomplete, but must be
   explicitly tracked to completion; do not claim architecture support is complete until the
   parity checklist is satisfied. Report any unavailable independent-kernel check separately.

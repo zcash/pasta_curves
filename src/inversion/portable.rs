@@ -6,10 +6,11 @@
 //! instruction after the assembly. The packed divstep is the recurrence of `Packed.lean` on words,
 //! with the branch taken by masks; the decoder is the formula of `Packed.lean`'s `unpack`; the rows
 //! and the reduction are limb arithmetic modulo `2^320`, with `u128` accumulators over `u64 × u64`
-//! products, which 64-bit targets compile to their widening multiplication. The blocks are not
-//! modelled in Lean: the crate's tests check them against the same known answers as the assembly
-//! blocks. A translation via Aeneas would be possible; the code stays within the subset of Rust
-//! that Aeneas could translate (no `unsafe`, explicit wrapping arithmetic, plain loops).
+//! products, which 64-bit targets compile to their widening multiplication. Aeneas translates them
+//! to Lean (`lean/PastaCurves/Portable/`), but no theorem is stated about the translation: the
+//! crate's tests check them against the same known answers as the assembly blocks. The code stays
+//! within the subset of Rust that Aeneas translates (no `unsafe`, explicit wrapping arithmetic,
+//! plain loops).
 //!
 //! There is no data-dependent branch or memory access: the divstep selects its two outcomes by a
 //! mask, and the rows fold each matrix entry's sign in by a conditional negation under its mask.

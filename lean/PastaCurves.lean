@@ -19,6 +19,7 @@ import PastaCurves.Inversion.PackedWords
 import PastaCurves.Inversion.Composition
 import PastaCurves.AArch64
 import PastaCurves.X86_64
+import PastaCurves.Portable.Funs
 
 /-!
 # The assembly routines, formalized
