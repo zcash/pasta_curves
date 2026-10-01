@@ -4,6 +4,8 @@ Released under the Apache License, Version 2.0, as described in the file LICENSE
 -/
 import PastaAArch64Asm.Semantics
 import PastaAArch64Asm.Transcription
+import PastaAArch64Asm.Machine
+import PastaAArch64Asm.MachineAdd
 import PastaAArch64Asm.Compositions
 import PastaAArch64Asm.Fields
 import PastaAArch64Asm.Vectors
