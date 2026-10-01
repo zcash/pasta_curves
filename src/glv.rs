@@ -1,15 +1,54 @@
 //! GLV (Gallant–Lambert–Vanstone) scalar multiplication for the Pasta curves.
 //!
-//! Both Pasta curves carry a cube-root endomorphism
+//! GLV is a **re-encoding** of the scalar, in two stages, and only the first
+//! is what the technique is named for.
+//!
+//! The **split**. Both Pasta curves carry a cube-root endomorphism
 //! $\phi(x, y) = (\zeta x, y)$ (exposed as [`CurveExt::endo`]), for which
-//! $\phi(P) = \lambda P$ with $\lambda$ = `Scalar::ZETA`. This module uses that
-//! structure to split a full-width scalar multiplication $k P$ into two
-//! half-width multiplications evaluated against a shared table of odd multiples
-//! of $P$ and $\phi(P)$.
+//! $\phi(P) = \lambda P$ with $\lambda$ = [`Scalar::ZETA`]. Because
+//! $\lambda^2 + \lambda + 1 = 0$, a full-width scalar can be rewritten as
+//! $k \equiv k_1 + k_2\lambda \pmod n$ with both halves near $\sqrt{n}$, so
+//! that $k P = k_1 P + k_2 \phi(P)$. Running both halves over one shared
+//! column loop halves the doublings. That is the whole of what the split
+//! buys, and it is independent of what comes next.
+//!
+//! The **digit expansion**. Turning that re-encoded scalar into columns a
+//! ladder can walk is a separate choice, and GLV says nothing about it. More
+//! than one answer works, and this crate carries two:
+//!
+//! - *This module*: two **independent** width-4 wNAF digit strings, one per
+//!   half, sharing a column index. An addition is paid whenever either string
+//!   is nonzero, so their densities add.
+//! - *`crate::glv_eisenstein`* (feature `glv-eisenstein`): one **joint**
+//!   width-3 NAF over the Eisenstein integers. It uses the fact that
+//!   $(k_1, k_2)$ is not two unrelated integers but the single element
+//!   $k_1 + k_2\omega$ of $\mathbb{Z}[\omega]$, which the scalar field
+//!   receives by $\omega \mapsto \lambda$. One digit string instead of two,
+//!   so an addition is paid once per column rather than twice.
+//!
+//! # Using it
+//!
+//! Both modules expose the same four entry points, one per call shape. Each
+//! shares whatever the shape lets it share, so none of them asks the caller
+//! to assemble the precomputation:
+//!
+//! |                 | one scalar    | many scalars    |
+//! |-----------------|---------------|-----------------|
+//! | **one point**   | [`mul`]       | [`mul_scalars`] |
+//! | **many points** | [`batch_mul`] | [`mul_pairs`]   |
+//!
+//! [`batch_mul`] is the wallet-scanning shape, and the one `glv_eisenstein`
+//! optimises hardest: a shared scalar means one recoding and one fused
+//! column ladder across every point.
+//!
+//! This module evaluates its two half-width multiplications against a shared
+//! table of odd multiples of $P$ and $\phi(P)$.
 //!
 //! This path is variable-time in the scalar (GLV decomposition plus wNAF
 //! recoding); the `_glv` naming distinguishes it from the native `Mul`
 //! implementations, which are unchanged.
+//!
+//! [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
 //!
 //! # References
 //!
@@ -40,7 +79,7 @@ use ff::PrimeField;
 use ff::WithSmallOrderMulGroup;
 use group::CurveAffine as _;
 
-use crate::arithmetic::{CurveExt, mac, sbb};
+use crate::arithmetic::{CurveExt, VartimeField, mac, sbb};
 use crate::{pallas, vesta};
 
 mod private {
@@ -51,14 +90,419 @@ mod private {
     impl Sealed for crate::vesta::Point {}
 }
 
+/// How a GLV-split scalar is expanded into digit columns, together with the
+/// table of points those digits index.
+///
+/// `decompose` answers the first half of a GLV multiplication, turning `k`
+/// into a pair of half-width integers. It says nothing about the second half,
+/// which is how that pair becomes digits, and there is more than one answer:
+/// [`Wnaf4`] recodes the two halves as independent width-4 wNAFs, while
+/// `crate::glv_eisenstein::EisensteinNaf3` recodes them jointly as one
+/// width-3 NAF over the Eisenstein integers. This trait is the shape they
+/// share, so the laws below can be stated once.
+///
+/// Implementations must satisfy, for every `k` and every non-identity `P`:
+///
+/// - `mul(&table(P), &recode(k)) == P * k`, the identity included;
+/// - `batch_tables(ps)[i] == table(&ps[i])`, so batching is only a shared
+///   inversion and never a different answer;
+/// - `recode` is a function of `k` alone, so a recoding may be built once and
+///   reused across points.
+///
+/// # Both tables are the same construction
+///
+/// The two recodings look unlike each other and are not. A digit set carries
+/// a group of cheap symmetries, the table stores one point per ORBIT, and the
+/// lookup applies the group element it dropped. When the action is free the
+/// table is exactly `|digits| / |G|` points:
+///
+/// |                  | group `G`   | digits                       | stored |
+/// |------------------|-------------|------------------------------|--------|
+/// | [`Wnaf4`]        | $\{\pm 1\}$ | $\pm 1, \pm 3, \pm 5, \pm 7$ | 4      |
+/// | `EisensteinNaf3` | $\mu_6$     | the 48 odd classes           | 8      |
+///
+/// Freeness is what makes the saving exactly $|G|$: $-d \neq d$ for odd $d$,
+/// just as no nonidentity unit fixes an odd class. So the familiar
+/// signed-digit trick, storing only positive multiples and negating on
+/// lookup, is the $|G| = 2$ case of what
+/// `crate::glv_eisenstein` does with the six curve automorphisms.
+///
+/// Internal: it exists to pin the contract and to let one conformance suite
+/// run against both recodings, not as a surface for callers.
+pub(crate) trait Recoding<C>
+where
+    C: GlvParams,
+{
+    /// The recoded scalar: the digit columns the ladder walks.
+    type Digits;
+
+    /// The precomputed multiples of `P` that the digits index.
+    type Table;
+
+    /// Recodes a scalar, independently of any point.
+    /// Only the conformance suite calls this: production code reaches the
+    /// same operation through the inherent method.
+    #[cfg(test)]
+    fn recode(k: &C::ScalarExt) -> Self::Digits;
+
+    /// Builds the table for one point.
+    /// Only the conformance suite calls this: production code reaches the
+    /// same operation through the inherent method.
+    #[cfg(test)]
+    fn table(p: &C) -> Self::Table;
+
+    /// Builds tables for many points, sharing one field inversion.
+    /// Only the conformance suite calls this: production code reaches the
+    /// same operation through the inherent method.
+    #[cfg(test)]
+    fn batch_tables(points: &[C]) -> Vec<Self::Table>;
+
+    /// Number of digit columns in a recoding.
+    ///
+    /// Hidden: the per-column interface exists so that [`Recoding::mul`] can
+    /// be written once, not for callers to drive a ladder by hand.
+    #[doc(hidden)]
+    fn columns(digits: &Self::Digits) -> usize;
+
+    /// Adds column `i`'s contribution to the accumulator, which is nothing at
+    /// all for a zero column.
+    #[doc(hidden)]
+    fn add_column(table: &Self::Table, digits: &Self::Digits, i: usize, acc: &mut C);
+
+    /// Walks the ladder: the point the digits name, against that table.
+    ///
+    /// This is Horner's rule, right to left, and it is the same fold for
+    /// every recoding: an accumulator doubled once per column, with that
+    /// column's contribution added in. Only [`Recoding::add_column`] differs,
+    /// so the loop is provided here rather than written per implementation.
+    fn mul(table: &Self::Table, digits: &Self::Digits) -> C {
+        let len = Self::columns(digits);
+        let mut acc = C::identity();
+        for i in (0..len).rev() {
+            // `acc` is still the identity on the first iteration; skip the
+            // wasted doubling.
+            if i + 1 < len {
+                acc = acc.double();
+            }
+            Self::add_column(table, digits, i, &mut acc);
+        }
+        acc
+    }
+}
+
+/// The laws every [`Recoding`] must satisfy, as functions the per-curve
+/// property tests in this module and in [`crate::glv_eisenstein`] both run.
+///
+/// Stating them once is the point of the trait: the two recodings share no
+/// ladder code, so without a common suite nothing forces them to mean the
+/// same thing by "reuse gives the same answer".
+#[cfg(test)]
+pub(crate) mod conformance {
+    use ff::PrimeField;
+    use proptest::prelude::*;
+
+    use super::{GlvParams, Recoding};
+
+    /// Scalars drawn as four uniform `u64` limbs widened through
+    /// `from_uniform_bytes`, so the whole field is reachable without modular
+    /// bias. Shared with [`crate::glv_eisenstein`]'s property tests.
+    pub(crate) fn scalar_strategy<F>() -> impl Strategy<Value = F>
+    where
+        F: PrimeField + ff::FromUniformBytes<64>,
+    {
+        proptest::array::uniform4(any::<u64>()).prop_map(|limbs| {
+            let mut bytes = [0u8; 64];
+            for (i, l) in limbs.iter().enumerate() {
+                bytes[i * 8..(i + 1) * 8].copy_from_slice(&l.to_le_bytes());
+            }
+            F::from_uniform_bytes(&bytes)
+        })
+    }
+
+    /// The defining law: the ladder computes `k * P`.
+    pub(crate) fn agrees_with_mul<C, R>(p: &C, k: &C::ScalarExt)
+    where
+        C: GlvParams,
+        R: Recoding<C>,
+    {
+        assert_eq!(R::mul(&R::table(p), &R::recode(k)), *p * *k);
+    }
+
+    /// Multiplication is additive in the scalar, so the recoding cannot be
+    /// merely self-consistent: it has to respect the group structure.
+    pub(crate) fn additive_in_scalar<C, R>(p: &C, a: &C::ScalarExt, b: &C::ScalarExt)
+    where
+        C: GlvParams,
+        R: Recoding<C>,
+    {
+        let t = R::table(p);
+        let sum = R::mul(&t, &R::recode(&(*a + *b)));
+        let parts = R::mul(&t, &R::recode(a)) + R::mul(&t, &R::recode(b));
+        assert_eq!(sum, parts, "mul is not additive in the scalar");
+    }
+
+    /// Zero and negation, which the additive law alone does not pin.
+    pub(crate) fn zero_and_negation<C, R>(p: &C, k: &C::ScalarExt)
+    where
+        C: GlvParams,
+        R: Recoding<C>,
+    {
+        let t = R::table(p);
+        assert!(bool::from(
+            R::mul(&t, &R::recode(&<C::ScalarExt as ff::Field>::ZERO)).is_identity()
+        ));
+        let both = R::mul(&t, &R::recode(k)) + R::mul(&t, &R::recode(&(-*k)));
+        assert!(bool::from(both.is_identity()), "k*P + (-k)*P is not O");
+    }
+
+    /// Batching is a shared inversion, never a different answer.
+    pub(crate) fn batch_matches_solo<C, R>(points: &[C], k: &C::ScalarExt)
+    where
+        C: GlvParams,
+        R: Recoding<C>,
+    {
+        let digits = R::recode(k);
+        for (t, p) in R::batch_tables(points).iter().zip(points) {
+            assert_eq!(R::mul(t, &digits), R::mul(&R::table(p), &digits));
+        }
+    }
+
+    /// A batch of affine results, as every plural entry point returns.
+    type Affines<C> = alloc::vec::Vec<<C as crate::arithmetic::CurveExt>::AffineExt>;
+
+    /// One point against many scalars.
+    pub(crate) type MulScalars<C> =
+        fn(&C, &[<C as crate::arithmetic::CurveExt>::ScalarExt]) -> Affines<C>;
+
+    /// Many points against many scalars.
+    pub(crate) type MulPairs<C> =
+        fn(&[(C, <C as crate::arithmetic::CurveExt>::ScalarExt)]) -> Affines<C>;
+
+    /// A module's four free entry points, one per call shape.
+    ///
+    /// Gathered into a struct because they are free functions, one set per
+    /// module, rather than methods of [`Recoding`]: this is what lets a law
+    /// be stated once and run against both recodings.
+    pub(crate) struct EntryPoints<C: GlvParams> {
+        pub(crate) mul: fn(&C, &C::ScalarExt) -> C,
+        pub(crate) batch_mul: fn(&[C], &C::ScalarExt) -> Affines<C>,
+        pub(crate) mul_scalars: MulScalars<C>,
+        pub(crate) mul_pairs: MulPairs<C>,
+    }
+
+    /// The inputs a windowed ladder is most likely to get wrong, against
+    /// every entry point: the ends of the scalar range, the endomorphism's
+    /// own eigenvalue, the width the GLV split rounds at, the point at
+    /// infinity, and batches built entirely out of them.
+    ///
+    /// The property tests draw full-width scalars and nonidentity points, so
+    /// none of this is reachable from them: a uniform draw hits zero, one, or
+    /// the identity with probability around `2^-254`.
+    pub(crate) fn corner_cases<C>(f: &EntryPoints<C>)
+    where
+        C: GlvParams,
+    {
+        use ff::WithSmallOrderMulGroup as _;
+        use group::CurveAffine as _;
+
+        let zero = <C::ScalarExt as ff::Field>::ZERO;
+        let one = <C::ScalarExt as ff::Field>::ONE;
+        let lambda = C::ScalarExt::ZETA;
+        let scalars = [
+            zero,
+            one,
+            -one,
+            C::ScalarExt::from(2),
+            C::ScalarExt::from(3),
+            // 2^w exactly, for both modules' window widths.
+            C::ScalarExt::from(8),
+            C::ScalarExt::from(16),
+            lambda,
+            -lambda,
+            lambda + one,
+            C::ScalarExt::from(u64::MAX),
+            // The half-width boundary the decomposition rounds at.
+            C::ScalarExt::from_u128((1u128 << 127) - 1),
+            C::ScalarExt::from_u128(1u128 << 127),
+            C::ScalarExt::from_u128(1u128 << 127) + one,
+        ];
+
+        let g = C::generator();
+        let o = C::identity();
+        let points = [o, g, -g, g.double(), g * (lambda + C::ScalarExt::from(42))];
+        let o_affine = C::AffineExt::identity();
+
+        for p in points {
+            for k in scalars {
+                let want = p * k;
+                let affine = want.to_affine();
+
+                assert_eq!((f.mul)(&p, &k), want, "mul disagrees with the operator");
+
+                // Negating either argument negates the product, and both
+                // routes to `-kP` must agree.
+                assert_eq!((f.mul)(&p, &(-k)), -want, "mul by -k");
+                assert_eq!((f.mul)(&(-p), &k), -want, "mul of -P");
+                assert_eq!((f.mul)(&p, &k) + (f.mul)(&p, &(-k)), o, "kP + (-k)P");
+
+                // Every plural entry point, at length one.
+                assert_eq!((f.batch_mul)(&[p], &k), alloc::vec![affine], "batch_mul");
+                assert_eq!(
+                    (f.mul_scalars)(&p, &[k]),
+                    alloc::vec![affine],
+                    "mul_scalars"
+                );
+                assert_eq!((f.mul_pairs)(&[(p, k)]), alloc::vec![affine], "mul_pairs");
+            }
+        }
+
+        // Small multiples the ladder has to reproduce by construction, stated
+        // against the group operation rather than against `Mul`.
+        assert_eq!((f.mul)(&g, &C::ScalarExt::from(2)), g.double());
+        assert_eq!((f.mul)(&g, &C::ScalarExt::from(3)), g.double() + g);
+        assert_eq!((f.mul)(&g, &-one), -g, "(n-1)P must be -P");
+        assert_eq!((f.mul)(&g, &zero), o, "0P must be O");
+        assert_eq!((f.mul)(&o, &one), o, "1*O must be O");
+
+        // Batches made entirely of degenerate inputs. Every result is the
+        // identity, so the shared inversion faces nothing but zero
+        // z-coordinates and must not divide by one of them.
+        for got in [
+            (f.batch_mul)(&[o, o, o], &one),
+            (f.batch_mul)(&[g, -g, o], &zero),
+            (f.mul_scalars)(&o, &[one, -one, zero, lambda]),
+            (f.mul_pairs)(&[(o, one), (o, -one), (g, zero)]),
+        ] {
+            assert!(
+                got.iter().all(|q| *q == o_affine),
+                "a degenerate batch must normalize to identities",
+            );
+        }
+
+        // Identities interleaved with real points: the shared inversion has
+        // to skip the zero z without disturbing its neighbours.
+        let mixed = [o, g, o, g.double(), -g, o];
+        let k = lambda + C::ScalarExt::from(7);
+        for (got, p) in (f.batch_mul)(&mixed, &k).iter().zip(&mixed) {
+            assert_eq!(*got, (*p * k).to_affine(), "mixed batch_mul lane");
+        }
+        let pairs: alloc::vec::Vec<_> = mixed.iter().zip(scalars).map(|(p, k)| (*p, k)).collect();
+        for (got, (p, k)) in (f.mul_pairs)(&pairs).iter().zip(&pairs) {
+            assert_eq!(*got, (*p * *k).to_affine(), "mixed mul_pairs lane");
+        }
+        for (got, k) in (f.mul_scalars)(&o, &scalars).iter().zip(scalars) {
+            assert_eq!(*got, o_affine, "O against {k:?} must be O");
+        }
+
+        // The same scalars against points that are not the identity. Without
+        // this, a `mul_scalars` that reused one scalar for the whole slice
+        // survives: every other call here passes it a single-element slice,
+        // or passes the identity, where each answer is the identity whatever
+        // the scalar.
+        for p in [g, -g, g.double()] {
+            for (got, k) in (f.mul_scalars)(&p, &scalars).iter().zip(scalars) {
+                assert_eq!(*got, (p * k).to_affine(), "mul_scalars lane");
+            }
+        }
+    }
+
+    /// The plural entry points are elementwise the singular one. They exist
+    /// only to share the precomputation, so sharing must not change a value.
+    pub(crate) fn plural_matches_singular<C>(
+        points: &[C],
+        ks: &[C::ScalarExt],
+        mul_scalars: MulScalars<C>,
+        mul_pairs: MulPairs<C>,
+    ) where
+        C: GlvParams,
+    {
+        assert!(mul_scalars(&points[0], &[]).is_empty());
+        assert!(mul_pairs(&[]).is_empty());
+
+        let got = mul_scalars(&points[0], ks);
+        assert_eq!(got.len(), ks.len());
+        for (got, k) in got.iter().zip(ks) {
+            assert_eq!(*got, (points[0] * *k).to_affine());
+        }
+
+        let pairs: alloc::vec::Vec<(C, C::ScalarExt)> = points
+            .iter()
+            .zip(ks.iter().cycle())
+            .map(|(p, k)| (*p, *k))
+            .collect();
+        let got = mul_pairs(&pairs);
+        assert_eq!(got.len(), pairs.len());
+        for (got, (p, k)) in got.iter().zip(&pairs) {
+            assert_eq!(*got, (*p * *k).to_affine());
+        }
+    }
+
+    /// A recoding is a function of `k` alone, so it survives reuse across
+    /// points. This is what makes `Recoded`/`Decomposed` worth exposing.
+    pub(crate) fn recoding_is_reusable<C, R>(points: &[C], k: &C::ScalarExt)
+    where
+        C: GlvParams,
+        R: Recoding<C>,
+    {
+        let shared = R::recode(k);
+        for p in points {
+            assert_eq!(R::mul(&R::table(p), &shared), *p * *k);
+        }
+    }
+}
+
+/// The recoding [`crate::glv`] performs: two independent width-4 wNAF digit
+/// strings, one per GLV half, sharing a column index.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Wnaf4;
+
+impl<C> Recoding<C> for Wnaf4
+where
+    C: GlvParams,
+{
+    type Digits = Decomposed<C>;
+    type Table = Table<C>;
+
+    #[cfg(test)]
+    fn recode(k: &C::ScalarExt) -> Self::Digits {
+        Decomposed::new(k)
+    }
+
+    #[cfg(test)]
+    fn table(p: &C) -> Self::Table {
+        Table::new(p)
+    }
+
+    #[cfg(test)]
+    fn batch_tables(points: &[C]) -> Vec<Self::Table> {
+        Table::batch(points)
+    }
+
+    fn columns(digits: &Self::Digits) -> usize {
+        digits.len
+    }
+
+    fn add_column(table: &Self::Table, digits: &Self::Digits, i: usize, acc: &mut C) {
+        Table::add_digit(acc, &table.t1, digits.digits1[i]);
+        Table::add_digit(acc, &table.t2, digits.digits2[i]);
+    }
+}
+
 /// Per-curve GLV constants: a short basis for the lattice
 /// $\{(a, b) : a + b\lambda \equiv 0 \pmod n\}$ — where $n$ is the order of the
-/// group (equivalently the scalar field modulus) and $\lambda$ = `Scalar::ZETA`
-/// — together with the Babai rounding coefficients derived from that basis.
+/// group (equivalently the scalar field modulus) and $\lambda$ =
+/// [`Scalar::ZETA`] — together with the Babai rounding coefficients derived
+/// from that basis.
+///
+/// [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
+///
+/// The base field is required to implement [`VartimeField`], so that
+/// `crate::glv_eisenstein`'s batch-affine ladder can reach the safegcd
+/// inversion.
 ///
 /// This trait is sealed; it is implemented for [`pallas::Point`] and
 /// [`vesta::Point`].
-pub trait GlvParams: CurveExt + private::Sealed {
+pub trait GlvParams: CurveExt<Base: VartimeField> + private::Sealed {
     /// First short lattice vector `v1 = (V1A, -V1B_NEG)`.
     const V1A: u128;
     /// Magnitude of `v1`'s (negative) second component.
@@ -93,10 +537,12 @@ pub trait GlvParams: CurveExt + private::Sealed {
 /// this impl body verbatim.
 ///
 /// The `constants` test (see the module's test suite) re-verifies the short
-/// basis against Pallas's own $\lambda$ = `Scalar::ZETA` using field
+/// basis against Pallas's own $\lambda$ = [`Scalar::ZETA`] using field
 /// arithmetic alone, and the Babai coefficients `G1`/`G2` against their
 /// defining rounding using limb arithmetic alone; the `decompose` tests prove
 /// that the decomposition reconstructs `k`. A wrong constant cannot pass them.
+///
+/// [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
 impl GlvParams for pallas::Point {
     const V1A: u128 = 0x49e69d1640f049157fcae1c700000001;
     const V1B_NEG: u128 = 0x49e69d1640a899538cb1279300000000;
@@ -120,8 +566,10 @@ impl GlvParams for pallas::Point {
 
 /// As for Pallas, these constants are computed by `sage/glv_constants.sage`,
 /// and the `constants` and `decompose` tests re-verify them against Vesta's
-/// own $\lambda$ = `Scalar::ZETA` and the Babai coefficients' defining
+/// own $\lambda$ = [`Scalar::ZETA`] and the Babai coefficients' defining
 /// rounding.
+///
+/// [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
 impl GlvParams for vesta::Point {
     const V1A: u128 = 0x49e69d1640f049157fcae1c700000000;
     const V1B_NEG: u128 = 0x49e69d1640a899538cb1279300000001;
@@ -220,7 +668,10 @@ fn signed_halves(x: [u64; 4]) -> (bool, u128) {
 /// The four little-endian limbs of a Pasta scalar. (Pasta scalars have a
 /// 32-byte little-endian representation; the four 8-byte reads cover it
 /// exactly.)
-fn scalar_limbs<F: PrimeField>(k: &F) -> [u64; 4] {
+fn scalar_limbs<F>(k: &F) -> [u64; 4]
+where
+    F: PrimeField,
+{
     let bytes = k.to_repr();
     let bytes: &[u8] = bytes.as_ref();
     let mut limbs = [0u64; 4];
@@ -232,7 +683,10 @@ fn scalar_limbs<F: PrimeField>(k: &F) -> [u64; 4] {
 
 /// GLV split: `k = k1 + k2 * lambda (mod n)` with `|k1|`, `|k2|` strictly
 /// below `2^127`, each half returned as `(is_negative, magnitude)`.
-fn decompose<C: GlvParams>(k: &C::ScalarExt) -> ((bool, u128), (bool, u128)) {
+pub(crate) fn decompose<C>(k: &C::ScalarExt) -> ((bool, u128), (bool, u128))
+where
+    C: GlvParams,
+{
     let kl = scalar_limbs(k);
     let c1 = round_mul_shift(&C::G1, &kl);
     let c2 = round_mul_shift(&C::G2, &kl);
@@ -249,14 +703,20 @@ fn decompose<C: GlvParams>(k: &C::ScalarExt) -> ((bool, u128), (bool, u128)) {
 /// Build one with [`Table::new`], or many with one shared normalization via
 /// [`Table::batch`].
 #[derive(Clone, Copy, Debug)]
-pub struct Table<C: GlvParams> {
+pub struct Table<C>
+where
+    C: GlvParams,
+{
     /// `{1, 3, 5, 7} * P`
     t1: [C::AffineExt; 4],
     /// `{1, 3, 5, 7} * phi(P)`
     t2: [C::AffineExt; 4],
 }
 
-impl<C: GlvParams> Table<C> {
+impl<C> Table<C>
+where
+    C: GlvParams,
+{
     /// Builds the window for a single point (with no heap allocation, but
     /// one field inversion; amortize that with [`Table::batch`]).
     pub fn new(p: &C) -> Self {
@@ -331,17 +791,7 @@ impl<C: GlvParams> Table<C> {
     /// shared-doubling ladder over the GLV split. Identical to `P * k`
     /// (tested).
     pub fn mul_decomposed(&self, k: &Decomposed<C>) -> C {
-        let mut acc = C::identity();
-        for i in (0..k.len).rev() {
-            // `acc` is still the identity on the first iteration; skip the
-            // wasted doubling.
-            if i + 1 < k.len {
-                acc = acc.double();
-            }
-            Self::add_digit(&mut acc, &self.t1, k.digits1[i]);
-            Self::add_digit(&mut acc, &self.t2, k.digits2[i]);
-        }
-        acc
+        <Wnaf4 as Recoding<C>>::mul(self, k)
     }
 
     /// Adds `d * B` to `acc`, where `table` holds `{1, 3, 5, 7} * B` and `d`
@@ -364,7 +814,10 @@ impl<C: GlvParams> Table<C> {
 /// recoding out of a loop that multiplies the same scalar against many
 /// tables (e.g. one viewing key against a batch of ephemeral keys).
 #[derive(Clone, Debug)]
-pub struct Decomposed<C: GlvParams> {
+pub struct Decomposed<C>
+where
+    C: GlvParams,
+{
     digits1: [i8; MAX_WNAF_DIGITS],
     digits2: [i8; MAX_WNAF_DIGITS],
     /// Digit positions in use: the longer of the two halves' wNAF lengths.
@@ -373,7 +826,10 @@ pub struct Decomposed<C: GlvParams> {
     _curve: core::marker::PhantomData<C>,
 }
 
-impl<C: GlvParams> Decomposed<C> {
+impl<C> Decomposed<C>
+where
+    C: GlvParams,
+{
     /// Decomposes `k` and recodes both halves as width-4 wNAF digits, with
     /// each half's sign folded into its digits.
     pub fn new(k: &C::ScalarExt) -> Self {
@@ -418,8 +874,92 @@ fn wnaf_digits(a: u128, negate: bool) -> ([i8; MAX_WNAF_DIGITS], usize) {
     (digits, n)
 }
 
+/// One-shot `k * p` through the split wNAF recoding: variable-time in `k`,
+/// identical in value to `p * k` (including `p` = identity).
+///
+/// The same call shape as `crate::glv_eisenstein::mul`, so the two
+/// recodings are interchangeable at the call site.
+pub fn mul<C>(p: &C, k: &C::ScalarExt) -> C
+where
+    C: GlvParams,
+{
+    p.mul_glv(k)
+}
+
+/// `k * p` for every `p`, building the per-point tables with one shared
+/// field inversion and recoding the scalar once, then returning affine
+/// results.
+///
+/// The same call shape as `crate::glv_eisenstein::batch_mul`. That one is
+/// faster on a large batch, because it also shares an inversion across the
+/// ladder itself; this one exists so a caller can pick the recoding without
+/// changing anything else. Identity inputs are handled.
+pub fn batch_mul<C>(points: &[C], k: &C::ScalarExt) -> Vec<C::AffineExt>
+where
+    C: GlvParams,
+{
+    if points.is_empty() {
+        return Vec::new();
+    }
+    let decomposed = Decomposed::new(k);
+    let proj: Vec<C> = Table::batch(points)
+        .iter()
+        .map(|t| t.mul_decomposed(&decomposed))
+        .collect();
+    normalize(&proj)
+}
+
+/// `k * p` for every `k`, against one point.
+///
+/// The table is built once and reused across the scalars, and the results
+/// share a single field inversion on the way back to affine.
+pub fn mul_scalars<C>(p: &C, ks: &[C::ScalarExt]) -> Vec<C::AffineExt>
+where
+    C: GlvParams,
+{
+    if ks.is_empty() {
+        return Vec::new();
+    }
+    let table = Table::new(p);
+    let proj: Vec<C> = ks.iter().map(|k| table.mul(k)).collect();
+    normalize(&proj)
+}
+
+/// `k * p` for every `(p, k)` pair.
+///
+/// The per-point tables are built with one shared field inversion, and the
+/// results share another on the way back to affine. Neither the point nor
+/// the scalar is shared, so each pair still walks its own ladder; use
+/// [`batch_mul`] instead when the scalar is common to every point, which is
+/// the cheaper shape.
+pub fn mul_pairs<C>(pairs: &[(C, C::ScalarExt)]) -> Vec<C::AffineExt>
+where
+    C: GlvParams,
+{
+    if pairs.is_empty() {
+        return Vec::new();
+    }
+    let points: Vec<C> = pairs.iter().map(|(p, _)| *p).collect();
+    let proj: Vec<C> = Table::batch(&points)
+        .iter()
+        .zip(pairs)
+        .map(|(t, (_, k))| t.mul(k))
+        .collect();
+    normalize(&proj)
+}
+
+/// One shared inversion back to affine.
+fn normalize<C>(proj: &[C]) -> Vec<C::AffineExt>
+where
+    C: GlvParams,
+{
+    let mut affine = alloc::vec![C::AffineExt::identity(); proj.len()];
+    C::batch_normalize(proj, &mut affine);
+    affine
+}
+
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::arithmetic::adc;
     use ff::Field;
@@ -463,7 +1003,10 @@ mod tests {
     }
 
     /// Deterministic full-width scalars for the known-answer tests.
-    fn scalars<F: PrimeField>(n: u64) -> impl Iterator<Item = F> {
+    fn scalars<F>(n: u64) -> impl Iterator<Item = F>
+    where
+        F: PrimeField,
+    {
         (0..n).map(|i| {
             (F::from(0x9E37_79B9_7F4A_7C15u64 + i).square() + F::from(0x0123_4567_89AB_CDEFu64))
                 .square()
@@ -475,7 +1018,10 @@ mod tests {
     /// using limb arithmetic only: `g` is that rounding if and only if
     /// `|2^384 * v - g * n| < n/2` (an exact tie is impossible: `n` is odd,
     /// so `n/2` is not an integer).
-    fn babai_coefficient_verify<C: GlvParams>(g: &[u64; 5], v: u128) {
+    fn babai_coefficient_verify<C>(g: &[u64; 5], v: u128)
+    where
+        C: GlvParams,
+    {
         // n = (n - 1) + 1, with n - 1 read out of the field type as -1.
         // n is odd, so n - 1 is even and adding the 1 back cannot carry.
         let mut n = scalar_limbs(&-C::ScalarExt::ONE);
@@ -530,10 +1076,15 @@ mod tests {
     }
 
     /// The short-basis lattice relations, re-verified against the curve's
-    /// own lambda (= `Scalar::ZETA`) using field arithmetic only:
+    /// own lambda (= [`Scalar::ZETA`]) using field arithmetic only:
     ///   V1A - V1B_NEG*lambda == 0  and  V2A + V2B*lambda == 0  (mod n),
     /// plus the Babai coefficients G1/G2 against their defining rounding.
-    fn constants_verify<C: GlvParams>() {
+    ///
+    /// [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
+    fn constants_verify<C>()
+    where
+        C: GlvParams,
+    {
         let lambda = C::ScalarExt::ZETA;
         let from = C::ScalarExt::from_u128;
         assert_eq!(from(C::V1A), from(C::V1B_NEG) * lambda, "v1 not in lattice");
@@ -544,7 +1095,10 @@ mod tests {
 
     /// The endomorphism / lambda pairing on the real curve, on the same
     /// projective `endo` the table build relies on: `phi(P) == ZETA * P`.
-    fn endo_map_is_lambda<C: GlvParams>() {
+    fn endo_map_is_lambda<C>()
+    where
+        C: GlvParams,
+    {
         let g = C::generator();
         for k in scalars::<C::ScalarExt>(64) {
             let p = g * k;
@@ -559,7 +1113,10 @@ mod tests {
     /// The algebraic gate: k1 + k2*lambda == k (mod n) with both halves at most
     /// 2^127, for full-width scalars and the edge cases. Wrong GLV
     /// constants cannot pass this.
-    fn decompose_reconstructs<C: GlvParams>() {
+    fn decompose_reconstructs<C>()
+    where
+        C: GlvParams,
+    {
         let lambda = C::ScalarExt::ZETA;
         let check = |k: C::ScalarExt| {
             let ((neg1, a1), (neg2, a2)) = decompose::<C>(&k);
@@ -582,7 +1139,10 @@ mod tests {
     }
 
     /// Table-based multiplication matches the group's native `Mul`.
-    fn table_mul_matches_group_mul<C: GlvParams>() {
+    fn table_mul_matches_group_mul<C>()
+    where
+        C: GlvParams,
+    {
         let g = C::generator();
         for (i, k) in scalars::<C::ScalarExt>(64).enumerate() {
             let p = g * (k + C::ScalarExt::from(i as u64 + 1));
@@ -594,7 +1154,10 @@ mod tests {
     }
 
     /// One-shot `mul_glv` matches the native operator.
-    fn mul_glv_matches_operator<C: GlvParams>() {
+    fn mul_glv_matches_operator<C>()
+    where
+        C: GlvParams,
+    {
         let g = C::generator();
         for k in scalars::<C::ScalarExt>(64) {
             let p = g * (k + C::ScalarExt::ONE);
@@ -603,7 +1166,10 @@ mod tests {
     }
 
     /// The batched table build equals the solo build, point by point.
-    fn batch_tables_equal_solo<C: GlvParams>() {
+    fn batch_tables_equal_solo<C>()
+    where
+        C: GlvParams,
+    {
         let g = C::generator();
         let points: Vec<C> = scalars::<C::ScalarExt>(16)
             .map(|k| g * (k + C::ScalarExt::ONE))
@@ -623,7 +1189,10 @@ mod tests {
     }
 
     /// Identity tables work both alone and alongside non-identity tables.
-    fn identity_tables<C: GlvParams>() {
+    fn identity_tables<C>()
+    where
+        C: GlvParams,
+    {
         let identity = C::identity();
         let generator = C::generator();
         let k = C::ScalarExt::from(0xDEAD_BEEFu64);
@@ -642,7 +1211,10 @@ mod tests {
 
     /// A reused [`Decomposed`] gives the same products as decomposing
     /// per-multiplication.
-    fn decomposed_reuse_matches_fresh<C: GlvParams>() {
+    fn decomposed_reuse_matches_fresh<C>()
+    where
+        C: GlvParams,
+    {
         let g = C::generator();
         let k = scalars::<C::ScalarExt>(1).next().unwrap();
         let decomposed = Decomposed::<C>::new(&k);
@@ -698,6 +1270,391 @@ mod tests {
         };
     }
 
+    /// Known-answer vectors. Generated by `sage/glv_test_vectors.sage`;
+    /// regenerate with that script rather than editing the tables by hand.
+    ///
+    /// The property tests check both recodings against the crate's own `Mul`
+    /// and against each other, which cannot catch a fault the reference
+    /// shares with them. These expected points come from Sage's own curve
+    /// arithmetic instead, so a wrong answer would have to be wrong the same
+    /// way in two implementations that share no code.
+    pub(crate) mod vectors {
+        use super::*;
+        use crate::arithmetic::CurveAffine;
+
+        /// `k * G` on Pallas: `(k, x, y)` as little-endian limbs.
+        ///
+        /// Generated by `sage/glv_test_vectors.sage`; do not edit by hand.
+        #[rustfmt::skip]
+        pub(crate) const PALLAS_VECTORS: [([u64; 4], [u64; 4], [u64; 4]); 15] = [
+            // one
+            ([0x1, 0, 0, 0],
+             [0x992d30ed00000000, 0x224698fc094cf91b, 0, 0x4000000000000000],
+             [0x2, 0, 0, 0]),
+            // two
+            ([0x2, 0, 0, 0],
+             [0x1303c567b0000003, 0xefee2ee4411acfc, 0, 0x1c00000000000000],
+             [0x8aea5cdf3bfffffc, 0x17076ec9563fb75e, 0, 0x2b00000000000000]),
+            // minus one
+            ([0x8c46eb2100000000, 0x224698fc0994a8dd, 0, 0x4000000000000000],
+             [0x992d30ed00000000, 0x224698fc094cf91b, 0, 0x4000000000000000],
+             [0x992d30ecffffffff, 0x224698fc094cf91b, 0, 0x4000000000000000]),
+            // zeta
+            ([0x2aa9d2e050aa0e4f, 0xfed467d47c033af, 0x511db4d81cf70f5a, 0x6819a58283e528e],
+             [0x7b7fd22f0201b548, 0x5270d29d19fc7d2, 0xd3552a23a8554e50, 0x2d33357cb532458e],
+             [0x2, 0, 0, 0]),
+            // zeta squared
+            ([0x619d1840af55f1b1, 0x1259527ec1d4752e, 0xaee24b27e308f0a6, 0x397e65a7d7c1ad71],
+             [0x1dad5ebdfdfe4aba, 0x1d1f8bd237ad3149, 0x2caad5dc57aab1b0, 0x12ccca834acdba71],
+             [0x2, 0, 0, 0]),
+            // half the order
+            ([0xc623759080000000, 0x11234c7e04ca546e, 0, 0x2000000000000000],
+             [0xc0ba6527af70acf7, 0x7865416c09f327e5, 0xdae60f42ce13f6e9, 0xc376da060916888],
+             [0xdf56887b807cc21b, 0xc36d942037670d7a, 0xf372497ad0968cb2, 0x17a9db4ec26a7523]),
+            // 2^127
+            ([0, 0x8000000000000000, 0, 0],
+             [0x69a0fa0803dc4843, 0x58095e73b31f2e48, 0xedb41d2ecba5a33a, 0x3ddc2602361790f9],
+             [0x559d859b845787b0, 0x2b1850bd5b3a0a14, 0x1b879f9cb5b9bb17, 0x2350a7f5001193da]),
+            // 2^127 - 1
+            ([0xffffffffffffffff, 0x7fffffffffffffff, 0, 0],
+             [0xe376fcaecc6e0b05, 0xef120698d47c1742, 0x7d3af336e2089900, 0x10a37079455f743c],
+             [0x63cdf51f2000aaeb, 0x2760f1367385dddf, 0x5029035ce8bcd2ca, 0x1366e8c2c9e573b4]),
+            // random 0
+            ([0xfdce6ea5a6ee4db7, 0xe00504d671811e3c, 0xf46923051583328e, 0x132104c4fb5f15b9],
+             [0xc5a2f8ce7f192802, 0x61a8bbd4b4157510, 0xe24cf6288aff7877, 0x36e72cbf397928e9],
+             [0xc4f2bfd744116faa, 0x620550f383930a9a, 0x6e40ba8899fc5b9d, 0xf1bd4438df0f2f1]),
+            // random 1
+            ([0x3ba008c0de374107, 0x3d4f6399eff48ca1, 0x2741b50b6f2d327, 0x3466e07974bc6868],
+             [0x15dd40b4a9534ffc, 0xcd1181f2522a39a7, 0x80a56e4d3ddab432, 0x3be381077241156],
+             [0xd3ff1da7a01b8ba, 0x36787ce533f2e649, 0x2d37c7431c9e0ca4, 0x1ad718c0bdda49dc]),
+            // random 2
+            ([0xb9faec4a77f959e, 0x4a6646e8be79c3fd, 0xfc45ce72a8439fd9, 0x28bfc4ac5f6e87be],
+             [0xc87d533e6cc32527, 0x2dd7b64d61bfa377, 0x8224c19237036c08, 0x1c66d4d7e6a4c046],
+             [0x402cc8d9b43aa24d, 0x52167e42edd74051, 0x3fc68125dc81b9fe, 0x3f3dd7eeb2f0baaf]),
+            // random 3
+            ([0x9e33d7e44025bd7f, 0x2d843c477ac3f944, 0x5c06921f84629441, 0x17d3821f6f833913],
+             [0xb9282277e7adf4b3, 0x87acf7994d6c96a1, 0x4ae061fe136d210, 0x3c558c05793b55da],
+             [0x5e477c7f3878eaae, 0x5f51312749a96544, 0x16572e4d06f43514, 0xdf6fa226772dd76]),
+            // random 4
+            ([0xc2009548b79ee5a5, 0x6a5bbd72608485aa, 0xd32fb6749afa42f2, 0x22f26e04cc8ddf09],
+             [0xbae02a480b04e1ad, 0xf40b69c9554360b2, 0xb338a6fd47453147, 0xf9551ebf1430b05],
+             [0xa1b9bb8cd8674785, 0x12021f374a955125, 0x9bbd5f64a584d825, 0x164b2df90f887220]),
+            // random 5
+            ([0xfd35e85fa0c427c, 0xae1f07216ee0204e, 0x1b8cfd042cc3edac, 0xdd86b087824bf97],
+             [0xdbfae910ff170147, 0xfb7b9eb17dfd914e, 0x380fd68cf0827828, 0x3502eeb171a67154],
+             [0x453be311d72de1e8, 0x98fcf277dbdcd0f0, 0x2a5054a7b3100313, 0xa780105092304e4]),
+            // random 6
+            ([0x48e890686e74115a, 0x52bf1077a5c0e79f, 0xa0362cc2cf016b36, 0x3e6e5e5aa12aa594],
+             [0x2954114ff466aaa6, 0x63ecae7bffcc7e43, 0x81a07bcc95b6e679, 0x12937ca56e65dfc9],
+             [0x3dbedece4191483a, 0x21601d3f3dad50be, 0xd20b6c187dae7cb9, 0x10e4724b9863c7ec]),
+        ];
+
+        /// `k * G` on Vesta: `(k, x, y)` as little-endian limbs.
+        ///
+        /// Generated by `sage/glv_test_vectors.sage`; do not edit by hand.
+        #[rustfmt::skip]
+        pub(crate) const VESTA_VECTORS: [([u64; 4], [u64; 4], [u64; 4]); 15] = [
+            // one
+            ([0x1, 0, 0, 0],
+             [0x8c46eb2100000000, 0x224698fc0994a8dd, 0, 0x4000000000000000],
+             [0x2, 0, 0, 0]),
+            // two
+            ([0x2, 0, 0, 0],
+             [0xed5f06de70000003, 0xefee2ee443109e0, 0, 0x1c00000000000000],
+             [0xda3fa5fa2bfffffc, 0x17076ec9566fe174, 0, 0x2b00000000000000]),
+            // minus one
+            ([0x992d30ed00000000, 0x224698fc094cf91b, 0, 0x4000000000000000],
+             [0x8c46eb2100000000, 0x224698fc0994a8dd, 0, 0x4000000000000000],
+             [0x8c46eb20ffffffff, 0x224698fc0994a8dd, 0, 0x4000000000000000]),
+            // zeta
+            ([0x7b7fd22f0201b547, 0x5270d29d19fc7d2, 0xd3552a23a8554e50, 0x2d33357cb532458e],
+             [0x2aa9d2e050aa0e50, 0xfed467d47c033af, 0x511db4d81cf70f5a, 0x6819a58283e528e],
+             [0x2, 0, 0, 0]),
+            // zeta squared
+            ([0x1dad5ebdfdfe4ab9, 0x1d1f8bd237ad3149, 0x2caad5dc57aab1b0, 0x12ccca834acdba71],
+             [0x619d1840af55f1b2, 0x1259527ec1d4752e, 0xaee24b27e308f0a6, 0x397e65a7d7c1ad71],
+             [0x2, 0, 0, 0]),
+            // half the order
+            ([0xcc96987680000000, 0x11234c7e04a67c8d, 0, 0x2000000000000000],
+             [0xb7df5b85a62e2cfb, 0xcdbe894f14c1bfb6, 0xf84fa0cc8fc9ffcb, 0x27855ad5b23eb036],
+             [0x31f46767c566e7bf, 0x9f5cb835b7497d36, 0x3574ede136d59f54, 0x374f5576a6c9724f]),
+            // 2^127
+            ([0, 0x8000000000000000, 0, 0],
+             [0x20f60677de11721d, 0xcc6aab1817a91d34, 0x69d2b790ea086318, 0x18331218993f554],
+             [0x2352a52f0dc66700, 0x7a9034244b36ec4f, 0x9dfa93931879d470, 0x34f773d6e8d4141b]),
+            // 2^127 - 1
+            ([0xffffffffffffffff, 0x7fffffffffffffff, 0, 0],
+             [0x3d56ce7288ee429e, 0x7d350382db76ed56, 0x534a6b0135e6f614, 0x3ec431bb0b76576f],
+             [0x850930c1f035bdc4, 0xa6c91b9983f0d42d, 0x8f948bad2db9013a, 0x3ae7e35ca6b8a0c0]),
+            // random 0
+            ([0xfdce6ea5a6ee4db7, 0xe00504d671811e3c, 0xf46923051583328e, 0x132104c4fb5f15b9],
+             [0xaac6a2ae8fb5c79f, 0xd35e8ac32674b100, 0x34ef8fccd7ea93ee, 0x1f21a986bad2e01f],
+             [0xf77bf9b100e9b612, 0x7150b9cbd3f2571a, 0x65be2eb1070d6e47, 0x31e117224aa896b]),
+            // random 1
+            ([0x3ba008c0de374107, 0x3d4f6399eff48ca1, 0x2741b50b6f2d327, 0x3466e07974bc6868],
+             [0x4605280a640545ac, 0x3a3450783f49a169, 0xb9162adccb7ccfb5, 0x24b316f325a25ecb],
+             [0xacd1abc6702201f6, 0x40d33fa23e5225f, 0x1aecb0cd0efd5611, 0xfacbb27fe219331]),
+            // random 2
+            ([0xb9faec4a77f959e, 0x4a6646e8be79c3fd, 0xfc45ce72a8439fd9, 0x28bfc4ac5f6e87be],
+             [0x8a03c367583e1f15, 0x220e6e7b15e1fb3f, 0x285b1109fed53939, 0x20a0d7b9fa392d8c],
+             [0xcbccd57b89032cf8, 0x8d8d8243473efb44, 0x85faece5b5f66d72, 0x3d88861ba90c2ad6]),
+            // random 3
+            ([0x9e33d7e44025bd7f, 0x2d843c477ac3f944, 0x5c06921f84629441, 0x17d3821f6f833913],
+             [0x86d8e5c0048fbeef, 0x5331a3de05e659e5, 0x5dfaf9749765eb73, 0x78c8965235b4429],
+             [0x35da430bcae34aaa, 0x133ca03691efbd6, 0x62f8012d4d4cff11, 0x386a5219f0326b5a]),
+            // random 4
+            ([0xc2009548b79ee5a5, 0x6a5bbd72608485aa, 0xd32fb6749afa42f2, 0x22f26e04cc8ddf09],
+             [0xeed46cbc4252d60f, 0x6b2ca66990a4972b, 0x6dbaf78e21bfaa31, 0x3fa797508b012682],
+             [0x88975f8b89893189, 0x7f559b69ce057b64, 0x982859e12302e425, 0x14ad45dbd098e139]),
+            // random 5
+            ([0xfd35e85fa0c427c, 0xae1f07216ee0204e, 0x1b8cfd042cc3edac, 0xdd86b087824bf97],
+             [0xf38547b2c7f747de, 0xe0e0bab944057631, 0xa4caecd2b371f1ea, 0x2b9e6b4838115fb2],
+             [0x954ba7c20e83682e, 0x27f2152fb43f4afd, 0x8fd88cb1bfca6780, 0x284a4fe1798d0955]),
+            // random 6
+            ([0x48e890686e74115a, 0x52bf1077a5c0e79f, 0xa0362cc2cf016b36, 0x3e6e5e5aa12aa594],
+             [0xd65e2d301e77b640, 0xf4ee1e16056f88c1, 0x4dbf063d2fb8b7f4, 0x31d09821f60f49a1],
+             [0xb8ebcd9c64f7d106, 0x52784e86422e9029, 0x7fb292b5ba3202c1, 0x192c4e7f8d935b7a]),
+        ];
+
+        /// One shared scalar for the Pallas batch below.
+        ///
+        /// Generated by `sage/glv_test_vectors.sage`; do not edit by hand.
+        #[rustfmt::skip]
+        pub(crate) const PALLAS_BATCH_K: [u64; 4] =
+            [0xc99ba0549081818e, 0xc9f76e5dc64b091a, 0xd893c97c7bbda5f2, 0x31cfe3d2aebbab79];
+
+        /// A batch against that scalar: `(s, x, y)` with `P = s*G`
+        /// and `k*P = (x, y)`.
+        ///
+        /// Generated by `sage/glv_test_vectors.sage`; do not edit by hand.
+        #[rustfmt::skip]
+        pub(crate) const PALLAS_BATCH: [([u64; 4], [u64; 4], [u64; 4]); 12] = [
+            ([0x983863f621af356a, 0xfcdb5f0259fc14f9, 0xef9b2f8ac0096464, 0x2f9d8832912722dc],
+             [0x6241b62a2e51ef89, 0xe7273968dbc0b1f4, 0xb42fc9858c0655d1, 0x16ae323ccbc38a1a],
+             [0x9788b18474a23a1f, 0x417ff59ae9d54cb, 0x51a547faebf45732, 0x1634def4ee6a05ca]),
+            ([0x17c68b0404270e9, 0xdaa1f84b200a990a, 0xdac643e9f076baed, 0xdcb616172687715],
+             [0x65f8bdabca56a221, 0xac94b13951bb2fb8, 0xeaaf4fa7bcdcaccf, 0x14f58da7308b0e77],
+             [0x91bb04b1ed174cd6, 0x14d659e33e509c92, 0xc8ec740705f1e8d6, 0x37061cc79f9f8d5d]),
+            ([0xd06b50747cb4c21f, 0x2bc4e50938b7b5ae, 0xd110865bfea78db4, 0x34155318a4e07bc6],
+             [0xce92a457796e895c, 0xeb0905e6544b07a9, 0xefc9ea67744a17f2, 0x228bb1afff7b58cb],
+             [0xaf849d0ab1824605, 0xe4c17946a2355b49, 0xabb8f031bd5c6cc4, 0xbb9f15b2b7af710]),
+            ([0x96f2f83cb79661c9, 0xba483a6ce84c5d0f, 0x38dc269d0ad25316, 0x3545bafaa9b903e2],
+             [0x3748945dbc22dff, 0xd1972b459ee1d0a2, 0x3ff9014a812ba094, 0x1ff16517b937b78c],
+             [0xfa0f7b4fa394b4dc, 0xfc1f707339c072cf, 0x3c1fbbd65ffdd4c8, 0x37d4996eb4c7b7b3]),
+            ([0xf44ced56be715e08, 0x13815e9c87b16830, 0xee29cfabcf965fbf, 0x378c8b975840e2e1],
+             [0xc7d1792018cc02a3, 0x98f67af807c255b4, 0x46e9406d0a3526e6, 0x4d06af86dffb8de],
+             [0x5ad1ecf3871b5385, 0xb64972ece41feeff, 0xd96165862fe5ca3b, 0x22d153f535965db]),
+            ([0xd2e4810c256b20de, 0x43e21617e1d0aa4e, 0x6dc00bd4a2914131, 0x3022a6ba6444cd30],
+             [0x320397d96071d649, 0xc583a12e409237ef, 0x1670a9066289f301, 0x28d948266593cf3a],
+             [0xa165d4d1a4905119, 0xce8893ebcf854f08, 0x1d1d30c4884942a, 0x2eb1adba5567b824]),
+            ([0x8c0560e48d7ac65d, 0x9b5eabebc8782989, 0xca66c21efedfd1e3, 0x218f0fdc5d191d57],
+             [0xe2a170603c672aba, 0x91aacdb78cc4bd26, 0x9b1b76083b3b8972, 0xebd74674a1e29da],
+             [0xa061180aa4fab0fb, 0x6d8e41cb648e4bb5, 0x8346c90fa05e3b49, 0x27ce37a8b6a8449d]),
+            ([0xf412cb010ebf204e, 0x5f8218762d58e3ee, 0x61121bf49fed1964, 0x1a62341c77c3e3a0],
+             [0xf3527a30afcd4c0, 0x626d1837461e21d7, 0x4e4e9d7ed9b54e5a, 0xc9b50ea2a4ea337],
+             [0xc922d4f18348d536, 0xabcab4165af17ebe, 0x8e000d9f2f786545, 0x16512d43d9414ec3]),
+            ([0xc63062b8a8716fb9, 0xd09dc7fcbf8ee155, 0xbca98ba0003bf1df, 0x39f0ac94228fa367],
+             [0x538a64ba8f2b1edd, 0x79de939d955e9cf0, 0x95b19f17ae76f027, 0x4dc4e3a9c6b9780],
+             [0x3641a6b0e1caa59, 0x283875c800778a47, 0xb9eba6b59b450797, 0x31f5892701016420]),
+            ([0x842a35eaae197d62, 0x1ce7073dc73d4e7c, 0xead3cd19432b1ad4, 0x35c136b547d0d61f],
+             [0x76b5ff7786074669, 0x4cc1f45996cf7675, 0x8055d1f1860397c6, 0x21f9f074adeb0254],
+             [0x935d0c4e249d6e9e, 0x557591922afc2cdd, 0x706f058d2c647e63, 0xb730502404eeb7e]),
+            ([0x1ad56f3fc6ee0205, 0x6363874972ffc0b9, 0xa397bcb4d426c79a, 0x2bb2346de32f977],
+             [0xa8d1775bef2b1922, 0x1e8e044a8ea65df8, 0x8e6ad6f1c518391, 0x32fe1e98b923a511],
+             [0x9bc195cd216019cf, 0x80c18c7c46ce6f35, 0xd0f4e6f05e3e88cf, 0x2c9a09619d17f88]),
+            ([0x5b515f0a484d6a78, 0x9fda63c0cc9ae2bb, 0x4e43b31603ad1f38, 0x33579d6dff2a6276],
+             [0xe356891d1d502c47, 0x5887ffbb32ee476, 0x127ee4655dabb6a9, 0x119b86fa32cc036b],
+             [0x2384c64d3842a74d, 0x31243be15a08cd7d, 0x9eb169cdcb362563, 0x8577331e089c74f]),
+        ];
+
+        /// One shared scalar for the Vesta batch below.
+        ///
+        /// Generated by `sage/glv_test_vectors.sage`; do not edit by hand.
+        #[rustfmt::skip]
+        pub(crate) const VESTA_BATCH_K: [u64; 4] =
+            [0xc99ba0549081818e, 0xc9f76e5dc64b091a, 0xd893c97c7bbda5f2, 0x31cfe3d2aebbab79];
+
+        /// A batch against that scalar: `(s, x, y)` with `P = s*G`
+        /// and `k*P = (x, y)`.
+        ///
+        /// Generated by `sage/glv_test_vectors.sage`; do not edit by hand.
+        #[rustfmt::skip]
+        pub(crate) const VESTA_BATCH: [([u64; 4], [u64; 4], [u64; 4]); 12] = [
+            ([0x983863f621af356a, 0xfcdb5f0259fc14f9, 0xef9b2f8ac0096464, 0x2f9d8832912722dc],
+             [0x807e4cb552b72e49, 0x91ef77dd3b2df14f, 0x78e5346964c6ffcd, 0xc22c59598025cc9],
+             [0x9c810379f5c38508, 0x73c7061b10b1ffb9, 0x19c923679a44ee77, 0x1e53bd2e20458be1]),
+            ([0x17c68b0404270e9, 0xdaa1f84b200a990a, 0xdac643e9f076baed, 0xdcb616172687715],
+             [0x37fa85ac7f0fc001, 0x445e1b7f3be80d01, 0x5fa335b1e10a8024, 0x380e354528d22b8c],
+             [0x64ba140e40ccc22c, 0x648f5c3af5ddbbf9, 0x67fb54968965789c, 0x3da46a162992f77a]),
+            ([0xd06b50747cb4c21f, 0x2bc4e50938b7b5ae, 0xd110865bfea78db4, 0x34155318a4e07bc6],
+             [0x8449a173239d4d55, 0xb1e6e067567866f3, 0x45cab55f22c1c066, 0x1e382634c7c0a70d],
+             [0xfb8f266afe573d7c, 0x461d9a28d235b7d1, 0x38fbb8bbb697fe9f, 0x306a1703a2bb10e0]),
+            ([0x96f2f83cb79661c9, 0xba483a6ce84c5d0f, 0x38dc269d0ad25316, 0x3545bafaa9b903e2],
+             [0x82316890a801e94c, 0x62163c03c58eafe1, 0xfc4e73846135d473, 0x636e66dbf7ded4c],
+             [0x39024542c993398e, 0x14b9ada1778380e1, 0xc3139402ae9d0011, 0x236d85ac60b10b0a]),
+            ([0xf44ced56be715e08, 0x13815e9c87b16830, 0xee29cfabcf965fbf, 0x378c8b975840e2e1],
+             [0x836bab68400f1da4, 0x990d8f522fc4655, 0x688edc3e58a6bf1a, 0xd0b79c2d6bbe2fe],
+             [0x109aa3c2d8f0f4f9, 0x98df15a25ab2af87, 0x265ec2242020fe0, 0x32191ef8dfb18a50]),
+            ([0xd2e4810c256b20de, 0x43e21617e1d0aa4e, 0x6dc00bd4a2914131, 0x3022a6ba6444cd30],
+             [0x4bc6f68a9404753b, 0x869e27a3310bb303, 0xbcaaf2f2ee472a57, 0x12928e72f3d2fdb1],
+             [0xa089304abd16e9dd, 0x73f0179af00c4a7f, 0x5283aa97ae019195, 0xbe1bb0d8a621184]),
+            ([0x8c0560e48d7ac65d, 0x9b5eabebc8782989, 0xca66c21efedfd1e3, 0x218f0fdc5d191d57],
+             [0x3d99f8859911ae81, 0x6e04f808a46ed3b2, 0x50a07a178d72dc6c, 0x3f8b89fcb7e74e5],
+             [0x27536f94efe07602, 0x67e59408768a37, 0xdcbe966d00ddc25, 0xdc9bce302ad9164]),
+            ([0xf412cb010ebf204e, 0x5f8218762d58e3ee, 0x61121bf49fed1964, 0x1a62341c77c3e3a0],
+             [0xbaf196bae295bae5, 0xac4fa4832a96ba06, 0x409a3aca7c6ca62a, 0x11ebee29b772704b],
+             [0x9f30d9ad5dc3b302, 0xa4992b6979d08d2a, 0x94ba306bebeb5718, 0x27d0bf9d0114263e]),
+            ([0xc63062b8a8716fb9, 0xd09dc7fcbf8ee155, 0xbca98ba0003bf1df, 0x39f0ac94228fa367],
+             [0xa94fbfaf84b1ff5a, 0x5c73dc2b0e6ed8c4, 0x2d60b6808d378b8, 0x38226d91051a7a88],
+             [0xda867c579e5c5b52, 0x771cc4491dd85719, 0x9b036d11caaf6fad, 0x15925f238d3266dd]),
+            ([0x842a35eaae197d62, 0x1ce7073dc73d4e7c, 0xead3cd19432b1ad4, 0x35c136b547d0d61f],
+             [0xe9cf0078cd01b055, 0x41426b5a9533930b, 0x34fbef371f7d07bb, 0x121df8307ee6ba84],
+             [0x699514ef507ae213, 0x3ca9a07067dac05a, 0x666100d79c168926, 0x1703894f17e31b23]),
+            ([0x1ad56f3fc6ee0205, 0x6363874972ffc0b9, 0xa397bcb4d426c79a, 0x2bb2346de32f977],
+             [0xca9108707cd91e90, 0x870b7e96096d594b, 0xfa4bf75d188f1bff, 0xe93f8f4ad4b3689],
+             [0x606362ac8fc8f6be, 0x22c42359229fcaa7, 0xc303f812a7c1d63d, 0x30b349231d8a0e16]),
+            ([0x5b515f0a484d6a78, 0x9fda63c0cc9ae2bb, 0x4e43b31603ad1f38, 0x33579d6dff2a6276],
+             [0x81f11edf8ddcccea, 0xb98d02137b783af1, 0x286501502fac2ac1, 0x1e6394a50e6e9c0f],
+             [0x4741fe59a199b4c0, 0x89e2fb64dcad99ab, 0xfc13ff850dc8f9ee, 0x12ccc7a3fbc898d8]),
+        ];
+
+        /// A field element from little-endian 64-bit limbs.
+        pub(crate) fn from_limbs<F>(l: &[u64; 4]) -> F
+        where
+            F: PrimeField,
+        {
+            let mut repr = F::Repr::default();
+            let bytes = repr.as_mut();
+            for (i, limb) in l.iter().enumerate() {
+                bytes[i * 8..(i + 1) * 8].copy_from_slice(&limb.to_le_bytes());
+            }
+            F::from_repr(repr).expect("vector limb value is in range")
+        }
+
+        /// Every vector, against the native ladder, `mul_glv`, and a recoding
+        /// driven through the [`Recoding`] trait.
+        pub(crate) fn check<C, R>(vs: &[([u64; 4], [u64; 4], [u64; 4])])
+        where
+            C: GlvParams,
+            C::Base: PrimeField,
+            R: Recoding<C>,
+        {
+            for (k, x, y) in vs {
+                let k: C::ScalarExt = from_limbs(k);
+                let g = C::generator();
+                let want = C::AffineExt::from_xy_unchecked(from_limbs(x), from_limbs(y));
+                assert!(bool::from(want.is_on_curve()), "vector is off the curve");
+                assert_eq!((g * k).to_affine(), want, "native Mul missed a vector");
+                assert_eq!(g.mul_glv(&k).to_affine(), want, "mul_glv missed a vector");
+                assert_eq!(
+                    R::mul(&R::table(&g), &R::recode(&k)).to_affine(),
+                    want,
+                    "recoding missed a vector"
+                );
+            }
+        }
+
+        /// A batch vector set, against the non-GLV reference: every lane's
+        /// expected point is reproduced by the native `Mul`, and by `glv`'s
+        /// batched tables driven with one shared recoding.
+        pub(crate) fn check_batch<C, R>(k: &[u64; 4], vs: &[([u64; 4], [u64; 4], [u64; 4])])
+        where
+            C: GlvParams,
+            C::Base: PrimeField,
+            R: Recoding<C>,
+        {
+            let k: C::ScalarExt = from_limbs(k);
+            let g = C::generator();
+            let points: Vec<C> = vs
+                .iter()
+                .map(|(s, ..)| g * from_limbs::<C::ScalarExt>(s))
+                .collect();
+            let want: Vec<C::AffineExt> = vs
+                .iter()
+                .map(|(_, x, y)| C::AffineExt::from_xy_unchecked(from_limbs(x), from_limbs(y)))
+                .collect();
+
+            for (p, w) in points.iter().zip(&want) {
+                assert!(bool::from(w.is_on_curve()), "vector is off the curve");
+                assert_eq!((*p * k).to_affine(), *w, "native Mul missed a batch lane");
+            }
+
+            let digits = R::recode(&k);
+            for (t, w) in R::batch_tables(&points).iter().zip(&want) {
+                assert_eq!(
+                    R::mul(t, &digits).to_affine(),
+                    *w,
+                    "batched table missed a lane"
+                );
+            }
+        }
+
+        #[test]
+        fn pallas_wnaf() {
+            check::<pallas::Point, Wnaf4>(&PALLAS_VECTORS);
+        }
+
+        #[test]
+        fn vesta_wnaf() {
+            check::<vesta::Point, Wnaf4>(&VESTA_VECTORS);
+        }
+
+        /// All four free entry points agree with the vectors, in both
+        /// modules, so every shape a caller actually reaches for is covered.
+        #[test]
+        fn free_functions_match_vectors() {
+            use group::Curve as _;
+
+            let g = <pallas::Point as group::Group>::generator();
+            let ks: Vec<<pallas::Point as CurveExt>::ScalarExt> = PALLAS_VECTORS
+                .iter()
+                .map(|(k, _, _)| from_limbs(k))
+                .collect();
+            let want: Vec<<pallas::Point as CurveExt>::AffineExt> = PALLAS_VECTORS
+                .iter()
+                .map(|(_, x, y)| {
+                    <pallas::Point as CurveExt>::AffineExt::from_xy_unchecked(
+                        from_limbs(x),
+                        from_limbs(y),
+                    )
+                })
+                .collect();
+            let pairs: Vec<_> = ks.iter().map(|k| (g, *k)).collect();
+
+            for (k, want) in ks.iter().zip(&want) {
+                assert_eq!(super::super::mul(&g, k).to_affine(), *want);
+                assert_eq!(super::super::batch_mul(&[g], k), alloc::vec![*want]);
+            }
+            assert_eq!(super::super::mul_scalars(&g, &ks), want);
+            assert_eq!(super::super::mul_pairs(&pairs), want);
+
+            #[cfg(feature = "glv-eisenstein")]
+            {
+                use crate::glv_eisenstein as eis;
+                for (k, want) in ks.iter().zip(&want) {
+                    assert_eq!(
+                        eis::mul(&g, k).to_affine(),
+                        *want,
+                        "the two modules' free `mul` must agree"
+                    );
+                    assert_eq!(eis::batch_mul(&[g], k), alloc::vec![*want]);
+                }
+                assert_eq!(eis::mul_scalars(&g, &ks), want);
+                assert_eq!(eis::mul_pairs(&pairs), want);
+            }
+        }
+
+        #[test]
+        fn pallas_wnaf_batch() {
+            check_batch::<pallas::Point, Wnaf4>(&PALLAS_BATCH_K, &PALLAS_BATCH);
+        }
+
+        #[test]
+        fn vesta_wnaf_batch() {
+            check_batch::<vesta::Point, Wnaf4>(&VESTA_BATCH_K, &VESTA_BATCH);
+        }
+    }
+
     glv_tests!(pallas_glv, pallas::Point);
     glv_tests!(vesta_glv, vesta::Point);
 
@@ -705,7 +1662,10 @@ mod tests {
     /// `decompose`): the additive/multiplicative identities and their
     /// negations, lambda and its neighbours (the decomposition's own axis), and
     /// the half-width boundary where k1/k2 magnitudes live.
-    fn edge_case_matrix<C: GlvParams>() {
+    fn edge_case_matrix<C>()
+    where
+        C: GlvParams,
+    {
         let lambda = C::ScalarExt::ZETA;
         let edge_scalars = [
             C::ScalarExt::ZERO,
@@ -743,8 +1703,34 @@ mod tests {
         edge_case_matrix::<vesta::Point>();
     }
 
+    /// This module's four entry points, for the shared corner-case suite.
+    fn entry_points<C>() -> conformance::EntryPoints<C>
+    where
+        C: GlvParams,
+    {
+        conformance::EntryPoints {
+            mul: super::mul,
+            batch_mul: super::batch_mul,
+            mul_scalars: super::mul_scalars,
+            mul_pairs: super::mul_pairs,
+        }
+    }
+
+    #[test]
+    fn corner_cases_pallas() {
+        conformance::corner_cases(&entry_points::<pallas::Point>());
+    }
+
+    #[test]
+    fn corner_cases_vesta() {
+        conformance::corner_cases(&entry_points::<vesta::Point>());
+    }
+
     /// Loads a Pasta scalar from its four little-endian limbs.
-    fn scalar_from_limbs<F: PrimeField>(limbs: [u64; 4]) -> F {
+    fn scalar_from_limbs<F>(limbs: [u64; 4]) -> F
+    where
+        F: PrimeField,
+    {
         let mut bytes = [0u8; 32];
         for (chunk, limb) in bytes.chunks_exact_mut(8).zip(limbs.iter()) {
             chunk.copy_from_slice(&limb.to_le_bytes());
@@ -782,7 +1768,10 @@ mod tests {
     ///
     /// With the shipped constants the witness must behave like any other
     /// scalar; the second half of the test pins its boundary geometry.
-    fn babai_boundary_witness<C: GlvParams>(limbs: [u64; 4]) {
+    fn babai_boundary_witness<C>(limbs: [u64; 4])
+    where
+        C: GlvParams,
+    {
         let k = scalar_from_limbs::<C::ScalarExt>(limbs);
         assert_eq!(
             scalar_limbs(&k),
@@ -852,7 +1841,10 @@ mod tests {
     /// right; the broken invariant is the observable, not a wrong point.)
     /// On the pre-`babai_coefficient_verify` code, this test alone
     /// detects the flip; nothing else in that suite did.
-    fn native_vs_glv_boundary<C: GlvParams>(limbs: [u64; 4]) {
+    fn native_vs_glv_boundary<C>(limbs: [u64; 4])
+    where
+        C: GlvParams,
+    {
         let k = scalar_from_limbs::<C::ScalarExt>(limbs);
         let p = C::generator() * (k + C::ScalarExt::ONE);
         assert_eq!(p.mul_glv(&k), p * k, "GLV must agree with native Mul");
@@ -876,16 +1868,7 @@ mod tests {
         use proptest::prelude::*;
 
         use super::*;
-
-        fn scalar_strategy<F: PrimeField + ff::FromUniformBytes<64>>() -> impl Strategy<Value = F> {
-            proptest::array::uniform4(any::<u64>()).prop_map(|limbs| {
-                let mut bytes = [0u8; 64];
-                for (i, l) in limbs.iter().enumerate() {
-                    bytes[i * 8..(i + 1) * 8].copy_from_slice(&l.to_le_bytes());
-                }
-                F::from_uniform_bytes(&bytes)
-            })
-        }
+        use crate::glv::conformance::scalar_strategy;
 
         macro_rules! glv_pbt {
             ($mod_name:ident, $curve:ty) => {
@@ -895,6 +1878,30 @@ mod tests {
                     type Scalar = <$curve as CurveExt>::ScalarExt;
 
                     proptest! {
+                        /// The shared `Recoding` laws, for this module's
+                        /// width-4 wNAF recoding.
+                        #[test]
+                        fn recoding_laws(
+                            s in scalar_strategy::<Scalar>(),
+                            a in scalar_strategy::<Scalar>(),
+                            b in scalar_strategy::<Scalar>(),
+                        ) {
+                            use crate::glv::conformance as law;
+                            let p = <$curve>::generator() * (s + Scalar::ONE);
+                            let ps = [p, p.double(), p + <$curve>::generator()];
+                            law::agrees_with_mul::<$curve, Wnaf4>(&p, &a);
+                            law::additive_in_scalar::<$curve, Wnaf4>(&p, &a, &b);
+                            law::zero_and_negation::<$curve, Wnaf4>(&p, &a);
+                            law::batch_matches_solo::<$curve, Wnaf4>(&ps, &a);
+                            law::recoding_is_reusable::<$curve, Wnaf4>(&ps, &a);
+                            law::plural_matches_singular::<$curve>(
+                                &ps,
+                                &[a, b, a + b],
+                                super::super::mul_scalars,
+                                super::super::mul_pairs,
+                            );
+                        }
+
                         /// For all P != O, k: P.mul_glv(k) == P * k.
                         #[test]
                         fn mul_glv_matches_mul(

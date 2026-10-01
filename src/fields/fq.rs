@@ -11,7 +11,9 @@ use lazy_static::lazy_static;
 #[cfg(feature = "bits")]
 use ff::{FieldBits, PrimeFieldBits};
 
-use crate::arithmetic::{SqrtTableHelpers, VartimeField, adc, mac, sbb};
+#[cfg(feature = "sqrt-table")]
+use crate::arithmetic::SqrtTableHelpers;
+use crate::arithmetic::{VartimeField, adc, mac, sbb};
 #[cfg(feature = "deferred")]
 use crate::deferred::{DeferredField, Product};
 
@@ -745,6 +747,7 @@ lazy_static! {
     static ref FQ_TABLES: SqrtTables<Fq> = SqrtTables::new(0x116A9E, 1206);
 }
 
+#[cfg(feature = "sqrt-table")]
 impl SqrtTableHelpers for Fq {
     fn pow_by_t_minus1_over2(&self) -> Self {
         let sqr = |x: Fq, i: u32| (0..i).fold(x, |x, _| x.square());
@@ -861,6 +864,7 @@ fn test_sqrt_32bit_overflow() {
 }
 
 #[test]
+#[cfg(feature = "sqrt-table")]
 fn test_pow_by_t_minus1_over2() {
     // NB: TWO_INV is standing in as a "random" field element
     let v = (Fq::TWO_INV).pow_by_t_minus1_over2();

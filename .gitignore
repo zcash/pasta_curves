@@ -2,3 +2,4 @@
 **/*.rs.bk
 .vscode
 **/*.html
+/proptest-regressions
