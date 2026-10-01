@@ -103,7 +103,7 @@ impl ConditionallySelectable for Fp {
 
 /// Constant representing the modulus
 /// p = 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001
-const MODULUS: Fp = Fp([
+pub(crate) const MODULUS: Fp = Fp([
     0x992d30ed00000001,
     0x224698fc094cf91b,
     0x0000000000000000,
@@ -184,10 +184,10 @@ impl<T: ::core::borrow::Borrow<Fp>> ::core::iter::Product<T> for Fp {
 }
 
 /// INV = -(p^{-1} mod 2^64) mod 2^64
-const INV: u64 = 0x992d30ecffffffff;
+pub(crate) const INV: u64 = 0x992d30ecffffffff;
 
 /// R = 2^256 mod p
-const R: Fp = Fp([
+pub(crate) const R: Fp = Fp([
     0x34786d38fffffffd,
     0x992c350be41914ad,
     0xffffffffffffffff,
@@ -195,7 +195,7 @@ const R: Fp = Fp([
 ]);
 
 /// R^2 = 2^512 mod p
-const R2: Fp = Fp([
+pub(crate) const R2: Fp = Fp([
     0x8c78ecb30000000f,
     0xd7d30dbd8b0de0e7,
     0x7797a99bc3c95d18,
@@ -203,7 +203,7 @@ const R2: Fp = Fp([
 ]);
 
 /// R^3 = 2^768 mod p
-const R3: Fp = Fp([
+pub(crate) const R3: Fp = Fp([
     0xf185a5993a9e10f9,
     0xf6a68f3b6ac5b1d1,
     0xdf8d1014353fd42c,

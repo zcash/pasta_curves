@@ -8,7 +8,18 @@
 //! the `mul` tests beside it in `src/fields/fp.rs` and `src/fields/fq.rs`. The
 //! field types do not use the backend yet.
 
-use super::{Limbs, from_mont, mul, sqr_n_mul, square};
+// The mul-family routines are gated on 64-bit pointers on x86-64, so on
+// other targets the constants below are unused; the known answers are
+// always kept in full so the sources match across targets.
+#![allow(dead_code)]
+
+use super::{Limbs, add, from_mont, sub};
+
+#[cfg(any(
+    target_arch = "aarch64",
+    all(target_arch = "x86_64", target_pointer_width = "64")
+))]
+use super::{mul, sqr_n_mul, square};
 
 /// One field's constants and known answers.
 struct Field {
@@ -17,6 +28,10 @@ struct Field {
     inv: u64,
     /// `R = 2^256 mod p`, the Montgomery form of `1`.
     r: Limbs,
+    /// `2R mod p`.
+    two_r: Limbs,
+    /// `3R mod p`.
+    three_r: Limbs,
     /// `R^2 mod p`.
     r2: Limbs,
     /// `R^3 mod p`.
@@ -27,6 +42,8 @@ struct Field {
     r7: Limbs,
     /// `mul(p - 1, p - 1)`.
     pm1_sq: Limbs,
+    /// `p - 2`.
+    pm2: Limbs,
 }
 
 /// The Pallas base field (`pasta_curves::Fp`).
@@ -42,6 +59,18 @@ const FP: Field = Field {
         0x34786d38fffffffd,
         0x992c350be41914ad,
         0xffffffffffffffff,
+        0x3fffffffffffffff,
+    ],
+    two_r: [
+        0xcfc3a984fffffff9,
+        0x1011d11bbee5303e,
+        0xffffffffffffffff,
+        0x3fffffffffffffff,
+    ],
+    three_r: [
+        0x6b0ee5d0fffffff5,
+        0x86f76d2b99b14bd0,
+        0xfffffffffffffffe,
         0x3fffffffffffffff,
     ],
     r2: [
@@ -74,6 +103,12 @@ const FP: Field = Field {
         0x70cb2996efc89a65,
         0x21f1c4ff1e2278d5,
     ],
+    pm2: [
+        0x992d30ecffffffff,
+        0x224698fc094cf91b,
+        0x0000000000000000,
+        0x4000000000000000,
+    ],
 };
 
 /// The Vesta base field (`pasta_curves::Fq`).
@@ -89,6 +124,18 @@ const FQ: Field = Field {
         0x5b2b3e9cfffffffd,
         0x992c350be3420567,
         0xffffffffffffffff,
+        0x3fffffffffffffff,
+    ],
+    two_r: [
+        0x2a0f9218fffffff9,
+        0x1011d11bbcef61f1,
+        0xffffffffffffffff,
+        0x3fffffffffffffff,
+    ],
+    three_r: [
+        0xf8f3e594fffffff5,
+        0x86f76d2b969cbe7a,
+        0xfffffffffffffffe,
         0x3fffffffffffffff,
     ],
     r2: [
@@ -121,6 +168,12 @@ const FQ: Field = Field {
         0x5790be58c050df13,
         0x1f7a89dd17647953,
     ],
+    pm2: [
+        0x8c46eb20ffffffff,
+        0x224698fc0994a8dd,
+        0x0000000000000000,
+        0x4000000000000000,
+    ],
 };
 
 const FIELDS: [&Field; 2] = [&FP, &FQ];
@@ -135,6 +188,58 @@ fn p_minus_1(f: &Field) -> Limbs {
     limbs
 }
 
+/// The constants above are copies of the field types' own, so that a known answer here says
+/// something about the fields the crate computes in: check that they agree.
+#[test]
+fn constants_match_the_field_types() {
+    use crate::fields::{fp, fq};
+
+    assert_eq!(FP.modulus, fp::MODULUS.0);
+    assert_eq!(FP.inv, fp::INV);
+    assert_eq!(FP.r, fp::R.0);
+    assert_eq!(FP.r2, fp::R2.0);
+    assert_eq!(FP.r3, fp::R3.0);
+
+    assert_eq!(FQ.modulus, fq::MODULUS.0);
+    assert_eq!(FQ.inv, fq::INV);
+    assert_eq!(FQ.r, fq::R.0);
+    assert_eq!(FQ.r2, fq::R2.0);
+    assert_eq!(FQ.r3, fq::R3.0);
+}
+
+#[test]
+fn add_known_answers() {
+    for f in FIELDS {
+        assert_eq!(add(&f.r, &f.r, &f.modulus), f.two_r);
+        assert_eq!(add(&f.r, &f.two_r, &f.modulus), f.three_r);
+        assert_eq!(add(&f.two_r, &f.r, &f.modulus), f.three_r);
+        let pm1 = p_minus_1(f);
+        assert_eq!(add(&pm1, &pm1, &f.modulus), f.pm2);
+        assert_eq!(add(&ZERO, &pm1, &f.modulus), pm1);
+        assert_eq!(add(&pm1, &ZERO, &f.modulus), pm1);
+        assert_eq!(add(&pm1, &ONE, &f.modulus), ZERO);
+    }
+}
+
+#[test]
+fn sub_known_answers() {
+    for f in FIELDS {
+        assert_eq!(sub(&f.r, &f.r, &f.modulus), ZERO);
+        assert_eq!(sub(&f.two_r, &f.r, &f.modulus), f.r);
+        assert_eq!(sub(&f.three_r, &f.r, &f.modulus), f.two_r);
+        assert_eq!(sub(&f.three_r, &f.two_r, &f.modulus), f.r);
+        let pm1 = p_minus_1(f);
+        assert_eq!(sub(&pm1, &pm1, &f.modulus), ZERO);
+        assert_eq!(sub(&pm1, &f.pm2, &f.modulus), ONE);
+        assert_eq!(sub(&ZERO, &pm1, &f.modulus), ONE);
+        assert_eq!(sub(&ZERO, &ONE, &f.modulus), pm1);
+    }
+}
+
+#[cfg(any(
+    target_arch = "aarch64",
+    all(target_arch = "x86_64", target_pointer_width = "64")
+))]
 #[test]
 fn mul_known_answers() {
     for f in FIELDS {
@@ -148,6 +253,10 @@ fn mul_known_answers() {
     }
 }
 
+#[cfg(any(
+    target_arch = "aarch64",
+    all(target_arch = "x86_64", target_pointer_width = "64")
+))]
 #[test]
 fn square_known_answers() {
     for f in FIELDS {
@@ -159,6 +268,10 @@ fn square_known_answers() {
     }
 }
 
+#[cfg(any(
+    target_arch = "aarch64",
+    all(target_arch = "x86_64", target_pointer_width = "64")
+))]
 #[test]
 fn sqr_n_mul_known_answers() {
     for f in FIELDS {
@@ -176,4 +289,24 @@ fn from_mont_known_answers() {
         assert_eq!(from_mont(&f.r2, &f.modulus, f.inv), f.r);
         assert_eq!(from_mont(&ZERO, &f.modulus, f.inv), ZERO);
     }
+    // `from_mont` accepts any four-limb value: the all-ones input is the
+    // extreme case of that contract, where the candidate is largest.
+    assert_eq!(
+        from_mont(&[u64::MAX; 4], &FP.modulus, FP.inv),
+        [
+            0xc9eda265ac589659,
+            0x75a6de91c8d4fcc3,
+            0x8f34d6691037659a,
+            0x1e0e3b00e1dd872a,
+        ]
+    );
+    assert_eq!(
+        from_mont(&[u64::MAX; 4], &FQ.modulus, FQ.inv),
+        [
+            0x2b2d474371e59083,
+            0x5bb8b7d46bcea6f2,
+            0xa86f41a73faf20ec,
+            0x20857622e89b86ac,
+        ]
+    );
 }

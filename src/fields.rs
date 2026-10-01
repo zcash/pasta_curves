@@ -1,8 +1,8 @@
 //! This module contains implementations for the two finite fields of the Pallas
 //! and Vesta curves.
 
-mod fp;
-mod fq;
+pub(crate) mod fp;
+pub(crate) mod fq;
 mod modinv62;
 
 pub use fp::*;
