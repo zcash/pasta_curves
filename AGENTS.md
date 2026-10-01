@@ -175,6 +175,16 @@ and Lake cannot exempt one package from `--wfail`.
 When the pin moves to another Aeneas release, it fails until `fetch_aeneas.sh` is run again; it
 never fetches by itself.
 
+For proof work, connect to the Lean language server through
+[lean-lsp-mcp](https://github.com/oOo0oOo/lean-lsp-mcp), for example with
+`claude mcp add --scope user lean-lsp -- uvx lean-lsp-mcp` for Claude Code. Its tools show the goals
+at any point of a proof, try several tactics there without editing the file, and report a file's
+diagnostics, without a rebuild. A proof develops one step at a time against the real goal, where a
+rebuild after each edit would mean guessing at goals between builds. Build the package once before
+the first use, so the server starts from current `.olean` files. The server runs `lake serve` with
+the `lake` it finds on the path, which must be elan's (see above). Aeneas' skill file `lean-lsp-mcp`
+describes the tools in more detail.
+
 - **Every architecture's `Transcription.lean` and the shared `Vectors.lean` are generated** by
   `lean/scripts/gen.py` from the Rust `asm!` blocks and the reference vectors. Never edit them
   by hand; change the generator or its inputs and regenerate. Architecture-specific
