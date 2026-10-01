@@ -59,7 +59,9 @@ jobs:
           for profile in "" --release; do
             out=$(cargo test $profile --all-features 2>&1)
             echo "$out"
-            ! printf '%s\n' "$out" | grep -E '^test asm::'
+            if printf '%s\n' "$out" | grep -E '^test asm::'; then
+              exit 1
+            fi
           done
       - name: Verify working directory is clean
         run: git diff --exit-code
@@ -101,5 +103,7 @@ jobs:
           for profile in "" --release; do
             out=$(cargo test $profile --all-features asm:: 2>&1)
             echo "$out"
-            ! printf '%s\n' "$out" | grep -E '^running [1-9]'
+            if printf '%s\n' "$out" | grep -E '^running [1-9]'; then
+              exit 1
+            fi
           done
