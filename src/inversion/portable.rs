@@ -9,14 +9,26 @@
 //! products, which 64-bit targets compile to their widening multiplication. Aeneas translates them
 //! to Lean (`lean/PastaCurves/Portable/`), but no theorem is stated about the translation: the
 //! crate's tests check them against the same known answers as the assembly blocks. The code stays
-//! within the subset of Rust that Aeneas translates (no `unsafe`, explicit wrapping arithmetic,
-//! plain loops).
+//! within the subset of Rust that Aeneas translates (no `unsafe`, explicit wrapping arithmetic, and
+//! the fixed-length loops unrolled by `unroll!`, so that the translation of those is straight-line
+//! code).
 //!
 //! There is no data-dependent branch or memory access: the divstep selects its two outcomes by a
 //! mask, and the rows fold each matrix entry's sign in by a conditional negation under its mask.
 
 use super::InvertBlocks;
 use crate::limbs::Limbs;
+
+/// Runs `$body` once for each index in the list, with `$i` bound to it: a loop of fixed length,
+/// unrolled, so that its translation to Lean is straight-line code.
+macro_rules! unroll {
+    ($i:ident in [$($n:literal),* $(,)?] $body:block) => {
+        $({
+            let $i: usize = $n;
+            $body
+        })*
+    };
+}
 
 /// The mask of a word's sign, read as two's complement: all ones for a negative word, else zero.
 #[inline(always)]
@@ -90,14 +102,15 @@ fn mat_mul(m: [u64; 4], n: [u64; 4]) -> [u64; 4] {
 
 /// `x` negated under the mask `s`, modulo `2^320`: `-x` for the all-ones mask, `x` for zero.
 #[inline(always)]
+#[expect(unused_assignments, reason = "the carry out of the top word is dropped")]
 fn negate(x: &[u64; 5], s: u64) -> [u64; 5] {
     let mut out = [0u64; 5];
     let mut carry = s & 1;
-    for i in 0..5 {
+    unroll!(i in [0, 1, 2, 3, 4] {
         let (word, overflow) = (x[i] ^ s).overflowing_add(carry);
         out[i] = word;
         carry = u64::from(overflow);
-    }
+    });
     out
 }
 
@@ -105,30 +118,32 @@ fn negate(x: &[u64; 5], s: u64) -> [u64; 5] {
 /// `m1` and sign masks `s0`, `s1`. Each column's two products and the carry stay below `2^128`
 /// because `m0 + m1 ≤ 2^63`, which the row bound of the contracts gives.
 #[inline(always)]
+#[expect(unused_assignments, reason = "the carry out of the top word is dropped")]
 fn row(x: &[u64; 5], y: &[u64; 5], m0: u64, m1: u64, s0: u64, s1: u64) -> [u64; 5] {
     let x = negate(x, s0);
     let y = negate(y, s1);
     let mut out = [0u64; 5];
     let mut carry: u128 = 0;
-    for i in 0..5 {
+    unroll!(i in [0, 1, 2, 3, 4] {
         let column = carry + u128::from(x[i]) * u128::from(m0) + u128::from(y[i]) * u128::from(m1);
         out[i] = column as u64;
         carry = column >> 64;
-    }
+    });
     out
 }
 
 /// `x + y` modulo `2^320`.
 #[inline(always)]
+#[expect(unused_assignments, reason = "the carry out of the top word is dropped")]
 fn add5(x: &[u64; 5], y: &[u64; 5]) -> [u64; 5] {
     let mut out = [0u64; 5];
     let mut carry = 0u64;
-    for i in 0..5 {
+    unroll!(i in [0, 1, 2, 3, 4] {
         let (sum, overflow1) = x[i].overflowing_add(y[i]);
         let (sum, overflow2) = sum.overflowing_add(carry);
         out[i] = sum;
         carry = u64::from(overflow1 | overflow2);
-    }
+    });
     out
 }
 
@@ -231,17 +246,17 @@ impl InvertBlocks for Backend {
     fn cond_sub(value: &Limbs, modulus: &Limbs) -> Limbs {
         let mut difference = [0u64; 4];
         let mut borrow = 0u64;
-        for i in 0..4 {
+        unroll!(i in [0, 1, 2, 3] {
             let (word, underflow1) = value[i].overflowing_sub(modulus[i]);
             let (word, underflow2) = word.overflowing_sub(borrow);
             difference[i] = word;
             borrow = u64::from(underflow1 | underflow2);
-        }
+        });
         let keep = 0u64.wrapping_sub(borrow);
         let mut out = [0u64; 4];
-        for i in 0..4 {
+        unroll!(i in [0, 1, 2, 3] {
             out[i] = (keep & value[i]) | (!keep & difference[i]);
-        }
+        });
         out
     }
 }
