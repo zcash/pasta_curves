@@ -121,6 +121,15 @@ else
   (https://github.com/koalaman/shellcheck)"
 fi
 
+step "actionlint"
+if command -v actionlint >/dev/null; then
+  actionlint
+else
+  skip "actionlint" \
+    "  install it with one of: brew install actionlint; go install github.com/rhysd/actionlint/cmd/actionlint@latest
+  (https://github.com/rhysd/actionlint)"
+fi
+
 step "ruff"
 if command -v ruff >/dev/null; then
   ruff check .

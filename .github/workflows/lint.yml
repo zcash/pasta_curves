@@ -43,3 +43,26 @@ jobs:
         run: '"$RUNNER_TEMP/lint-venv/bin/ruff" check .'
       - name: Check the Python scripts' formatting
         run: '"$RUNNER_TEMP/lint-venv/bin/ruff" format --check .'
+
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Pinned by version and by the SHA-256 of the release archive, from the release's
+      # checksums file, as ruff is pinned by its wheels' hashes. actionlint runs the
+      # preinstalled shellcheck over each `run:` script.
+      - name: Install actionlint, hash-pinned
+        env:
+          VERSION: 1.7.12
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          archive="$RUNNER_TEMP/actionlint.tar.gz"
+          curl -sSfL -o "$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${VERSION}/actionlint_${VERSION}_linux_amd64.tar.gz"
+          echo "${SHA256}  ${archive}" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+      - name: Lint the workflows
+        run: '"$RUNNER_TEMP/actionlint" -color'
