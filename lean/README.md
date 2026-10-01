@@ -127,6 +127,7 @@ PastaCurves/Inversion/HullCert.lean      the certificate checked by the kernel; 
 PastaCurves/Inversion/SignMag.lean       the sign-magnitude form of a matrix entry; the row identities on words
 PastaCurves/Inversion/PackedWords.lean   the packed step on words, its packing and decoder, and its batch iteration
 PastaCurves/Inversion/Composition.lean   `InvertBlocks.Spec`, and `invert` equals the model over blocks that meet it
+PastaCurves/Inversion/Vectors.lean       known answers for the six blocks, from the round model
 PastaCurves/AArch64.lean                 AArch64 umbrella module
 PastaCurves/AArch64/Semantics.lean       AArch64 instruction semantics
 PastaCurves/AArch64/Transcription.lean   GENERATED: the blocks and their factored rounds
