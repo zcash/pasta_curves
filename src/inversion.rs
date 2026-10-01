@@ -133,8 +133,8 @@ if_asm_unsupported! {
 ///
 /// `x` must be canonical. This is debug-asserted. Under that precondition the machine-checked
 /// proofs in `lean/` establish the result on AArch64 (`invert_entry_spec`, from `montInv_spec` on
-/// words and the six block proofs). The portable blocks are not modelled; they are tested against
-/// the same known answers as the assembly blocks.
+/// words and the six block proofs). Of the portable blocks, only `cond_sub` is proved, from its
+/// Aeneas translation; all six are tested against the same known answers as the assembly blocks.
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, `inv` must be correctly derived
 /// from it, and `v0` must be `2^562 mod p`, the starting value of the coefficient `v`, which

@@ -206,6 +206,13 @@ never fetches by itself.
   self-contained responsibility. Extend shared components rather than duplicating them.
   Reject unsupported syntax, uninitialized register/flag reads, and unmodeled memory accesses;
   test those rejection paths. For x86, CF and OF are independent and must not be conflated.
+- **The portable blocks' Aeneas translation is generated** (`Portable/Types.lean` and
+  `Funs.lean`, by `lean/scripts/gen_portable.sh`); never edit it by hand. Proofs about it
+  follow Aeneas' own guidance at the revision that `lean/lakefile.toml` pins: the skill files
+  in [`documentation/skills/`](https://github.com/AeneasVerif/aeneas/tree/b86120db3183b0107eb5f2637b11c424cd06ef1c/documentation/skills)
+  (`aeneas-lean-core`, `aeneas-tactics-quickref`, `proof-patterns`, and
+  `aeneas-crypto-verification` are the ones for proofs) and the guides beside them in
+  `documentation/`. A build fetches the same files to `lean/.lake/packages/aeneas/`.
 
 ### Adding or extending an architecture
 
