@@ -26,6 +26,7 @@ import PastaCurves.X86_64
 import PastaCurves.Portable.Funs
 import PastaCurves.Portable.Words
 import PastaCurves.Portable.Vectors
+import PastaCurves.Portable.Spec
 
 /-!
 # The assembly routines, formalized
