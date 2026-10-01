@@ -30,4 +30,32 @@ def cselLo (c x y : Nat) : Nat := if c = 0 then x else y
 /-- `csel d, x, y, cs`: `x` when the carry is set, else `y`. -/
 def cselCs (c x y : Nat) : Nat := if c = 0 then y else x
 
+-- Boundary cases distinguish AArch64's carry convention from x86-64's borrow convention. Each
+-- mirrors the example of the same operation in `PastaCurves.X86_64.Semantics`, named in its
+-- comment: where x86-64's CF is `1` on borrow, AArch64's carry is `0`.
+-- The instructions these examples test correspond as follows (x86-64, then AArch64):
+-- - `sub`, `sbb` and `subs`, `sbcs`: the same difference, with complementary flags (`CF = 1 - C`).
+-- - `mulx` and `umulh` with `mul`: the high and low words of the product.
+-- - `cmovnc d, s` and `csel d, s, d, cs` (equivalently `csel d, d, s, lo`): both take `s`
+--   exactly when the subtraction did not borrow.
+-- - `neg r` and `subs xzr, r, #1`: the same flag value, set exactly when `r` is nonzero.
+-- No borrow (`sbb 0 0 0 = (0, 0)`, `neg 0 = (0, 0)`): `subs` sets the carry.
+example : subc 0 0 1 = (0, 1) := by decide +kernel
+-- Borrow in and out (`sbb 0 0 1 = (2^64 - 1, 1)` and
+-- `sbb (2^64 - 1) (2^64 - 1) 1 = (2^64 - 1, 1)`): `sbcs` with the carry clear clears it.
+example : subc 0 0 0 = (2^64 - 1, 0) := by decide +kernel
+example : subc (2^64 - 1) (2^64 - 1) 0 = (2^64 - 1, 0) := by decide +kernel
+-- `0 - 1`, the subtraction that `neg 1 = (2^64 - 1, 1)` performs: it borrows, so the carry is
+-- clear.
+example : subc 0 1 1 = (2^64 - 1, 0) := by decide +kernel
+-- The two words of a product (`mulx (2^64 - 1) 2 = (1, 2^64 - 2)`), by `umulh` and `mul`.
+example : umulh (2^64 - 1) 2 = 1 ∧ mulLo (2^64 - 1) 2 = 2^64 - 2 := by decide +kernel
+-- Selection on the carry (`cmovnc 0 3 5 = 5 ∧ cmovnc 1 3 5 = 3`), on either condition.
+example : cselLo 0 3 5 = 3 ∧ cselLo 1 3 5 = 5 := by decide +kernel
+example : cselCs 0 3 5 = 5 ∧ cselCs 1 3 5 = 3 := by decide +kernel
+-- `subs xzr, r, #1`, which the multiplication and squaring blocks use to set the carry of the
+-- low-limb cancellation: the carry is set exactly when `r` is nonzero.
+example : (subc 0 1 1).2 = 0 ∧ (subc 1 1 1).2 = 1 ∧ (subc (2^64 - 1) 1 1).2 = 1 := by
+  decide +kernel
+
 end PastaCurves.AArch64
