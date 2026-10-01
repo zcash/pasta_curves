@@ -14,7 +14,11 @@ import re
 import sys
 from pathlib import Path
 
-IMPORT = re.compile(r"^import\s+([A-Za-z0-9_.]+)", re.MULTILINE)
+# Plain imports, and the module system's forms of them (`public import`, `meta import`,
+# `import all`), which the generated translation of the portable blocks uses.
+IMPORT = re.compile(
+    r"^(?:public\s+)?(?:meta\s+)?import\s+(?:all\s+)?([A-Za-z0-9_.]+)", re.MULTILINE
+)
 
 
 def module_name(path):
