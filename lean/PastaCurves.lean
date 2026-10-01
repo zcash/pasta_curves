@@ -24,6 +24,8 @@ import PastaCurves.Inversion.Vectors
 import PastaCurves.AArch64
 import PastaCurves.X86_64
 import PastaCurves.Portable.Funs
+import PastaCurves.Portable.Words
+import PastaCurves.Portable.Vectors
 
 /-!
 # The assembly routines, formalized
