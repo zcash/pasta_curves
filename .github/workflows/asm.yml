@@ -34,7 +34,7 @@ jobs:
         # compile out and every check below would pass vacuously.
         run: test "$(uname -sm)" = "Darwin arm64"
       - name: Test the backend (debug, with the debug assertions)
-        run: cargo test --verbose asm::
+        run: cargo test --verbose 'asm::'
       - name: Confirm every test of the backend ran, in both profiles
         shell: bash
         # A cfg-gated test that silently compiles out still reports success,
