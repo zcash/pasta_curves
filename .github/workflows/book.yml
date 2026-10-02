@@ -100,12 +100,14 @@ jobs:
           publish_dir: ./book/book
 
   book-ci:
-    # The single stable check to mark as a required status check. It always
-    # runs, so it always reports; it fails only if the book build actually
-    # failed.
+    # The single stable check to mark as a required status check. It runs
+    # unless the workflow run was cancelled, and fails only if the book build
+    # actually failed. A run that a newer one cancels (two pushes in quick
+    # succession, as with stacked branches) reports nothing; the newer run
+    # reports instead.
     name: Pasta book CI
     needs: [changes, build]
-    if: always()
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Gate on the build result
