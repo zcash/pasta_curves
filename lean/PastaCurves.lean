@@ -3,6 +3,7 @@ import PastaCurves.Fields
 import PastaCurves.FieldTypes
 import PastaCurves.KnownAnswers
 import PastaCurves.Compositions
+import PastaCurves.Leakage
 import PastaCurves.Spec
 import PastaCurves.Inversion.Divstep
 import PastaCurves.Inversion.Packed
@@ -18,6 +19,7 @@ import PastaCurves.Inversion.LowerBound
 import PastaCurves.Inversion.SignMag
 import PastaCurves.Inversion.PackedWords
 import PastaCurves.Inversion.Composition
+import PastaCurves.Inversion.Schedule
 import PastaCurves.AArch64
 import PastaCurves.X86_64
 
