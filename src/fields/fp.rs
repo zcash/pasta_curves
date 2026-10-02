@@ -1269,6 +1269,119 @@ fn test_from_u512() {
     );
 }
 
+/// Corner cases of `from_u512`. Each input is the 512-bit integer `d0 + 2^256 d1`, where `d0` and
+/// `d1` are the 256-bit digits that `from_u512` splits it into. The expected residues mod `p` were
+/// computed with Python's integers. In the last three cases the digits are the left operands that
+/// come nearest to overflowing the inline `mul` when the right operand is `R2` or `R3`, the
+/// constants that `from_u512` multiplies its digits by.
+#[test]
+fn test_from_u512_corner_cases() {
+    #[rustfmt::skip]
+    let cases: [([u64; 8], [u64; 4]); 12] = [
+        // 0
+        (
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+             0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+        ),
+        // p - 1
+        (
+            [0x992d30ed00000000, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000,
+             0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x992d30ed00000000, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000],
+        ),
+        // p
+        (
+            [0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000,
+             0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+        ),
+        // 2^256 - 1
+        (
+            [0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+             0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x34786d38fffffffc, 0x992c350be41914ad, 0xffffffffffffffff, 0x3fffffffffffffff],
+        ),
+        // 2^256
+        (
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+             0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x34786d38fffffffd, 0x992c350be41914ad, 0xffffffffffffffff, 0x3fffffffffffffff],
+        ),
+        // p 2^256
+        (
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+             0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000],
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+        ),
+        // (p - 1) 2^256 + p - 1
+        (
+            [0x992d30ed00000000, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000,
+             0x992d30ed00000000, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000],
+            [0x64b4c3b400000003, 0x891a63f02533e46e, 0x0000000000000000, 0x0000000000000000],
+        ),
+        // 2^511
+        (
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+             0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x8000000000000000],
+            [0x92d30ed000000008, 0x7d0cd35cca2d6d01, 0x3bcbd4cde1e4ae8c, 0x24b6a0d7bdce5b8a],
+        ),
+        // 2^512 - 1
+        (
+            [0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+             0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+            [0x8c78ecb30000000e, 0xd7d30dbd8b0de0e7, 0x7797a99bc3c95d18, 0x096d41af7b9cb714],
+        ),
+        // forced_q_r2, the left operand nearest to overflowing `mul` with `R2`
+        (
+            [0x3cc9961eeeeeeeef, 0x907f42c685cc8a31, 0xffffffffffffffff, 0xffffffffffffffff,
+             0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x71420357eeeeeeec, 0x29ab77d269e59ede, 0xffffffffffffffff, 0x3fffffffffffffff],
+        ),
+        // forced_q_r3 2^256, the same for `R3`
+        (
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+             0x032c286da5f9b149, 0x3f747fab2d936552, 0xffffffffffffffff, 0xffffffffffffffff],
+            [0xd5abd7bb68193aea, 0x4b22a76b19f2f1ce, 0xa87dc2a20b1a34e5, 0x308bc2b27a3a82ee],
+        ),
+        // forced_q_r2 + forced_q_r3 2^256
+        (
+            [0x3cc9961eeeeeeeef, 0x907f42c685cc8a31, 0xffffffffffffffff, 0xffffffffffffffff,
+             0x032c286da5f9b149, 0x3f747fab2d936552, 0xffffffffffffffff, 0xffffffffffffffff],
+            [0xadc0aa26570829d5, 0x528786417a8b9791, 0xa87dc2a20b1a34e4, 0x308bc2b27a3a82ee],
+        ),
+    ];
+    for (input, residue) in cases {
+        let repr = ff::PrimeField::to_repr(&Fp::from_u512(input));
+        let limbs: [u64; 4] = core::array::from_fn(|i| {
+            u64::from_le_bytes(repr[8 * i..8 * (i + 1)].try_into().unwrap())
+        });
+        assert_eq!(limbs, residue, "{input:x?}");
+    }
+}
+
+#[test]
+fn test_from_u512_against_horner() {
+    use rand::SeedableRng;
+
+    // `from_u512` splits the 512-bit integer into two 256-bit digits and recombines them with
+    // `R2` and `R3`. Horner's rule computes the same value one limb at a time instead.
+    let horner = |l: [u64; 8]| {
+        let two_64 = Fp::from(u64::MAX) + Fp::one();
+        l.iter()
+            .rev()
+            .fold(Fp::zero(), |acc, &limb| acc * two_64 + Fp::from(limb))
+    };
+    let mut rng = rand_xorshift::XorShiftRng::from_seed([0x3c; 16]);
+    let mut inputs = vec![[0u64; 8], [u64::MAX; 8]];
+    for _ in 0..1000 {
+        inputs.push(core::array::from_fn(|_| rng.try_next_u64().unwrap()));
+    }
+    for l in inputs {
+        assert_eq!(Fp::from_u512(l), horner(l), "limbs {l:x?}");
+    }
+}
+
 #[cfg(feature = "zeroize")]
 #[test]
 fn test_zeroize() {
@@ -1286,12 +1399,12 @@ if_asm_supported! {
 fn asm_mul_unreduced_lhs_matches_portable() {
     use rand::SeedableRng;
 
-    // `from_u512` feeds raw (unreduced) 256-bit digits as the lhs of the
-    // inline `mul`, with `R2`/`R3` as the rhs. The five-limb accumulator
-    // tolerates an unreduced lhs only while every rhs limb is at most
-    // `2^64 - 3` (see the contract in `crate::asm::mul`); assert the
-    // selected rhs values keep that invariant, then pin the behaviour against
-    // the portable implementation on the most adversarial inputs known.
+    // The inline `mul` accepts an unreduced lhs when the rhs is canonical with
+    // every limb at most `2^64 - 3`: its five-limb accumulator cannot wrap then
+    // (see the contract in `crate::asm::mul`). Assert that the selected rhs
+    // values, among them `R2` and `R3`, keep that invariant, then pin the
+    // behaviour against the portable implementation on the most adversarial
+    // inputs known.
     let mut max_canonical = MODULUS;
     max_canonical.0[0] -= 1;
     let dense_limb = u64::MAX - 2;
@@ -1340,25 +1453,6 @@ fn asm_mul_unreduced_lhs_matches_portable() {
         check(Fp(l), R3);
     }
 
-    // End-to-end `from_u512` against a portable recomposition.
-    let portable_from_u512 = |l: [u64; 8]| {
-        let d0 = Fp([l[0], l[1], l[2], l[3]]);
-        let d1 = Fp([l[4], l[5], l[6], l[7]]);
-        Fp::mul(&d0, &R2).add(&Fp::mul(&d1, &R3))
-    };
-    assert_eq!(
-        Fp::from_u512([u64::MAX; 8]),
-        portable_from_u512([u64::MAX; 8])
-    );
-    for _ in 0..10_000u32 {
-        let mut l = [0u64; 8];
-        for w in l.iter_mut() {
-            *w = rng.try_next_u64().unwrap();
-        }
-        l[3] |= 0xc000000000000000;
-        l[7] |= 0xc000000000000000;
-        assert_eq!(Fp::from_u512(l), portable_from_u512(l), "limbs {l:x?}");
-    }
 }
 }
 
