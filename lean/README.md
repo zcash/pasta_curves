@@ -123,6 +123,7 @@ PastaCurves/Inversion/Hull.lean          convex regions by half-planes, inclusio
 PastaCurves/Inversion/HullBound.lean     the termination bound from a certificate (the hull-light argument)
 PastaCurves/Inversion/HullData.lean      GENERATED: the certificate's half-planes and Farkas records
 PastaCurves/Inversion/HullCert.lean      the certificate checked by the kernel; `terminationBound_256`
+PastaCurves/Inversion/LowerBound.lean    lower bounds by witness: 590 is exact; 554 to 588 for Pallas, 555 to 588 for Vesta
 PastaCurves/Inversion/SignMag.lean       the sign-magnitude form of a matrix entry; the row identities on words
 PastaCurves/Inversion/PackedWords.lean   the packed step on words, its packing and decoder, and its batch iteration
 PastaCurves/Inversion/Composition.lean   `InvertBlocks.Spec`, and `invert` equals the model over blocks that meet it
@@ -308,6 +309,13 @@ The inversion's blocks, each equated with the word-level function of the shared 
   the six statements above. Each round carries the model's state by those statements, whose
   bounds come from the model's round invariant. `invertBlocks_spec` instantiates the record for
   the AArch64 blocks.
+
+* `pallas_suffices_iff`, `vesta_suffices_iff`, and `iterations_256_tight` (proved, in
+  `Inversion/LowerBound.lean`): how far the termination bound is from the worst case. For
+  256-bit inputs it is exact, the paper's 590-step pair being still running after 589 steps. For
+  Pallas no number of divsteps below `554` is correct and `588` is, and for Vesta the same with
+  `555`, by inputs found by `sage/divstep_lower_bounds.sage` and the bound for 255-bit moduli.
+  The inversion's 590 steps therefore cannot be cut to nine rounds of 59.
 
 The crate's entry points, in `Entry.lean`: `mul_entry_spec`, `square_entry_spec`,
 `sqrNMul_entry_spec`, `fromMont_entry_spec`, `add_entry_spec`, and `sub_entry_spec` (all
