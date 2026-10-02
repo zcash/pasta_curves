@@ -6,6 +6,8 @@ Reads the inline `asm!` blocks in `src/asm/aarch64.rs` and `src/asm/x86_64.rs`, 
 - `lean/PastaCurves/<Architecture>/Transcription.lean`: each block as a Lean definition over
   its instruction semantics, one `let` per instruction result, in the block's order, with the
   instruction as a trailing comment;
+- `lean/PastaCurves/AArch64/Programs.lean`: each AArch64 block's instruction stream as syntax,
+  for the constant-time proofs;
 - `lean/PastaCurves/Vectors.lean`, `KnownAnswers.lean`, and `FieldTypes.lean`: the hardware
   reference vectors, the backend tests' known answers, and the field types' constants, as data
   and examples checked by kernel evaluation.
@@ -44,6 +46,7 @@ def generated_outputs():
     """Every generated path and its expected contents, without writing anything."""
     return data.generated_outputs() + [
         (aarch64_blocks.OUTPUT, aarch64_blocks.text()),
+        (aarch64_blocks.PROGRAMS_OUTPUT, aarch64_blocks.programs_text()),
         (x86_64_blocks.OUTPUT, x86_64_blocks.text()),
     ]
 

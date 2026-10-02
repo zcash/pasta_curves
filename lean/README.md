@@ -103,6 +103,7 @@ For x86-64, CF/OF availability is checked by the generator as described above.
 PastaCurves.lean                         root module, imports everything below
 PastaCurves/Semantics.lean               shared 64-bit arithmetic and limb representation
 PastaCurves/Compositions.lean            shared checks and contracts; the `invert` driver
+PastaCurves/Leakage.lean                 leakage traces, and constant time as non-interference
 PastaCurves/Fields.lean                  the two fields and facts about their constants
 PastaCurves/Pratt.lean                   Pratt certificates: the checker and its soundness
 PastaCurves/Primality.lean               the two Pasta primes, certified
@@ -127,14 +128,18 @@ PastaCurves/Inversion/LowerBound.lean    lower bounds by witness: 590 is exact; 
 PastaCurves/Inversion/SignMag.lean       the sign-magnitude form of a matrix entry; the row identities on words
 PastaCurves/Inversion/PackedWords.lean   the packed step on words, its packing and decoder, and its batch iteration
 PastaCurves/Inversion/Composition.lean   `InvertBlocks.Spec`, and `invert` equals the model over blocks that meet it
+PastaCurves/Inversion/Schedule.lean      `invert` over effectful blocks; its schedule of calls is constant
 PastaCurves/AArch64.lean                 AArch64 umbrella module
 PastaCurves/AArch64/Semantics.lean       AArch64 instruction semantics
+PastaCurves/AArch64/Leakage.lean         AArch64 instructions as syntax, and what each leaks
 PastaCurves/AArch64/Transcription.lean   GENERATED: the blocks and their factored rounds
+PastaCurves/AArch64/Programs.lean        GENERATED: the blocks' instruction streams, as syntax
 PastaCurves/AArch64/Compositions.lean    compositions of the AArch64 blocks
 PastaCurves/AArch64/Vectors.lean         the AArch64 blocks on the vectors, kernel-checked
 PastaCurves/AArch64/Spec.lean            proofs about the AArch64 blocks and compositions
 PastaCurves/AArch64/Spec/*.lean          the block proofs, one file per block, imported by Spec.lean
 PastaCurves/AArch64/Entry.lean           proofs about the AArch64 entry points at the two fields
+PastaCurves/AArch64/ConstantTime.lean    the ten blocks and the inversion are constant-time
 PastaCurves/X86_64.lean                  x86-64 umbrella module
 PastaCurves/X86_64/Semantics.lean        x86-64 instruction semantics and eight-word product
 PastaCurves/X86_64/Transcription.lean    GENERATED: all six x86-64 assembly blocks
@@ -310,6 +315,18 @@ The inversion's blocks, each equated with the word-level function of the shared 
   bounds come from the model's round invariant. `invertBlocks_spec` instantiates the record for
   the AArch64 blocks.
 
+* `invert_constantTime` (proved, in `AArch64/ConstantTime.lean`), with `mulMont_constantTime`
+  and the other nine block theorems: in the leakage model of `Leakage.lean`, where each
+  instruction reveals itself and, unless its timing is independent of its data, the values of
+  its data sources, every AArch64 block's trace is independent of the registers and flags it
+  starts from, for every value semantics; and two runs of the inversion, on any inputs, leak the
+  same trace. The blocks' instruction streams are generated into `AArch64/Programs.lean` and each
+  instruction is checked by the kernel against the policy of `AArch64/Leakage.lean`, which takes
+  Arm's data-independent-time instructions (`FEAT_DIT`) as the hardware assumption. The driver's
+  calls are `invertSchedule` for every input, by `invertM_logged` in `Inversion/Schedule.lean`,
+  whose `invertM` is `invert` over the identity monad (`invertM_id`). Not covered: the code
+  rustc emits between the blocks, the setting of `PSTATE.DIT`, the portable blocks, and the
+  x86-64 blocks.
 * `pallas_suffices_iff`, `vesta_suffices_iff`, and `iterations_256_tight` (proved, in
   `Inversion/LowerBound.lean`): how far the termination bound is from the worst case. For
   256-bit inputs it is exact, the paper's 590-step pair being still running after 589 steps. For
@@ -350,6 +367,8 @@ against a step-by-step trace of one batch. The proofs cover:
   `invert` over any backend's blocks against `montInvModel`, instantiated for AArch64;
 * from those, the six Montgomery entry points at either field under the conditions they
   assert, and `invert` over the AArch64 blocks at either field.
+* the constant-timeness of the ten AArch64 blocks and of the inversion's schedule of calls, in
+  the leakage model, and lower bounds on the number of divsteps that the inversion needs.
 
 This covers the crate's current code except the portable inversion blocks
 (`src/inversion/portable.rs`), up to the aspects that the trust story lists as reviewed by hand.

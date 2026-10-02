@@ -639,6 +639,46 @@ class Lifter:
             raise ValueError(f"unexpected condition: {text}")
 
 
+# -- the instruction stream, for the leakage model -------------------------------------------------
+
+# The instructions whose last operand is a condition code.
+CONDITIONAL = {Mnemonic.CSEL, Mnemonic.CNEG, Mnemonic.CSETM, Mnemonic.CCMP}
+
+
+def instruction_term(ins):
+    """An instruction as a term of `PastaCurves.AArch64.Instr`, the syntax of the leakage model:
+    its mnemonic and its operands as written. A register is named as in the block, `xzr` is the
+    zero register, an immediate keeps the radix of the source, a shifted operand's `lsl #k` is one
+    operand, and the last operand of a conditional instruction is its condition. A memory operand
+    is an error: the blocks are `nomem`, and the leakage model has no address for one."""
+    try:
+        op = Mnemonic(ins.op)
+    except ValueError:
+        raise ValueError(f"unhandled instruction: {ins.text}") from None
+    tokens = list(ins.operands)
+    condition = None
+    if op in CONDITIONAL:
+        condition = Lifter._condition(tokens.pop(), ins.text)
+    operands = []
+    while tokens:
+        token = tokens.pop(0)
+        if token == "lsl" and tokens and tokens[0].startswith("#"):
+            operands.append(f".lsl {literal(tokens.pop(0))}")
+        elif token == ZERO:
+            operands.append(".zero")
+        elif token.startswith("#"):
+            if immediate(token) < 0:
+                raise ValueError(f"negative immediate: {ins.text}")
+            operands.append(f".imm {literal(token)}")
+        elif re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", token):
+            operands.append(f'.reg "{token}"')
+        else:
+            raise ValueError(f"unsupported operand {token}: {ins.text}")
+    if condition is not None:
+        operands.append(f".cond .{condition.value}")
+    return f"⟨.{op.value}, [{', '.join(operands)}]⟩"
+
+
 # -- a block ------------------------------------------------------------------------------------
 
 
@@ -764,6 +804,19 @@ class Target:
     loops: dict = dataclasses.field(default_factory=dict)
     macro_rounds: dict = dataclasses.field(default_factory=dict)
     reserved_names: frozenset = frozenset({PAIR, CARRY, FLAGS})
+
+
+def stream(source, block, target):
+    """The instruction stream of one block, for the leakage model: its name, its docstring, and
+    each instruction as (term, text), in order, macro invocations expanded."""
+    parsed = parse_block(source, block, target.kinds, target.reserved_names)
+    lift_block(parsed, block, target.kinds)  # the stream is of a block that lifts
+    doc = (
+        f"The instruction stream of the inline `asm!` block of `{block.rust_name}`, as written, "
+        "its macro invocations expanded."
+    )
+    terms = [(instruction_term(ins), ins.text) for ins in parsed.instructions]
+    return f"{block.lean_name}Program", doc, terms
 
 
 def transcribe(source, block, target):

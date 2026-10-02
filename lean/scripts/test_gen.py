@@ -406,6 +406,56 @@ class AArch64OperandCountTests(unittest.TestCase):
                     aarch64_step(aarch64.Lifter(), op, ["r0"] * actual, op)
 
 
+class AArch64StreamTests(unittest.TestCase):
+    """The instruction stream back end: each instruction as a term of the leakage model's
+    `Instr`, and the instructions it cannot state."""
+
+    def term(self, text):
+        return aarch64.instruction_term(aarch64.parse_instruction(text))
+
+    def test_operand_forms(self):
+        self.assertEqual(
+            self.term("csel {pf}, {pg}, {pf}, ge"),
+            '⟨.csel, [.reg "pf", .reg "pg", .reg "pf", .cond .ge]⟩',
+        )
+        self.assertEqual(
+            self.term("ccmp {d}, xzr, #8, ne"),
+            '⟨.ccmp, [.reg "d", .zero, .imm 8, .cond .ne]⟩',
+        )
+        self.assertEqual(
+            self.term("add {a}, {b}, {c}, lsl #20"),
+            '⟨.add, [.reg "a", .reg "b", .reg "c", .lsl 20]⟩',
+        )
+        self.assertEqual(
+            self.term("and {pf}, {f}, #0xfffff"),
+            '⟨.and, [.reg "pf", .reg "f", .imm 0xfffff]⟩',
+        )
+        self.assertEqual(self.term("csetm {s}, mi"), '⟨.csetm, [.reg "s", .cond .mi]⟩')
+
+    def test_unstateable_instructions_are_rejected(self):
+        for text, message in [
+            ("ldr x0, [x1, #8]", "unhandled instruction"),
+            ("b.ne 1f", "unhandled instruction"),
+            ("udiv x0, x1, x2", "unhandled instruction"),
+            ("add x0, x1, [x2]", "unsupported operand"),
+            ("add x0, x1, #-1", "negative immediate"),
+            ("csel x0, x1, x2, eq", "unexpected condition"),
+        ]:
+            with self.subTest(text=text), self.assertRaisesRegex(ValueError, message):
+                self.term(text)
+
+    def test_every_real_block_has_a_stream_of_its_instructions(self):
+        source = aarch64_blocks.SOURCE.read_text()
+        for block in aarch64_blocks.BLOCKS:
+            with self.subTest(block=block.rust_name):
+                name, _, terms = aarch64.stream(source, block, aarch64_blocks.TARGET)
+                parsed = aarch64.parse_block(
+                    source, block, aarch64_blocks.KINDS, aarch64_blocks.TARGET.reserved_names
+                )
+                self.assertEqual(name, f"{block.lean_name}Program")
+                self.assertEqual([text for _, text in terms], [i.text for i in parsed.instructions])
+
+
 class SharedAArch64ParserTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
