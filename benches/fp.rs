@@ -46,7 +46,7 @@ fn bench_fp_double(b: &mut Bencher) {
     let mut count = 0;
     b.iter(|| {
         let mut tmp = v[count];
-        tmp = tmp.double();
+        tmp = Field::double(&tmp);
         count = (count + 1) % SAMPLES;
         tmp
     });
@@ -128,7 +128,7 @@ fn bench_fp_square(b: &mut Bencher) {
     let mut count = 0;
     b.iter(|| {
         let mut tmp = v[count];
-        tmp = tmp.square();
+        tmp = Field::square(&tmp);
         count = (count + 1) % SAMPLES;
         tmp
     });
@@ -225,7 +225,7 @@ fn bench_fp_sqrt(b: &mut Bencher) {
     let v: Vec<Fp> = (0..SAMPLES)
         .map(|_| {
             let tmp = Fp::random(&mut rng);
-            tmp.square()
+            Field::square(&tmp)
         })
         .collect();
 

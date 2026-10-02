@@ -6,6 +6,11 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `pasta_curves::BACKEND`, the name of the assembly backend compiled into
+  the build (`"aarch64"`, `"x86-64"`, or `"portable"`), intended for
+  diagnostics only. Passing the compiler flag `--cfg pasta_curves_noasm`
+  compiles the backend out on any target.
 
 ## [0.6.0] - 2026-09-25
 ### Added

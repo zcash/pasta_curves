@@ -34,7 +34,7 @@ jobs:
         # compile out and every check below would pass vacuously.
         run: test "$(uname -sm)" = "Darwin arm64"
       - name: Test the backend (debug, with the debug assertions)
-        run: cargo test --verbose asm::
+        run: cargo test --verbose --features asm 'asm::'
       - name: Confirm every test of the backend ran, in both profiles
         shell: bash
         # A cfg-gated test that silently compiles out still reports success,
@@ -46,9 +46,22 @@ jobs:
           echo "tests in the backend: $expected"
           test "$expected" -gt 0
           for profile in "" --release; do
-            out=$(cargo test $profile asm:: 2>&1)
+            out=$(cargo test $profile --features asm 'asm::' 2>&1)
             echo "$out"
             echo "$out" | grep -q "^test result: ok. $expected passed"
+          done
+      - name: With the assembly disabled, the crate's tests pass and the backend has none to run
+        shell: bash
+        env:
+          RUSTFLAGS: --cfg pasta_curves_noasm
+        run: |
+          cargo build --verbose --all-features
+          for profile in "" --release; do
+            out=$(cargo test $profile --all-features 2>&1)
+            echo "$out"
+            if printf '%s\n' "$out" | grep -E '^test asm::'; then
+              exit 1
+            fi
           done
       - name: Verify working directory is clean
         run: git diff --exit-code
@@ -69,3 +82,28 @@ jobs:
         run: |
           cargo +nightly build --verbose --release --no-default-features \
             -Z build-std=core,compiler_builtins --target aarch64-apple-darwin
+
+  intel-macos:
+    name: No backend on Intel macOS
+    # Apple x86-64 targets reserve `rbp`, and so have fewer available registers
+    # than the squaring blocks need; the `asm` module compiles out there instead
+    # of failing to build.
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Confirm the runner is Intel
+        run: test "$(uname -sm)" = "Darwin x86_64"
+      - name: Build
+        run: cargo build --verbose --all-features
+      - name: The backend has no tests to run (debug and release)
+        shell: bash
+        run: |
+          for profile in "" --release; do
+            out=$(cargo test $profile --all-features 'asm::' 2>&1)
+            echo "$out"
+            if printf '%s\n' "$out" | grep -E '^running [1-9]'; then
+              exit 1
+            fi
+          done

@@ -15,12 +15,19 @@ rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/zcash/pasta_curves"
 documentation = "https://docs.rs/pasta_curves"
+# The Lean formalization of the assembly backend is part of the repository, not of the crate.
+exclude = ["/lean"]
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
 # Build one synthetic documentation set containing every architecture backend.
 targets = []
+
+[lints.rust]
+# `--cfg pasta_curves_noasm` compiles the assembly backend out, even if `asm` is
+# enabled; see `src/asm/README.md`.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(pasta_curves_noasm)'] }
 
 [dev-dependencies]
 bincode = "1.3"
@@ -81,6 +88,7 @@ hex = { version = "0.4", optional = true, default-features = false, features = [
 [features]
 default = ["bits", "sqrt-table"]
 alloc = ["group/alloc", "blake2b_simd"]
+asm = []
 bits = ["ff/bits"]
 glv = ["alloc"]
 gpu = ["alloc", "ec-gpu"]

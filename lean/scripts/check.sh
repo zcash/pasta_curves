@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Check that the Lean transcriptions of the crate's inline Pasta Montgomery blocks
+# are current: regenerating the Lean files from the crate's `asm!` blocks reproduces the
+# committed files exactly, and the generated parts of the proofs in the `Spec/` files are
+# the ones the generator produces.
+#
+# Run from the repository root; exits non-zero on violation.
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+
+python3 lean/scripts/gen.py --check
+python3 lean/scripts/gen.py --check-specs
+PYTHONDONTWRITEBYTECODE=1 python3 lean/scripts/test_gen.py
+PYTHONDONTWRITEBYTECODE=1 python3 lean/scripts/test_vectors.py
+PYTHONDONTWRITEBYTECODE=1 python3 lean/scripts/test_asm_source.py
+echo "Lean transcription: current."

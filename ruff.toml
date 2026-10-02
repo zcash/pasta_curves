@@ -1,0 +1,4 @@
+# Lint configuration for the Python scripts (lean/scripts/). Ruff's default rule set
+# and its formatter; both run by CI and by scripts/ci.sh.
+line-length = 100
+target-version = "py310"

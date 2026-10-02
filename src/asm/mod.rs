@@ -11,17 +11,42 @@
 //!
 //! # Availability
 //!
-//! The module provides a backend for `target_arch = "aarch64"` and, in part,
-//! for `target_arch = "x86_64"`: `add`, `sub`, and `from_mont` are
-//! register-only and work on every x86-64 target, while `mul`, `square`, and
-//! the routines built on them read limbs through pointers, so they require
-//! 64-bit pointers (the x32 ABI's 32-bit pointers would break them; see the
-//! x86-64 module's docs for why registers alone cannot serve there) and a CPU
-//! with BMI2 and ADX (MULX, ADCX/ADOX: Intel Broadwell / AMD Zen or newer) at
-//! run time — neither is checked. `from_mont` uses MULX (BMI2) alone. Elsewhere
-//! the `asm` module is absent. Nothing is assembled at build time: the blocks
-//! are compiled by the Rust toolchain, so no C toolchain is needed, and the
-//! module adds no dependency.
+//! When the `asm` feature flag is enabled, the module provides a backend for
+//! `target_arch = "aarch64"`, and for `target_arch = "x86_64"` with 64-bit
+//! pointers. On x86-64, `add`, `sub`, and `from_mont` are register-only, while
+//! `mul`, `square`, and the routines built on them read limbs through pointers;
+//! the x32 ABI's 32-bit pointers would break them (see the x86-64 module's docs
+//! for why registers alone cannot serve there), so the module has no backend on
+//! that target. They also need, at run time, a CPU with BMI2 and ADX (MULX,
+//! ADCX/ADOX: Intel Broadwell / AMD Zen or newer); neither is checked.
+//! `from_mont` uses MULX (BMI2) alone. Apple x86-64 targets are excluded
+//! altogether: they reserve `rbp`, and so have fewer available registers than
+//! the squaring blocks need.
+//!
+//! On every other target, that is any target other than AArch64 and non-Apple
+//! x86-64 with 64-bit pointers, the module has no backend. The same holds on
+//! any target when the compiler is passed `--cfg pasta_curves_noasm` (through
+//! `RUSTFLAGS`, or `rustflags` in `.cargo/config.toml`), which is how to build
+//! for old x86-64 CPUs without BMI2 and ADX. Code that uses the backend does
+//! not repeat these conditions: it declares its uses of the backend under
+//! `if_asm_supported!` and its portable fallback under `if_asm_unsupported!`;
+//! the first expands to its items exactly where the module has a backend, and
+//! the second exactly where it does not. [`BACKEND`] names the result.
+//!
+//! Nothing is assembled at build time: the blocks are compiled by the Rust
+//! toolchain, so no C toolchain is needed, and the module adds no dependency.
+//!
+//! # Timing
+//!
+//! The blocks have no data-dependent branch or memory access, and a release
+//! build runs nothing else. So the routines' timing should not depend on their
+//! operands, unless behaviour of the Rust toolchain or platform introduces an
+//! unexpected obstacle to that. A debug build also runs the assertions' checks,
+//! and debug mode carries no constant-time guarantee. The checks are written
+//! without data-dependent branches, and pass their words through
+//! `core::hint::black_box`, as `subtle` does. An inspection of the output of
+//! one toolchain (AArch64, Rust 1.96.1) found only the assertions' own branches
+//! left, but that is best effort, which the compiler owes nothing to.
 //!
 //! # Provenance
 //!
@@ -31,218 +56,101 @@
 //!
 //! [Semolina]: https://github.com/supranational/semolina
 
-#[cfg(any(target_arch = "aarch64", doc))]
-mod aarch64;
-
-#[cfg(any(target_arch = "x86_64", doc))]
-mod x86_64;
-
-#[cfg(test)]
-mod tests;
-
-/// Four little-endian 64-bit limbs, least significant first: a field element
-/// (in Montgomery form, or canonical after [`from_mont`]) or a modulus.
-pub type Limbs = [u64; 4];
-
-/// Whether `value < modulus` as little-endian 256-bit integers.
-#[inline(always)]
-fn is_canonical(value: &Limbs, modulus: &Limbs) -> bool {
-    for i in (0..4).rev() {
-        if value[i] != modulus[i] {
-            return value[i] < modulus[i];
-        }
-    }
-    false
+/// Declares items, a local binding, or a block only where this module has a backend.
+///
+/// The expansion carries the target, presence of the `asm` feature, and absence of
+/// `--cfg pasta_curves_noasm`, so code that uses the backend does not repeat the backend
+/// condition. Write an extra pair of braces to cfg-gate arbitrary statements in a block:
+/// `if_asm_supported! {{ ... }}`. A binding used after the macro must instead be
+/// written without the extra braces: `if_asm_supported! { let value = expression; }`.
+macro_rules! if_asm_supported {
+    (@cfg $($tokens:tt)+) => {
+        // The x86-64 multiplication family addresses limbs through pointers, so the backend needs
+        // 64-bit pointers; and Apple x86-64 targets reserve `rbp`, and so have fewer available
+        // registers than the squaring blocks need.
+        #[cfg(all(
+            feature = "asm",
+            not(pasta_curves_noasm),
+            any(
+                target_arch = "aarch64",
+                all(
+                    target_arch = "x86_64",
+                    target_pointer_width = "64",
+                    not(target_vendor = "apple"),
+                )
+            )
+        ))]
+        $($tokens)+
+    };
+    ({ $($body:tt)* }) => {
+        if_asm_supported! { @cfg { $($body)* } }
+    };
+    (let $name:ident $(: $ty:ty)? = $value:expr;) => {
+        if_asm_supported! { @cfg let $name $(: $ty)? = $value; }
+    };
+    ($($item:item)*) => { $(
+        if_asm_supported! { @cfg $item }
+    )* };
 }
 
-/// Adds two residues for a Pasta modulus and conditionally subtracts the modulus.
-///
-/// # Safety
-///
-/// Both inputs must be canonical; this is debug-asserted.
-///
-/// `modulus` must be either the Pallas or Vesta field modulus. Any other values will
-/// cause undefined results.
-#[inline(always)]
-pub fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
-    debug_assert!(
-        is_canonical(lhs, modulus),
-        "pasta_curves::asm::add requires a canonical lhs"
-    );
-    debug_assert!(
-        is_canonical(rhs, modulus),
-        "pasta_curves::asm::add requires a canonical rhs"
-    );
-
-    #[cfg(target_arch = "aarch64")]
-    {
-        aarch64::add(lhs, rhs, modulus)
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    {
-        x86_64::add(lhs, rhs, modulus)
-    }
+/// Declares items, a local binding, or a block where this module has no backend.
+/// This is the complement of `if_asm_supported!` for portable fallbacks.
+macro_rules! if_asm_unsupported {
+    (@cfg $($tokens:tt)+) => {
+        #[cfg(not(all(
+            feature = "asm",
+            not(pasta_curves_noasm),
+            any(
+                target_arch = "aarch64",
+                all(
+                    target_arch = "x86_64",
+                    target_pointer_width = "64",
+                    not(target_vendor = "apple"),
+                )
+            )
+        )))]
+        $($tokens)+
+    };
+    ({ $($body:tt)* }) => {
+        if_asm_unsupported! { @cfg { $($body)* } }
+    };
+    (let $name:ident $(: $ty:ty)? = $value:expr;) => {
+        if_asm_unsupported! { @cfg let $name $(: $ty)? = $value; }
+    };
+    ($($item:item)*) => { $(
+        if_asm_unsupported! { @cfg $item }
+    )* };
 }
 
-/// Subtracts two residues for a Pasta modulus, adding the modulus back on underflow.
-///
-/// # Safety
-///
-/// Both inputs must be canonical; this is debug-asserted.
-///
-/// `modulus` must be either the Pallas or Vesta field modulus. Any other values will
-/// cause undefined results.
-#[inline(always)]
-pub fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
-    debug_assert!(
-        is_canonical(lhs, modulus),
-        "pasta_curves::asm::sub requires a canonical lhs"
-    );
-    debug_assert!(
-        is_canonical(rhs, modulus),
-        "pasta_curves::asm::sub requires a canonical rhs"
-    );
+if_asm_supported! {
+    /// The assembly backend compiled into this build: `"aarch64"` or `"x86-64"` where the crate
+    /// has one, and `"portable"` where it does not. Intended for diagnostics only, such as logs
+    /// and benchmark labels; it is not a stable interface. The field types do not use the
+    /// backend yet.
+    pub const BACKEND: &str = if cfg!(target_arch = "aarch64") { "aarch64" } else { "x86-64" };
 
-    #[cfg(target_arch = "aarch64")]
-    {
-        aarch64::sub(lhs, rhs, modulus)
-    }
+    #[cfg(any(target_arch = "aarch64", doc))]
+    mod aarch64;
 
-    #[cfg(target_arch = "x86_64")]
-    {
-        x86_64::sub(lhs, rhs, modulus)
-    }
+    #[cfg(any(target_arch = "x86_64", doc))]
+    mod x86_64;
+
+    // The tests use std only to catch the debug assertions they check, so a release test
+    // build stays free of it.
+    #[cfg(all(test, debug_assertions))]
+    extern crate std;
+
+    #[cfg(test)]
+    mod tests;
+
+    mod entry;
+    pub use entry::*;
 }
 
-/// Multiplies two Montgomery residues for a Pasta modulus.
-///
-/// # Safety
-///
-/// Either `lhs` is canonical (below the modulus) and `rhs` is any four-limb value, or
-/// `rhs` is canonical with each of its limbs 1 to 3 at most `2^64 - 3` and `lhs` is any
-/// four-limb value. This is the contract that the machine-checked proofs in `lean/`
-/// establish (`mulMont_spec_of_lhs_lt` and `mulMont_spec_of_rhs_lt`), and is
-/// debug-asserted.
-///
-/// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
-/// correctly derived from it. Any other values will cause undefined results.
-#[cfg(any(
-    target_arch = "aarch64",
-    all(target_arch = "x86_64", target_pointer_width = "64")
-))]
-#[inline(always)]
-pub fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
-    debug_assert!(
-        is_canonical(lhs, modulus)
-            || (is_canonical(rhs, modulus) && rhs[1..].iter().all(|&limb| limb <= u64::MAX - 2)),
-        "pasta_curves::asm::mul requires a canonical lhs, or a canonical rhs with limbs 1 to 3 \
-         at most 2^64 - 3"
-    );
-
-    #[cfg(target_arch = "aarch64")]
-    {
-        aarch64::mul(lhs, rhs, modulus, inv)
-    }
-
-    #[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
-    {
-        x86_64::mul(lhs, rhs, modulus, inv)
-    }
-}
-
-/// Squares a canonical Montgomery residue for a Pasta modulus.
-///
-/// Outputs are canonical.
-///
-/// # Safety
-///
-/// The input of `square` must be canonical, a contract that the proofs do not cover; this
-/// is debug-asserted.
-///
-/// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
-/// correctly derived from it. Any other values will cause undefined results.
-#[cfg(any(
-    target_arch = "aarch64",
-    all(target_arch = "x86_64", target_pointer_width = "64")
-))]
-#[inline(always)]
-pub fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
-    debug_assert!(
-        is_canonical(value, modulus),
-        "pasta_curves::asm::square requires a canonical input"
-    );
-
-    #[cfg(target_arch = "aarch64")]
-    {
-        aarch64::square(value, modulus, inv)
-    }
-
-    #[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
-    {
-        x86_64::square(value, modulus, inv)
-    }
-}
-
-/// Squares a canonical Montgomery residue `count` times, then multiplies the
-/// result by the canonical Montgomery residue `rhs`.
-///
-/// A `count` of zero is just the multiplication.
-///
-/// Each step is one of the inline blocks, which the compiler inlines, so the accumulator
-/// stays in registers throughout.
-///
-/// # Safety
-///
-/// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
-/// correctly derived from it. Any other values will cause undefined results.
-#[cfg(any(
-    target_arch = "aarch64",
-    all(target_arch = "x86_64", target_pointer_width = "64")
-))]
-#[inline]
-pub fn sqr_n_mul(value: &Limbs, count: usize, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
-    // On aarch64, `square` and `mul` can be inlined and optimised by Rust.
-    #[cfg(target_arch = "aarch64")]
-    {
-        let mut acc = *value;
-        for _ in 0..count {
-            acc = square(&acc, modulus, inv);
-        }
-        mul(&acc, rhs, modulus, inv)
-    }
-
-    // On x86_64, `square` and `mul` can't be inlined due to register pressure, so we need
-    // a separate fused assembly implementation.
-    #[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
-    {
-        x86_64::sqr_n_mul(value, count, rhs, modulus, inv)
-    }
-}
-
-/// Converts a Montgomery residue into its canonical integer, `value * 2^-256 mod p`, as a
-/// Montgomery multiplication by one.
-///
-/// Any four-limb `value` is accepted: `1` is canonical with limbs 1 to 3 zero, so it is a
-/// right operand inside the multiplication's contract for any left operand
-/// (`mulMont_spec_of_rhs_lt` in `lean/`).
-///
-/// # Safety
-///
-/// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
-/// correctly derived from it. Any other values will cause undefined results.
-#[inline]
-pub fn from_mont(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
-    // On aarch64, `mul` can be inlined and optimised by Rust.
-    #[cfg(target_arch = "aarch64")]
-    {
-        mul(value, &[1, 0, 0, 0], modulus, inv)
-    }
-
-    // On x86_64, `mul` can't be inlined due to register pressure, so we use a dedicated
-    // register-only assembly implementation instead.
-    #[cfg(target_arch = "x86_64")]
-    {
-        x86_64::from_mont(value, modulus, inv)
-    }
+if_asm_unsupported! {
+    /// The assembly backend compiled into this build: `"aarch64"` or `"x86-64"` where the crate
+    /// has one, and `"portable"` where it does not. Intended for diagnostics only, such as logs
+    /// and benchmark labels; it is not a stable interface. The field types do not use the
+    /// backend yet.
+    pub const BACKEND: &str = "portable";
 }

@@ -2,3 +2,5 @@
 **/*.rs.bk
 .vscode
 **/*.html
+/lean/.lake
+/lean/work
