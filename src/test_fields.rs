@@ -38,6 +38,12 @@ pub(crate) struct Field {
     /// Inputs and outputs of `invert`: `7R`, `0`, `1`, `p - 1`, and a small value, from the
     /// integer model of the algorithm.
     pub(crate) inversions: [(Limbs, Limbs); 5],
+    /// Inputs on which the inversion's half-delta divsteps run long, each with the number of
+    /// divsteps it needs from `(1/2, p, x)`: the slowest input of a random search, and the slowest
+    /// of a search that grafts the start of a 590-step witness onto `f = p`. Derived by
+    /// `sage/divstep_lower_bounds.sage`; `lean/PastaCurves/Inversion/LowerBound.lean` proves the
+    /// second's count.
+    pub(crate) slow_inversions: [(Limbs, usize); 2],
     /// The Montgomery product by the field type's inherent `const fn`s, independent of the backends.
     pub(crate) portable_mul: fn(&Limbs, &Limbs) -> Limbs,
     /// The Montgomery inverse by the field type's inherent `const fn`s, independent of the backends.
@@ -171,6 +177,26 @@ pub(crate) const FP: Field = Field {
             ],
         ),
     ],
+    slow_inversions: [
+        (
+            [
+                0xc272ca667fc703ef,
+                0xbe5e3a48f321707d,
+                0x4d48e6b1a76141f9,
+                0x30b621aec4ff23df,
+            ],
+            531,
+        ),
+        (
+            [
+                0x316654b8b42304c4,
+                0xc472e1964098c6d0,
+                0x84c918864d11250d,
+                0x35afa69efdea975e,
+            ],
+            554,
+        ),
+    ],
     portable_mul: fp_mul,
     portable_inverse: fp_inverse,
 };
@@ -300,6 +326,26 @@ pub(crate) const FQ: Field = Field {
                 0x7562671be840d861,
                 0x1253ce66fd1d1868,
             ],
+        ),
+    ],
+    slow_inversions: [
+        (
+            [
+                0xe458efb42aed9287,
+                0xa4f34e5ad9cdefaf,
+                0xbd0255d4c410a4a0,
+                0x0f53762440e03531,
+            ],
+            530,
+        ),
+        (
+            [
+                0xbd1db488b42304c4,
+                0xae437e766ab0e45b,
+                0x56be338eab1fb4c3,
+                0x2dbe09392054def6,
+            ],
+            555,
         ),
     ],
     portable_mul: fq_mul,

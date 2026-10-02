@@ -1310,6 +1310,11 @@ mod tests {
     }
 
     #[test]
+    fn invert_slow_inputs() {
+        crate::inversion::tests::invert_slow_inputs::<Backend>();
+    }
+
+    #[test]
     fn invert_random() {
         crate::inversion::tests::invert_random::<Backend>();
     }

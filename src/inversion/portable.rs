@@ -292,6 +292,11 @@ mod tests {
     }
 
     #[test]
+    fn invert_slow_inputs() {
+        checks::invert_slow_inputs::<Backend>();
+    }
+
+    #[test]
     fn invert_random() {
         checks::invert_random::<Backend>();
     }

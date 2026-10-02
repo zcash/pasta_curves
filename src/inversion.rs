@@ -1595,6 +1595,30 @@ pub(crate) mod tests {
         }
     }
 
+    /// The inputs on which the divsteps run long. Each is inverted correctly, and the `f`, `g`
+    /// update of the driver's rounds, run alone, reaches `g = 0` within nine rounds exactly when
+    /// the input needs at most `9 * 59 = 531` divsteps, and within ten rounds always. So nine
+    /// rounds would suffice for some of these inputs and not for others.
+    pub(crate) fn invert_slow_inputs<B: InvertBlocks>() {
+        for f in FIELDS {
+            for (x, steps) in &f.slow_inversions {
+                check_inverse::<B>(f, x);
+                let mut d: u64 = 1;
+                let mut fw = [f.modulus[0], f.modulus[1], f.modulus[2], f.modulus[3], 0];
+                let mut gw = [x[0], x[1], x[2], x[3], 0];
+                for round in 1..=10 {
+                    let [d2, m00, m01, m10, m11] = B::divstep59(d, fw[0], gw[0]);
+                    d = d2;
+                    let [m00, m01, m10, m11, s00, s01, s10, s11] = B::sign_mag(m00, m01, m10, m11);
+                    let f2 = B::fg_row(&fw, &gw, m00, m01, s00, s01);
+                    gw = B::fg_row(&fw, &gw, m10, m11, s10, s11);
+                    fw = f2;
+                    assert_eq!(gw == [0; 5], *steps <= 59 * round, "{x:x?} round {round}");
+                }
+            }
+        }
+    }
+
     /// Random inputs: uniform values below `2^64`; uniform values below `2^254`; values between
     /// `2^254` and `p`, whose top limb is `2^62` and whose limb 1 is below the modulus's; and
     /// values within a random 64-bit distance below `p - 1`.
