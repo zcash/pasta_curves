@@ -61,6 +61,13 @@ without data-dependent branches, and pass their words through `core::hint::black
 `subtle` does. An inspection of the output of one toolchain (AArch64, Rust 1.96.1) found only
 the assertions' own branches left, but that is best effort, which the compiler owes nothing to.
 
+That timing argument is relative to the hardware. On AArch64, Arm guarantees data-independent timing
+for these instructions only while `PSTATE.DIT` is set (`FEAT_DIT`, Armv8.4), a per-thread bit that
+user space starts with clear and that the crate does not set. `--cfg pasta_curves_dit` is an example,
+for the maintainers to evaluate, that runs the inversion with DIT set; `dit.rs` explains where DIT
+lives, why the bit cannot be set inside a `pure` block, how the guard orders the blocks inside its
+window, and why it needs `target_feature = "dit"` (the default on `aarch64-apple-darwin`).
+
 Field elements and moduli are `[u64; 4]`, least significant limb first, and `inv` is
 `-modulus[0]^-1 mod 2^64`. The routines take the modulus and `inv` as arguments, so one
 implementation serves both fields, but they rely on the shape the two Pasta moduli share:
@@ -87,6 +94,8 @@ over the assembly blocks on AArch64 and over the portable blocks everywhere. Wit
 feature, on unsupported platforms, or with `--cfg pasta_curves_noasm`, the backend has no tests to
 run, and the inversion's tests over the portable blocks are the ones that run. `scripts/ci.sh` runs
 every check CI runs.
+With `RUSTFLAGS="--cfg pasta_curves_dit"` on an AArch64 target with DIT, `invert_under_dit` checks
+that the inversion runs with DIT set and restores the caller's value.
 
 ## Formal verification
 

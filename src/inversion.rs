@@ -146,7 +146,13 @@ pub(crate) fn invert(x: &Limbs, modulus: &Limbs, inv: u64, v0: &Limbs) -> Limbs 
         crate::limbs::is_canonical(x, modulus),
         "pasta_curves::inversion::invert requires a canonical input"
     );
-    invert_with::<Selected>(x, modulus, inv, v0)
+    // With `--cfg pasta_curves_dit`, which `lib.rs` restricts to the AArch64 backend on a target
+    // with DIT, the inversion runs with Arm's data-independent timing set; see `src/asm/dit.rs`.
+    #[cfg(pasta_curves_dit)]
+    let z = crate::asm::dit::with_dit(*x, |x| invert_with::<Selected>(&x, modulus, inv, v0));
+    #[cfg(not(pasta_curves_dit))]
+    let z = invert_with::<Selected>(x, modulus, inv, v0);
+    z
 }
 
 /// Known answers for every block and for the inversion, and the checks that run them over any
@@ -1617,6 +1623,32 @@ pub(crate) mod tests {
                 check_inverse::<B>(f, &near_p);
             }
         }
+    }
+
+    /// With `--cfg pasta_curves_dit`, `invert` runs with Arm's data-independent timing set: DIT
+    /// is set inside the window and the caller's value restored after, whether the caller had it
+    /// clear or set, and the known answers still hold.
+    #[cfg(pasta_curves_dit)]
+    #[test]
+    fn invert_under_dit() {
+        use crate::asm::dit::{dit, set_dit, with_dit};
+
+        for before in [false, true] {
+            set_dit(before);
+            let mut inside = 2;
+            let out = with_dit([1, 2, 3, 4], |x| {
+                inside = dit();
+                x
+            });
+            assert_eq!((inside, out, dit()), (1, [1, 2, 3, 4], u64::from(before)));
+            for f in FIELDS {
+                for (x, z) in &f.inversions {
+                    assert_eq!(super::invert(x, &f.modulus, f.inv, &f.v0), *z);
+                    assert_eq!(dit(), u64::from(before));
+                }
+            }
+        }
+        set_dit(false);
     }
 
     /// The entry point `invert` runs the selected blocks, and in a debug build its assertion

@@ -16,6 +16,25 @@ extern crate alloc;
 #[macro_use]
 extern crate std;
 
+// `--cfg pasta_curves_dit` runs the inversion with Arm's data-independent timing set (an example
+// for the maintainers to evaluate; see `src/asm/dit.rs`). It needs the AArch64 assembly backend,
+// and a target whose CPUs have DIT, since `msr dit` is undefined on the others and the crate,
+// being `no_std`, cannot detect the feature at run time.
+#[cfg(all(
+    pasta_curves_dit,
+    not(all(
+        feature = "asm",
+        not(pasta_curves_noasm),
+        target_arch = "aarch64",
+        target_feature = "dit"
+    ))
+))]
+compile_error!(
+    "`--cfg pasta_curves_dit` needs the `asm` feature, an AArch64 target, and \
+     `target_feature = \"dit\"` (the default on aarch64-apple-darwin, `-C target-feature=+dit` \
+     elsewhere)"
+);
+
 // The assembly backends, and the `if_asm_supported!` and `if_asm_unsupported!` macros that gate
 // code on them; declared first so that the macros are in scope in the modules below.
 #[macro_use]
