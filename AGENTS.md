@@ -189,13 +189,16 @@ cd .. && lean/scripts/check.sh   # regenerate the transcription and check the sk
   contracts, not redundant value wrappers. Split per-block proof files belong under
   `<Architecture>/Spec/`, imported by its `Spec.lean`. Shared arithmetic, constants, and
   architecture-independent lemmas stay outside ISA modules.
-- **Extend the shared generator pipeline.** `gen.py` owns CLI orchestration, binding storage,
-  liveness, formatting, vector emission, SSA naming, and proof skeleton generation/checking.
-  `asm_source.py` owns the self-contained Rust source parser and operand/output validation.
-  `gen_<architecture>.py` backends supply ISA-specific operand, instruction, flag, and
-  round-recognition rules through the shared machinery. Keep common code in `gen.py`, near
-  the existing implementation; a separate general-purpose module needs a substantial,
-  self-contained responsibility. Extend shared components rather than duplicating them.
+- **Extend the generator as the compiler it is.** `lean/scripts/asm2lean/` is a pipeline over
+  one intermediate representation: `rust.py` is the fail-closed front end for the Rust `asm!`
+  syntax; `aarch64.py` and `x86_64.py` lift instructions to IR nodes (`ir.py`) with each
+  instruction set's checks, mnemonics and conditions as enums; `reroll.py` folds unrolled
+  rounds after checking they are alpha-equivalent; `lean.py` and `skeleton.py` are the two back
+  ends, and each node states its own Lean `let`s and its own proof step. The crate's
+  configuration (blocks, round folding, proof conventions, the spec manifest, and the data
+  modules) is in `lean/scripts/pasta/`, and `gen.py` is only the command line. A new
+  instruction or instruction set adds node classes and a lifter, not branches in shared code.
+  Generated output must stay byte-identical unless the change means to alter it.
   Reject unsupported syntax, uninitialized register/flag reads, and unmodeled memory accesses;
   test those rejection paths. For x86, CF and OF are independent and must not be conflated.
 

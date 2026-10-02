@@ -9,6 +9,7 @@ from collections import Counter
 sys.dont_write_bytecode = True
 
 import gen
+from pasta import data
 
 
 def contract_counts(vectors, in_contract):
@@ -23,9 +24,9 @@ def contract_counts(vectors, in_contract):
 class SharedVectorTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.lines = gen.VECTORS.read_text().splitlines()
-        cls.vectors = gen.parse_vectors(cls.lines)
-        cls.generated = gen.render_vector_data(cls.lines)
+        cls.lines = data.VECTORS.read_text().splitlines()
+        cls.vectors = data.parse_vectors(cls.lines)
+        cls.generated = data.render_vector_data(cls.lines)
 
     def test_corpus_shape_covers_both_fields_and_all_operations(self):
         self.assertEqual(
@@ -43,15 +44,15 @@ class SharedVectorTests(unittest.TestCase):
         )
 
     def test_public_contract_counts(self):
-        included, omitted = contract_counts(self.vectors, gen.in_public_contract)
+        included, omitted = contract_counts(self.vectors, data.in_public_contract)
         self.assertEqual(included, Counter({"MUL": 806, "FROM": 34, "SQR": 34}))
         self.assertEqual(omitted, Counter({"MUL": 180}))
 
     def test_generated_file_is_registered_and_current(self):
         outputs = dict(gen.generated_outputs())
-        self.assertIn(gen.OUT_VECTORS, outputs)
-        self.assertEqual(outputs[gen.OUT_VECTORS], self.generated)
-        self.assertEqual(gen.OUT_VECTORS.read_text(), self.generated)
+        self.assertIn(data.OUT_VECTORS, outputs)
+        self.assertEqual(outputs[data.OUT_VECTORS], self.generated)
+        self.assertEqual(data.OUT_VECTORS.read_text(), self.generated)
 
     def test_generated_file_holds_every_in_contract_vector_once(self):
         # Each entry opens with its index and its field.

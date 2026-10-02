@@ -1,8 +1,9 @@
-"""Shared fail-closed extraction of Rust inline-assembly source.
+"""Front end: fail-closed extraction of Rust inline-assembly source.
 
-This module parses only the Rust and ``asm!`` surface syntax needed by the Pasta
-backends. Architecture-specific instruction semantics belong in their emitters.
-Unsupported syntax is rejected rather than guessed.
+This module parses only the Rust and ``asm!`` surface syntax that the blocks use: one function
+with one ``asm!`` block, its template strings, its operand declarations, the bindings before it,
+and the array it returns. The instruction set's semantics belong to the lifters
+(``aarch64.py``, ``x86_64.py``). Unsupported syntax is rejected rather than guessed.
 
 A template line of an ``asm!`` block may be an invocation of a ``macro_rules!`` macro of the
 same source file (a repeated instruction sequence, written once). `parse_macros` reads the
@@ -12,11 +13,8 @@ each invocation into its instructions, recording where they came from in `origin
 """
 
 import dataclasses
-import difflib
 import re
-import sys
 from collections.abc import Sequence
-from pathlib import Path
 
 
 class GenerationError(ValueError):
@@ -779,22 +777,3 @@ def returned_registers(parsed: ParsedFunction, function: str) -> tuple[str, ...]
     if unused:
         raise GenerationError(f"{function}: named asm outputs not returned: {sorted(unused)}")
     return tuple(registers)
-
-
-def check_output(path: Path, expected: str, root: Path | None = None) -> bool:
-    """Compare one generated file without writing it, printing a unified diff."""
-    display = path.relative_to(root) if root is not None else path
-    if not path.exists():
-        print(f"{display} does not exist", file=sys.stderr)
-        return False
-    actual = path.read_text()
-    if actual == expected:
-        return True
-    diff = difflib.unified_diff(
-        actual.splitlines(True),
-        expected.splitlines(True),
-        fromfile=str(display),
-        tofile="generated",
-    )
-    sys.stderr.writelines(diff)
-    return False
