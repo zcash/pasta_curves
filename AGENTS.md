@@ -106,11 +106,11 @@ The instruction streams are the object of machine-checked correctness proofs, so
 an instruction is a change to a specification: keep the transcription, its documentation, and
 the proofs in step, and do not "improve" the assembly in passing.
 
-The module provides a backend on `target_arch = "aarch64"` and, in part, on
-`target_arch = "x86_64"`: `add`, `sub`, and `from_mont` on every x86-64 target, and `mul` and
-`square` on x86-64 with 64-bit pointers. Elsewhere the `asm` module is absent. Nothing is
-assembled at build time, so no C toolchain is needed. On all of those, beside the crate's usual
-checks:
+With the `asm` feature, the module provides a backend on `target_arch = "aarch64"`, and on
+`target_arch = "x86_64"` with 64-bit pointers except on Apple targets (see `src/asm/README.md`).
+Elsewhere, without the feature, or with `--cfg pasta_curves_noasm`, the module has no backend.
+Nothing is assembled at build time, so no C toolchain is needed. Where there is a backend, beside
+the crate's usual checks:
 
 ```sh
 cargo test --features asm 'asm::'           # the backend's tests, with the debug assertions they check

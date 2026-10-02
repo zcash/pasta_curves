@@ -936,6 +936,10 @@ impl ec_gpu::GpuField for Fp {
     }
 }
 
+// The tests in these blocks compare the field types' runtime path (the operators, `Field::square`,
+// `sqr_n_mul_runtime`, and `to_repr`) with their portable `const fn`s. They are compiled only where
+// that path is the assembly backend: elsewhere it is the portable code, and each comparison would
+// be of the code with itself.
 #[cfg(all(test, feature = "asm"))]
 if_asm_supported! {
 fn asm_portable_repr(value: Fp) -> [u8; 32] {
@@ -1275,6 +1279,7 @@ fn test_zeroize() {
     assert_eq!(a, Fp::zero());
 }
 
+// Compiled only with the backend, like `asm_matches_portable_arithmetic`, for the same reason.
 #[cfg(all(test, feature = "asm"))]
 if_asm_supported! {
 #[test]
@@ -1405,6 +1410,7 @@ fn constants_are_canonical() {
     }
 }
 
+// Compiled only with the backend, like `asm_matches_portable_arithmetic`, for the same reason.
 #[cfg(all(test, feature = "asm"))]
 if_asm_supported! {
 #[test]

@@ -1,12 +1,11 @@
-//! Known-answer tests of the four entry points, for both Pasta fields.
+//! Known-answer tests of the six entry points, for both Pasta fields.
 //!
 //! The expected values were computed independently with big-integer Montgomery
-//! arithmetic (`a * b * 2^-256 mod p`) in Python, and the ones that are also among
-//! the reference vectors recorded from the assembly on Apple M-series hardware
-//! agree with those. The differential tests against the portable arithmetic are
-//! those of zcash/pasta_curves#100: `aarch64_asm_matches_portable_arithmetic` and
-//! the `mul` tests beside it in `src/fields/fp.rs` and `src/fields/fq.rs`. The
-//! field types do not use the backend yet.
+//! arithmetic (`a * b * 2^-256 mod p`) in Python, and the ones that are also
+//! among the reference vectors recorded from the assembly on Apple M-series
+//! hardware agree with those. The differential tests against the portable
+//! arithmetic are `asm_matches_portable_arithmetic` and the `mul` tests beside
+//! it in `src/fields/fp.rs` and `src/fields/fq.rs`.
 
 use super::{Limbs, add, from_mont, sub};
 

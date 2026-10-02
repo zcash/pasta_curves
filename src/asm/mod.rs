@@ -125,8 +125,7 @@ macro_rules! if_asm_unsupported {
 if_asm_supported! {
     /// The assembly backend compiled into this build: `"aarch64"` or `"x86-64"` where the crate
     /// has one, and `"portable"` where it does not. Intended for diagnostics only, such as logs
-    /// and benchmark labels; it is not a stable interface. The field types do not use the
-    /// backend yet.
+    /// and benchmark labels; it is not a stable interface.
     pub const BACKEND: &str = if cfg!(target_arch = "aarch64") { "aarch64" } else { "x86-64" };
 
     #[cfg(any(target_arch = "aarch64", doc))]
@@ -150,7 +149,6 @@ if_asm_supported! {
 if_asm_unsupported! {
     /// The assembly backend compiled into this build: `"aarch64"` or `"x86-64"` where the crate
     /// has one, and `"portable"` where it does not. Intended for diagnostics only, such as logs
-    /// and benchmark labels; it is not a stable interface. The field types do not use the
-    /// backend yet.
+    /// and benchmark labels; it is not a stable interface.
     pub const BACKEND: &str = "portable";
 }
