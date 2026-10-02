@@ -207,14 +207,15 @@ fn known_answers_match_the_portable_arithmetic() {
 /// multiplies by the residue `1`. The operands are canonical where a routine's contract asks for
 /// that; elsewhere they range over every four-limb value. Like the rest of this module's tests, the
 /// test is compiled only where the module has a backend, so it always compares the assembly with
-/// the portable code.
+/// the portable code. The multiplication also gets 200,000 random canonical operand pairs, and the
+/// cases of its second contract where its accumulator comes nearest to wrapping.
 #[test]
 fn entry_points_match_the_portable_arithmetic() {
     use rand::{Rng, SeedableRng};
     use rand_xorshift::XorShiftRng;
 
     macro_rules! check {
-        ($field:ident, $f:expr) => {{
+        ($field:ident, $f:expr, $forced_r2:expr, $forced_r3:expr) => {{
             use crate::fields::$field;
             let f = $f;
             let portable_mul = |x: &Limbs, y: &Limbs| $field::mul(&$field(*x), &$field(*y)).0;
@@ -262,10 +263,75 @@ fn entry_points_match_the_portable_arithmetic() {
                 let expected = portable_mul(a, &[1, 0, 0, 0]);
                 assert_eq!(from_mont(a, &f.modulus, f.inv), expected, "{a:x?}");
             }
+
+            // Many more random canonical operands for the multiplication.
+            let mut rng = XorShiftRng::from_seed([0x42; 16]);
+            for _ in 0..200_000u32 {
+                let a = $field::from_raw(core::array::from_fn(|_| rng.next_u64())).0;
+                let b = $field::from_raw(core::array::from_fn(|_| rng.next_u64())).0;
+                assert_eq!(mul(&a, &b, &f.modulus, f.inv), portable_mul(&a, &b), "{a:x?} {b:x?}");
+            }
+
+            // The multiplication's second contract, where its five-limb accumulator comes nearest
+            // to wrapping: an unreduced left operand, and a canonical right operand whose limbs
+            // are at most `2^64 - 3`. Each case asserts that it is within the contract.
+            let second_contract = |lhs: Limbs, rhs: Limbs| {
+                assert!(super::mul_contract(&lhs, &rhs, &f.modulus), "{lhs:x?} {rhs:x?}");
+                let product = portable_mul(&lhs, &rhs);
+                assert_eq!(mul(&lhs, &rhs, &f.modulus, f.inv), product, "{lhs:x?} {rhs:x?}");
+            };
+            // The right operands are `R2` and `R3`, which `from_u512` multiplies by, and two
+            // canonical values near the modulus.
+            let mut dense = [u64::MAX - 2; 4];
+            dense[3] = f.modulus[3] - 1;
+            for rhs in [f.r2, f.r3, p_minus_1(f), dense] {
+                second_contract([u64::MAX; 4], rhs);
+            }
+            // The low limbs of these left operands bring the first two Montgomery quotients to
+            // (or near) their maximum, and their top limbs are all ones.
+            second_contract($forced_r2, f.r2);
+            second_contract($forced_r3, f.r3);
+            let mut rng = XorShiftRng::from_seed([0x9d; 16]);
+            for i in 0..20_000u32 {
+                let mut lhs: Limbs = core::array::from_fn(|_| rng.next_u64());
+                if i % 2 == 0 {
+                    lhs[2] = u64::MAX;
+                    lhs[3] = u64::MAX;
+                }
+                second_contract(lhs, f.r2);
+                second_contract(lhs, f.r3);
+            }
+            // Left operands with the top bit set, against right operands just below the modulus,
+            // where the bound `T < 2p` on the final reduction's input is tightest.
+            let mut rng = XorShiftRng::from_seed([0x17; 16]);
+            let mut n = 0u32;
+            while n < 100_000 {
+                let mut lhs: Limbs = core::array::from_fn(|_| rng.next_u64());
+                lhs[3] |= 1 << 63;
+                let mut rhs = f.modulus;
+                rhs[0] = rhs[0].wrapping_sub(rng.next_u64() >> (rng.next_u32() % 64));
+                if rng.next_u32() & 1 == 1 {
+                    rhs[1] = rhs[1].wrapping_sub(rng.next_u64() >> 60);
+                }
+                if super::mul_contract(&lhs, &rhs, &f.modulus) {
+                    n += 1;
+                    second_contract(lhs, rhs);
+                }
+            }
         }};
     }
-    check!(Fp, &FP);
-    check!(Fq, &FQ);
+    check!(
+        Fp,
+        &FP,
+        [0x3cc9961eeeeeeeef, 0x907f42c685cc8a31, u64::MAX, u64::MAX],
+        [0x032c286da5f9b149, 0x3f747fab2d936552, u64::MAX, u64::MAX]
+    );
+    check!(
+        Fq,
+        &FQ,
+        [0xf3bfcadeeeeeeeef, 0x27fa6352b2545d71, u64::MAX, u64::MAX],
+        [0x0000000000000d24, 0x00000000000007c2, u64::MAX, u64::MAX]
+    );
 }
 
 #[test]
