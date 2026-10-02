@@ -114,8 +114,14 @@ the crate's usual checks:
 
 ```sh
 cargo test --features asm 'asm::'           # the backend's tests, with the debug assertions they check
-cargo test --release --features asm 'asm::' # the same tests on the release code
+cargo test --release --features asm 'asm::' # the same tests on the release code, as shipped
 ```
+
+CI and `scripts/ci.sh` run the release tests with `CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true`
+and `CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS=true`, which keep the checks of the debug profile. With
+the `asm` feature they also run the release profile as shipped. That run is needed because the
+assertions change the code around each `asm!` block, which can affect the compiler's register
+allocation.
 
 A cfg-gated test that compiles out still reports success, so CI counts the `#[test]`
 functions under `src/asm` and requires the run of the module's tests to report exactly that
@@ -411,7 +417,8 @@ The required aggregate check gates on: `test`, `test-32-bit`, `no-std`, and `bit
 The individual jobs are:
 
 - **`test`** — `cargo test --release` with `--all-features` and `--no-default-features`,
-  on Ubuntu, Windows, and macOS; verifies the working directory is clean afterward.
+  on Ubuntu, Windows, and macOS, with the debug assertions and overflow checks, and with
+  `--all-features` also as shipped; verifies the working directory is clean afterward.
 - **`test-32-bit`** — the same feature matrix on `i686-unknown-linux-gnu`.
 - **`no-std`** — builds `--no-default-features` for `thumbv6m-none-eabi`,
   `wasm32-unknown-unknown`, and `wasm32-wasi`.

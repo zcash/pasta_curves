@@ -19,8 +19,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Run tests
+      # The release runs keep the debug assertions, which check the backend's operand contracts,
+      # and overflow checks. Neither can hide a failure. With the `asm` feature, a further run
+      # tests the release profile as shipped. That run is needed because the assertions change
+      # the code around each `asm!` block, which can affect the compiler's register allocation.
+      - name: Run tests (release, with the debug assertions)
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
+          CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS: true
         run: cargo test --verbose --release ${{ matrix.features }}
+      - name: Run tests (release, as shipped)
+        if: matrix.features == '--all-features'
+        run: cargo test --verbose --release --all-features
       - name: Verify working directory is clean
         run: git diff --exit-code
 

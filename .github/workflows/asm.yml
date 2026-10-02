@@ -35,25 +35,35 @@ jobs:
         run: test "$(uname -sm)" = "Darwin arm64"
       - name: Test the backend (debug, with the debug assertions)
         run: cargo test --verbose --features asm 'asm::'
-      - name: Confirm every test of the backend ran, in both profiles
+      - name: Confirm every test of the backend ran, in every profile
         shell: bash
         # A cfg-gated test that silently compiles out still reports success,
         # so count the `#[test]` functions under `src/asm` and require the
         # run of the module's tests to report exactly that many passed. A test
-        # added to the module then raises the expectation by itself.
+        # added to the module then raises the expectation by itself. The runs
+        # are the debug profile, the release profile with the debug assertions
+        # and overflow checks, and the release profile as shipped. The last is
+        # a run of its own because the assertions change the code around each
+        # `asm!` block, which can affect the compiler's register allocation.
         run: |
           expected=$(grep -rh '^\s*#\[test\]' src/asm | wc -l | tr -d ' ')
           echo "tests in the backend: $expected"
           test "$expected" -gt 0
-          for profile in "" --release; do
-            out=$(cargo test $profile --features asm 'asm::' 2>&1)
+          count() {
+            out=$(cargo test "$@" --features asm 'asm::' 2>&1)
             echo "$out"
             echo "$out" | grep -q "^test result: ok. $expected passed"
-          done
+          }
+          count
+          CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true \
+            CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS=true count --release
+          count --release
       - name: With the assembly disabled, the crate's tests pass and the backend has none to run
         shell: bash
         env:
           RUSTFLAGS: --cfg pasta_curves_noasm
+          CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
+          CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS: true
         run: |
           cargo build --verbose --all-features
           for profile in "" --release; do
@@ -99,6 +109,9 @@ jobs:
         run: cargo build --verbose --all-features
       - name: The backend has no tests to run (debug and release)
         shell: bash
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
+          CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS: true
         run: |
           for profile in "" --release; do
             out=$(cargo test $profile --all-features 'asm::' 2>&1)
