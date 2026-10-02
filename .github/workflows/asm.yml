@@ -46,7 +46,7 @@ jobs:
           echo "tests in the backend: $expected"
           test "$expected" -gt 0
           for profile in "" --release; do
-            out=$(cargo test $profile --features asm asm:: 2>&1)
+            out=$(cargo test $profile --features asm 'asm::' 2>&1)
             echo "$out"
             echo "$out" | grep -q "^test result: ok. $expected passed"
           done
@@ -101,7 +101,7 @@ jobs:
         shell: bash
         run: |
           for profile in "" --release; do
-            out=$(cargo test $profile --all-features asm:: 2>&1)
+            out=$(cargo test $profile --all-features 'asm::' 2>&1)
             echo "$out"
             if printf '%s\n' "$out" | grep -E '^running [1-9]'; then
               exit 1

@@ -63,7 +63,8 @@ fn test_endo_consistency() {
 
 #[test]
 fn backend_name() {
-    // The backend's condition, restated: the target, and the absence of the opt-out flag.
+    // The backend's condition, restated: the feature, the target, and the absence of the opt-out
+    // flag.
     let supported = cfg!(all(
         feature = "asm",
         not(pasta_curves_noasm),
@@ -86,6 +87,9 @@ fn backend_name() {
     assert_eq!(BACKEND, expected);
 }
 
+// The point of these tests is that they compile: each macro is used in every position the backend's
+// users need (an item, a `let` binding, and a block inside a function), so the assertions are
+// trivially true by design.
 #[cfg(feature = "asm")]
 #[cfg(test)]
 mod asm_gate_tests {

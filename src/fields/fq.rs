@@ -1448,7 +1448,7 @@ fn asm_mul_unreduced_lhs_near_modulus_rhs_matches_portable() {
         if rng.try_next_u32().unwrap() & 1 == 1 {
             rhs.0[1] = rhs.0[1].wrapping_sub(rng.try_next_u64().unwrap() >> 60);
         }
-        if !is_canonical(&rhs) || rhs.0.iter().any(|&l| l > u64::MAX - 3) {
+        if !is_canonical(&rhs) || rhs.0.iter().any(|&l| l > u64::MAX - 2) {
             continue;
         }
         n += 1;

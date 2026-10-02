@@ -113,8 +113,8 @@ assembled at build time, so no C toolchain is needed. On all of those, beside th
 checks:
 
 ```sh
-cargo test --features asm asm::           # the backend's tests, with the debug assertions they check
-cargo test --release --features asm asm:: # the same tests on the release code
+cargo test --features asm 'asm::'           # the backend's tests, with the debug assertions they check
+cargo test --release --features asm 'asm::' # the same tests on the release code
 ```
 
 A cfg-gated test that compiles out still reports success, so CI counts the `#[test]`
@@ -302,7 +302,7 @@ Defined in `Cargo.toml`; `default = ["bits", "sqrt-table"]`.
 - `alloc` — enables heap-allocating functionality (`arithmetic::{CurveAffine, CurveExt}`,
   hash-to-curve, etc.); pulls in `blake2b_simd` and `group/alloc`. Many other features
   imply it.
-- `asm` - enables the inline assembly backend optimisations.
+- `asm` — enables the inline assembly backend optimisations.
 - `bits` — enables the `ff/bits` integration (`PrimeFieldBits`). *(default)*
 - `sqrt-table` — large precomputed tables (on the heap) that speed up square roots;
   implies `alloc`, pulls in `lazy_static`. *(default)*

@@ -11,17 +11,17 @@
 //!
 //! # Availability
 //!
-//! The module provides a backend for `target_arch = "aarch64"`, and for
-//! `target_arch = "x86_64"` with 64-bit pointers, when the `asm` feature flag
-//! is enabled. On x86-64, `add`, `sub`, and
-//! `from_mont` are register-only, while `mul`, `square`, and the routines built
-//! on them read limbs through pointers; the x32 ABI's 32-bit pointers would
-//! break them (see the x86-64 module's docs for why registers alone cannot
-//! serve there), so the module has no backend on that target. They also need,
-//! at run time, a CPU with BMI2 and ADX (MULX, ADCX/ADOX: Intel Broadwell / AMD
-//! Zen or newer); neither is checked. `from_mont` uses MULX (BMI2) alone. Apple
-//! x86-64 targets are excluded altogether: they reserve `rbp`, and so have
-//! fewer available registers than the squaring blocks need.
+//! When the `asm` feature flag is enabled, the module provides a backend for
+//! `target_arch = "aarch64"`, and for `target_arch = "x86_64"` with 64-bit
+//! pointers. On x86-64, `add`, `sub`, and `from_mont` are register-only, while
+//! `mul`, `square`, and the routines built on them read limbs through pointers;
+//! the x32 ABI's 32-bit pointers would break them (see the x86-64 module's docs
+//! for why registers alone cannot serve there), so the module has no backend on
+//! that target. They also need, at run time, a CPU with BMI2 and ADX (MULX,
+//! ADCX/ADOX: Intel Broadwell / AMD Zen or newer); neither is checked.
+//! `from_mont` uses MULX (BMI2) alone. Apple x86-64 targets are excluded
+//! altogether: they reserve `rbp`, and so have fewer available registers than
+//! the squaring blocks need.
 //!
 //! On every other target, that is any target other than AArch64 and non-Apple
 //! x86-64 with 64-bit pointers, the module has no backend. The same holds on
