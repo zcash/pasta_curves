@@ -75,7 +75,7 @@ if [ "$(uname -m)" = "arm64" ] || [ "$(uname -m)" = "aarch64" ]; then
   step "no_std: build against core alone, with no std to fall back on"
   if rustup run nightly rustc --version >/dev/null 2>&1 &&
      rustup component list --toolchain nightly --installed | grep -q '^rust-src'; then
-    cargo +nightly build --release --no-default-features \
+    cargo +nightly build --release --no-default-features --features asm \
       -Z build-std=core,compiler_builtins --target aarch64-apple-darwin
   else
     skip "the no_std build" \
