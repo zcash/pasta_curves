@@ -13,10 +13,52 @@ from pathlib import Path
 # Running this source-tree test should not leave lean/scripts/__pycache__ behind.
 sys.dont_write_bytecode = True
 
-import asm_source
 import gen
-import gen_aarch64
-import gen_x86_64
+from asm2lean import aarch64, ir, lean, rust, x86_64
+from asm2lean.ir import Call, Load, Mov, Node
+from asm2lean.skeleton import projection, skeleton, ssa_names
+from asm2lean.specs import check_spec
+from pasta import aarch64_blocks, data, x86_64_blocks
+from pasta.conventions import CONVENTIONS
+from pasta.paths import ROOT
+
+GenerationError = rust.GenerationError
+X86 = x86_64_blocks.TARGET
+MUL_ROUNDS = x86_64_blocks.MUL_ROUNDS
+
+
+def parse_declaration(text):
+    """An operand declaration, under the x86-64 target's restrictions."""
+    return rust.parse_declaration(
+        text,
+        reserved_names=set(X86.reserved_names),
+        fixed_registers={x86_64.RDX},
+        const_operands=set(X86.consts),
+    )
+
+
+def x86_block(name):
+    return next(block for block in x86_64_blocks.BLOCKS if block.lean_name == name)
+
+
+def transcribed(source, block):
+    """The x86-64 transcription of one block, with its round when it has one."""
+    return "\n".join(
+        lean.definition(p, lean.comment_column([p])) for p in x86_64.transcribe(source, block, X86)
+    )
+
+
+def x86_bind(lifter, register, value, comment="test input"):
+    lifter.bind_argument(Mov(comment=comment, dest=register, a=value))
+
+
+def aarch64_step(lifter, op, operands, text):
+    lifter.lift(aarch64.Instruction(op, tuple(operands), text))
+
+
+def bound_registers(lifter, registers):
+    for register in registers:
+        lifter.bind(Mov(comment="argument", dest=register, a="0"))
 
 
 def word_step_groups(skeleton):
@@ -52,196 +94,196 @@ def word_step_groups(skeleton):
 
 class DeclarationTests(unittest.TestCase):
     def test_inout_discard_and_named_outputs_are_parsed(self):
-        discarded = gen_x86_64.parse_declaration("z3 = inout(reg) product[3] => _,")
-        named = gen_x86_64.parse_declaration("z0 = inout(reg) product[0] => o1,")
+        discarded = parse_declaration("z3 = inout(reg) product[3] => _,")
+        named = parse_declaration("z0 = inout(reg) product[0] => o1,")
         self.assertEqual(
             discarded,
-            gen_x86_64.Declaration("z3", "inout", "product[3]", "_"),
+            rust.Declaration("z3", "inout", "product[3]", "_"),
         )
         self.assertEqual(
             named,
-            gen_x86_64.Declaration("z0", "inout", "product[0]", "o1"),
+            rust.Declaration("z0", "inout", "product[0]", "o1"),
         )
 
     def test_unsupported_constraint_is_rejected(self):
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "constraint"):
-            gen_x86_64.parse_declaration("x = in(xmm_reg) value,")
+        with self.assertRaisesRegex(GenerationError, "constraint"):
+            parse_declaration("x = in(xmm_reg) value,")
 
     def test_unsupported_fixed_register_is_rejected(self):
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "fixed-register"):
-            gen_x86_64.parse_declaration('in("rax") value,')
+        with self.assertRaisesRegex(GenerationError, "fixed-register"):
+            parse_declaration('in("rax") value,')
 
     def test_unsupported_const_is_rejected(self):
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "const operand"):
-            gen_x86_64.parse_declaration("p3 = const OTHER_CONSTANT,")
+        with self.assertRaisesRegex(GenerationError, "const operand"):
+            parse_declaration("p3 = const OTHER_CONSTANT,")
 
     def test_named_rdx_and_internal_names_are_reserved(self):
         for name in ("rdx", "cf", "ofl", "s", "d", "m", "n"):
             with (
                 self.subTest(name=name),
-                self.assertRaisesRegex(gen_x86_64.GenerationError, "reserved operand name"),
+                self.assertRaisesRegex(GenerationError, "reserved operand name"),
             ):
-                gen_x86_64.parse_declaration(f"{name} = out(reg) _,")
+                parse_declaration(f"{name} = out(reg) _,")
 
     def test_high_limb_value_is_validated(self):
-        source = gen_x86_64.SOURCE.read_text().replace(
+        source = x86_64_blocks.SOURCE.read_text().replace(
             "const PASTA_HIGH_LIMB: u64 = 1 << 62;",
             "const PASTA_HIGH_LIMB: u64 = 1 << 61;",
         )
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "1 << 62"):
-            gen_x86_64.validate_high_limb(source)
+        with self.assertRaisesRegex(GenerationError, "1 << 62"):
+            x86_64_blocks.validate_high_limb(source)
 
 
 class EmitterTests(unittest.TestCase):
     @staticmethod
     def emitter(*registers):
         directions = {register: "inout" for register in registers}
-        emitter = gen_x86_64.Emitter(directions, {})
+        emitter = x86_64.Lifter(directions, {})
         for register in registers:
             if register != "rdx":
-                emitter.bind_argument(register, "0", "test input")
+                x86_bind(emitter, register, "0")
         return emitter
 
     def test_unsupported_instruction_is_rejected(self):
         emitter = self.emitter("a")
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "unsupported instruction or"):
-            emitter.emit_instruction("or {a}, 1")
+        with self.assertRaisesRegex(GenerationError, "unsupported instruction or"):
+            emitter.lift("or {a}, 1")
 
     def test_input_only_register_cannot_be_written(self):
-        emitter = gen_x86_64.Emitter({"a": "in", "b": "in"}, {})
-        emitter.bind_argument("a", "1", "test input")
-        emitter.bind_argument("b", "2", "test input")
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "input-only register a"):
-            emitter.emit_instruction("add {a}, {b}")
+        emitter = x86_64.Lifter({"a": "in", "b": "in"}, {})
+        x86_bind(emitter, "a", "1", "test input")
+        x86_bind(emitter, "b", "2", "test input")
+        with self.assertRaisesRegex(GenerationError, "input-only register a"):
+            emitter.lift("add {a}, {b}")
 
     def test_input_only_register_cannot_be_xor_zeroed(self):
-        emitter = gen_x86_64.Emitter({"z": "in"}, {})
-        emitter.bind_argument("z", "1", "test input")
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "input-only register z"):
-            emitter.emit_instruction("xor {z:e}, {z:e}")
+        emitter = x86_64.Lifter({"z": "in"}, {})
+        x86_bind(emitter, "z", "1", "test input")
+        with self.assertRaisesRegex(GenerationError, "input-only register z"):
+            emitter.lift("xor {z:e}, {z:e}")
 
     def test_register_read_before_write_is_rejected(self):
-        emitter = gen_x86_64.Emitter({"a": "inout", "b": "in"}, {})
-        emitter.bind_argument("a", "0", "test input")
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "b read before"):
-            emitter.emit_instruction("add {a}, {b}")
+        emitter = x86_64.Lifter({"a": "inout", "b": "in"}, {})
+        x86_bind(emitter, "a", "0", "test input")
+        with self.assertRaisesRegex(GenerationError, "b read before"):
+            emitter.lift("add {a}, {b}")
 
     def test_memory_write_is_rejected(self):
-        emitter = gen_x86_64.Emitter({"a": "inout", "p": "in"}, {"p": "value"})
-        emitter.bind_argument("a", "0", "test input")
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "memory write"):
-            emitter.emit_instruction("mov qword ptr [{p}], {a}")
+        emitter = x86_64.Lifter({"a": "inout", "p": "in"}, {"p": "value"})
+        x86_bind(emitter, "a", "0", "test input")
+        with self.assertRaisesRegex(GenerationError, "memory write"):
+            emitter.lift("mov qword ptr [{p}], {a}")
 
     def test_non_limb_memory_offset_is_rejected(self):
-        emitter = gen_x86_64.Emitter({"a": "inout", "p": "in"}, {"p": "value"})
-        emitter.bind_argument("a", "0", "test input")
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "offset 32"):
-            emitter.emit_instruction("mov {a}, qword ptr [{p} + 32]")
+        emitter = x86_64.Lifter({"a": "inout", "p": "in"}, {"p": "value"})
+        x86_bind(emitter, "a", "0", "test input")
+        with self.assertRaisesRegex(GenerationError, "offset 32"):
+            emitter.lift("mov {a}, qword ptr [{p} + 32]")
 
     def test_undeclared_address_base_is_rejected(self):
-        emitter = gen_x86_64.Emitter({"a": "inout"}, {})
-        emitter.bind_argument("a", "0", "test input")
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "undeclared register p"):
-            emitter.emit_instruction("mov {a}, qword ptr [{p}]")
+        emitter = x86_64.Lifter({"a": "inout"}, {})
+        x86_bind(emitter, "a", "0", "test input")
+        with self.assertRaisesRegex(GenerationError, "undeclared register p"):
+            emitter.lift("mov {a}, qword ptr [{p}]")
 
     def test_register_is_not_an_address_base_without_pointer_binding(self):
         emitter = self.emitter("a", "p")
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "not a read-only pointer"):
-            emitter.emit_instruction("mov {a}, qword ptr [{p}]")
+        with self.assertRaisesRegex(GenerationError, "not a read-only pointer"):
+            emitter.lift("mov {a}, qword ptr [{p}]")
 
     def test_adc_rejects_invalid_cf(self):
         emitter = self.emitter("a", "b")
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "CF read while invalid"):
-            emitter.emit_instruction("adc {a}, {b}")
+        with self.assertRaisesRegex(GenerationError, "CF read while invalid"):
+            emitter.lift("adc {a}, {b}")
 
     def test_cmovnc_rejects_invalid_cf(self):
         emitter = self.emitter("a", "b")
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "CF read while invalid"):
-            emitter.emit_instruction("cmovnc {a}, {b}")
+        with self.assertRaisesRegex(GenerationError, "CF read while invalid"):
+            emitter.lift("cmovnc {a}, {b}")
 
     def test_add_invalidates_of(self):
         emitter = self.emitter("a", "b", "z")
-        emitter.emit_instruction("xor {z:e}, {z:e}")
-        emitter.emit_instruction("add {a}, {b}")
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "OF read while invalid"):
-            emitter.emit_instruction("adox {a}, {b}")
+        emitter.lift("xor {z:e}, {z:e}")
+        emitter.lift("add {a}, {b}")
+        with self.assertRaisesRegex(GenerationError, "OF read while invalid"):
+            emitter.lift("adox {a}, {b}")
 
     def test_neg_invalidates_of(self):
         emitter = self.emitter("a", "b", "z")
-        emitter.emit_instruction("xor {z:e}, {z:e}")
-        emitter.emit_instruction("neg {a}")
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "OF read while invalid"):
-            emitter.emit_instruction("adox {a}, {b}")
+        emitter.lift("xor {z:e}, {z:e}")
+        emitter.lift("neg {a}")
+        with self.assertRaisesRegex(GenerationError, "OF read while invalid"):
+            emitter.lift("adox {a}, {b}")
 
     def test_imul_invalidates_flags(self):
         emitter = self.emitter("a", "b", "z")
-        emitter.emit_instruction("xor {z:e}, {z:e}")
-        emitter.emit_instruction("imul {a}, {b}")
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "CF read while invalid"):
-            emitter.emit_instruction("adc {a}, {b}")
+        emitter.lift("xor {z:e}, {z:e}")
+        emitter.lift("imul {a}, {b}")
+        with self.assertRaisesRegex(GenerationError, "CF read while invalid"):
+            emitter.lift("adc {a}, {b}")
 
     def test_masked_or_zero_shift_counts_are_rejected(self):
         for amount in (0, 64, 65, 256):
             with self.subTest(amount=amount):
                 emitter = self.emitter("a")
-                with self.assertRaisesRegex(gen_x86_64.GenerationError, "shift counts"):
-                    emitter.emit_instruction(f"shl {{a}}, {amount}")
+                with self.assertRaisesRegex(GenerationError, "shift counts"):
+                    emitter.lift(f"shl {{a}}, {amount}")
 
     def test_shift_invalidates_flags(self):
         emitter = self.emitter("a", "b", "z")
-        emitter.emit_instruction("xor {z:e}, {z:e}")
-        emitter.emit_instruction("shl {a}, 62")
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "CF read while invalid"):
-            emitter.emit_instruction("adcx {a}, {b}")
+        emitter.lift("xor {z:e}, {z:e}")
+        emitter.lift("shl {a}, 62")
+        with self.assertRaisesRegex(GenerationError, "CF read while invalid"):
+            emitter.lift("adcx {a}, {b}")
 
     def test_xor_self_allows_uninitialized_output_and_clears_both_flags(self):
-        emitter = gen_x86_64.Emitter({"a": "inout", "b": "in", "z": "out"}, {})
-        emitter.bind_argument("a", "1", "test input")
-        emitter.bind_argument("b", "2", "test input")
-        emitter.emit_instruction("xor {z:e}, {z:e}")
-        emitter.emit_instruction("adcx {a}, {b}")
-        emitter.emit_instruction("adox {a}, {b}")
+        emitter = x86_64.Lifter({"a": "inout", "b": "in", "z": "out"}, {})
+        x86_bind(emitter, "a", "1", "test input")
+        x86_bind(emitter, "b", "2", "test input")
+        emitter.lift("xor {z:e}, {z:e}")
+        emitter.lift("adcx {a}, {b}")
+        emitter.lift("adox {a}, {b}")
 
     def test_adcx_and_adox_preserve_the_other_flag(self):
         emitter = self.emitter("a", "b", "z")
-        emitter.emit_instruction("xor {z:e}, {z:e}")
-        emitter.emit_instruction("adcx {a}, {b}")
-        emitter.emit_instruction("adox {a}, {b}")
+        emitter.lift("xor {z:e}, {z:e}")
+        emitter.lift("adcx {a}, {b}")
+        emitter.lift("adox {a}, {b}")
         # OF from ADOX and CF from ADCX are both still valid.
-        emitter.emit_instruction("adox {a}, {b}")
-        emitter.emit_instruction("adcx {a}, {b}")
+        emitter.lift("adox {a}, {b}")
+        emitter.lift("adcx {a}, {b}")
 
     def test_mov_mulx_and_cmov_preserve_flags(self):
         emitter = self.emitter("a", "b", "z", "rdx", "hi", "lo")
-        emitter.bind_argument("rdx", "3", "fixed register test input")
-        emitter.emit_instruction("xor {z:e}, {z:e}")
-        emitter.emit_instruction("mov {a}, {b}")
-        emitter.emit_instruction("mulx {hi}, {lo}, {a}")
-        emitter.emit_instruction("cmovnc {a}, {b}")
-        emitter.emit_instruction("adox {a}, {b}")
-        emitter.emit_instruction("adcx {a}, {b}")
+        x86_bind(emitter, "rdx", "3", "fixed register test input")
+        emitter.lift("xor {z:e}, {z:e}")
+        emitter.lift("mov {a}, {b}")
+        emitter.lift("mulx {hi}, {lo}, {a}")
+        emitter.lift("cmovnc {a}, {b}")
+        emitter.lift("adox {a}, {b}")
+        emitter.lift("adcx {a}, {b}")
 
 
 class AArch64WriteDirectionTests(unittest.TestCase):
     def test_input_only_destination_is_rejected(self):
-        emitter = gen_aarch64.Emitter([], {"b0": "in", "r0": "inout"})
-        emitter.bind("r0", "0", "argument", reads=())
+        emitter = aarch64.Lifter({"b0": "in", "r0": "inout"})
+        bound_registers(emitter, ["r0"])
         with self.assertRaisesRegex(ValueError, "input-only register b0"):
-            emitter.step("mov", ["b0", "r0"], "mov b0, r0")
+            aarch64_step(emitter, "mov", ["b0", "r0"], "mov b0, r0")
 
     def test_undeclared_destination_is_rejected(self):
-        emitter = gen_aarch64.Emitter([], {"r0": "inout"})
+        emitter = aarch64.Lifter({"r0": "inout"})
         with self.assertRaisesRegex(ValueError, "undeclared destination"):
-            emitter.step("mov", ["bad", "r0"], "mov bad, r0")
+            aarch64_step(emitter, "mov", ["bad", "r0"], "mov bad, r0")
 
     def test_output_and_inout_writes_are_allowed(self):
         for direction in ("out", "inout"):
-            emitter = gen_aarch64.Emitter([], {"r0": direction})
-            emitter.step("mov", ["r0", "xzr"], "mov r0, xzr")
+            emitter = aarch64.Lifter({"r0": direction})
+            aarch64_step(emitter, "mov", ["r0", "xzr"], "mov r0, xzr")
             self.assertIn("r0", emitter.known)
 
     def test_zero_register_write_is_allowed(self):
-        gen_aarch64.Emitter([]).step("mov", ["xzr", "xzr"], "mov xzr, xzr")
+        aarch64_step(aarch64.Lifter(), "mov", ["xzr", "xzr"], "mov xzr, xzr")
 
 
 class AArch64FlagFormTests(unittest.TestCase):
@@ -249,15 +291,14 @@ class AArch64FlagFormTests(unittest.TestCase):
 
     @staticmethod
     def emitter(*registers):
-        emitter = gen_aarch64.Emitter([], {register: "inout" for register in registers})
-        for register in registers:
-            emitter.bind(register, "0", "argument", reads=())
+        emitter = aarch64.Lifter({register: "inout" for register in registers})
+        bound_registers(emitter, registers)
         return emitter
 
     def run_steps(self, emitter, *lines):
         for line in lines:
             op, rest = line.split(" ", 1)
-            emitter.step(op, gen_aarch64.tokenize(rest), line)
+            aarch64_step(emitter, op, aarch64.tokenize(rest), line)
 
     def test_carry_condition_after_four_flags_is_rejected(self):
         emitter = self.emitter("a", "b")
@@ -297,7 +338,7 @@ class AArch64FlagFormTests(unittest.TestCase):
             "neg m, m",
             "sub m, m, t",
         )
-        expressions = [entry["expr"] for entry in emitter.entries[5:]]
+        expressions = [let.expr for node in emitter.nodes[5:] for let in node.lets()]
         self.assertEqual(
             expressions,
             [
@@ -336,10 +377,10 @@ class AArch64FlagFormTests(unittest.TestCase):
 
 class AArch64OperandCountTests(unittest.TestCase):
     def test_shifted_add_is_rejected(self):
-        emitter = gen_aarch64.Emitter([])
+        emitter = aarch64.Lifter()
         with self.assertRaisesRegex(ValueError, "adds expects 3 operands"):
-            emitter.step(
-                "adds", gen_aarch64.tokenize("r0, r0, b0, lsl #1"), "adds r0, r0, b0, lsl #1"
+            aarch64_step(
+                emitter, "adds", aarch64.tokenize("r0, r0, b0, lsl #1"), "adds r0, r0, b0, lsl #1"
             )
 
     def test_missing_and_extra_operands_are_rejected_before_reads(self):
@@ -362,55 +403,56 @@ class AArch64OperandCountTests(unittest.TestCase):
                     self.subTest(op=op, actual=actual),
                     self.assertRaisesRegex(ValueError, "expects .* operands"),
                 ):
-                    gen_aarch64.Emitter([]).step(op, ["r0"] * actual, op)
+                    aarch64_step(aarch64.Lifter(), op, ["r0"] * actual, op)
 
 
 class SharedAArch64ParserTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = gen_aarch64.INLINE.read_text()
+        cls.source = aarch64_blocks.SOURCE.read_text()
+
+    @staticmethod
+    def parse_block(block):
+        return aarch64.parse_block(
+            aarch64_blocks.SOURCE.read_text(),
+            block,
+            aarch64_blocks.KINDS,
+            aarch64_blocks.TARGET.reserved_names,
+        )
 
     def test_all_real_blocks_use_shared_parsed_function_model(self):
-        for config in gen_aarch64.INLINE_ROUTINES:
-            rust_name = config.rust_name
+        for block in aarch64_blocks.BLOCKS:
+            rust_name = block.rust_name
             with self.subTest(routine=rust_name):
-                parsed = asm_source.parse_function(
+                parsed = rust.parse_function(
                     self.source,
                     rust_name,
-                    config.arg_names,
-                    len(config.result_fields),
+                    block.arg_names,
+                    len(aarch64_blocks.KINDS[block.result]),
                     allowed_options={"pure", "nomem", "nostack"},
                     required_options={"pure", "nomem", "nostack"},
                 )
-                instructions, declarations, locals_map, outputs, returned, origins = (
-                    gen_aarch64.parse_inline(gen_aarch64.INLINE, config)
-                )
-                self.assertIsInstance(parsed, asm_source.ParsedFunction)
-                self.assertEqual(len(instructions), len(parsed.instructions) + 1)
-                self.assertEqual(
-                    declarations,
-                    [
-                        (declaration.name, declaration.kind, declaration.value, declaration.output)
-                        for declaration in parsed.declarations
-                    ],
-                )
-                self.assertEqual(locals_map, parsed.locals)
-                self.assertEqual(outputs, asm_source.output_bindings(parsed, rust_name))
-                self.assertEqual(returned, asm_source.returned_registers(parsed, rust_name))
-                self.assertEqual(origins, parsed.origins)
-                self.assertEqual(len(origins), len(parsed.instructions))
+                adapted = self.parse_block(block)
+                self.assertIsInstance(parsed, rust.ParsedFunction)
+                self.assertEqual(len(adapted.instructions), len(parsed.instructions))
+                self.assertEqual(adapted.declarations, parsed.declarations)
+                self.assertEqual(adapted.locals, parsed.locals)
+                self.assertEqual(adapted.outputs, rust.output_bindings(parsed, rust_name))
+                self.assertEqual(adapted.returned, rust.returned_registers(parsed, rust_name))
+                self.assertEqual(adapted.origins, parsed.origins)
+                self.assertEqual(len(adapted.origins), len(parsed.instructions))
 
     def test_divstep_macro_expands_to_the_step_body_at_every_site(self):
-        macros = asm_source.parse_macros(self.source)
+        macros = rust.parse_macros(self.source)
         self.assertEqual(set(macros["divstep"]), {"core", "", "last"})
         core = macros["divstep"]["core"]
         self.assertEqual(len(core), 7)
         self.assertEqual(macros["divstep"][""], core + ("tst {pg}, #2", "asr {pg}, {pg}, #1"))
         self.assertEqual(macros["divstep"]["last"], core + ("asr {pg}, {pg}, #1",))
-        config = next(c for c in gen_aarch64.INLINE_ROUTINES if c.rust_name == "divstep59")
-        instructions, _, _, _, _, origins = gen_aarch64.parse_inline(gen_aarch64.INLINE, config)
+        block = next(b for b in aarch64_blocks.BLOCKS if b.rust_name == "divstep59")
+        parsed = self.parse_block(block)
         sites = {}
-        for instruction, origin in zip(instructions, origins):
+        for instruction, origin in zip(parsed.instructions, parsed.origins, strict=True):
             if origin is not None:
                 sites.setdefault(origin, []).append(instruction)
         arms = [
@@ -427,30 +469,30 @@ class SharedAArch64ParserTests(unittest.TestCase):
         )
 
     def test_divstep_rounds_are_factored_from_the_macro(self):
-        routines = {routine.name: routine for routine in gen_aarch64.all_routines()}
-        block = routines["divstep59Block"]
-        calls = [entry for entry in block.emitter.entries if entry["fact"][0] == "call"]
+        programs = {program.name: program for program in aarch64_blocks.programs()}
+        block = programs["divstep59Block"]
+        calls = [node for node in block.nodes if isinstance(node, Call)]
         # A run of consecutive invocations is one call of the round iterated over the run; the
         # third batch's run breaks where the second batch's matrix products are scheduled.
         self.assertEqual(
-            [entry["expr"].split(" ")[0] for entry in calls],
+            [node.expr().split(" ")[0] for node in calls],
             ["divstepRound^[19]", "divstepLast"] * 2
             + ["divstepRound^[10]", "divstepRound^[8]", "divstepLast"],
         )
         for name in ("divstepRound", "divstepLast"):
-            body = [code for code, _ in routines[name].lines if code is not None]
+            body = [code for code, _ in lean.body_lines(programs[name]) if code is not None]
             self.assertEqual(
                 body[:4],
                 ["  let d := st.d", "  let pf := st.f", "  let pg := st.g", "  let fl := st.fl"],
             )
-        self.assertEqual(len(routines["divstepRound"].lines), 4 + 9)
-        self.assertEqual(len(routines["divstepLast"].lines), 4 + 8)
+        self.assertEqual(len(lean.body_lines(programs["divstepRound"])), 4 + 9)
+        self.assertEqual(len(lean.body_lines(programs["divstepLast"])), 4 + 8)
         # The last step's flags are carried but never read; the block leaves the binding as a comment.
-        comments = [comment for code, comment in block.lines if code is None]
+        comments = [comment for code, comment in lean.body_lines(block) if code is None]
         self.assertEqual(len([c for c in comments if "fl = step" in c]), 3)
 
     def test_real_named_and_implicit_outputs_are_extracted(self):
-        mul = asm_source.parse_function(
+        mul = rust.parse_function(
             self.source,
             "mul",
             ["lhs", "rhs", "modulus", "inv"],
@@ -458,7 +500,7 @@ class SharedAArch64ParserTests(unittest.TestCase):
             allowed_options={"pure", "nomem", "nostack"},
             required_options={"pure", "nomem", "nostack"},
         )
-        add = asm_source.parse_function(
+        add = rust.parse_function(
             self.source,
             "add",
             ["lhs", "rhs", "modulus"],
@@ -468,12 +510,12 @@ class SharedAArch64ParserTests(unittest.TestCase):
         )
         self.assertEqual(mul.returns, ("o0", "o1", "o2", "o3"))
         self.assertEqual(
-            asm_source.output_bindings(mul, "mul"),
+            rust.output_bindings(mul, "mul"),
             {"o0": "r0", "o1": "r1", "o2": "r2", "o3": "r3"},
         )
         self.assertEqual(add.returns, ("r0", "r1", "r2", "r3"))
         self.assertEqual(
-            asm_source.output_bindings(add, "add"),
+            rust.output_bindings(add, "add"),
             {"r0": "r0", "r1": "r1", "r2": "r2", "r3": "r3"},
         )
 
@@ -481,7 +523,7 @@ class SharedAArch64ParserTests(unittest.TestCase):
 class X86RealSourceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = gen_x86_64.SOURCE.read_text()
+        cls.source = x86_64_blocks.SOURCE.read_text()
 
     def mutate(self, old, new):
         self.assertEqual(self.source.count(old), 1, old)
@@ -489,8 +531,8 @@ class X86RealSourceTests(unittest.TestCase):
 
     def assert_mutation_rejected(self, old, new, message):
         source = self.mutate(old, new)
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, message):
-            gen_x86_64.gen_program(source)
+        with self.assertRaisesRegex(GenerationError, message):
+            x86_64_blocks.text(source)
 
     def mutate_function(self, name, old, new):
         marker = f"pub(super) fn {name}("
@@ -503,27 +545,30 @@ class X86RealSourceTests(unittest.TestCase):
 
     def assert_function_mutation_rejected(self, name, old, new, message):
         source = self.mutate_function(name, old, new)
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, message):
-            gen_x86_64.gen_program(source)
+        with self.assertRaisesRegex(GenerationError, message):
+            x86_64_blocks.text(source)
+
+    def flat_mul(self):
+        return x86_64.lift_block(self.source, x86_block("mulMont"), X86)
 
     def test_all_six_blocks_generate(self):
-        generated = gen_x86_64.gen_program(self.source)
-        for config in gen_x86_64.ROUTINES:
-            self.assertIn(f"def {config.lean_name} ", generated)
+        generated = x86_64_blocks.text(self.source)
+        for block in x86_64_blocks.BLOCKS:
+            self.assertIn(f"def {block.lean_name} ", generated)
 
     def test_source_output_tuple_order_is_used(self):
-        mul = gen_x86_64.transcribe(self.source, gen_x86_64.ROUTINES[2])
-        square_hi = gen_x86_64.transcribe(self.source, gen_x86_64.ROUTINES[4])
+        mul = transcribed(self.source, x86_block("mulMont"))
+        square_hi = transcribed(self.source, x86_block("squareHi"))
         self.assertTrue(mul.rstrip().endswith("⟨ee, ae, be, ce⟩"))
         self.assertTrue(square_hi.rstrip().endswith("⟨a, z0, z1, z2⟩"))
 
     def test_each_unfactored_source_instruction_has_one_generated_comment(self):
-        for config in gen_x86_64.ROUTINES:
-            if config.lean_name == "mulMont":
+        for block in x86_64_blocks.BLOCKS:
+            if block.lean_name == "mulMont":
                 continue
-            with self.subTest(routine=config.lean_name):
-                parsed = gen_x86_64.parse_function(self.source, config)
-                generated = gen_x86_64.transcribe(self.source, config)
+            with self.subTest(routine=block.lean_name):
+                parsed = x86_64.parse_function(self.source, block, X86)
+                generated = transcribed(self.source, block)
                 comments = Counter(re.findall(r"-- (.+)$", generated, re.MULTILINE))
                 self.assertEqual(
                     Counter(parsed.instructions),
@@ -533,20 +578,10 @@ class X86RealSourceTests(unittest.TestCase):
                 )
 
     def test_factored_mul_rounds_match_under_rotation(self):
-        routine = gen_x86_64.emit_routine(self.source, gen_x86_64.ROUTINES[2])
-        rounds = [
-            gen_x86_64._normalized_mul_round_entries(
-                routine.emitter, pc_range, rotation, f"rhs.l{index}"
-            )
-            for index, (pc_range, rotation) in enumerate(
-                zip(gen_x86_64.MUL_ROUND_RANGES, gen_x86_64.MUL_ROUND_ROTATIONS), start=1
-            )
-        ]
-        self.assertEqual(
-            gen_x86_64._round_fingerprint(rounds[0]),
-            gen_x86_64._round_fingerprint(rounds[1]),
-        )
-        self.assertEqual({entry["pc"] for entry in rounds[0]}, set(range(36)))
+        nodes = self.flat_mul().nodes
+        rounds = [MUL_ROUNDS.normalized(nodes, index) for index in range(len(MUL_ROUNDS.ranges))]
+        self.assertEqual(MUL_ROUNDS.fingerprint(rounds[0]), MUL_ROUNDS.fingerprint(rounds[1]))
+        self.assertEqual({node.pc for node in rounds[0]}, set(range(36)))
 
     def test_factored_mul_round_difference_is_rejected(self):
         source = self.mutate_function(
@@ -555,52 +590,43 @@ class X86RealSourceTests(unittest.TestCase):
             '            "add {ce}, {s1}",\n            "adc {de}, {s2}",\n            "adc {ee}, {s1}",\n',
         )
         with self.assertRaisesRegex(
-            gen_x86_64.GenerationError,
+            GenerationError,
             "flattened full rounds 1 and 2 differ after accumulator rotation",
         ):
-            gen_x86_64.gen_program(source)
+            x86_64_blocks.text(source)
 
     def test_factored_round_flattens_back_to_each_source_round(self):
-        routine = gen_x86_64.emit_routine(self.source, gen_x86_64.ROUTINES[2])
-        source_load, body = gen_x86_64._factored_round_body(routine.emitter)
+        nodes = self.flat_mul().nodes
+        load, body = MUL_ROUNDS.body(nodes, GenerationError)
         registers = ["be", "ce", "de", "ee", "ae", "rdx"]
-        for round_number, (first, last) in enumerate(gen_x86_64.MUL_ROUND_RANGES, start=1):
-            source = [
-                entry
-                for entry in routine.emitter.entries
-                if entry["pc"] is not None and first <= entry["pc"] <= last
-            ]
-            flattened = gen_x86_64._flattened_round_call(
-                source_load, body, registers, f"rhs.l{round_number}", first
-            )
-            self.assertEqual(
-                gen_x86_64._round_fingerprint(flattened), gen_x86_64._round_fingerprint(source)
-            )
-            self.assertEqual({entry["pc"] for entry in flattened}, set(range(first, last + 1)))
+        for round_number, (first, last) in enumerate(MUL_ROUNDS.ranges, start=1):
+            source = [node for node in nodes if node.pc is not None and first <= node.pc <= last]
+            flattened = MUL_ROUNDS.flattened(load, body, registers, f"rhs.l{round_number}", first)
+            self.assertEqual(MUL_ROUNDS.fingerprint(flattened), MUL_ROUNDS.fingerprint(source))
+            self.assertEqual({node.pc for node in flattened}, set(range(first, last + 1)))
             registers = registers[1:5] + registers[:1] + ["rdx"]
 
     def test_factored_round_call_with_misordered_registers_is_rejected(self):
-        routine = gen_x86_64.emit_routine(self.source, gen_x86_64.ROUTINES[2])
-        source_load, body = gen_x86_64._factored_round_body(routine.emitter)
-        with self.assertRaisesRegex(
-            gen_x86_64.GenerationError, "does not flatten to the source's round 1"
-        ):
-            gen_x86_64._check_round_call(
-                routine.emitter,
-                source_load,
+        nodes = self.flat_mul().nodes
+        load, body = MUL_ROUNDS.body(nodes, GenerationError)
+        with self.assertRaisesRegex(GenerationError, "does not flatten to the source's round 1"):
+            MUL_ROUNDS.check_call(
+                nodes,
+                load,
                 body,
                 ["ce", "be", "de", "ee", "ae", "rdx"],
                 "rhs.l1",
-                gen_x86_64.MUL_ROUND_RANGES[0],
-                1,
+                0,
+                GenerationError,
             )
 
     def test_factored_mul_comments_cover_one_validated_full_round(self):
-        generated = gen_x86_64.transcribe(self.source, gen_x86_64.ROUTINES[2])
+        block = x86_block("mulMont")
+        generated = transcribed(self.source, block)
         comments = Counter(re.findall(r"-- (.+)$", generated, re.MULTILINE))
-        parsed = gen_x86_64.parse_function(self.source, gen_x86_64.ROUTINES[2])
+        parsed = x86_64.parse_function(self.source, block, X86)
         omitted = []
-        second_first, second_last = gen_x86_64.MUL_ROUND_RANGES[1]
+        second_first, second_last = MUL_ROUNDS.ranges[1]
         for pc, instruction in enumerate(parsed.instructions):
             if not second_first <= pc <= second_last:
                 omitted.append(instruction)
@@ -610,9 +636,9 @@ class X86RealSourceTests(unittest.TestCase):
         )
 
     def test_declared_pointer_blocks_are_readonly(self):
-        for config in (gen_x86_64.ROUTINES[2], gen_x86_64.ROUTINES[4]):
-            with self.subTest(routine=config.lean_name):
-                parsed = gen_x86_64.parse_function(self.source, config)
+        for block in (x86_block("mulMont"), x86_block("squareHi")):
+            with self.subTest(routine=block.lean_name):
+                parsed = x86_64.parse_function(self.source, block, X86)
                 self.assertIn("readonly", parsed.options)
                 self.assertNotIn("nomem", parsed.options)
 
@@ -635,7 +661,7 @@ class X86RealSourceTests(unittest.TestCase):
             '            "add {r0}, {b0}",',
             '            /* "sub {r0}, {b0}", */\n            "add {r0}, {b0}",',
         )
-        self.assertEqual(gen_x86_64.gen_program(source), gen_x86_64.gen_program(self.source))
+        self.assertEqual(x86_64_blocks.text(source), x86_64_blocks.text(self.source))
 
     def test_junk_between_templates_is_rejected(self):
         self.assert_mutation_rejected(
@@ -710,51 +736,49 @@ class X86RealSourceTests(unittest.TestCase):
         )
 
     def test_x86_skeleton_extracts_every_retained_instruction_let(self):
-        routines = {routine.name: routine for routine in gen_x86_64.all_routines()}
+        programs = {program.name: program for program in x86_64_blocks.programs()}
         # Every retained binding is extracted exactly once, equal values included (the three
         # zeros of an `xor r, r`, a repeated `mov` from `rdx`), since merging is off.
         for name in ("squareLo", "mulMontRound", "fromMont"):
             with self.subTest(routine=name):
-                routine = routines[name]
-                prepared = gen_x86_64.SKELETON_BACKEND.prepare(
-                    routine.emitter, routine.emitter.entries
-                )
-                groups = word_step_groups(gen.skeleton(routine))
+                program = programs[name]
+                names = ssa_names([let for _, let, _ in program.kept()])
+                groups = word_step_groups(skeleton(program))
                 extracted = [name for group in groups for name in group]
-                self.assertEqual(sorted(extracted), sorted(prepared.names))
+                self.assertEqual(sorted(extracted), sorted(names))
                 self.assertEqual(len(extracted), len(set(extracted)))
-        square_lo_lines = gen.skeleton(routines["squareLo"])
+        square_lo_lines = skeleton(programs["squareLo"])
         square_lo = "\n".join(square_lo_lines)
         self.assertIn(["s_2", "z4_1", "cf_5"], word_step_groups(square_lo_lines))
         self.assertNotIn("obtain ⟨cf_5, b_cf_5, l_z4_1⟩", square_lo)
 
-        mul_round_routine = routines["mulMontRound"]
-        mul_round_lines = gen.skeleton(mul_round_routine)
-        mul_round = "\n".join(mul_round_lines)
+        mul_round = programs["mulMontRound"]
+        mul_round_lines = skeleton(mul_round)
+        mul_round_text = "\n".join(mul_round_lines)
         # The factored round is rendered like every other block: an instruction's pair wrapper
         # and its two projections, extracted together, and read under their own names.
         self.assertIn(["m", "s2", "s1_1"], word_step_groups(mul_round_lines))
         self.assertIn(["s", "r0_1", "cf_1"], word_step_groups(mul_round_lines))
-        self.assertIn("r0_1 := (addc r0 s1_1 cf).1 using", mul_round)
-        self.assertIn("cf_1 := (addc r0 s1_1 cf).2", mul_round)
+        self.assertIn("r0_1 := (addc r0 s1_1 cf).1 using", mul_round_text)
+        self.assertIn("cf_1 := (addc r0 s1_1 cf).2", mul_round_text)
         # The round's and the calling block's local definitions stay transparent.
-        for lines in (mul_round_lines, gen.skeleton(routines["mulMont"])):
+        for lines in (mul_round_lines, skeleton(programs["mulMont"])):
             steps = [line for line in lines if line.startswith("  word_step")]
             self.assertTrue(steps)
             self.assertTrue(all(line.startswith("  word_step -clear ") for line in steps))
-        helper_text = "\n".join(code for code, _ in mul_round_routine.lines)
+        helper_text = "\n".join(code for code, _ in lean.body_lines(mul_round))
         self.assertIn("let m := mulx b lhs.l0", helper_text)
         self.assertIn("let s := addc r0 s1 cf", helper_text)
         self.assertIn("let r0 := s.1", helper_text)
         self.assertIn("let cf := s.2", helper_text)
         # The omitted entry load aliases RDX to b only until the source writes RDX again.
         # Reduction products must use the rebound Montgomery quotient, never b.
-        expressions = [entry["expr"] for entry in mul_round_routine.emitter.entries]
+        expressions = [let.expr for _, let in mul_round.bindings()]
         quotient_index = expressions.index("mulLo rdx inv")
         self.assertTrue(any("mulx rdx modulus.l1" in expr for expr in expressions[quotient_index:]))
         self.assertFalse(any("mulx b modulus.l1" in expr for expr in expressions[quotient_index:]))
 
-        from_mont_lines = gen.skeleton(routines["fromMont"])
+        from_mont_lines = skeleton(programs["fromMont"])
         from_mont = "\n".join(from_mont_lines)
         self.assertIn(["n", "z0_1", "cf"], word_step_groups(from_mont_lines))
         self.assertIn("z0_1 := (neg z0).1 using", from_mont)
@@ -762,169 +786,122 @@ class X86RealSourceTests(unittest.TestCase):
         self.assertIn("\n  word_step n,", from_mont)
 
     def test_all_x86_routines_and_factored_round_generate_shared_skeletons(self):
-        routines = gen_x86_64.all_routines()
+        programs = x86_64_blocks.programs()
         self.assertEqual(
-            [routine.name for routine in routines],
+            [program.name for program in programs],
             ["addMod", "subMod", "mulMontRound", "mulMont", "squareLo", "squareHi", "fromMont"],
         )
-        for routine in routines:
-            with self.subTest(routine=routine.name):
-                generated = gen.skeleton(routine)
+        for program in programs:
+            with self.subTest(routine=program.name):
+                generated = skeleton(program)
                 self.assertEqual(
                     generated[0],
-                    f"  -- generated skeleton for `{routine.name}`: do not edit between the annotations",
+                    f"  -- generated skeleton for `{program.name}`: do not edit between the annotations",
                 )
                 self.assertEqual(generated[-1], "  subst hr")
-                self.assertIs(
-                    gen.find_routine(f"X86_64:{routine.name}").emitter.__class__,
-                    routine.emitter.__class__,
-                )
+                self.assertEqual(gen.find_routine(f"X86_64:{program.name}").architecture, "X86_64")
 
 
 class SharedGeneratorTests(unittest.TestCase):
     def test_skeleton_hooks_are_backend_owned(self):
-        aarch_routines = gen_aarch64.all_routines()
-        x86_routines = gen_x86_64.all_routines()
-        self.assertTrue(
-            all(
-                routine.skeleton_backend is gen_aarch64.SKELETON_BACKEND
-                for routine in aarch_routines
-            )
-        )
-        self.assertTrue(
-            all(routine.skeleton_backend is gen_x86_64.SKELETON_BACKEND for routine in x86_routines)
-        )
-        self.assertIsNot(gen_aarch64.SKELETON_BACKEND, gen_x86_64.SKELETON_BACKEND)
+        # Each architecture's proof steps belong to its own nodes: a program holds only the
+        # shared nodes of `ir` and its own architecture's.
+        def modules(programs):
+            return {type(node).__module__ for program in programs for node in program.nodes}
 
-        aarch_add = next(routine for routine in aarch_routines if routine.name == "addMod")
-        aarch_live = [
-            entry
-            for entry, keep in zip(
-                aarch_add.emitter.entries, aarch_add.emitter.liveness(aarch_add.result_names)
-            )
-            if keep
-        ]
-        aarch_prepared = gen_aarch64.SKELETON_BACKEND.prepare(aarch_add.emitter, aarch_live)
+        aarch_programs = aarch64_blocks.programs()
+        x86_programs = x86_64_blocks.programs()
+        self.assertLessEqual(modules(aarch_programs), {ir.__name__, aarch64.__name__})
+        self.assertLessEqual(modules(x86_programs), {ir.__name__, x86_64.__name__})
+
+        aarch_add = next(program for program in aarch_programs if program.name == "addMod")
+        kept = [(node, let) for node, let, live in aarch_add.kept() if live]
         self.assertTrue(
             any(
-                entry.get("group_fact", entry["fact"])[0] == "subs"
-                and len(entry.get("group", ())) == 3
-                for entry in aarch_prepared.entries
+                isinstance(node, aarch64.SubBorrow) and sum(1 for n, _ in kept if n is node) == 3
+                for node, _ in kept
             )
         )
-
-        x86_square = next(routine for routine in x86_routines if routine.name == "squareLo")
-        x86_prepared = gen_x86_64.SKELETON_BACKEND.prepare(
-            x86_square.emitter, x86_square.emitter.entries
-        )
-        self.assertTrue(
-            any(
-                entry.get("group_fact", entry["fact"])[0] == "x86_mulx"
-                for entry in x86_prepared.entries
-            )
-        )
+        x86_square = next(program for program in x86_programs if program.name == "squareLo")
+        self.assertTrue(any(isinstance(node, x86_64.Mulx) for node in x86_square.nodes))
 
     def test_skeleton_facts_come_from_the_routine_backend(self):
-        # The shared traversal knows the common facts; an ISA-specific one reaches it only
-        # through the routine's backend hook, and one that no hook handles is an error.
-        class StubBackend(gen.SkeletonBackend):
-            def fact(self, kind, ops, context):
-                if kind != "stub":
-                    return False
-                (operand,) = ops
-                context.eq(context.name, f"stub {operand}")
-                context.lines.append(f"  have b_{context.name} : {context.name} < 2^64 := by sorry")
-                context.bnd[context.name] = f"b_{context.name}"
-                return True
+        # The shared traversal knows only how to walk; each node states its own step, and a node
+        # that states none is an error.
+        import dataclasses
 
-        def routine(backend):
-            emitter = gen.Emitter()
-            emitter.bind("x", "lhs.l0", "argument", reads=(), load=True, fact=("load", "lhs", "l0"))
-            emitter.bind("y", "stub x", "stub x", reads={"x"}, fact=("stub", "x"))
+        @dataclasses.dataclass(frozen=True, kw_only=True)
+        class Stub(Node):
+            dest: str = ir.dst()
+            a: str = ir.src()
 
-            class StubRoutine(gen.Routine):
-                architecture = "Stub"
-                skeleton_backend = backend
+            def lets(self):
+                return [self._let(self.dest, f"stub {self.a}", self.a)]
 
-            return StubRoutine(
-                "doc", "def stub", emitter.render(["y"]), "  y", "stub", emitter, ["y"]
-            )
+            def prove(self, step):
+                step.eq(step.name, f"stub {step.r(self.a)}")
+                step.line(f"  have b_{step.name} : {step.name} < 2^64 := by sorry")
+                step.state.bnd[step.name] = f"b_{step.name}"
 
-        skeleton = "\n".join(gen.skeleton(routine(StubBackend())))
-        self.assertIn("  word_step x := lhs.l0 using hlhs.1\n", skeleton)
-        self.assertIn("  word_step y := stub x\n", skeleton)
-        self.assertIn("have b_y : y < 2^64 := by sorry", skeleton)
-        with self.assertRaisesRegex(ValueError, "unsupported skeleton fact stub"):
-            gen.skeleton(routine(gen.SkeletonBackend()))
+        @dataclasses.dataclass(frozen=True, kw_only=True)
+        class Unproved(Stub):
+            def prove(self, step):
+                return Node.prove(self, step)
+
+        def program(stub):
+            nodes = [
+                Load(comment="argument", dest="x", arg="lhs", field="l0"),
+                stub(comment="stub x", dest="y", a="x"),
+            ]
+            return CONVENTIONS.program("Stub", "stub", "doc", "def stub", nodes, ["y"])
+
+        text = "\n".join(skeleton(program(Stub)))
+        self.assertIn("  word_step x := lhs.l0 using hlhs.1\n", text)
+        self.assertIn("  word_step y := stub x\n", text)
+        self.assertIn("have b_y : y < 2^64 := by sorry", text)
+        with self.assertRaisesRegex(ValueError, "unsupported skeleton fact Unproved"):
+            skeleton(program(Unproved))
 
     def test_backward_liveness_and_backend_retention_share_the_same_ir(self):
-        emitter = gen.Emitter()
-        emitter.bind("input", "lhs.l0", reads=set(), fact=("param", "lhs", "l0"))
-        emitter.bind("dead", "input + 1", reads={"input"}, fact=("call", "{} + 1", ["input"]))
-        emitter.bind("result", "input", reads={"input"}, fact=("call", "{}", ["input"]))
-        self.assertEqual(
-            [
-                entry["name"]
-                for entry, keep in zip(emitter.entries, emitter.liveness(["result"]))
-                if keep
-            ],
-            ["input", "result"],
+        nodes = [
+            Mov(comment="argument", dest="input", a="lhs.l0"),
+            Mov(comment="dead", dest="dead", a="input"),
+            Mov(comment="result", dest="result", a="input"),
+        ]
+        eliminated = CONVENTIONS.program("Test", "t", "doc", "def t", nodes, ["result"])
+        retained = CONVENTIONS.program(
+            "Test", "t", "doc", "def t", nodes, ["result"], dead_code=ir.DeadCode.RETAIN
         )
-
-        retained = gen_x86_64.Emitter({}, {})
-        retained.entries = list(emitter.entries)
-        self.assertEqual(
-            [
-                entry["name"]
-                for entry, keep in zip(retained.entries, retained.liveness(["result"]))
-                if keep
-            ],
-            ["input", "result"],
-        )
-        self.assertIn(
-            ("  let dead := input + 1", None),
-            retained.render(["result"]),
-        )
+        for program in (eliminated, retained):
+            self.assertEqual(
+                [
+                    let.name
+                    for (_, let), live in zip(program.bindings(), program.liveness())
+                    if live
+                ],
+                ["input", "result"],
+            )
+        # Eliminating it, a dead computed value is dead code in the block, an error; retaining
+        # it, the binding is kept.
+        with self.assertRaisesRegex(ValueError, "dead computation: dead := input"):
+            lean.body_lines(eliminated)
+        self.assertIn(("  let dead := input", "dead"), lean.body_lines(retained))
 
     def test_transcription_snapshots_match_committed_files(self):
-        self.assertEqual(gen_aarch64.gen_program(), gen_aarch64.OUT_PROGRAM.read_text())
-        self.assertEqual(gen_x86_64.gen_program(), gen_x86_64.OUTPUT.read_text())
+        self.assertEqual(aarch64_blocks.text(), aarch64_blocks.OUTPUT.read_text())
+        self.assertEqual(x86_64_blocks.text(), x86_64_blocks.OUTPUT.read_text())
 
     def test_round_argument_fields_are_routine_local(self):
-        aarch_round = next(
-            routine for routine in gen_aarch64.all_routines() if routine.name == "mulMontRound"
-        )
-        x86_round = next(
-            routine for routine in gen_x86_64.all_routines() if routine.name == "mulMontRound"
-        )
+        aarch_round = next(p for p in aarch64_blocks.programs() if p.name == "mulMontRound")
+        x86_round = next(p for p in x86_64_blocks.programs() if p.name == "mulMontRound")
         self.assertEqual(
-            aarch_round.arg_fields["acc"],
-            [
-                "r0",
-                "r1",
-                "r2",
-                "r3",
-                "r4",
-                "q",
-                "t1",
-                "t3",
-            ],
+            aarch_round.arg_fields["acc"], ["r0", "r1", "r2", "r3", "r4", "q", "t1", "t3"]
         )
-        self.assertEqual(
-            x86_round.arg_fields["acc"],
-            [
-                "r0",
-                "r1",
-                "r2",
-                "r3",
-                "r4",
-                "q",
-            ],
-        )
-        self.assertEqual(gen.proj("acc", "q", aarch_round.arg_fields), "2.2.2.2.2.1")
-        self.assertEqual(gen.proj("acc", "q", x86_round.arg_fields), "2.2.2.2.2")
-        self.assertEqual(gen.proj("acc", "r4", aarch_round.arg_fields), "2.2.2.2.1")
-        self.assertEqual(gen.proj("acc", "r4", x86_round.arg_fields), "2.2.2.2.1")
+        self.assertEqual(x86_round.arg_fields["acc"], ["r0", "r1", "r2", "r3", "r4", "q"])
+        self.assertEqual(projection(aarch_round.arg_fields["acc"], "q"), "2.2.2.2.2.1")
+        self.assertEqual(projection(x86_round.arg_fields["acc"], "q"), "2.2.2.2.2")
+        self.assertEqual(projection(aarch_round.arg_fields["acc"], "r4"), "2.2.2.2.1")
+        self.assertEqual(projection(x86_round.arg_fields["acc"], "r4"), "2.2.2.2.1")
 
     def test_skeleton_lookup_names_the_architecture(self):
         self.assertEqual(gen.find_routine("AArch64:addMod").architecture, "AArch64")
@@ -938,15 +915,15 @@ class SkeletonCheckerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.routine = gen.find_routine("X86_64:addMod")
-        cls.skeleton = "\n".join(gen.skeleton(cls.routine)) + "\n"
+        cls.skeleton = "\n".join(skeleton(cls.routine)) + "\n"
 
     def check_text(self, text):
         with tempfile.TemporaryDirectory() as directory:
-            path = gen.Path(directory) / "Spec.lean"
+            path = Path(directory) / "Spec.lean"
             path.write_text(text)
             diagnostics = io.StringIO()
             with contextlib.redirect_stderr(diagnostics):
-                ok = gen.check_spec(path, [self.routine])
+                ok = check_spec(path, [self.routine])
             return ok, diagnostics.getvalue()
 
     def test_handwritten_annotation_blocks_are_ignored(self):
@@ -983,15 +960,15 @@ class SkeletonCheckerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             diagnostics = io.StringIO()
             with contextlib.redirect_stderr(diagnostics):
-                self.assertFalse(gen.check_spec(Path(directory) / "missing.lean", []))
+                self.assertFalse(check_spec(Path(directory) / "missing.lean", []))
             self.assertIn("cannot read proof file", diagnostics.getvalue())
 
     def test_manifest_selects_existing_files_and_rejects_mismatched(self):
-        add_path = gen.ROOT / "lean/PastaCurves/X86_64/Spec/Add.lean"
+        add_path = ROOT / "lean/PastaCurves/X86_64/Spec/Add.lean"
         available = gen.architecture_routines()
         for name, (arch, expected_names) in gen.SPEC_MANIFEST.items():
             with self.subTest(path=name):
-                manifest_path = gen.ROOT / name
+                manifest_path = ROOT / name
                 if Path(manifest_path).exists:
                     path, routines = gen.parse_spec_manifest(str(manifest_path))
                     self.assertEqual(path, manifest_path)
@@ -1024,22 +1001,22 @@ const FP: Field = Field {
 """
 
     def test_literals_are_read_in_order_and_references_skipped(self):
-        self.assertEqual(gen.parse_known_answers(self.SOURCE), [("FP", "two_r", [1, 2, 3, 4])])
+        self.assertEqual(data.parse_known_answers(self.SOURCE), [("FP", "two_r", [1, 2, 3, 4])])
 
     def test_a_literal_without_a_definition_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "no known-answer definition"):
-            gen.parse_known_answers(self.SOURCE.replace("two_r", "five_r"))
+            data.parse_known_answers(self.SOURCE.replace("two_r", "five_r"))
 
     def test_an_unknown_field_constant_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "unknown field constant"):
-            gen.parse_known_answers(self.SOURCE.replace("const FP", "const FR"))
+            data.parse_known_answers(self.SOURCE.replace("const FP", "const FR"))
 
     def test_the_tests_have_literals(self):
         with self.assertRaisesRegex(ValueError, "no known-answer literals"):
-            gen.parse_known_answers("")
+            data.parse_known_answers("")
 
     def test_each_literal_becomes_one_kernel_checked_example(self):
-        rendered = gen.render_known_answers(self.SOURCE)
+        rendered = data.render_known_answers(self.SOURCE)
         self.assertEqual(rendered.count("decide +kernel"), 1)
         self.assertIn(
             "let x := Limbs.toNat\n"
@@ -1064,14 +1041,16 @@ const FP: Field = Field {
 """
 
     def test_pairs_are_read_in_order(self):
-        self.assertEqual(gen.parse_inversions(self.SOURCE), [("FP", 0, [1, 2, 3, 4], [5, 6, 7, 8])])
+        self.assertEqual(
+            data.parse_inversions(self.SOURCE), [("FP", 0, [1, 2, 3, 4], [5, 6, 7, 8])]
+        )
 
     def test_a_pair_that_is_not_two_four_limb_values_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "not two four-limb values"):
-            gen.parse_inversions(self.SOURCE.replace("0x3, 0x4]", "0x3]"))
+            data.parse_inversions(self.SOURCE.replace("0x3, 0x4]", "0x3]"))
 
     def test_each_pair_becomes_one_kernel_checked_example(self):
-        rendered = gen.render_known_answers(
+        rendered = data.render_known_answers(
             self.SOURCE.replace("inversions", "two_r: [0x1, 0x2, 0x3, 0x4,],\n    inversions")
         )
         self.assertIn("z < p ∧ (x*z) % p = (if x = 0 then 0 else R^2 % p)", rendered)
@@ -1094,19 +1073,19 @@ pub(crate) const R3: Fp = Fp([0xe, 0xf, 0x10, 0x11]);
 """
 
     def test_constants_are_read_as_the_source_spells_them(self):
-        modulus, inv, powers = gen.parse_field_type(self.SOURCE, "fp.rs")
+        modulus, inv, powers = data.parse_field_type(self.SOURCE, "fp.rs")
         self.assertEqual(modulus, ["0x1", "0x2", "0x0", "0x4"])
         self.assertEqual(inv, "0x5")
         self.assertEqual(powers["R2"], ["0xa", "0xb", "0xc", "0xd"])
 
     def test_a_missing_constant_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "missing R3"):
-            gen.parse_field_type(self.SOURCE.replace("const R3", "const S3"), "fp.rs")
+            data.parse_field_type(self.SOURCE.replace("const R3", "const S3"), "fp.rs")
         with self.assertRaisesRegex(ValueError, "missing INV"):
-            gen.parse_field_type(self.SOURCE.replace("const INV", "const NV"), "fp.rs")
+            data.parse_field_type(self.SOURCE.replace("const INV", "const NV"), "fp.rs")
 
     def test_each_constant_becomes_one_example(self):
-        rendered = gen.render_field_types({"fp": self.SOURCE, "fq": self.SOURCE})
+        rendered = data.render_field_types({"fp": self.SOURCE, "fq": self.SOURCE})
         self.assertEqual(rendered.count("decide +kernel"), 6)
         self.assertEqual(rendered.count("  decide\n"), 4)
         self.assertIn("example : pallasBase.modulus =\n    ⟨0x1, 0x2, 0x0, 0x4⟩ := by\n", rendered)

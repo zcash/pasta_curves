@@ -1,1071 +1,89 @@
 #!/usr/bin/env python3
-"""Generate the Lean transcription of the crate's inline Pasta Montgomery blocks.
+"""Generate the Lean transcriptions of the crate's inline assembly, and check the proofs' skeletons.
 
 Reads the inline `asm!` blocks in `src/asm/aarch64.rs` and `src/asm/x86_64.rs`, and writes
 
 - `lean/PastaCurves/<Architecture>/Transcription.lean`: each block as a Lean definition over
-  its instruction semantics, one `let` per instruction result, in the block's order,
-  with the instruction as a trailing comment;
-- `lean/PastaCurves/<Architecture>/Vectors.lean`: one kernel-checked example per line of
-  `test-vectors/pasta_mul-armv8-vectors.txt` whose operands are inside the backend's
-  contracts, the outputs of the real routines on an Apple M-series machine.
+  its instruction semantics, one `let` per instruction result, in the block's order, with the
+  instruction as a trailing comment;
+- `lean/PastaCurves/Vectors.lean`, `KnownAnswers.lean`, and `FieldTypes.lean`: the hardware
+  reference vectors, the backend tests' known answers, and the field types' constants, as data
+  and examples checked by kernel evaluation.
 
-The transcription is deliberately mechanical. A block is read from its template lines, with
-the operand placeholders as register names, rebound by each instruction that writes them:
-the `in` and `inout` operands bind argument limbs and `inv`, the named `out` and the `inout`
-operands are the result limbs, and the block ends as a routine does. The compiler's
-allocation of registers to the operands is not modelled; the script checks that every
-register the block reads was written by the block or bound by an operand.
+The work is done by the compiler in `asm2lean/` (see its `__init__.py` for its stages), on the
+configuration in `pasta/`: which blocks, how their repeated rounds fold, how the proofs name
+things, and which proof file proves which routine. This file is the command line.
 
-AArch64 omits bindings that nothing later reads: unused operands are left as comments,
-unused flag writes are dropped, and unused computed registers are reported as errors.
-x86-64 retains architectural results, including dead flag writes.
+Run from anywhere in the repository:
 
-A template line may invoke a `macro_rules!` macro of the source file for a repeated
-instruction sequence (`asm_source.parse_macros`). A backend transcribes a sequence listed in
-its round table once and calls it per invocation; the AArch64 table is `MACRO_ROUNDS`.
+    python3 lean/scripts/gen.py                         # write every generated file
+    python3 lean/scripts/gen.py --check                 # compare them without writing
+    python3 lean/scripts/gen.py --skeleton ARCH:NAME    # print one proof skeleton
+    python3 lean/scripts/gen.py --check-spec [ARCH:]FILE
+    python3 lean/scripts/gen.py --check-specs [--strict]
 
-For both architectures, the proof skeletons lift and extract the `let`s with merging off, so
-every binding is its own `let`, equal values or not.
-
-Run from the repository root:
-
-    python3 lean/scripts/gen.py
-
-`lean/scripts/check.sh` fails if the generated output differs from the committed files;
-`--check` compares all outputs without rewriting them.
-
-The script also generates the mechanical part of each block's correctness proof:
-`--skeleton ARCH:NAME` prints it (see `skeleton`), and `--check-spec FILE` checks that
-FILE contains its registered skeletons verbatim once its `-- BEGIN ... -- END` annotation
-blocks are removed; the check script runs that too. Python 3.9+; stdlib only.
+`lean/scripts/check.sh` runs `--check`, `--check-specs`, and the generator's tests.
+Python 3.10+; stdlib only.
 """
 
 import argparse
-import re
+import difflib
 import sys
-import textwrap
 from pathlib import Path
 
-import asm_source
-
-# Backends import this module by name; keep a single shared state when this file runs as a script.
-sys.modules.setdefault("gen", sys.modules[__name__])
-
-ROOT = Path(__file__).resolve().parents[2]
-VECTORS = ROOT / "test-vectors/pasta_mul-armv8-vectors.txt"
-
-# Fields of the argument structures, by argument name, for the skeleton's bound hypotheses.
-LIMB_FIELDS = ["l0", "l1", "l2", "l3"]
-ARG_FIELDS = {arg: LIMB_FIELDS for arg in ("t", "lhs", "rhs", "value", "modulus")}
-ARG_FIELDS["product"] = [f"l{i}" for i in range(8)]
-
-# Bounds hypotheses the annotated spec theorems must provide, by argument name.
-BOUND_HYPS = {
-    "t": "ht",
-    "modulus": "hm",
-    "lhs": "hlhs",
-    "rhs": "hrhs",
-    "value": "hv",
-    "product": "hproduct",
-    "acc": "hacc",
-}
-INV_BOUND_HYP = "hinv_lt"
-SKELETON_WIDTH = 100
-# A literal operand in a transcription: decimal, or hex as the assembly wrote it.
-LITERAL = re.compile(r"[0-9]+|0x[0-9a-f]+")
-
-
-class Emitter:
-    """Records one block's Lean `let` bindings and their proof facts."""
-
-    def __init__(self):
-        self.entries = []  # dicts: name, expr, comment, reads, load (bool)
-        self.known = set()  # names holding a value the program may read
-        self.cur_reads = set()
-        self.pc = None  # index of the instruction being transcribed (None: an argument)
-
-    def bind(self, name, expr, comment=None, reads=None, load=False, fact=None, note=None):
-        """Record a binding. `fact` is the skeleton's description of it: a tuple whose head
-        names the kind of instruction and whose remaining items are the operand names. `note`,
-        when given, replaces the instruction as the binding's trailing comment, for a binding
-        that continues the instruction of the line above it."""
-        self.known.add(name)
-        self.entries.append(
-            {
-                "name": name,
-                "expr": expr,
-                "comment": comment,
-                "note": note,
-                "reads": set(self.cur_reads) if reads is None else set(reads),
-                "load": load,
-                "fact": fact,
-                "pc": self.pc,
-            }
-        )
-
-    def liveness(self, result_names):
-        """Which entries something later reads, by a backward pass from the result names."""
-        needed = set(result_names)
-        live = [False] * len(self.entries)
-        for i in range(len(self.entries) - 1, -1, -1):
-            e = self.entries[i]
-            if e["name"] in needed:
-                live[i] = True
-                needed.discard(e["name"])
-                needed |= e["reads"]
-        return live
-
-    def render(self, result_names):
-        """The `let` lines, with bindings that nothing reads dropped."""
-        live = self.liveness(result_names)
-        lines = []  # (code, comment): a `let` with its instruction, or (None, whole-line comment)
-        for e, keep in zip(self.entries, live):
-            if keep:
-                lines.append((f"  let {e['name']} := {e['expr']}", e.get("note") or e["comment"]))
-            elif e["load"] or e.get("optional"):
-                lines.append(
-                    (None, f"  -- {e['comment']}: {e['name']} = {e['expr']} is never read")
-                )
-            elif e["name"] not in ("c", "fl"):
-                raise ValueError(f"dead computation: {e['name']} := {e['expr']} ({e['comment']})")
-        return lines
-
-
-class Routine:
-    """A transcribed routine: docstring, signature line, body lines, and result line, plus the
-    emitter and result names for the proof skeleton, and for a round definition the text of its
-    state structure."""
-
-    def __init__(
-        self,
-        doc,
-        signature,
-        lines,
-        result,
-        name,
-        emitter,
-        result_names,
-        struct=None,
-        arg_fields=None,
-    ):
-        self.doc, self.signature, self.lines, self.result = doc, signature, lines, result
-        self.name, self.emitter, self.result_names = name, emitter, result_names
-        self.struct = struct
-        self.arg_fields = {arg: list(fields) for arg, fields in ARG_FIELDS.items()}
-        if arg_fields:
-            self.arg_fields.update({arg: list(fields) for arg, fields in arg_fields.items()})
-
-    def text(self, column):
-        """The definition, with the instruction comments aligned at `column`; a line whose code
-        reaches the column (an outlier, such as the helper call) gets its comment two spaces
-        after the code instead."""
-        body = []
-        for code, comment in self.lines:
-            if code is None:
-                body.append(comment)
-            else:
-                body.append(
-                    f"{code.ljust(column) if len(code) + 2 <= column else code + '  '}-- {comment}"
-                )
-        head = f"{self.struct}\n" if self.struct else ""
-        return (
-            head
-            + f"{docstring(self.doc)}\n{self.signature}\n"
-            + "\n".join(body)
-            + f"\n{self.result}\n"
-        )
-
-
-def docstring(text, width=100):
-    """A `/-- ... -/` docstring wrapped to the repository's line width."""
-    lines = textwrap.TextWrapper(
-        width=width, break_long_words=False, break_on_hyphens=False, initial_indent="/-- "
-    ).wrap(text)
-    if len(lines[-1]) + 3 <= width:
-        lines[-1] += " -/"
-    else:
-        lines.append("-/")
-    return "\n".join(lines)
-
-
-# --- reference vectors ------------------------------------------------------------------
-
-# The crate's two fields, by the vectors file's key, as `Fields.lean` names them.
-FIELDS = {"Fp": "pallasBase", "Fq": "vestaBase"}
-
-
-# The two moduli as integers, for classifying the vectors' operands.
-MODULUS_INT = {
-    "Fp": 0x40000000000000000000000000000000224698FC094CF91B992D30ED00000001,
-    "Fq": 0x40000000000000000000000000000000224698FC0994A8DD8C46EB2100000001,
-}
-
-VECTOR_OPERAND_COUNTS = {"MUL": 2, "SQR": 1, "FROM": 1}
-HEX_VALUE = re.compile(r"[0-9a-fA-F]{64}")
-
-
-def parse_vectors(lines):
-    """Parse and strictly validate nonempty lines from the shared hardware corpus."""
-    vectors = []
-    for line_number, line in enumerate(lines, 1):
-        parts = line.split()
-        if not parts:
-            continue
-        if len(parts) < 2:
-            raise ValueError(f"vector line {line_number}: malformed row")
-        op, key, *vals = parts
-        if op not in VECTOR_OPERAND_COUNTS:
-            raise ValueError(f"vector line {line_number}: unknown operation {op}")
-        if key not in FIELDS:
-            raise ValueError(f"vector line {line_number}: unknown field {key}")
-        expected = VECTOR_OPERAND_COUNTS[op] + 1
-        if len(vals) != expected:
-            raise ValueError(
-                f"vector line {line_number}: {op} expects {expected} values, got {len(vals)}"
-            )
-        if any(HEX_VALUE.fullmatch(v) is None for v in vals):
-            raise ValueError(f"vector line {line_number}: values must be 64 hexadecimal digits")
-        vectors.append((op, key, vals))
-    return vectors
-
-
-def is_canonical(key, value):
-    """Whether a 256-bit input is below the selected Pasta modulus."""
-    return value < MODULUS_INT[key]
-
-
-def in_public_contract(op, key, operands):
-    """Whether the vector's operands are inside the public contract: for the multiplication,
-    a canonical left operand, or a canonical right operand whose limbs 1 to 3 are at most
-    `2^64 - 3`; for the squaring, a canonical input; for the conversion, any."""
-    p = MODULUS_INT[key]
-    if op == "MUL":
-        lhs, rhs = operands
-        limbs = [(rhs >> (64 * i)) % 2**64 for i in range(1, 4)]
-        return lhs < p or (rhs < p and all(l <= 2**64 - 3 for l in limbs))
-    if op == "SQR":
-        return operands[0] < p
-    if op == "FROM":
-        return True
-    raise ValueError(f"unknown operation {op}")
-
-
-OUT_VECTORS = ROOT / "lean/PastaCurves/Vectors.lean"
-
-VECTORS_INTRODUCTION = """import PastaCurves.Fields
-
-/-!
-# Reference vectors for the transcribed blocks
-
-GENERATED by `lean/scripts/gen.py` from `test-vectors/pasta_mul-armv8-vectors.txt`; do not
-edit by hand. Each vector is the output of the real AArch64 assembly (Semolina's
-`mul_mont_pasta`, `sqr_mont_pasta`, and `from_mont_pasta`, as vendored by pasta_curves at
-`8ad85e9fab7929f6236960e472f432a4bd9ccd74` and run on an Apple M-series machine) on the given
-operands. Each backend's `Vectors.lean` checks its transcription against them through
-`VectorCheck.lean`. The vectors file also records the routines' outputs on operands outside the
-public contracts (multiplications with unreduced operands), where the block's dropped fifth limb
-can change the result; those are left out here, with their number recorded at the end.
-
-Each entry gives its index in its list, which a reported failure names, its field, the operands,
-and the expected result. The fields are `pallasBase` and `vestaBase` from `Fields.lean`, the
-crate's constants for its `Fp` (the Pallas base field) and `Fq` (the Vesta base field).
--/
-
-namespace PastaCurves
-
-"""
-
-# The generated lists, by the corpus's routine key: the Lean name, its type, and its docstring.
-VECTOR_LISTS = {
-    "MUL": (
-        "mulVectors",
-        "List (Nat × PastaField × Limbs × Limbs × Limbs)",
-        (
-            "The multiplication vectors inside the public contract: the index, the field, `lhs`, "
-            "`rhs`, and the expected result."
-        ),
-    ),
-    "SQR": (
-        "sqrVectors",
-        "List (Nat × PastaField × Limbs × Limbs)",
-        (
-            "The squaring vectors, all of them canonical inputs: the index, the field, the input, "
-            "and the expected result."
-        ),
-    ),
-    "FROM": (
-        "fromVectors",
-        "List (Nat × PastaField × Limbs × Limbs)",
-        "The conversion vectors: the index, the field, the input, and the expected result.",
-    ),
-}
-
-
-def render_vector_data(lines):
-    """Render the corpus rows inside the public contracts as Lean data, one list per routine."""
-    rows = {op: [] for op in VECTOR_LISTS}
-    skipped = {}
-    for op, key, vals in parse_vectors(lines):
-        *operands, r = vals
-        if not in_public_contract(op, key, [int(v, 16) for v in operands]):
-            skipped[op] = skipped.get(op, 0) + 1
-            continue
-        rows[op].append((FIELDS[key], operands, r))
-    out = [VECTORS_INTRODUCTION]
-    for op, (name, type_, doc) in VECTOR_LISTS.items():
-        out.append(f"{docstring(doc)}\ndef {name} : {type_} := [\n")
-        for i, (field, operands, r) in enumerate(rows[op]):
-            # One value per line keeps every line within the repository's width.
-            out.append(f"  ({i}, {field},\n")
-            for v in operands:
-                out.append(f"    Limbs.ofNat 0x{v},\n")
-            out.append(f"    Limbs.ofNat 0x{r}),\n")
-        out.append("]\n\n")
-    n = sum(len(entries) for entries in rows.values())
-    omitted = ", ".join(f"{k} {op}" for op, k in sorted(skipped.items())) or "none"
-    out.append(
-        f"-- {n} vectors; omitted as outside the public contracts: {omitted}.\n\nend PastaCurves\n"
-    )
-    return "".join(out)
-
-
-# --- the backend tests' known answers -----------------------------------------------------
-
-KNOWN_ANSWERS = ROOT / "src/test_fields.rs"
-OUT_KNOWN_ANSWERS = ROOT / "lean/PastaCurves/KnownAnswers.lean"
-
-# The known answers that `src/test_fields.rs` writes as literals, by field name: what each one is,
-# as a Lean proposition about its value `x` at the field's modulus `p`. A literal with any other
-# name is an error, so that a new one cannot go unchecked.
-KNOWN_ANSWER_SPECS = {
-    "two_r": ("`2R mod p`", "x = (2*R) % p"),
-    "three_r": ("`3R mod p`", "x = (3*R) % p"),
-    "pm2": ("`p - 2`", "x = p - 2"),
-    "r4": ("`R^4 mod p`", "x = R^4 % p"),
-    "r7": ("`R^7 mod p`", "x = R^7 % p"),
-    "pm1_sq": (
-        "the Montgomery square of `p-1`, `(p-1)^2 R^-1 mod p`",
-        "x < p ∧ (x*R) % p = ((p-1) * (p-1)) % p",
-    ),
-    "from_mont_ones": (
-        "the conversion of the all-ones input, `(2^256 - 1) R^-1 mod p`",
-        "x < p ∧ (x*R) % p = (2^256 - 1) % p",
-    ),
-    "v0": ("`2^562 mod p`, the starting `v` of `invert`", "x = 2^562 % p"),
-}
-
-# The `Field` constants of `src/test_fields.rs`, by Rust name, as `Fields.lean` names the field.
-KNOWN_ANSWER_FIELDS = {"FP": "pallasBase", "FQ": "vestaBase"}
-
-KNOWN_ANSWERS_INTRODUCTION = """import PastaCurves.Fields
-
-/-!
-# The backend tests' known answers
-
-GENERATED by `lean/scripts/gen.py` from the `Field` constants of `src/test_fields.rs`; do not edit
-by hand. The tests take each field's modulus and Montgomery constants from its field type, and write
-their other expected values as literals. Each example here states one such literal, with its limbs
-in the tests' order, and checks it against its definition at the field's modulus, by kernel
-evaluation. `lean/scripts/check.sh` regenerates this file and fails if it differs, so a literal
-changed in the tests is checked here too.
--/
-
-namespace PastaCurves.KnownAnswers
-
-"""
-
-
-def parse_known_answers(text):
-    """The literal limb arrays of the `Field` constants in the tests, as (constant, field name,
-    limbs) triples, in source order. Fields that are not literals are skipped; an unknown field
-    name among the literals is an error."""
-    out = []
-    for m in re.finditer(r"const (\w+): Field = Field \{(.*?)\n\};", text, re.DOTALL):
-        name, body = m.group(1), m.group(2)
-        if name not in KNOWN_ANSWER_FIELDS:
-            raise ValueError(f"{KNOWN_ANSWERS}: unknown field constant {name}")
-        for f in re.finditer(r"(\w+): \[\s*((?:0x[0-9a-fA-F]+,\s*){4})\]", body):
-            field = f.group(1)
-            if field not in KNOWN_ANSWER_SPECS:
-                raise ValueError(f"{KNOWN_ANSWERS}: {name}.{field} has no known-answer definition")
-            limbs = [int(x, 16) for x in re.findall(r"0x[0-9a-fA-F]+", f.group(2))]
-            out.append((name, field, limbs))
-    if not out:
-        raise ValueError(f"{KNOWN_ANSWERS}: no known-answer literals found")
-    return out
-
-
-def parse_inversions(text):
-    """The `inversions` pairs of the `Field` constants in the tests, as (constant, index, input
-    limbs, output limbs) tuples, in source order."""
-    out = []
-    for m in re.finditer(r"const (\w+): Field = Field \{(.*?)\n\};", text, re.DOTALL):
-        name, body = m.group(1), m.group(2)
-        block = re.search(r"inversions: \[(.*?)\n    \],", body, re.DOTALL)
-        if block is None:
-            continue
-        pairs = re.findall(r"\(\s*\[([^\]]*)\],\s*\[([^\]]*)\],?\s*\)", block.group(1))
-        if not pairs:
-            raise ValueError(f"{KNOWN_ANSWERS}: {name}.inversions has no pairs")
-        for i, (x, z) in enumerate(pairs):
-            limbs = [[int(v, 16) for v in re.findall(r"0x[0-9a-fA-F]+", w)] for w in (x, z)]
-            if any(len(w) != 4 for w in limbs):
-                raise ValueError(
-                    f"{KNOWN_ANSWERS}: {name}.inversions[{i}] is not two four-limb values"
-                )
-            out.append((name, i, limbs[0], limbs[1]))
-    return out
-
-
-def render_known_answers(text):
-    """One kernel-checked example per literal known answer of the backend tests."""
-    out = [KNOWN_ANSWERS_INTRODUCTION]
-    for name, field, limbs in parse_known_answers(text):
-        what, prop = KNOWN_ANSWER_SPECS[field]
-        lean_field = KNOWN_ANSWER_FIELDS[name]
-        literal = ", ".join(f"0x{limb:016x}" for limb in limbs)
-        out.append(f"-- `{name}.{field}`: {what}.\n")
-        out.append(f"example : let p := {lean_field}.modulus.toNat\n")
-        # The limbs on a line of their own keep every line within the repository's width.
-        out.append(f"    let x := Limbs.toNat\n      ⟨{literal}⟩\n")
-        out.append(f"    {prop} := by\n  decide +kernel\n\n")
-    for name, i, x, z in parse_inversions(text):
-        lean_field = KNOWN_ANSWER_FIELDS[name]
-        out.append(
-            f"-- `{name}.inversions[{i}]`: `invert` maps `x` to `z`, the Montgomery inverse.\n"
-        )
-        out.append(f"example : let p := {lean_field}.modulus.toNat\n")
-        for var, limbs in (("x", x), ("z", z)):
-            literal = ", ".join(f"0x{limb:016x}" for limb in limbs)
-            out.append(f"    let {var} := Limbs.toNat\n      ⟨{literal}⟩\n")
-        out.append(
-            "    z < p ∧ (x*z) % p = (if x = 0 then 0 else R^2 % p) := by\n  decide +kernel\n\n"
-        )
-    out.append("end PastaCurves.KnownAnswers\n")
-    return "".join(out)
-
-
-# --- the field types' constants -----------------------------------------------------------
-
-OUT_FIELD_TYPES = ROOT / "lean/PastaCurves/FieldTypes.lean"
-
-# The field types' source files, as `Fields.lean` names their fields.
-FIELD_TYPE_SOURCES = {"fp": "pallasBase", "fq": "vestaBase"}
-
-# The Montgomery constants of a field type: the power of `R` that each one is, mod `p`.
-FIELD_TYPE_POWERS = {"R": "R", "R2": "R^2", "R3": "R^3"}
-
-FIELD_TYPES_INTRODUCTION = """import PastaCurves.Fields
-
-/-!
-# The field types' constants
-
-GENERATED by `lean/scripts/gen.py` from `src/fields/fp.rs` and `src/fields/fq.rs`; do not edit by
-hand. Each example states one constant of a field type, with its limbs as the Rust source writes
-them. The modulus and `INV` are checked against the fields of `Fields.lean`, and `R`, `R2`, and
-`R3` against their definitions at the field's modulus, by kernel evaluation.
-`lean/scripts/check.sh` regenerates this file and fails if it differs, so a constant changed in
-the field types is checked here too.
--/
-
-namespace PastaCurves.FieldTypes
-
-"""
-
-
-def parse_field_type(text, path):
-    """The modulus limbs, `INV`, and the Montgomery constants of a field type's source, as the
-    source spells them: `(modulus, inv, {name: limbs})`. A missing constant is an error."""
-    limbs = {}
-    for m in re.finditer(r"const (MODULUS|R|R2|R3): F[pq] = F[pq]\(\[(.*?)\]\);", text, re.DOTALL):
-        words = re.findall(r"0x[0-9a-fA-F]+", m.group(2))
-        if len(words) != 4:
-            raise ValueError(f"{path}: {m.group(1)} does not have four limbs")
-        limbs[m.group(1)] = words
-    inv = re.search(r"const INV: u64 = (0x[0-9a-fA-F]+);", text)
-    missing = [name for name in ("MODULUS", *FIELD_TYPE_POWERS) if name not in limbs]
-    if inv is None:
-        missing.append("INV")
-    if missing:
-        raise ValueError(f"{path}: missing {', '.join(missing)}")
-    modulus = limbs.pop("MODULUS")
-    return modulus, inv.group(1), limbs
-
-
-def render_field_types(sources):
-    """One kernel-checked example per constant of each field type; `sources` maps each module
-    name of `FIELD_TYPE_SOURCES` to its source text."""
-    out = [FIELD_TYPES_INTRODUCTION]
-    for module, lean_field in FIELD_TYPE_SOURCES.items():
-        modulus, inv, powers = parse_field_type(sources[module], f"src/fields/{module}.rs")
-        out.append(f"-- `{module}::MODULUS`: the modulus limbs of `{lean_field}`.\n")
-        out.append(f"example : {lean_field}.modulus =\n    ⟨{', '.join(modulus)}⟩ := by\n")
-        out.append("  decide\n\n")
-        out.append(f"-- `{module}::INV`: the Montgomery constant of `{lean_field}`.\n")
-        out.append(f"example : {lean_field}.inv = {inv} := by\n  decide\n\n")
-        for name, power in FIELD_TYPE_POWERS.items():
-            out.append(f"-- `{module}::{name}`: `{power} mod p`.\n")
-            out.append(f"example : let p := {lean_field}.modulus.toNat\n")
-            out.append(f"    let x := Limbs.toNat\n      ⟨{', '.join(powers[name])}⟩\n")
-            out.append(f"    x = {power} % p := by\n  decide +kernel\n\n")
-    out.append("end PastaCurves.FieldTypes\n")
-    return "".join(out)
-
-
-# --- proof skeletons --------------------------------------------------------------------
-
-
-def ssa_names(entries):
-    """Unique names for the live bindings: the first binding of a register keeps its name,
-    later ones get `_1`, `_2`, ... An argument bound under the argument's own name (the inline
-    block's `inv`) is primed, so that extracting it does not shadow the theorem's variable."""
-    counts, names = {}, []
-    for e in entries:
-        n = counts.get(e["name"], 0)
-        counts[e["name"]] = n + 1
-        base = e["name"] + "'" if e["expr"] == e["name"] else e["name"]
-        names.append(base if n == 0 else f"{base}_{n}")
-    return names
-
-
-class SkeletonBackend:
-    """Hooks for ISA-specific proof grouping and facts in the shared skeleton traversal."""
-
-    def prepare(self, emitter, entries):
-        return SkeletonPreparation(entries, ssa_names(entries))
-
-    def fact(self, kind, ops, context):
-        return False
-
-
-class SkeletonPreparation:
-    """The entries and backend-selected grouping metadata consumed by the shared traversal."""
-
-    def __init__(self, entries, names, clear_values=True):
-        self.entries = entries
-        self.names = names
-        self.clear_values = clear_values
-
-
-class SkeletonFactContext:
-    """Shared skeleton state exposed narrowly to an ISA backend's fact hook."""
-
-    def __init__(
-        self,
-        entries,
-        names,
-        index,
-        entry,
-        name,
-        group_entries,
-        group_names,
-        lines,
-        eq,
-        bound,
-        lt64,
-        le1,
-        ren,
-        bnd,
-        unit_bound,
-        consumed,
-    ):
-        self.entries, self.names, self.index = entries, names, index
-        self.entry, self.name = entry, name
-        self.group_entries = group_entries
-        self.group_names = group_names
-        self.lines, self.eq, self.bound = lines, eq, bound
-        self.lt64, self.le1 = lt64, le1
-        self.ren, self.bnd, self.unit_bound = ren, bnd, unit_bound
-        self.consumed = consumed
-
-
-def wrap_tactic(head, words, tail, indent="  "):
-    """`head w1 w2 ... tail`, broken over lines at SKELETON_WIDTH with a 4-space continuation;
-    the first word stays on the head's line however long it is."""
-    lines, cur = [], indent + head
-    for w in words:
-        if cur != indent + head and len(cur) + 1 + len(w) > SKELETON_WIDTH:
-            lines.append(cur)
-            cur = indent + "    " + w
-        else:
-            cur += " " + w
-    lines.append(cur + tail)
-    return lines
-
-
-def proj(arg, field, arg_fields=ARG_FIELDS):
-    """The projection of the `Bounded` conjunction of argument `arg` that bounds `field`."""
-    fields = arg_fields[arg]
-    i = fields.index(field)
-    return ".".join(["2"] * i + (["1"] if i < len(fields) - 1 else []))
-
-
-def skeleton(routine):
-    """The generated part of the correctness proof of `routine`: unfold the routine in `hr` and
-    lift its lets to the top; then, instruction by instruction, a `word_step` (the tactic of
-    `PastaCurves/Tactic/WordStep.lean`) extracts that instruction's lets from `hr` under SSA names,
-    records their defining equations (by `rfl`, in `%`/`/` form), makes the locals opaque when
-    requested by the backend, and proves the bound `b_x : x < 2^64` of each result whose bound
-    is one lemma instance (`x := v using proof`). The lines after the step derive the other facts
-    from the equations (the carry-chain equation, a carry's bound by `1`, a narrower bound, the
-    product decomposition), each an instance of one lemma, and clear the equations that the
-    later steps do not need. So a step costs nothing wherever it sits and names the facts it
-    rests on; `omega` is left to the hand-written annotations, which go after the facts of the
-    group whose marker (`-- <register>: <instruction>`) names the register they need.
-
-    Extracting one instruction at a time (`extract_lets +onlyGivenNames`) keeps the rest of the
-    chain folded inside `hr`, so that `clear_value` has one hypothesis to revert and re-check.
-    With every let extracted up front, each `clear_value` re-checks all the later locals and
-    equations, which is quadratic in the chain's length and exhausted the heartbeat budget on
-    the multiplication routine's 264 locals."""
-    e = routine.emitter
-    live = e.liveness(routine.result_names)
-    live_entries = [en for en, keep in zip(e.entries, live) if keep]
-    backend = routine.skeleton_backend
-    prepared = backend.prepare(e, live_entries)
-    entries, names = prepared.entries, prepared.names
-    ren = {}  # current SSA name of each register at each point: resolved while walking
-    bnd = {}  # SSA name -> the fact bounding it below 2^64 (registers) or by 1 (carries)
-    narrow = set()  # `lsr` results, whose bound is below 2^64 and needs weakening
-    unit_bound = set()
-    out = [
-        f"  -- generated skeleton for `{routine.name}`: do not edit between the annotations",
-        f"  unfold {routine.name} at hr",
-        "  lift_lets -merge at hr",
-    ]
-    products = {}
-    values = {}  # the current group's equations `e_x : x = v`, as the `x := v` of its step
-    bounds = {}  # the current group's bounds `b_x : x < 2^64`, as the `using proof` of its step
-
-    def r(op):  # operand as written in the entry, renamed to its SSA name at that point
-        return ren.get(op, op)
-
-    def bound_hyp(arg):
-        """The theorem's `Bounded` hypothesis on argument `arg`: as `BOUND_HYPS` names it, else
-        `h<arg>`."""
-        return BOUND_HYPS.get(arg, f"h{arg}")
-
-    def expression_bound(op):
-        field = re.fullmatch(r"(\w+)\.(l[0-7])", op)
-        if field and field.group(1) in routine.arg_fields:
-            arg, limb = field.groups()
-            return f"{bound_hyp(arg)}.{proj(arg, limb, routine.arg_fields)}"
-        return None
-
-    def lt64(op):  # a proof that the operand is below 2^64
-        if LITERAL.fullmatch(op):
-            return "(by decide)"
-        direct = expression_bound(op)
-        if direct:
-            return direct
-        if op in narrow or op in unit_bound:
-            return f"(lt_of_lt_of_le {bnd[op]} (by norm_num))"
-        return bnd[op]
-
-    def le1(op):  # a proof that the carry operand is at most 1
-        if LITERAL.fullmatch(op):
-            return "(by decide)"
-        return bnd[op]
-
-    def eq(nm, rhs):
-        values[nm] = rhs
-
-    def bound(nm, proof):
-        """Record that `proof : v < 2^64` for the value `v` of `nm`; the step proves `b_{nm}`."""
-        bounds[nm] = proof
-        bnd[nm] = f"b_{nm}"
-
-    i = 0
-    while i < len(entries):
-        en, nm = entries[i], names[i]
-        kind, *ops = en.get("group_fact", en["fact"])
-        if kind not in ("call", "callout", "load", "param"):
-            ops = [r(o) if isinstance(o, str) else o for o in ops]
-        # The group's marker: the register it writes, then the instruction. Annotation blocks
-        # are placed after the group they name. Backend metadata groups the bindings of an
-        # instruction that produces several.
-        group_entries = en.get("group")
-        if group_entries:
-            group = [group_name for _, group_name in group_entries]
-            nm = group[0]
-        else:
-            group = [nm]
-        group_names = group
-        label = en.get("group_label", nm)
-        values, bounds, lines = {}, {}, []
-        # Every step records only facts `omega` handles cheaply later: linear equations, bounds,
-        # and at most a disjunction. The `%`/`/` equations are derived by `rfl`, used to prove
-        # those facts, and cleared.
-        fact_context = SkeletonFactContext(
-            entries,
-            names,
-            i,
-            en,
-            nm,
-            group_entries or [(en, nm)],
-            group_names,
-            lines,
-            eq,
-            bound,
-            lt64,
-            le1,
-            ren,
-            bnd,
-            unit_bound,
-            len(group),
-        )
-
-        if backend.fact(kind, ops, fact_context):
-            pass
-        elif kind == "load":
-            arg, field = ops
-            eq(nm, f"{arg}.{field}")
-            bound(nm, f"{bound_hyp(arg)}.{proj(arg, field, routine.arg_fields)}")
-        elif kind == "inv":
-            eq(nm, "inv")
-            bound(nm, INV_BOUND_HYP)
-        elif kind == "param":
-            (p,) = ops
-            eq(nm, p)
-            bound(nm, f"h{p}")
-        elif kind == "mov":
-            (a,) = ops
-            eq(nm, a)
-            bound(nm, lt64(a))
-        elif kind == "mul":
-            a, b = ops
-            eq(nm, f"{a} * {b} % 2^64")
-            bound(nm, "Nat.mod_lt _ (Nat.two_pow_pos _)")
-            products[(a, b)] = nm  # its `%` equation is cleared at the matching `umulh`
-        elif kind == "umulh":
-            a, b = ops
-            eq(nm, f"{a} * {b} / 2^64")
-            bound(nm, f"Nat.div_lt_of_lt_mul (Nat.mul_lt_mul'' {lt64(a)} {lt64(b)})")
-            if (a, b) in products:
-                lo = products.pop((a, b))
-                lines.append(f"  have d_{nm} : {lo} + 2^64 * {nm} = {a} * {b} := by")
-                lines.append(f"    rw [e_{lo}, e_{nm}]; exact Nat.mod_add_div _ _")
-                lines.append(f"  clear e_{lo} e_{nm}")
-            else:
-                # The low half is never computed (its cancellation is arranged by `subs`); name
-                # it as a ghost so that later steps need no `%`.
-                lines.append(f"  obtain ⟨lo_{nm}, b_lo_{nm}, d_{nm}⟩ :")
-                lines.append(f"      ∃ lo, lo < 2^64 ∧ lo + 2^64 * {nm} = {a} * {b} :=")
-                lines.append(f"    ⟨{a} * {b} % 2^64, Nat.mod_lt _ (Nat.two_pow_pos _),")
-                lines.append(f"      by rw [e_{nm}]; exact Nat.mod_add_div _ _⟩")
-                lines.append(f"  clear e_{nm}")
-        elif kind == "lsl":
-            # No pairing with the matching `lsr`: the split fact is stated here, with the
-            # high part as `a / 2^(64 - k)`, and the `lsr`'s equation is kept, so that `omega`
-            # connects the two, through a `mov` copy's equation if there is one.
-            a, k = ops
-            if k != 62:
-                raise ValueError(f"lsl by {k}: add a lemma to the spec preamble")
-            eq(nm, f"{a} * 2^{k} % 2^64")
-            bound(nm, "Nat.mod_lt _ (Nat.two_pow_pos _)")
-            lines.append(f"  have sh_{nm} : {nm} + 2^64 * ({a} / 2^2) = {a} * 2^62 := by")
-            lines.append(f"    rw [e_{nm}]; exact lsl62_lsr2_split _")
-        elif kind == "lsr":
-            a, k = ops
-            eq(nm, f"{a} / 2^{k}")
-            lines.append(f"  have b_{nm} : {nm} < 2^{64 - k} := by")
-            lines.append(
-                f"    rw [e_{nm}]; exact Nat.div_lt_of_lt_mul (lt_of_lt_of_eq {lt64(a)} (by norm_num))"
-            )
-            bnd[nm] = f"b_{nm}"
-            narrow.add(nm)
-        elif kind == "adc":
-            a, b, cin = ops
-            eq(nm, f"({a} + {b} + {cin}) % 2^64")
-            bound(nm, "Nat.mod_lt _ (Nat.two_pow_pos _)")
-            lines.append(f"  obtain ⟨k_{nm}, b_k_{nm}, l_{nm}⟩ :")
-            lines.append(f"      ∃ k, k ≤ 1 ∧ {nm} + 2^64 * k = {a} + {b} + {cin} :=")
-            lines.append(
-                f"    ⟨({a} + {b} + {cin}) / 2^64, addc_carry_le_one {a} {b} {cin} {lt64(a)} {lt64(b)} {le1(cin)},"
-            )
-            lines.append(f"      by rw [e_{nm}]; exact Nat.mod_add_div _ _⟩")
-            lines.append(f"  clear e_{nm}")
-        elif kind == "select":
-            c, a, b = ops
-            eq(nm, f"(if {c} = 0 then {a} else {b})")
-            bound(nm, f"ite_lt {lt64(a)} {lt64(b)}")
-        elif kind == "call":
-            fmt, cargs = ops
-            eq(nm, fmt.format(*[r(o) for o in cargs]))
-        elif kind == "callout":
-            callee, field = ops
-            eq(nm, f"{r(callee)}.{field}")
-            bnd[nm] = f"b_{nm}"  # supplied by the annotation that applies the callee's theorem
-        else:
-            raise ValueError(f"unsupported skeleton fact {kind}")
-
-        if not group_entries:
-            ren[en["name"]] = nm
-        out.append(
-            f"  -- {label}: {group_entries[0][0]['comment'] if group_entries else en['comment']}"
-        )
-        items = []
-        for name in group:
-            item = name
-            if name in values:
-                item += f" := {values[name]}"
-            if name in bounds:
-                item += f" using {bounds[name]}"
-            items.append(item)
-        head = "word_step" if prepared.clear_values else "word_step -clear"
-        out += wrap_tactic(head, [f"{item}," for item in items[:-1]] + items[-1:], "")
-        out += lines
-        i += fact_context.consumed
-    out.append("  subst hr")
-    return out
-
-
-def _strip_annotations(path, text):
-    """Remove checked annotation blocks and reject malformed marker structure."""
-    remaining = []
-    active = None
-    ok = True
-    for line_number, line in enumerate(text.splitlines(), 1):
-        marker = re.match(r"^\s*-- (BEGIN|END)(?:\s+(.*?))?\s*$", line)
-        if not marker:
-            if active is None:
-                remaining.append(line)
-            continue
-        kind, label = marker.group(1), marker.group(2) or ""
-        if kind == "BEGIN":
-            if active is not None:
-                print(f"{path}:{line_number}: nested BEGIN inside `{active[0]}`", file=sys.stderr)
-                ok = False
-            else:
-                active = (label, line_number)
-        elif active is None:
-            print(f"{path}:{line_number}: END without BEGIN", file=sys.stderr)
-            ok = False
-        else:
-            if label != active[0]:
-                print(
-                    f"{path}:{line_number}: END `{label}` does not match BEGIN `{active[0]}` "
-                    f"at line {active[1]}",
-                    file=sys.stderr,
-                )
-                ok = False
-            active = None
-    if active is not None:
-        print(f"{path}:{active[1]}: unterminated BEGIN `{active[0]}`", file=sys.stderr)
-        ok = False
-    return ok, [line for line in remaining if line.strip()]
-
-
-def check_spec(path, routines):
-    """Require exactly one current skeleton for every routine in this file's manifest."""
-    path = Path(path)
-    try:
-        source = path.read_text()
-    except OSError as error:
-        print(f"{path}: cannot read proof file: {error.strerror}", file=sys.stderr)
-        return False
-    ok, remaining = _strip_annotations(path, source)
-    expected_names = {routine.name for routine in routines}
-    markers = [
-        (index, match.group(1))
-        for index, line in enumerate(remaining)
-        if (match := re.match(r"^\s*-- generated skeleton for `([^`]+)`:", line))
-    ]
-    unexpected = sorted({name for _, name in markers if name not in expected_names})
-    for name in unexpected:
-        print(f"{path}: unexpected generated skeleton `{name}`", file=sys.stderr)
-        ok = False
-    for routine in routines:
-        generated = [line for line in skeleton(routine) if line.strip()]
-        starts = [index for index, name in markers if name == routine.name]
-        if len(starts) != 1:
-            print(
-                f"{path}: expected one skeleton of {routine.name}, found {len(starts)}",
-                file=sys.stderr,
-            )
-            ok = False
-            continue
-        start = starts[0]
-        found = remaining[start : start + len(generated)]
-        if found != generated:
-            for index, expected in enumerate(generated):
-                actual = found[index] if index < len(found) else "<eof>"
-                if actual != expected:
-                    print(
-                        f"{path}: skeleton of {routine.name} diverges at skeleton line {index}:",
-                        file=sys.stderr,
-                    )
-                    print(f"  expected: {expected}", file=sys.stderr)
-                    print(f"  found:    {actual}", file=sys.stderr)
-                    break
-            ok = False
-    return ok
-
-
-# Import backends lazily: they import the shared vector API above to configure it,
-# while this common CLI imports them only when orchestration needs them.
-def _backends():
-    import gen_aarch64
-    import gen_x86_64
-
-    return gen_aarch64, gen_x86_64
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from asm2lean import specs
+from asm2lean.skeleton import skeleton
+from pasta import aarch64_blocks, data, x86_64_blocks
+from pasta.paths import ROOT
+from pasta.specs import SPEC_MANIFEST, UNPROVED_ROUTINES
 
 
 def generated_outputs():
-    """Return every generated path and its expected contents without writing files."""
-    gen_aarch64, gen_x86_64 = _backends()
-    shared = [(OUT_VECTORS, render_vector_data(VECTORS.read_text().splitlines()))]
-    shared.append((OUT_KNOWN_ANSWERS, render_known_answers(KNOWN_ANSWERS.read_text())))
-    field_types = {m: (ROOT / f"src/fields/{m}.rs").read_text() for m in FIELD_TYPE_SOURCES}
-    shared.append((OUT_FIELD_TYPES, render_field_types(field_types)))
-    return shared + gen_aarch64.generated_outputs() + gen_x86_64.generated_outputs()
-
-
-# Existing proof files only. None selects every generated routine of that architecture.
-SPEC_MANIFEST = {
-    "lean/PastaCurves/AArch64/Spec/Add.lean": ("AArch64", ("addMod",)),
-    "lean/PastaCurves/AArch64/Spec/Sub.lean": ("AArch64", ("subMod",)),
-    "lean/PastaCurves/AArch64/Spec/Mul.lean": ("AArch64", ("mulMont", "mulMontRound")),
-    "lean/PastaCurves/AArch64/Spec/Square.lean": ("AArch64", ("sqrMont",)),
-    "lean/PastaCurves/AArch64/Spec/CondSub.lean": ("AArch64", ("condSubBlock",)),
-    "lean/PastaCurves/AArch64/Spec/Amontred.lean": ("AArch64", ("amontredBlock",)),
-    "lean/PastaCurves/AArch64/Spec/SignMag.lean": ("AArch64", ("signMagBlock",)),
-    "lean/PastaCurves/AArch64/Spec/UvRow.lean": ("AArch64", ("uvRowBlock",)),
-    "lean/PastaCurves/AArch64/Spec/FgRow.lean": ("AArch64", ("fgRowBlock",)),
-    "lean/PastaCurves/AArch64/Spec/Divstep.lean": ("AArch64", ("divstepRound", "divstepLast")),
-    "lean/PastaCurves/AArch64/Spec/Divstep59.lean": ("AArch64", ("divstep59Block",)),
-    "lean/PastaCurves/X86_64/Spec/Add.lean": ("X86_64", ("addMod",)),
-    "lean/PastaCurves/X86_64/Spec/Sub.lean": ("X86_64", ("subMod",)),
-    "lean/PastaCurves/X86_64/Spec/FromMont.lean": ("X86_64", ("fromMont",)),
-    "lean/PastaCurves/X86_64/Spec/Mul.lean": ("X86_64", ("mulMont", "mulMontRound")),
-    "lean/PastaCurves/X86_64/Spec/Square.lean": ("X86_64", ("squareLo", "squareHi")),
-}
-
-# Missing proofs are tracked by routine, not by hypothetical files; a block transcribed ahead of
-# its proof is listed here under its architecture. None at present.
-UNPROVED_ROUTINES = {}
+    """Every generated path and its expected contents, without writing anything."""
+    return data.generated_outputs() + [
+        (aarch64_blocks.OUTPUT, aarch64_blocks.text()),
+        (x86_64_blocks.OUTPUT, x86_64_blocks.text()),
+    ]
 
 
 def architecture_routines():
-    """Return the proof-capable routine manifest for each assembly architecture."""
-    gen_aarch64, gen_x86_64 = _backends()
-    return {"AArch64": gen_aarch64.all_routines(), "X86_64": gen_x86_64.all_routines()}
+    """The routines of each architecture's transcription, which the proofs are about."""
+    return {"AArch64": aarch64_blocks.programs(), "X86_64": x86_64_blocks.programs()}
 
 
 def find_routine(specification):
-    """Resolve ``ARCH:NAME`` to its routine."""
-    if ":" not in specification:
-        raise ValueError(f"expected ARCH:NAME, not {specification}")
-    architecture, name = specification.split(":", 1)
-    manifests = architecture_routines()
-    if architecture not in manifests:
-        raise ValueError(f"unknown architecture {architecture}")
-    matches = [routine for routine in manifests[architecture] if routine.name == name]
-    if len(matches) != 1:
-        raise ValueError(f"no routine {architecture}:{name}")
-    return matches[0]
+    return specs.find_routine(specification, architecture_routines())
 
 
 def parse_spec_manifest(specification):
-    """Resolve one explicitly registered proof file to its required routine skeletons."""
-    requested_architecture = None
-    path_text = specification
-    if ":" in specification:
-        requested_architecture, path_text = specification.split(":", 1)
-    path = Path(path_text)
-    try:
-        key = path.resolve().relative_to(ROOT).as_posix()
-    except ValueError as error:
-        raise ValueError(f"spec path is outside the repository: {path}") from error
-    if key not in SPEC_MANIFEST:
-        raise ValueError(f"unregistered proof skeleton manifest: {key}")
-    architecture, routine_names = SPEC_MANIFEST[key]
-    if requested_architecture is not None and requested_architecture != architecture:
-        raise ValueError(f"manifest {key} belongs to {architecture}, not {requested_architecture}")
-    available = architecture_routines()
-    if architecture not in available:
-        raise ValueError(f"manifest {key} names unknown architecture {architecture}")
-    routines = available[architecture]
-    if routine_names is None:
-        selected = routines
-    else:
-        by_name = {routine.name: routine for routine in routines}
-        missing = [name for name in routine_names if name not in by_name]
-        if missing:
-            raise ValueError(f"manifest {key} names missing routines: {', '.join(missing)}")
-        selected = [by_name[name] for name in routine_names]
-    return path, selected
+    return specs.parse_spec_manifest(specification, SPEC_MANIFEST, architecture_routines(), ROOT)
 
 
 def check_specs(strict=False):
-    """Check every registered file and account for every generated routine exactly once.
-
-    Explicitly unproved routines are reported, never counted as checked skeletons. Strict
-    mode rejects them as well. Kernel checking remains the responsibility of the Lean build.
-    """
-    available = architecture_routines()
-    inventory = {
-        (arch, routine.name) for arch, routines in available.items() for routine in routines
-    }
-    covered, unproved = {}, set()
-    ok = True
-    for filename, (arch, names) in SPEC_MANIFEST.items():
-        if arch not in available:
-            print(f"{filename}: unknown architecture {arch}", file=sys.stderr)
-            ok = False
-            continue
-        by_name = {routine.name: routine for routine in available[arch]}
-        selected = tuple(by_name) if names is None else names
-        routines = []
-        for name in selected:
-            key = (arch, name)
-            if key not in inventory:
-                print(f"{filename}: unknown routine {arch}:{name}", file=sys.stderr)
-                ok = False
-                continue
-            if key in covered:
-                print(
-                    f"{arch}:{name}: duplicate coverage in {covered[key]} and {filename}",
-                    file=sys.stderr,
-                )
-                ok = False
-            covered[key] = filename
-            routines.append(by_name[name])
-        if not check_spec(ROOT / filename, routines):
-            ok = False
-    for arch, names in UNPROVED_ROUTINES.items():
-        if arch not in available:
-            print(f"unproved list: unknown architecture {arch}", file=sys.stderr)
-            ok = False
-        for name in names:
-            key = (arch, name)
-            if key not in inventory:
-                print(f"unproved list: unknown routine {arch}:{name}", file=sys.stderr)
-                ok = False
-            if key in unproved:
-                print(f"unproved list: duplicate routine {arch}:{name}", file=sys.stderr)
-                ok = False
-            unproved.add(key)
-    for arch, name in sorted(set(covered) & unproved):
-        print(f"{arch}:{name}: both covered and explicitly unproved", file=sys.stderr)
-        ok = False
-    for arch, name in sorted(inventory - set(covered) - unproved):
-        print(f"{arch}:{name}: no Spec coverage or explicit unproved entry", file=sys.stderr)
-        ok = False
-    for arch, name in sorted(unproved & inventory):
-        print(f"unproved: {arch}:{name}")
-    if strict and unproved:
-        print(
-            "strict Spec coverage requires every routine to have a checked skeleton",
-            file=sys.stderr,
-        )
-        ok = False
-    print(
-        f"Spec coverage: {len(covered)} registered, {len(unproved & inventory)} unproved; "
-        f"{'checks passed' if ok else 'FAILED'}"
+    return specs.check_specs(
+        SPEC_MANIFEST, UNPROVED_ROUTINES, architecture_routines(), ROOT, strict=strict
     )
-    return ok
+
+
+def check_output(path, expected):
+    """Compare one generated file without writing it, printing a unified diff."""
+    display = path.relative_to(ROOT)
+    if not path.exists():
+        print(f"{display} does not exist", file=sys.stderr)
+        return False
+    actual = path.read_text()
+    if actual == expected:
+        return True
+    diff = difflib.unified_diff(
+        actual.splitlines(True),
+        expected.splitlines(True),
+        fromfile=str(display),
+        tofile="generated",
+    )
+    sys.stderr.writelines(diff)
+    return False
 
 
 def main(argv=None):
@@ -1077,11 +95,7 @@ def main(argv=None):
         metavar="[ARCH:]FILE",
         help="check the architecture's registered proof skeletons",
     )
-    action.add_argument(
-        "--skeleton",
-        metavar="ARCH:NAME",
-        help="print one proof skeleton",
-    )
+    action.add_argument("--skeleton", metavar="ARCH:NAME", help="print one proof skeleton")
     action.add_argument(
         "--check-specs",
         action="store_true",
@@ -1112,20 +126,21 @@ def main(argv=None):
         except ValueError as error:
             print(error, file=sys.stderr)
             return 1
-        ok = check_spec(path, routines)
+        ok = specs.check_spec(path, routines)
         print(f"{path}: skeletons {'current' if ok else 'STALE'}")
         return 0 if ok else 1
 
     outputs = generated_outputs()
     if args.check:
-        checks = [asm_source.check_output(path, expected) for path, expected in outputs]
+        # Every file is compared, so that each stale one prints its diff.
+        checks = [check_output(path, expected) for path, expected in outputs]
         ok = all(checks)
         print(f"generated transcriptions: {'current' if ok else 'STALE'}")
         return 0 if ok else 1
 
     for path, expected in outputs:
         path.write_text(expected)
-        print(f"wrote {path}")
+        print(f"wrote {path.relative_to(ROOT)}")
     return 0
 
 

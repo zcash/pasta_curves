@@ -18,9 +18,10 @@ in-contract vectors of the shared `Vectors.lean`, the existing AArch64 hardware 
 are cross-backend checks rather than x86 hardware captures. `Checks.lean` supplies additional
 kernel-checked arithmetic regressions.
 
-Both architectures use `scripts/gen.py`, with shared Rust `asm!` parsing and
-architecture-specific instruction emitters; `--check` compares generated output without
-rewriting it. The x86-64 emitter checks operand bindings and output order, read-only input-limb addresses,
+Both architectures use `scripts/gen.py`, the command line of the compiler in `scripts/asm2lean/`
+(a shared Rust `asm!` front end, a lifter per architecture, one IR, and the transcription and
+skeleton back ends) on the crate's configuration in `scripts/pasta/`; `--check` compares generated
+output without rewriting it. The x86-64 emitter checks operand bindings and output order, read-only input-limb addresses,
 register initialization, and CF/OF availability. Ordinary arithmetic models CF but invalidates
 unmodeled OF; `imul` and shifts invalidate unmodeled flags. Any subsequent read of an invalid
 flag is rejected. `adcx` and `adox` carry chains are tracked independently. The instruction
@@ -142,10 +143,15 @@ PastaCurves/X86_64/Checks.lean           additional kernel-checked arithmetic ex
 PastaCurves/X86_64/Spec.lean             proofs about the x86-64 blocks and compositions
 PastaCurves/X86_64/Spec/*.lean           the block proofs, one file per block, and Arithmetic.lean
 PastaCurves/X86_64/Entry.lean            proofs about the x86-64 entry points at the two fields
-scripts/gen.py                           shared bindings, vectors, skeletons, checks, and CLI
-scripts/asm_source.py                    shared Rust inline-assembly parser and validation
-scripts/gen_aarch64.py                   AArch64 decoding, round factoring, and proof-fact hooks
-scripts/gen_x86_64.py                    x86-64 decoding, flag validation, and proof-fact hooks
+scripts/gen.py                           the generator's command line
+scripts/asm2lean/rust.py                 the Rust inline-assembly front end and validation
+scripts/asm2lean/aarch64.py              AArch64 lifting, its checks, and its IR nodes
+scripts/asm2lean/x86_64.py               x86-64 lifting, flag validation, and its IR nodes
+scripts/asm2lean/ir.py                   the IR: nodes, programs, liveness
+scripts/asm2lean/reroll.py               folding unrolled rounds, checked up to renaming
+scripts/asm2lean/lean.py, skeleton.py    the transcription and the proof skeletons
+scripts/asm2lean/specs.py                the skeleton and Spec-coverage checks
+scripts/pasta/                           the crate's blocks, data modules, and Spec manifest
 scripts/test_*.py                        the generator's tests, run by check.sh
 scripts/check.sh                         regenerate and diff, skeleton check, generator tests (CI)
 scripts/check_nanoda.sh                  re-check the build with an independent kernel (CI)
