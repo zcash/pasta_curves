@@ -77,7 +77,9 @@ What is trusted, beyond Lean's kernel and standard axioms:
    fields: `decide` checks that the limbs encode the primes as pasta_curves states them, and
    every vector is checked with them. `FieldTypes.lean`, generated from `src/fields/fp.rs` and
    `src/fields/fq.rs`, checks that they are the field types' `MODULUS` and `INV`, and that the
-   field types' `R`, `R2`, and `R3` are the powers of `R` they name.
+   field types' `R`, `R2`, and `R3` are the powers of `R` they name. The moduli are prime: the
+   kernel checks a Pratt certificate for each (`Primality.lean`, with the checker in
+   `Pratt.lean`).
 
 Not modelled formally: the compiler's handling of the blocks' operands, that is, the
 allocation of registers to the placeholders and the `options(pure, nomem, nostack)`
@@ -94,12 +96,24 @@ PastaCurves.lean                         root module, imports everything below
 PastaCurves/Semantics.lean               shared 64-bit arithmetic and limb representation
 PastaCurves/Compositions.lean            shared operand comparisons and contracts
 PastaCurves/Fields.lean                  the two fields and facts about their constants
+PastaCurves/Pratt.lean                   Pratt certificates: the checker and its soundness
+PastaCurves/Primality.lean               the two Pasta primes, certified
 PastaCurves/FieldTypes.lean              GENERATED: the field types' constants, checked
 PastaCurves/KnownAnswers.lean            GENERATED: the backend tests' known answers, checked
 PastaCurves/Spec.lean                    shared arithmetic and limb lemmas
 PastaCurves/Vectors.lean                 GENERATED: the reference vectors inside the contracts
 ../test-vectors/pasta_mul-armv8-vectors.txt   the hardware outputs the vectors are generated from
 PastaCurves/VectorCheck.lean             a backend's routines, and the vectors it fails
+PastaCurves/Inversion/Divstep.lean       half-delta divsteps on integers: the step matrix and its bounds
+PastaCurves/Inversion/Packed.lean        divsteps on packed words: the batch equals the true matrix
+PastaCurves/Inversion/Divstep59.lean     the 59-step block on low words: three batches and their product
+PastaCurves/Inversion/Round.lean         the round arithmetic: five-word `updateFG`, `amontred`, `updateUV`, `finalU`
+PastaCurves/Inversion/Termination.lean   the termination bound (Theorem 5) as a proposition
+PastaCurves/Inversion/Model.lean         the rounds, `montInvModel`, the round invariant (Lemma 11), and Theorem 12
+PastaCurves/Inversion/Hull.lean          convex regions by half-planes, inclusions by Farkas certificates
+PastaCurves/Inversion/HullBound.lean     the termination bound from a certificate (the hull-light argument)
+PastaCurves/Inversion/HullData.lean      GENERATED: the certificate's half-planes and Farkas records
+PastaCurves/Inversion/HullCert.lean      the certificate checked by the kernel; `terminationBound_256`
 PastaCurves/AArch64.lean                 AArch64 umbrella module
 PastaCurves/AArch64/Semantics.lean       AArch64 instruction semantics
 PastaCurves/AArch64/Transcription.lean   GENERATED: the blocks and the round

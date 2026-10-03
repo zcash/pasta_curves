@@ -4,6 +4,16 @@ import PastaCurves.FieldTypes
 import PastaCurves.KnownAnswers
 import PastaCurves.Compositions
 import PastaCurves.Spec
+import PastaCurves.Inversion.Divstep
+import PastaCurves.Inversion.Packed
+import PastaCurves.Inversion.Divstep59
+import PastaCurves.Inversion.Round
+import PastaCurves.Inversion.Termination
+import PastaCurves.Inversion.Model
+import PastaCurves.Inversion.Hull
+import PastaCurves.Inversion.HullBound
+import PastaCurves.Inversion.HullData
+import PastaCurves.Inversion.HullCert
 import PastaCurves.AArch64
 import PastaCurves.X86_64
 

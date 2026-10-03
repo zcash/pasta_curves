@@ -7,7 +7,8 @@
 #
 # Usage, from the `lean/` directory: scripts/check_nanoda.sh <lean4export-binary> <nanoda-binary>
 # The library must already be built (`lake build`). Set LAKE to choose the lake that
-# provides the export environment (default: `lake` from PATH).
+# provides the export environment (default: `lake` from PATH), and PYTHON the interpreter
+# that runs the checkers (default: `python3` from PATH).
 #
 # scripts/nanoda-config.json is the machine-checked axiom census: nanoda's strict mode
 # fails on any axiom declared outside its `permitted_axioms` (the three standard axioms,
@@ -20,14 +21,15 @@ set -euo pipefail
 LEAN4EXPORT=${1:?usage: check_nanoda.sh <lean4export-binary> <nanoda-binary>}
 NANODA=${2:?usage: check_nanoda.sh <lean4export-binary> <nanoda-binary>}
 LAKE=${LAKE:-lake}
+PYTHON=${PYTHON:-python3}
 
 # The export root: the package's root module, which imports every other module (checked
 # below), so a module cannot silently drop out of the re-check.
 ROOTS=(PastaCurves)
 
-python3 scripts/check_export_coverage.py "${ROOTS[@]}"
+"$PYTHON" scripts/check_export_coverage.py "${ROOTS[@]}"
 
 mkdir -p work
 "$LAKE" env "$LEAN4EXPORT" "${ROOTS[@]}" > work/export.ndjson
-python3 scripts/check_export_axioms.py scripts/nanoda-config.json
+"$PYTHON" scripts/check_export_axioms.py scripts/nanoda-config.json
 "$NANODA" scripts/nanoda-config.json
