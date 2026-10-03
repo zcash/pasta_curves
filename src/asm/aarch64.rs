@@ -30,28 +30,19 @@
 
 use core::arch::asm;
 
-use super::{Limbs, is_canonical, mul_contract};
+use super::Limbs;
 
 /// Adds two residues for a Pasta modulus and conditionally subtracts the modulus.
 ///
-/// Like [`mul`], the block hardcodes the Pasta modulus shape
-/// (`modulus[2] == 0`). Both inputs must be canonical (debug-asserted; a
-/// violation yields an incorrect residue): the top carry of the addition is
-/// dropped and only one subtraction is attempted, both justified by
-/// `2p < 2^256`. Unreduced values, such as an unreduced `lhs` that `mul`
-/// accepts when `rhs` is canonical, must be reduced before reaching this
-/// path. Keeping both carry chains in one block avoids materializing carries
-/// between Rust operations.
+/// Like [`mul`], the block hardcodes the Pasta modulus shape (`modulus[2] == 0`). Both
+/// inputs must be canonical, which the entry point in `entry.rs` debug-asserts. A
+/// violation yields an incorrect residue: the top carry of the addition is dropped and
+/// only one subtraction is attempted, both justified by `2p < 2^256`. Unreduced values,
+/// such as an unreduced `lhs` that `mul` accepts when `rhs` is canonical, must be reduced
+/// before reaching this path. Keeping both carry chains in one block avoids materializing
+/// carries between Rust operations.
 #[inline(always)]
 pub(super) fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
-    debug_assert!(
-        is_canonical(lhs, modulus),
-        "pasta_curves::asm::add requires a canonical lhs"
-    );
-    debug_assert!(
-        is_canonical(rhs, modulus),
-        "pasta_curves::asm::add requires a canonical rhs"
-    );
     let [mut r0, mut r1, mut r2, mut r3] = *lhs;
     // SAFETY: register-only arithmetic with declared inputs and outputs;
     // no memory or stack access and no data-dependent control flow.
@@ -93,21 +84,13 @@ pub(super) fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 /// Subtracts two residues for a Pasta modulus, adding the modulus back on
 /// underflow.
 ///
-/// Like [`add`] and [`mul`], the block hardcodes the Pasta
-/// modulus shape (`modulus[2] == 0`). Canonical inputs (debug-asserted)
-/// guarantee a canonical result: the difference lies strictly between `-p`
-/// and `p`, so one conditional addition suffices, and the final carry is
-/// discarded after wrapping modulo `2^256`.
+/// Like [`add`] and [`mul`], the block hardcodes the Pasta modulus shape
+/// (`modulus[2] == 0`). Both inputs must be canonical, which the entry point in
+/// `entry.rs` debug-asserts. Canonical inputs guarantee a canonical result: the
+/// difference lies strictly between `-p` and `p`, so one conditional addition suffices,
+/// and the final carry is discarded after wrapping modulo `2^256`.
 #[inline(always)]
 pub(super) fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
-    debug_assert!(
-        is_canonical(lhs, modulus),
-        "pasta_curves::asm::sub requires a canonical lhs"
-    );
-    debug_assert!(
-        is_canonical(rhs, modulus),
-        "pasta_curves::asm::sub requires a canonical rhs"
-    );
     let [mut r0, mut r1, mut r2, mut r3] = *lhs;
     // SAFETY: register-only arithmetic with declared inputs and outputs;
     // no memory or stack access and no data-dependent control flow.
@@ -149,7 +132,8 @@ pub(super) fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 /// # Safety
 ///
 /// Either `lhs` is canonical and `rhs` is any four-limb value, or `rhs` is canonical with
-/// limbs 1 to 3 at most `2^64 - 3` and `lhs` is any four-limb value.
+/// limbs 1 to 3 at most `2^64 - 3` and `lhs` is any four-limb value. The entry point in
+/// `entry.rs` debug-asserts that one of the two holds.
 ///
 /// Two things can go wrong outside the contract. First, `mul` keeps a
 /// five-limb accumulator (one word fewer than textbook CIOS; the module's
@@ -169,11 +153,6 @@ pub(super) fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 /// incorrect residue that still looks canonical.
 #[inline(always)]
 pub(crate) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
-    debug_assert!(
-        mul_contract(lhs, rhs, modulus),
-        "pasta_curves::asm::mul requires a canonical lhs, or a canonical rhs with limbs 1 to 3 \
-         at most 2^64 - 3"
-    );
     let (o0, o1, o2, o3): (u64, u64, u64, u64);
     // SAFETY: straight-line register-only arithmetic; no memory access, no
     // stack use, and outputs depend only on the declared inputs.
@@ -382,13 +361,9 @@ pub(crate) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs 
 
 /// Squares a canonical Montgomery residue for a Pasta modulus.
 ///
-/// The input's canonicity is debug-asserted.
+/// The input must be canonical, which the entry point in `entry.rs` debug-asserts.
 #[inline(always)]
 pub(crate) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
-    debug_assert!(
-        is_canonical(value, modulus),
-        "pasta_curves::asm::square requires a canonical input"
-    );
     let mut a0 = value[0];
     let mut a1 = value[1];
     let mut a2 = value[2];

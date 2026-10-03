@@ -77,16 +77,16 @@
 
 use core::arch::asm;
 
-use super::{Limbs, is_canonical};
+use super::Limbs;
 
 const PASTA_HIGH_LIMB: u64 = 1 << 62;
 
 /// Adds two canonical residues and conditionally subtracts the modulus.
 ///
-/// Like [`mul`], this hardcodes the Pasta modulus shape (`modulus[2] == 0`).
-/// Both inputs must be canonical (debug-asserted). Their sum is below
-/// `2 * modulus < 2^256`, so the top carry can be discarded and one
-/// conditional subtraction produces a canonical result.
+/// Like [`mul`], this hardcodes the Pasta modulus shape (`modulus[2] == 0`). Both inputs
+/// must be canonical, which the entry point in `entry.rs` debug-asserts. Their sum is
+/// below `2 * modulus < 2^256`, so the top carry can be discarded and one conditional
+/// subtraction produces a canonical result.
 ///
 /// A register-only counterpart of the AArch64 backend's `add`: all operands
 /// arrive in registers and the block declares `nomem`. x86-64's two-operand
@@ -98,14 +98,6 @@ const PASTA_HIGH_LIMB: u64 = 1 << 62;
 /// at twelve registers.
 #[inline(always)]
 pub(super) fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
-    debug_assert!(
-        is_canonical(lhs, modulus),
-        "pasta_curves::asm::add requires a canonical lhs"
-    );
-    debug_assert!(
-        is_canonical(rhs, modulus),
-        "pasta_curves::asm::add requires a canonical rhs"
-    );
     let [mut r0, mut r1, mut r2, mut r3] = *lhs;
     // SAFETY: register-only arithmetic with declared inputs and outputs;
     // no memory or stack access and no data-dependent control flow.
@@ -154,19 +146,12 @@ pub(super) fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 
 /// Subtracts two canonical residues, adding the modulus back on underflow.
 ///
-/// Like [`add`] and [`mul`], this hardcodes the Pasta modulus shape
-/// (`modulus[2] == 0`). The difference lies strictly between `-modulus` and
-/// `modulus`, so one conditional addition produces a canonical result.
+/// Like [`add`] and [`mul`], this hardcodes the Pasta modulus shape (`modulus[2] == 0`).
+/// Both inputs must be canonical, which the entry point in `entry.rs` debug-asserts. The
+/// difference then lies strictly between `-modulus` and `modulus`, so one conditional
+/// addition produces a canonical result.
 #[inline(always)]
 pub(super) fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
-    debug_assert!(
-        is_canonical(lhs, modulus),
-        "pasta_curves::asm::sub requires a canonical lhs"
-    );
-    debug_assert!(
-        is_canonical(rhs, modulus),
-        "pasta_curves::asm::sub requires a canonical rhs"
-    );
     let [mut r0, mut r1, mut r2, mut r3] = *lhs;
     // SAFETY: register-only arithmetic with declared inputs and outputs;
     // no memory or stack access and no data-dependent control flow.
@@ -206,15 +191,14 @@ pub(super) fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
     [r0, r1, r2, r3]
 }
 
-/// Multiplies two Montgomery residues for a Pasta modulus, under the same
-/// two contracts as the AArch64 block, which the public entry point asserts:
-/// a canonical `lhs` with any `rhs`, or a canonical `rhs` whose limbs 1 to 3
-/// are at most `2^64 - 3` with any `lhs`. The instruction schedule differs
-/// from AArch64's (two carry chains, and a final round fused with the
-/// conditional subtraction), but each round is the same five-limb CIOS step,
-/// and the Lean proof establishes both contracts for this transcription under
-/// the same round bounds as the AArch64 proof (`mulMont_spec_of_lhs_lt` and
-/// `mulMont_spec_of_rhs_lt` in `X86_64/Spec/Mul.lean`).
+/// Multiplies two Montgomery residues for a Pasta modulus, under the same two contracts
+/// as the AArch64 block, which the entry point in `entry.rs` debug-asserts: a canonical
+/// `lhs` with any `rhs`, or a canonical `rhs` whose limbs 1 to 3 are at most `2^64 - 3`
+/// with any `lhs`. The instruction schedule differs from AArch64's (two carry chains, and
+/// a final round fused with the conditional subtraction), but each round is the same
+/// five-limb CIOS step, and the Lean proof establishes both contracts for this
+/// transcription under the same round bounds as the AArch64 proof
+/// (`mulMont_spec_of_lhs_lt` and `mulMont_spec_of_rhs_lt` in `X86_64/Spec/Mul.lean`).
 // Keep the assembly behind a call boundary. It consumes nearly every x86-64
 // register; forcing it into a register-heavy caller can make allocation
 // impossible instead of merely causing spills.
@@ -440,8 +424,8 @@ pub(super) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs 
     [o0, o1, o2, o3]
 }
 
-/// Squares a canonical Montgomery residue for a Pasta modulus (the input's
-/// canonicity is debug-asserted).
+/// Squares a canonical Montgomery residue for a Pasta modulus. The input must be
+/// canonical, which the entry point in `entry.rs` debug-asserts.
 ///
 /// A transcription of the AArch64 backend's dedicated squaring: the 512-bit
 /// square as cross products, one doubling pass, and the diagonals (ten MULX
@@ -458,10 +442,6 @@ pub(super) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs 
 /// on [`mul`].
 #[inline(never)]
 pub(super) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
-    debug_assert!(
-        is_canonical(value, modulus),
-        "pasta_curves::asm::square requires a canonical input"
-    );
     square_hi(square_lo(*value), modulus, inv)
 }
 
@@ -712,10 +692,10 @@ fn square_hi(product: [u64; 8], modulus: &Limbs, inv: u64) -> Limbs {
 ///
 /// # Safety
 ///
-/// `value` must be canonical (debug-asserted). Any four-limb `rhs` is
-/// accepted: the accumulator stays canonical, so the final multiplication is
-/// inside [`mul`]'s contract with a canonical `lhs`. The memory operands read
-/// the four modulus limbs.
+/// `value` must be canonical, which the entry point in `entry.rs` debug-asserts. Any
+/// four-limb `rhs` is accepted: the accumulator stays canonical, so the final
+/// multiplication is inside [`mul`]'s contract with a canonical `lhs`. The memory
+/// operands read the four modulus limbs.
 #[inline(never)]
 pub(super) fn sqr_n_mul(
     value: &Limbs,
@@ -724,10 +704,6 @@ pub(super) fn sqr_n_mul(
     modulus: &Limbs,
     inv: u64,
 ) -> Limbs {
-    debug_assert!(
-        is_canonical(value, modulus),
-        "pasta_curves::asm::sqr_n_mul requires a canonical value"
-    );
     let mut acc = *value;
     for _ in 0..count {
         acc = square_hi(square_lo(acc), modulus, inv);

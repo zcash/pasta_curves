@@ -162,6 +162,11 @@ pub fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
 /// correctly derived from it. Any other values will cause undefined results.
 #[inline]
 pub fn sqr_n_mul(value: &Limbs, count: usize, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
+    debug_assert!(
+        is_canonical(value, modulus),
+        "pasta_curves::asm::sqr_n_mul requires a canonical value"
+    );
+
     // On aarch64, `square` and `mul` can be inlined and optimised by Rust.
     #[cfg(target_arch = "aarch64")]
     {

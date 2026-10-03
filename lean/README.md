@@ -141,7 +141,7 @@ PastaCurves/AArch64/Entry.lean           proofs about the AArch64 entry points a
 PastaCurves/X86_64.lean                  x86-64 umbrella module
 PastaCurves/X86_64/Semantics.lean        x86-64 instruction semantics and eight-word product
 PastaCurves/X86_64/Transcription.lean    GENERATED: all six x86-64 assembly blocks
-PastaCurves/X86_64/Compositions.lean     split square, repeated squaring, backend contracts
+PastaCurves/X86_64/Compositions.lean     split square and repeated squaring
 PastaCurves/X86_64/Vectors.lean          the x86-64 blocks on the vectors, kernel-checked
 PastaCurves/X86_64/Checks.lean           additional kernel-checked arithmetic examples
 PastaCurves/X86_64/Spec.lean             proofs about the x86-64 blocks and compositions
