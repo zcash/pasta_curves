@@ -106,23 +106,30 @@ The instruction streams are the object of machine-checked correctness proofs, so
 an instruction is a change to a specification: keep the transcription, its documentation, and
 the proofs in step, and do not "improve" the assembly in passing.
 
-The module provides a backend on `target_arch = "aarch64"` and, in part, on
-`target_arch = "x86_64"`: `add`, `sub`, and `from_mont` on every x86-64 target, and `mul` and
-`square` on x86-64 with 64-bit pointers. Elsewhere the `asm` module is absent. Nothing is
-assembled at build time, so no C toolchain is needed. On all of those, beside the crate's usual
-checks:
+With the `asm` feature, the module provides a backend on `target_arch = "aarch64"`, and on
+`target_arch = "x86_64"` with 64-bit pointers except on Apple targets (see `src/asm/README.md`).
+Elsewhere, without the feature, or with `--cfg pasta_curves_noasm`, the module has no backend.
+Nothing is assembled at build time, so no C toolchain is needed. Where there is a backend, beside
+the crate's usual checks:
 
 ```sh
 cargo test --features asm 'asm::'           # the backend's tests, with the debug assertions they check
-cargo test --release --features asm 'asm::' # the same tests on the release code
+cargo test --release --features asm 'asm::' # the same tests on the release code, as shipped
 ```
+
+CI and `scripts/ci.sh` run the release tests with `CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true`
+and `CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS=true`, which keep the checks of the debug profile. With
+the `asm` feature they also run the release profile as shipped. That run is needed because the
+assertions change the code around each `asm!` block, which can affect the compiler's register
+allocation.
 
 A cfg-gated test that compiles out still reports success, so CI counts the `#[test]`
 functions under `src/asm` and requires the run of the module's tests to report exactly that
 many passed, in both profiles. CI also builds `core` from source on a nightly toolchain
-instead of using the sysroot (`cargo +nightly build --release --no-default-features -Z
-build-std=core,compiler_builtins --target aarch64-apple-darwin`), which proves that nothing in
-the backend reaches for std.
+instead of using the sysroot, which proves that nothing in the backend reaches for std:
+`cargo +nightly build --release --no-default-features -Z build-std=core,compiler_builtins`
+with `--target` set to `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, and
+`x86_64-apple-darwin` in turn, for each backend and for a target without one.
 
 Documentation is a synthetic cross-platform build: `cfg(doc)` retains APIs that are unavailable
 on the rustdoc host, while `doc(cfg(...))` renders their real architecture requirements. Because
@@ -137,7 +144,7 @@ backend, update these conditions and keep doc-only fallback bodies non-executabl
 
 ## The Lean formalization (`lean`)
 
-`lean/` is a Lake package (`PastaAsm`) with shared definitions and architecture-specific
+`lean/` is a Lake package (`PastaCurves`) with shared definitions and architecture-specific
 submodules. Its instruction-level models contribute to assuring the backend's routines'
 correctness; see `lean/README.md` for the implemented coverage, trust story, theorems and their
 caveats, and how those theorems are proven. All architectures use the same formalization
@@ -245,10 +252,7 @@ in one go; a check whose tool is not installed is skipped with a note on how to 
 
 ### Toolchain note
 
-`rust-toolchain.toml` pins the MSRV toolchain (currently **1.63.0**), whose old codegen
-is markedly slower — often *much* slower — than a current stable, on top of the release
-vs. debug gap above. For faster local iteration, run everything on a stable toolchain,
-e.g. `cargo +stable test --release --all-features`. CI runs both MSRV (for the required
+`rust-toolchain.toml` pins the MSRV toolchain. CI runs both MSRV (for the required
 checks) and beta/stable lint passes.
 
 ### Cross-platform / target coverage
@@ -411,7 +415,8 @@ The required aggregate check gates on: `test`, `test-32-bit`, `no-std`, and `bit
 The individual jobs are:
 
 - **`test`** — `cargo test --release` with `--all-features` and `--no-default-features`,
-  on Ubuntu, Windows, and macOS; verifies the working directory is clean afterward.
+  on Ubuntu, Windows, and macOS, with the debug assertions and overflow checks, and with
+  `--all-features` also as shipped; verifies the working directory is clean afterward.
 - **`test-32-bit`** — the same feature matrix on `i686-unknown-linux-gnu`.
 - **`no-std`** — builds `--no-default-features` for `thumbv6m-none-eabi`,
   `wasm32-unknown-unknown`, and `wasm32-wasi`.

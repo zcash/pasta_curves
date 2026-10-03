@@ -11,12 +11,12 @@ use lazy_static::lazy_static;
 #[cfg(feature = "bits")]
 use ff::{FieldBits, PrimeFieldBits};
 
-use crate::arithmetic::{SqrtTableHelpers, VartimeField, adc, mac, sbb};
+use crate::arithmetic::{VartimeField, adc, mac, sbb};
 #[cfg(feature = "deferred")]
 use crate::deferred::{DeferredField, Product};
 
 #[cfg(feature = "sqrt-table")]
-use crate::arithmetic::SqrtTables;
+use crate::arithmetic::{SqrtTableHelpers, SqrtTables};
 
 /// This represents an element of $\mathbb{F}_p$ where
 ///
@@ -281,7 +281,7 @@ impl Fp {
         self.add(self)
     }
 
-    fn from_u512(limbs: [u64; 8]) -> Fp {
+    pub(crate) fn from_u512(limbs: [u64; 8]) -> Fp {
         // We reduce an arbitrary 512-bit number by decomposing it into two 256-bit digits
         // with the higher bits multiplied by 2^256. Thus, we perform two reductions
         //
@@ -849,6 +849,7 @@ lazy_static! {
     static ref FP_TABLES: SqrtTables<Fp> = SqrtTables::new(0x11BE, 1098);
 }
 
+#[cfg(feature = "sqrt-table")]
 impl SqrtTableHelpers for Fp {
     fn pow_by_t_minus1_over2(&self) -> Self {
         let r10 = self.square_runtime();
@@ -935,6 +936,10 @@ impl ec_gpu::GpuField for Fp {
     }
 }
 
+// The tests in these blocks compare the field types' runtime path (the operators, `Field::square`,
+// `sqr_n_mul_runtime`, and `to_repr`) with their portable `const fn`s. They are compiled only where
+// that path is the assembly backend: elsewhere it is the portable code, and each comparison would
+// be of the code with itself.
 #[cfg(all(test, feature = "asm"))]
 if_asm_supported! {
 fn asm_portable_repr(value: Fp) -> [u8; 32] {
@@ -1054,6 +1059,7 @@ fn test_sqrt_32bit_overflow() {
     assert!((Fp::from(5)).sqrt().is_none().unwrap_u8() == 1);
 }
 
+#[cfg(feature = "sqrt-table")]
 #[test]
 fn test_pow_by_t_minus1_over2() {
     // NB: TWO_INV is standing in as a "random" field element
@@ -1263,6 +1269,119 @@ fn test_from_u512() {
     );
 }
 
+/// Corner cases of `from_u512`. Each input is the 512-bit integer `d0 + 2^256 d1`, where `d0` and
+/// `d1` are the 256-bit digits that `from_u512` splits it into. The expected residues mod `p` were
+/// computed with Python's integers. In the last three cases the digits are the left operands that
+/// come nearest to overflowing the inline `mul` when the right operand is `R2` or `R3`, the
+/// constants that `from_u512` multiplies its digits by.
+#[test]
+fn test_from_u512_corner_cases() {
+    #[rustfmt::skip]
+    let cases: [([u64; 8], [u64; 4]); 12] = [
+        // 0
+        (
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+             0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+        ),
+        // p - 1
+        (
+            [0x992d30ed00000000, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000,
+             0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x992d30ed00000000, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000],
+        ),
+        // p
+        (
+            [0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000,
+             0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+        ),
+        // 2^256 - 1
+        (
+            [0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+             0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x34786d38fffffffc, 0x992c350be41914ad, 0xffffffffffffffff, 0x3fffffffffffffff],
+        ),
+        // 2^256
+        (
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+             0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x34786d38fffffffd, 0x992c350be41914ad, 0xffffffffffffffff, 0x3fffffffffffffff],
+        ),
+        // p 2^256
+        (
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+             0x992d30ed00000001, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000],
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+        ),
+        // (p - 1) 2^256 + p - 1
+        (
+            [0x992d30ed00000000, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000,
+             0x992d30ed00000000, 0x224698fc094cf91b, 0x0000000000000000, 0x4000000000000000],
+            [0x64b4c3b400000003, 0x891a63f02533e46e, 0x0000000000000000, 0x0000000000000000],
+        ),
+        // 2^511
+        (
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+             0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x8000000000000000],
+            [0x92d30ed000000008, 0x7d0cd35cca2d6d01, 0x3bcbd4cde1e4ae8c, 0x24b6a0d7bdce5b8a],
+        ),
+        // 2^512 - 1
+        (
+            [0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+             0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+            [0x8c78ecb30000000e, 0xd7d30dbd8b0de0e7, 0x7797a99bc3c95d18, 0x096d41af7b9cb714],
+        ),
+        // forced_q_r2, the left operand nearest to overflowing `mul` with `R2`
+        (
+            [0x3cc9961eeeeeeeef, 0x907f42c685cc8a31, 0xffffffffffffffff, 0xffffffffffffffff,
+             0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x71420357eeeeeeec, 0x29ab77d269e59ede, 0xffffffffffffffff, 0x3fffffffffffffff],
+        ),
+        // forced_q_r3 2^256, the same for `R3`
+        (
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+             0x032c286da5f9b149, 0x3f747fab2d936552, 0xffffffffffffffff, 0xffffffffffffffff],
+            [0xd5abd7bb68193aea, 0x4b22a76b19f2f1ce, 0xa87dc2a20b1a34e5, 0x308bc2b27a3a82ee],
+        ),
+        // forced_q_r2 + forced_q_r3 2^256
+        (
+            [0x3cc9961eeeeeeeef, 0x907f42c685cc8a31, 0xffffffffffffffff, 0xffffffffffffffff,
+             0x032c286da5f9b149, 0x3f747fab2d936552, 0xffffffffffffffff, 0xffffffffffffffff],
+            [0xadc0aa26570829d5, 0x528786417a8b9791, 0xa87dc2a20b1a34e4, 0x308bc2b27a3a82ee],
+        ),
+    ];
+    for (input, residue) in cases {
+        let repr = ff::PrimeField::to_repr(&Fp::from_u512(input));
+        let limbs: [u64; 4] = core::array::from_fn(|i| {
+            u64::from_le_bytes(repr[8 * i..8 * (i + 1)].try_into().unwrap())
+        });
+        assert_eq!(limbs, residue, "{input:x?}");
+    }
+}
+
+#[test]
+fn test_from_u512_against_horner() {
+    use rand::SeedableRng;
+
+    // `from_u512` splits the 512-bit integer into two 256-bit digits and recombines them with
+    // `R2` and `R3`. Horner's rule computes the same value one limb at a time instead.
+    let horner = |l: [u64; 8]| {
+        let two_64 = Fp::from(u64::MAX) + Fp::one();
+        l.iter()
+            .rev()
+            .fold(Fp::zero(), |acc, &limb| acc * two_64 + Fp::from(limb))
+    };
+    let mut rng = rand_xorshift::XorShiftRng::from_seed([0x3c; 16]);
+    let mut inputs = vec![[0u64; 8], [u64::MAX; 8]];
+    for _ in 0..1000 {
+        inputs.push(core::array::from_fn(|_| rng.try_next_u64().unwrap()));
+    }
+    for l in inputs {
+        assert_eq!(Fp::from_u512(l), horner(l), "limbs {l:x?}");
+    }
+}
+
 #[cfg(feature = "zeroize")]
 #[test]
 fn test_zeroize() {
@@ -1271,88 +1390,6 @@ fn test_zeroize() {
     let mut a = <Fp as ff::Field>::ONE;
     a.zeroize();
     assert_eq!(a, Fp::zero());
-}
-
-#[cfg(all(test, feature = "asm"))]
-if_asm_supported! {
-#[test]
-fn asm_mul_unreduced_lhs_matches_portable() {
-    use rand::SeedableRng;
-
-    // `from_u512` feeds raw (unreduced) 256-bit digits as the lhs of the
-    // inline `mul`, with `R2`/`R3` as the rhs. The five-limb accumulator
-    // tolerates an unreduced lhs only while every rhs limb is at most
-    // `2^64 - 3` (see the contract in `crate::asm::mul`); assert the
-    // selected rhs values keep that invariant, then pin the behaviour against
-    // the portable implementation on the most adversarial inputs known.
-    let mut max_canonical = MODULUS;
-    max_canonical.0[0] -= 1;
-    let dense_limb = u64::MAX - 2;
-    let mut dense_canonical = Fp([dense_limb; 4]);
-    dense_canonical.0[3] = MODULUS.0[3] - 1;
-    let canonical_rhs = [R2, R3, max_canonical, dense_canonical];
-    for by in canonical_rhs {
-        for limb in by.0 {
-            assert!(limb <= u64::MAX - 2);
-        }
-    }
-
-    // lhs values with the low limbs solved so the first two Montgomery
-    // quotients hit (or approach) their maximum `2^64 - 1` while the top
-    // limbs are all-ones: jointly the nearest known approach to the
-    // carry-chain wrap described in `crate::asm::mul`.
-    let forced_q_r2 = Fp([0x3cc9961eeeeeeeef, 0x907f42c685cc8a31, u64::MAX, u64::MAX]);
-    let forced_q_r3 = Fp([0x032c286da5f9b149, 0x3f747fab2d936552, u64::MAX, u64::MAX]);
-
-    let check = |lhs: Fp, by: Fp| {
-        // Inherent `Fp::mul` is the portable implementation; its classical
-        // 8-limb reduction is valid for any lhs when `by` is canonical.
-        assert_eq!(lhs.mul_runtime(&by), Fp::mul(&lhs, &by), "lhs {:x?}", lhs.0);
-    };
-
-    check(Fp([u64::MAX; 4]), R2);
-    check(Fp([u64::MAX; 4]), R3);
-    check(forced_q_r2, R2);
-    check(forced_q_r3, R3);
-    // These maximize the full 256-bit lhs while taking the canonical rhs
-    // close to p. They exercise the final candidate's `T < 2p < R` bound.
-    check(Fp([u64::MAX; 4]), max_canonical);
-    check(Fp([u64::MAX; 4]), dense_canonical);
-
-    let mut rng = rand_xorshift::XorShiftRng::from_seed([0x9d; 16]);
-    for i in 0..20_000u32 {
-        let mut l = [0u64; 4];
-        for w in l.iter_mut() {
-            *w = rng.try_next_u64().unwrap();
-        }
-        if i % 2 == 0 {
-            l[3] = u64::MAX;
-            l[2] = u64::MAX;
-        }
-        check(Fp(l), R2);
-        check(Fp(l), R3);
-    }
-
-    // End-to-end `from_u512` against a portable recomposition.
-    let portable_from_u512 = |l: [u64; 8]| {
-        let d0 = Fp([l[0], l[1], l[2], l[3]]);
-        let d1 = Fp([l[4], l[5], l[6], l[7]]);
-        Fp::mul(&d0, &R2).add(&Fp::mul(&d1, &R3))
-    };
-    assert_eq!(
-        Fp::from_u512([u64::MAX; 8]),
-        portable_from_u512([u64::MAX; 8])
-    );
-    for _ in 0..10_000u32 {
-        let mut l = [0u64; 8];
-        for w in l.iter_mut() {
-            *w = rng.try_next_u64().unwrap();
-        }
-        l[3] |= 0xc000000000000000;
-        l[7] |= 0xc000000000000000;
-        assert_eq!(Fp::from_u512(l), portable_from_u512(l), "limbs {l:x?}");
-    }
-}
 }
 
 /// Whether `x` holds a reduced residue (limbs below the modulus).
@@ -1403,72 +1440,9 @@ fn constants_are_canonical() {
     }
 }
 
+// Compiled only with the backend, like `asm_matches_portable_arithmetic`, for the same reason.
 #[cfg(all(test, feature = "asm"))]
 if_asm_supported! {
-#[test]
-fn asm_mul_canonical_sweep_matches_portable() {
-    use rand::SeedableRng;
-
-    // Random canonical operands: the inline `mul` must agree with the
-    // portable implementation and return a canonical residue.
-    let mut rng = rand_xorshift::XorShiftRng::from_seed([0x42; 16]);
-    let mut random = || {
-        let mut l = [0u64; 4];
-        for w in l.iter_mut() {
-            *w = rng.try_next_u64().unwrap();
-        }
-        Fp::from_raw(l)
-    };
-    for _ in 0..200_000u32 {
-        let a = random();
-        let b = random();
-        let asm = a.mul_runtime(&b);
-        assert_eq!(asm, Fp::mul(&a, &b), "lhs {:x?} rhs {:x?}", a.0, b.0);
-        assert!(is_canonical(&asm));
-    }
-}
-
-#[test]
-fn asm_mul_unreduced_lhs_near_modulus_rhs_matches_portable() {
-    use rand::SeedableRng;
-
-    // The inline `mul` omits the fifth candidate limb on the strength of
-    // `(lhs * rhs + m * modulus) / R < 2 * modulus < R`, which holds for any
-    // 256-bit lhs once the rhs is canonical. Stress that bound where it is
-    // tightest: lhs with its top bit set, rhs within a few limbs of the
-    // modulus (kept canonical, and within the per-limb no-wrap condition
-    // that an unreduced lhs separately requires).
-    let mut rng = rand_xorshift::XorShiftRng::from_seed([0x17; 16]);
-    let mut n = 0u32;
-    while n < 100_000 {
-        let lhs = Fp([
-            rng.try_next_u64().unwrap(),
-            rng.try_next_u64().unwrap(),
-            rng.try_next_u64().unwrap(),
-            rng.try_next_u64().unwrap() | (1 << 63),
-        ]);
-        let mut rhs = MODULUS;
-        rhs.0[0] = rhs.0[0]
-            .wrapping_sub(rng.try_next_u64().unwrap() >> (rng.try_next_u32().unwrap() % 64));
-        if rng.try_next_u32().unwrap() & 1 == 1 {
-            rhs.0[1] = rhs.0[1].wrapping_sub(rng.try_next_u64().unwrap() >> 60);
-        }
-        if !is_canonical(&rhs) || rhs.0.iter().any(|&l| l > u64::MAX - 2) {
-            continue;
-        }
-        n += 1;
-        let asm = lhs.mul_runtime(&rhs);
-        assert_eq!(
-            asm,
-            Fp::mul(&lhs, &rhs),
-            "lhs {:x?} rhs {:x?}",
-            lhs.0,
-            rhs.0
-        );
-        assert!(is_canonical(&asm));
-    }
-}
-
 #[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "requires a canonical lhs")]

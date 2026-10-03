@@ -4,3 +4,4 @@
 **/*.html
 /lean/.lake
 /lean/work
+__pycache__/

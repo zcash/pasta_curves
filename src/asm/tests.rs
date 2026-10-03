@@ -1,16 +1,20 @@
-//! Known-answer tests of the four entry points, for both Pasta fields.
+//! Tests of the entry points, for both Pasta fields: known answers, the reference
+//! vectors, and a differential test against the portable arithmetic.
 //!
-//! The expected values were computed independently with big-integer Montgomery
-//! arithmetic (`a * b * 2^-256 mod p`) in Python, and the ones that are also among
-//! the reference vectors recorded from the assembly on Apple M-series hardware
-//! agree with those. The differential tests against the portable arithmetic are
-//! those of zcash/pasta_curves#100: `aarch64_asm_matches_portable_arithmetic` and
-//! the `mul` tests beside it in `src/fields/fp.rs` and `src/fields/fq.rs`. The
-//! field types do not use the backend yet.
+//! The moduli and the Montgomery constants are the field types' own. The other
+//! expected values were computed independently with big-integer Montgomery
+//! arithmetic (`a * b * 2^-256 mod p`) in Python, and a test checks each against
+//! the portable arithmetic. Every multiplication, squaring, and conversion case is
+//! also among the reference vectors recorded from the assembly on Apple M-series
+//! hardware, and agrees with it; the vectors have no addition, subtraction, or
+//! repeated-squaring cases. The differential test compares every entry point with
+//! the portable arithmetic of the field types, on edge and pseudo-random operands,
+//! so it covers those routines too.
 
 use super::{Limbs, add, from_mont, sub};
 
 use super::{mul, sqr_n_mul, square};
+use crate::fields::{fp, fq};
 
 /// The borrow chain of `is_canonical` decides `value < modulus` at the limb boundaries.
 #[test]
@@ -28,7 +32,7 @@ fn is_canonical_borrow_chain() {
     assert!(super::is_canonical(&[0, 0, 0, 0], &m));
 }
 
-/// One field's constants and known answers.
+/// One field's constants, from its field type, and known answers.
 struct Field {
     modulus: Limbs,
     /// `-modulus[0]^-1 mod 2^64`.
@@ -51,23 +55,15 @@ struct Field {
     pm1_sq: Limbs,
     /// `p - 2`.
     pm2: Limbs,
+    /// `from_mont` of the all-ones input, `(2^256 - 1) R^-1 mod p`.
+    from_mont_ones: Limbs,
 }
 
 /// The Pallas base field (`pasta_curves::Fp`).
 const FP: Field = Field {
-    modulus: [
-        0x992d30ed00000001,
-        0x224698fc094cf91b,
-        0x0000000000000000,
-        0x4000000000000000,
-    ],
-    inv: 0x992d30ecffffffff,
-    r: [
-        0x34786d38fffffffd,
-        0x992c350be41914ad,
-        0xffffffffffffffff,
-        0x3fffffffffffffff,
-    ],
+    modulus: fp::MODULUS.0,
+    inv: fp::INV,
+    r: fp::R.0,
     two_r: [
         0xcfc3a984fffffff9,
         0x1011d11bbee5303e,
@@ -80,18 +76,8 @@ const FP: Field = Field {
         0xfffffffffffffffe,
         0x3fffffffffffffff,
     ],
-    r2: [
-        0x8c78ecb30000000f,
-        0xd7d30dbd8b0de0e7,
-        0x7797a99bc3c95d18,
-        0x096d41af7b9cb714,
-    ],
-    r3: [
-        0xf185a5993a9e10f9,
-        0xf6a68f3b6ac5b1d1,
-        0xdf8d1014353fd42c,
-        0x2ae309222d2d9910,
-    ],
+    r2: fp::R2.0,
+    r3: fp::R3.0,
     r4: [
         0x1dfc65f6ad0492ae,
         0x84379b4cc10e927b,
@@ -116,23 +102,19 @@ const FP: Field = Field {
         0x0000000000000000,
         0x4000000000000000,
     ],
+    from_mont_ones: [
+        0xc9eda265ac589659,
+        0x75a6de91c8d4fcc3,
+        0x8f34d6691037659a,
+        0x1e0e3b00e1dd872a,
+    ],
 };
 
 /// The Vesta base field (`pasta_curves::Fq`).
 const FQ: Field = Field {
-    modulus: [
-        0x8c46eb2100000001,
-        0x224698fc0994a8dd,
-        0x0000000000000000,
-        0x4000000000000000,
-    ],
-    inv: 0x8c46eb20ffffffff,
-    r: [
-        0x5b2b3e9cfffffffd,
-        0x992c350be3420567,
-        0xffffffffffffffff,
-        0x3fffffffffffffff,
-    ],
+    modulus: fq::MODULUS.0,
+    inv: fq::INV,
+    r: fq::R.0,
     two_r: [
         0x2a0f9218fffffff9,
         0x1011d11bbcef61f1,
@@ -145,18 +127,8 @@ const FQ: Field = Field {
         0xfffffffffffffffe,
         0x3fffffffffffffff,
     ],
-    r2: [
-        0xfc9678ff0000000f,
-        0x67bb433d891a16e3,
-        0x7fae231004ccf590,
-        0x096d41af7ccfdaa9,
-    ],
-    r3: [
-        0x008b421c249dae4c,
-        0xe13bda50dba41326,
-        0x88fececb8e15cb63,
-        0x07dd97a06e6792c8,
-    ],
+    r2: fq::R2.0,
+    r3: fq::R3.0,
     r4: [
         0x569bba29179df5c1,
         0xf7abe57547cfa14c,
@@ -181,6 +153,12 @@ const FQ: Field = Field {
         0x0000000000000000,
         0x4000000000000000,
     ],
+    from_mont_ones: [
+        0x2b2d474371e59083,
+        0x5bb8b7d46bcea6f2,
+        0xa86f41a73faf20ec,
+        0x20857622e89b86ac,
+    ],
 };
 
 const FIELDS: [&Field; 2] = [&FP, &FQ];
@@ -195,23 +173,165 @@ fn p_minus_1(f: &Field) -> Limbs {
     limbs
 }
 
-/// The constants above are copies of the field types' own, so that a known answer here says
-/// something about the fields the crate computes in: check that they agree.
+/// The known answers above that are not the field types' own constants, recomputed on the same
+/// limbs by the field types' inherent `const fn`s, which never use the backend.
 #[test]
-fn constants_match_the_field_types() {
-    use crate::fields::{fp, fq};
+fn known_answers_match_the_portable_arithmetic() {
+    macro_rules! check {
+        ($field:ident, $f:expr) => {{
+            use crate::fields::$field;
+            let f = $f;
+            let portable_add = |x: Limbs, y: Limbs| $field::add(&$field(x), &$field(y)).0;
+            let portable_mul = |x: Limbs, y: Limbs| $field::mul(&$field(x), &$field(y)).0;
+            let portable_square = |x: Limbs| $field::square(&$field(x)).0;
+            let pm1 = p_minus_1(f);
+            assert_eq!(portable_add(f.r, f.r), f.two_r);
+            assert_eq!(portable_add(f.two_r, f.r), f.three_r);
+            assert_eq!(portable_add(pm1, pm1), f.pm2);
+            assert_eq!(portable_mul(f.r2, f.r3), f.r4);
+            assert_eq!(portable_mul(portable_square(portable_square(f.r2)), f.r3), f.r7);
+            assert_eq!(portable_mul(pm1, pm1), f.pm1_sq);
+            // `from_mont` of the all-ones input: its Montgomery product with the residue `1`.
+            assert_eq!(portable_mul([u64::MAX; 4], ONE), f.from_mont_ones);
+        }};
+    }
+    check!(Fp, &FP);
+    check!(Fq, &FQ);
+}
 
-    assert_eq!(FP.modulus, fp::MODULUS.0);
-    assert_eq!(FP.inv, fp::INV);
-    assert_eq!(FP.r, fp::R.0);
-    assert_eq!(FP.r2, fp::R2.0);
-    assert_eq!(FP.r3, fp::R3.0);
+/// The entry points agree with the portable arithmetic of the field types, on edge operands and on
+/// pseudo-random ones. The portable arithmetic is the field types' inherent `const fn`s, which
+/// never use the backend, applied to the same Montgomery residues. The portable multiplication is
+/// exact whenever the product is below `2^256 p`, which holds whenever one operand is canonical, so
+/// it is the reference under both of the multiplication's contracts, and for `from_mont`, which
+/// multiplies by the residue `1`. The operands are canonical where a routine's contract asks for
+/// that; elsewhere they range over every four-limb value. Like the rest of this module's tests, the
+/// test is compiled only where the module has a backend, so it always compares the assembly with
+/// the portable code. The multiplication also gets 200,000 random canonical operand pairs, and the
+/// cases of its second contract where its accumulator comes nearest to wrapping.
+#[test]
+fn entry_points_match_the_portable_arithmetic() {
+    use rand::{Rng, SeedableRng};
+    use rand_xorshift::XorShiftRng;
 
-    assert_eq!(FQ.modulus, fq::MODULUS.0);
-    assert_eq!(FQ.inv, fq::INV);
-    assert_eq!(FQ.r, fq::R.0);
-    assert_eq!(FQ.r2, fq::R2.0);
-    assert_eq!(FQ.r3, fq::R3.0);
+    macro_rules! check {
+        ($field:ident, $f:expr, $forced_r2:expr, $forced_r3:expr) => {{
+            use crate::fields::$field;
+            let f = $f;
+            let portable_mul = |x: &Limbs, y: &Limbs| $field::mul(&$field(*x), &$field(*y)).0;
+            let portable_square = |x: &Limbs| $field::square(&$field(*x)).0;
+            let mut rng = XorShiftRng::from_seed([0x5a; 16]);
+            let random_any: [Limbs; 32] =
+                core::array::from_fn(|_| core::array::from_fn(|_| rng.next_u64()));
+            // The Montgomery forms of elements reduced from 512 random bits, close to uniform.
+            let random_canonical: [Limbs; 32] = core::array::from_fn(|_| {
+                $field::from_u512(core::array::from_fn(|_| rng.next_u64())).0
+            });
+
+            let high = [u64::MAX, u64::MAX, u64::MAX, (1 << 62) - 1];
+            let edge_canonical = [ZERO, ONE, f.r, p_minus_1(f), f.pm2, high];
+            let edge_any = [[u64::MAX; 4], f.modulus, [0, 0, 0, u64::MAX]];
+            let canonical = || edge_canonical.iter().chain(&random_canonical);
+            let any = || canonical().chain(&edge_any).chain(&random_any);
+
+            for a in canonical() {
+                assert_eq!(square(a, &f.modulus, f.inv), portable_square(a), "{a:x?}");
+                for b in canonical() {
+                    let sum = $field::add(&$field(*a), &$field(*b)).0;
+                    let difference = $field::sub(&$field(*a), &$field(*b)).0;
+                    assert_eq!(add(a, b, &f.modulus), sum, "{a:x?} {b:x?}");
+                    assert_eq!(sub(a, b, &f.modulus), difference, "{a:x?} {b:x?}");
+                }
+                for b in any() {
+                    let product = portable_mul(a, b);
+                    assert_eq!(mul(a, b, &f.modulus, f.inv), product, "{a:x?} {b:x?}");
+                    // The other contract: any left operand, with a canonical right operand
+                    // whose limbs 1 to 3 are at most `2^64 - 3`.
+                    if super::mul_contract(b, a, &f.modulus) {
+                        assert_eq!(mul(b, a, &f.modulus, f.inv), product, "{b:x?} {a:x?}");
+                    }
+                    let mut power = *a;
+                    for count in 0..4 {
+                        let expected = portable_mul(&power, b);
+                        let actual = sqr_n_mul(a, count, b, &f.modulus, f.inv);
+                        assert_eq!(actual, expected, "{a:x?} {count} {b:x?}");
+                        power = portable_square(&power);
+                    }
+                }
+            }
+            for a in any() {
+                let expected = portable_mul(a, &[1, 0, 0, 0]);
+                assert_eq!(from_mont(a, &f.modulus, f.inv), expected, "{a:x?}");
+            }
+
+            // Many more random canonical operands for the multiplication.
+            let mut rng = XorShiftRng::from_seed([0x42; 16]);
+            for _ in 0..200_000u32 {
+                let a = $field::from_raw(core::array::from_fn(|_| rng.next_u64())).0;
+                let b = $field::from_raw(core::array::from_fn(|_| rng.next_u64())).0;
+                assert_eq!(mul(&a, &b, &f.modulus, f.inv), portable_mul(&a, &b), "{a:x?} {b:x?}");
+            }
+
+            // The multiplication's second contract, where its five-limb accumulator comes nearest
+            // to wrapping: an unreduced left operand, and a canonical right operand whose limbs
+            // are at most `2^64 - 3`. Each case asserts that it is within the contract.
+            let second_contract = |lhs: Limbs, rhs: Limbs| {
+                assert!(super::mul_contract(&lhs, &rhs, &f.modulus), "{lhs:x?} {rhs:x?}");
+                let product = portable_mul(&lhs, &rhs);
+                assert_eq!(mul(&lhs, &rhs, &f.modulus, f.inv), product, "{lhs:x?} {rhs:x?}");
+            };
+            // The right operands are `R2` and `R3`, which `from_u512` multiplies by, and two
+            // canonical values near the modulus.
+            let mut dense = [u64::MAX - 2; 4];
+            dense[3] = f.modulus[3] - 1;
+            for rhs in [f.r2, f.r3, p_minus_1(f), dense] {
+                second_contract([u64::MAX; 4], rhs);
+            }
+            // The low limbs of these left operands bring the first two Montgomery quotients to
+            // (or near) their maximum, and their top limbs are all ones.
+            second_contract($forced_r2, f.r2);
+            second_contract($forced_r3, f.r3);
+            let mut rng = XorShiftRng::from_seed([0x9d; 16]);
+            for i in 0..20_000u32 {
+                let mut lhs: Limbs = core::array::from_fn(|_| rng.next_u64());
+                if i % 2 == 0 {
+                    lhs[2] = u64::MAX;
+                    lhs[3] = u64::MAX;
+                }
+                second_contract(lhs, f.r2);
+                second_contract(lhs, f.r3);
+            }
+            // Left operands with the top bit set, against right operands just below the modulus,
+            // where the bound `T < 2p` on the final reduction's input is tightest.
+            let mut rng = XorShiftRng::from_seed([0x17; 16]);
+            let mut n = 0u32;
+            while n < 100_000 {
+                let mut lhs: Limbs = core::array::from_fn(|_| rng.next_u64());
+                lhs[3] |= 1 << 63;
+                let mut rhs = f.modulus;
+                rhs[0] = rhs[0].wrapping_sub(rng.next_u64() >> (rng.next_u32() % 64));
+                if rng.next_u32() & 1 == 1 {
+                    rhs[1] = rhs[1].wrapping_sub(rng.next_u64() >> 60);
+                }
+                if super::mul_contract(&lhs, &rhs, &f.modulus) {
+                    n += 1;
+                    second_contract(lhs, rhs);
+                }
+            }
+        }};
+    }
+    check!(
+        Fp,
+        &FP,
+        [0x3cc9961eeeeeeeef, 0x907f42c685cc8a31, u64::MAX, u64::MAX],
+        [0x032c286da5f9b149, 0x3f747fab2d936552, u64::MAX, u64::MAX]
+    );
+    check!(
+        Fq,
+        &FQ,
+        [0xf3bfcadeeeeeeeef, 0x27fa6352b2545d71, u64::MAX, u64::MAX],
+        [0x0000000000000d24, 0x00000000000007c2, u64::MAX, u64::MAX]
+    );
 }
 
 #[test]
@@ -283,27 +403,10 @@ fn from_mont_known_answers() {
         assert_eq!(from_mont(&f.r, &f.modulus, f.inv), ONE);
         assert_eq!(from_mont(&f.r2, &f.modulus, f.inv), f.r);
         assert_eq!(from_mont(&ZERO, &f.modulus, f.inv), ZERO);
+        // `from_mont` accepts any four-limb value: the all-ones input is the
+        // extreme case of that contract, where the candidate is largest.
+        assert_eq!(from_mont(&[u64::MAX; 4], &f.modulus, f.inv), f.from_mont_ones);
     }
-    // `from_mont` accepts any four-limb value: the all-ones input is the
-    // extreme case of that contract, where the candidate is largest.
-    assert_eq!(
-        from_mont(&[u64::MAX; 4], &FP.modulus, FP.inv),
-        [
-            0xc9eda265ac589659,
-            0x75a6de91c8d4fcc3,
-            0x8f34d6691037659a,
-            0x1e0e3b00e1dd872a,
-        ]
-    );
-    assert_eq!(
-        from_mont(&[u64::MAX; 4], &FQ.modulus, FQ.inv),
-        [
-            0x2b2d474371e59083,
-            0x5bb8b7d46bcea6f2,
-            0xa86f41a73faf20ec,
-            0x20857622e89b86ac,
-        ]
-    );
 }
 
 /// The reference vectors: outputs of Semolina's `mul_mont_pasta`, `sqr_mont_pasta`, and

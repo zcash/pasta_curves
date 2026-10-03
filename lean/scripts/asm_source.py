@@ -1,5 +1,3 @@
-# Copyright (c) 2026 the pasta-asm contributors.
-# SPDX-License-Identifier: Apache-2.0
 """Shared fail-closed extraction of Rust inline-assembly source.
 
 This module parses only the Rust and ``asm!`` surface syntax needed by the Pasta

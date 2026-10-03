@@ -2,6 +2,12 @@ name: Assembly backend
 
 # The checks specific to the assembly backend under `src/asm`; `ci.yml` builds and tests the
 # crate on Apple silicon, Ubuntu, and Windows in both feature configurations.
+#
+# Always triggers, so the required `Assembly backend CI` check is always reported (a workflow
+# skipped by `on.paths` would leave a required check pending and block merges). The jobs are
+# instead gated on a path filter computed inside the run, since they are irrelevant to a change
+# that provably cannot affect the crate's build. Erring toward running keeps a change from
+# dodging the checks by touching a file that the filter did not anticipate.
 
 on:
   push:
@@ -16,14 +22,37 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect backend-relevant changes
+    runs-on: ubuntu-latest
+    outputs:
+      asm: ${{ steps.filter.outputs.asm }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # dorny/paths-filter compiles each rule to its own picomatch matcher and ORs them, so a
+      # change is backend-relevant iff some changed file is outside the set that cannot affect
+      # the crate's build, or is this workflow. Note this is NOT the sequential-negation
+      # semantics of GitHub's own `on.paths` engine.
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
+        id: filter
+        with:
+          filters: |
+            asm:
+              - '!{book/**,lean/**,sage/**,.github/**,scripts/**,*.md,LICENSE-*,ruff.toml,katex-header.html}'
+              - '.github/workflows/asm.yml'
+
   test:
     name: Test the backend on ${{ matrix.os }}
+    needs: changes
+    if: needs.changes.outputs.asm == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        # macos-latest is Apple silicon.
-        os: [ubuntu-24.04-arm, macos-latest, windows-11-arm]
+        # macos-latest is Apple silicon; ubuntu-latest and windows-latest are x86-64.
+        os: [ubuntu-24.04-arm, macos-latest, windows-11-arm, ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -33,27 +62,46 @@ jobs:
         # If GitHub ever moves macos-latest back to x86_64, the backend would
         # compile out and every check below would pass vacuously.
         run: test "$(uname -sm)" = "Darwin arm64"
+      - name: Confirm the x86-64 CPU has BMI2 and ADX
+        if: ${{ runner.arch == 'X64' }}
+        shell: bash
+        # The x86-64 blocks need both at run time and do not check for them, so
+        # without them the tests would fail on an illegal instruction.
+        run: |
+          features=$(rustc --print cfg -C target-cpu=native | tr -d '\r')
+          printf '%s\n' "$features" | grep -qx 'target_feature="bmi2"'
+          printf '%s\n' "$features" | grep -qx 'target_feature="adx"'
       - name: Test the backend (debug, with the debug assertions)
         run: cargo test --verbose --features asm 'asm::'
-      - name: Confirm every test of the backend ran, in both profiles
+      - name: Confirm every test of the backend ran, in every profile
         shell: bash
         # A cfg-gated test that silently compiles out still reports success,
         # so count the `#[test]` functions under `src/asm` and require the
         # run of the module's tests to report exactly that many passed. A test
-        # added to the module then raises the expectation by itself.
+        # added to the module then raises the expectation by itself. The runs
+        # are the debug profile, the release profile with the debug assertions
+        # and overflow checks, and the release profile as shipped. The last is
+        # a run of its own because the assertions change the code around each
+        # `asm!` block, which can affect the compiler's register allocation.
         run: |
           expected=$(grep -rh '^\s*#\[test\]' src/asm | wc -l | tr -d ' ')
           echo "tests in the backend: $expected"
           test "$expected" -gt 0
-          for profile in "" --release; do
-            out=$(cargo test $profile --features asm 'asm::' 2>&1)
+          count() {
+            out=$(cargo test "$@" --features asm 'asm::' 2>&1)
             echo "$out"
             echo "$out" | grep -q "^test result: ok. $expected passed"
-          done
+          }
+          count
+          CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true \
+            CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS=true count --release
+          count --release
       - name: With the assembly disabled, the crate's tests pass and the backend has none to run
         shell: bash
         env:
           RUSTFLAGS: --cfg pasta_curves_noasm
+          CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
+          CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS: true
         run: |
           cargo build --verbose --all-features
           for profile in "" --release; do
@@ -68,10 +116,15 @@ jobs:
 
   no-std:
     name: no_std, with no std to fall back on
-    # `#![no_std]` keeps std out of the crate's own code, but the target the
-    # backend compiles on has a std to link, so build core from source instead
-    # of using the sysroot: nothing that reaches for std can compile.
-    runs-on: ubuntu-24.04-arm
+    needs: changes
+    if: needs.changes.outputs.asm == 'true'
+    # `#![no_std]` keeps std out of the crate's own code, but the targets the
+    # backend compiles on have a std to link, so build core from source instead
+    # of using the sysroot: nothing that reaches for std can compile. The code
+    # differs between the two backends and the portable fallback, so build
+    # each: AArch64, x86-64, and Intel macOS, which has no backend. A library
+    # build links nothing, so any host can build for all three.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -80,11 +133,15 @@ jobs:
         run: rustup toolchain install nightly --profile minimal --component rust-src
       - name: Build against core alone
         run: |
-          cargo +nightly build --verbose --release --no-default-features \
-            -Z build-std=core,compiler_builtins --target aarch64-apple-darwin
+          for target in aarch64-apple-darwin x86_64-unknown-linux-gnu x86_64-apple-darwin; do
+            cargo +nightly build --verbose --release --no-default-features --features asm \
+              -Z build-std=core,compiler_builtins --target "$target"
+          done
 
   intel-macos:
     name: No backend on Intel macOS
+    needs: changes
+    if: needs.changes.outputs.asm == 'true'
     # Apple x86-64 targets reserve `rbp`, and so have fewer available registers
     # than the squaring blocks need; the `asm` module compiles out there instead
     # of failing to build.
@@ -99,6 +156,9 @@ jobs:
         run: cargo build --verbose --all-features
       - name: The backend has no tests to run (debug and release)
         shell: bash
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
+          CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS: true
         run: |
           for profile in "" --release; do
             out=$(cargo test $profile --all-features 'asm::' 2>&1)
@@ -107,3 +167,34 @@ jobs:
               exit 1
             fi
           done
+
+  asm-ci:
+    # The single stable check to mark as a required status check. It runs unless the workflow run
+    # was cancelled, and fails only if a job that ran failed. A run that a newer one cancels (two
+    # pushes in quick succession, as with stacked branches) reports nothing; the newer run reports
+    # instead. A failure in any leg of the test matrix fails `test` as a whole.
+    name: Assembly backend CI
+    needs: [changes, test, no-std, intel-macos]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on the jobs' results
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          RESULTS: >-
+            test=${{ needs.test.result }}
+            no-std=${{ needs.no-std.result }}
+            intel-macos=${{ needs.intel-macos.result }}
+        run: |
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "The changes-detection job did not succeed."
+            exit 1
+          fi
+          status=0
+          for result in $RESULTS; do
+            case "${result#*=}" in
+              success|skipped) echo "$result" ;;
+              *) echo "$result: failed"; status=1 ;;
+            esac
+          done
+          exit "$status"

@@ -24,16 +24,27 @@ skip() {
 # ---- The crate (ci.yml) ----
 before=$(git status --porcelain)
 
+# The release runs keep the debug assertions, which check the backend's operand contracts, and
+# overflow checks. Neither can hide a failure. With the `asm` feature, a further run tests the
+# release profile as shipped. That run is needed because the assertions change the code around
+# each `asm!` block, which can affect the compiler's register allocation.
+with_assertions() {
+  CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS=true "$@"
+}
+
 for features in --all-features --no-default-features; do
   step "cargo build $features"
   cargo build $features
-  step "cargo test --release $features"
-  cargo test --release $features
+  step "cargo test --release $features, with the debug assertions"
+  with_assertions cargo test --release $features
 done
+step "cargo test --release --all-features, as shipped"
+cargo test --release --all-features
 
 step "with the assembly disabled, the tests pass and the backend has none to run"
 for profile in "" --release; do
-  out=$(RUSTFLAGS="--cfg pasta_curves_noasm" cargo test $profile --all-features 2>&1) ||
+  out=$(RUSTFLAGS="--cfg pasta_curves_noasm" with_assertions \
+    cargo test $profile --all-features 2>&1) ||
     { echo "$out"; exit 1; }
   if printf '%s\n' "$out" | grep -E '^test asm::'; then
     echo "backend tests ran with the assembly disabled"
@@ -58,32 +69,40 @@ for target in thumbv6m-none-eabi wasm32-unknown-unknown wasm32-wasip1; do
 done
 
 # ---- The assembly backend (asm.yml) ----
-# On an AArch64 host the backend's tests run, and the run must report exactly as many passed
-# as `src/asm` declares, so that a test that compiles out cannot pass silently.
-if [ "$(uname -m)" = "arm64" ] || [ "$(uname -m)" = "aarch64" ]; then
+# On a host with a backend, the backend's tests run, and the run must report exactly as many
+# passed as `src/asm` declares, so that a test that compiles out cannot pass silently. An x86-64
+# host has a backend unless it is Apple's; its CPU needs BMI2 and ADX to run it.
+arch=$(uname -m)
+if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ] ||
+   { [ "$arch" = "x86_64" ] && [ "$(uname -s)" != "Darwin" ]; }; then
   expected=$(grep -rh '^\s*#\[test\]' src/asm | wc -l | tr -d ' ')
   echo "tests in the backend: $expected"
   test "$expected" -gt 0
-  for profile in "" --release; do
-    step "cargo test $profile --features asm 'asm::'"
-    out=$(cargo test $profile --features asm 'asm::' 2>&1) || { echo "$out"; exit 1; }
+  count() {
+    step "cargo test $* --features asm 'asm::'"
+    out=$(cargo test "$@" --features asm 'asm::' 2>&1) || { echo "$out"; exit 1; }
     echo "$out"
     echo "$out" | grep -q "^test result: ok. $expected passed" ||
       { echo "expected exactly $expected tests of the backend to pass"; exit 1; }
-  done
+  }
+  count
+  with_assertions count --release
+  count --release
+fi
 
-  step "no_std: build against core alone, with no std to fall back on"
-  if rustup run nightly rustc --version >/dev/null 2>&1 &&
-     rustup component list --toolchain nightly --installed | grep -q '^rust-src'; then
-    cargo +nightly build --release --no-default-features \
-      -Z build-std=core,compiler_builtins --target aarch64-apple-darwin
-  else
-    skip "the no_std build" \
-      "  it needs a nightly toolchain with the library sources:
-    rustup toolchain install nightly --profile minimal --component rust-src"
-  fi
+# Each backend, and the portable fallback (Intel macOS), built against core alone, with no std
+# to fall back on. A library build links nothing, so any host can build for every target.
+if rustup run nightly rustc --version >/dev/null 2>&1 &&
+   rustup component list --toolchain nightly --installed | grep -q '^rust-src'; then
+  for target in aarch64-apple-darwin x86_64-unknown-linux-gnu x86_64-apple-darwin; do
+    step "no_std: build against core alone for $target"
+    cargo +nightly build --release --no-default-features --features asm \
+      -Z build-std=core,compiler_builtins --target "$target"
+  done
 else
-  echo "host: $(uname -sm); the backend's own tests run on AArch64 hosts only"
+  skip "the no_std builds" \
+    "  they need a nightly toolchain with the library sources:
+    rustup toolchain install nightly --profile minimal --component rust-src"
 fi
 
 # ---- Lints and documentation (lints-stable.yml, ci.yml) ----
@@ -149,6 +168,9 @@ step "lake build --wfail"
 
 step "the transcription and the proof skeletons are current"
 lean/scripts/check.sh
+
+step "the export-axiom checker's own tests"
+(cd lean && python3 -m unittest discover -s scripts -p 'test_check_export_axioms.py')
 
 step "nanoda re-check"
 lean4export=lean/work/lean4export/.lake/build/bin/lean4export

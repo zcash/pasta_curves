@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 the pasta-asm contributors.
-# SPDX-License-Identifier: Apache-2.0
 """Unit tests for shared asm parsing and architecture-specific generators."""
 
 import contextlib
@@ -539,6 +537,79 @@ class X86RealSourceTests(unittest.TestCase):
             "unsupported use of bound local r0",
         )
 
+    def test_x86_skeleton_extracts_every_retained_instruction_let(self):
+        routines = {routine.name: routine for routine in gen_x86_64.all_routines()}
+        # Every retained binding is extracted exactly once, equal values included (the three
+        # zeros of an `xor r, r`, a repeated `mov` from `rdx`), since merging is off.
+        for name in ("squareLo", "mulMontRound", "fromMont"):
+            with self.subTest(routine=name):
+                routine = routines[name]
+                prepared = gen_x86_64.SKELETON_BACKEND.prepare(
+                    routine.emitter, routine.emitter.entries
+                )
+                extracted, current = [], None
+                for line in gen.skeleton(routine):
+                    if line.startswith("  extract_lets -merge +onlyGivenNames "):
+                        current = line[len("  extract_lets -merge +onlyGivenNames ") :]
+                    elif current is not None:
+                        current += " " + line.strip()
+                    if current is not None and current.endswith(" at hr"):
+                        extracted += current[: -len(" at hr")].split()
+                        current = None
+                self.assertEqual(sorted(extracted), sorted(prepared.names))
+                self.assertEqual(len(extracted), len(set(extracted)))
+        square_lo = "\n".join(gen.skeleton(routines["squareLo"]))
+        self.assertIn("extract_lets -merge +onlyGivenNames s_2 z4_1 cf_5 at hr", square_lo)
+        self.assertNotIn("obtain ⟨cf_5, b_cf_5, l_z4_1⟩", square_lo)
+
+        mul_round_routine = routines["mulMontRound"]
+        mul_round = "\n".join(gen.skeleton(mul_round_routine))
+        # The factored round is rendered like every other block: an instruction's pair wrapper
+        # and its two projections, extracted together, and read under their own names.
+        self.assertIn("extract_lets -merge +onlyGivenNames m s2 s1_1 at hr", mul_round)
+        self.assertIn("extract_lets -merge +onlyGivenNames s r0_1 cf_1 at hr", mul_round)
+        self.assertIn("have e_r0_1 : r0_1 = (addc r0 s1_1 cf).1 := rfl", mul_round)
+        self.assertIn("have e_cf_1 : cf_1 = (addc r0 s1_1 cf).2 := rfl", mul_round)
+        # The round's and the calling block's local definitions stay transparent.
+        self.assertNotIn("clear_value", mul_round)
+        self.assertNotIn("clear_value", "\n".join(gen.skeleton(routines["mulMont"])))
+        helper_text = "\n".join(code for code, _ in mul_round_routine.lines)
+        self.assertIn("let m := mulx b lhs.l0", helper_text)
+        self.assertIn("let s := addc r0 s1 cf", helper_text)
+        self.assertIn("let r0 := s.1", helper_text)
+        self.assertIn("let cf := s.2", helper_text)
+        # The omitted entry load aliases RDX to b only until the source writes RDX again.
+        # Reduction products must use the rebound Montgomery quotient, never b.
+        expressions = [entry["expr"] for entry in mul_round_routine.emitter.entries]
+        quotient_index = expressions.index("mulLo rdx inv")
+        self.assertTrue(any("mulx rdx modulus.l1" in expr for expr in expressions[quotient_index:]))
+        self.assertFalse(any("mulx b modulus.l1" in expr for expr in expressions[quotient_index:]))
+
+        from_mont = "\n".join(gen.skeleton(routines["fromMont"]))
+        self.assertIn("extract_lets -merge +onlyGivenNames n z0_1 cf at hr", from_mont)
+        self.assertIn("have e_z0_1 : z0_1 = (neg z0).1 := rfl", from_mont)
+        self.assertIn("have e_cf : cf = (neg z0).2 := rfl", from_mont)
+        self.assertIn("clear_value", from_mont)
+
+    def test_all_x86_routines_and_factored_round_generate_shared_skeletons(self):
+        routines = gen_x86_64.all_routines()
+        self.assertEqual(
+            [routine.name for routine in routines],
+            ["addMod", "subMod", "mulMontRound", "mulMont", "squareLo", "squareHi", "fromMont"],
+        )
+        for routine in routines:
+            with self.subTest(routine=routine.name):
+                generated = gen.skeleton(routine)
+                self.assertEqual(
+                    generated[0],
+                    f"  -- generated skeleton for `{routine.name}`: do not edit between the annotations",
+                )
+                self.assertEqual(generated[-1], "  subst hr")
+                self.assertIs(
+                    gen.find_routine(f"X86_64:{routine.name}").emitter.__class__,
+                    routine.emitter.__class__,
+                )
+
 
 class SharedGeneratorTests(unittest.TestCase):
     def test_skeleton_hooks_are_backend_owned(self):
@@ -645,82 +716,9 @@ class SharedGeneratorTests(unittest.TestCase):
             retained.render(["result"]),
         )
 
-    def test_x86_skeleton_extracts_every_retained_instruction_let(self):
-        routines = {routine.name: routine for routine in gen_x86_64.all_routines()}
-        # Every retained binding is extracted exactly once, equal values included (the three
-        # zeros of an `xor r, r`, a repeated `mov` from `rdx`), since merging is off.
-        for name in ("squareLo", "mulMontRound", "fromMont"):
-            with self.subTest(routine=name):
-                routine = routines[name]
-                prepared = gen_x86_64.SKELETON_BACKEND.prepare(
-                    routine.emitter, routine.emitter.entries
-                )
-                extracted, current = [], None
-                for line in gen.skeleton(routine):
-                    if line.startswith("  extract_lets -merge +onlyGivenNames "):
-                        current = line[len("  extract_lets -merge +onlyGivenNames ") :]
-                    elif current is not None:
-                        current += " " + line.strip()
-                    if current is not None and current.endswith(" at hr"):
-                        extracted += current[: -len(" at hr")].split()
-                        current = None
-                self.assertEqual(sorted(extracted), sorted(prepared.names))
-                self.assertEqual(len(extracted), len(set(extracted)))
-        square_lo = "\n".join(gen.skeleton(routines["squareLo"]))
-        self.assertIn("extract_lets -merge +onlyGivenNames s_2 z4_1 cf_5 at hr", square_lo)
-        self.assertNotIn("obtain ⟨cf_5, b_cf_5, l_z4_1⟩", square_lo)
-
-        mul_round_routine = routines["mulMontRound"]
-        mul_round = "\n".join(gen.skeleton(mul_round_routine))
-        # The factored round is rendered like every other block: an instruction's pair wrapper
-        # and its two projections, extracted together, and read under their own names.
-        self.assertIn("extract_lets -merge +onlyGivenNames m s2 s1_1 at hr", mul_round)
-        self.assertIn("extract_lets -merge +onlyGivenNames s r0_1 cf_1 at hr", mul_round)
-        self.assertIn("have e_r0_1 : r0_1 = (addc r0 s1_1 cf).1 := rfl", mul_round)
-        self.assertIn("have e_cf_1 : cf_1 = (addc r0 s1_1 cf).2 := rfl", mul_round)
-        # The round's and the calling block's local definitions stay transparent.
-        self.assertNotIn("clear_value", mul_round)
-        self.assertNotIn("clear_value", "\n".join(gen.skeleton(routines["mulMont"])))
-        helper_text = "\n".join(code for code, _ in mul_round_routine.lines)
-        self.assertIn("let m := mulx b lhs.l0", helper_text)
-        self.assertIn("let s := addc r0 s1 cf", helper_text)
-        self.assertIn("let r0 := s.1", helper_text)
-        self.assertIn("let cf := s.2", helper_text)
-        # The omitted entry load aliases RDX to b only until the source writes RDX again.
-        # Reduction products must use the rebound Montgomery quotient, never b.
-        expressions = [entry["expr"] for entry in mul_round_routine.emitter.entries]
-        quotient_index = expressions.index("mulLo rdx inv")
-        self.assertTrue(any("mulx rdx modulus.l1" in expr for expr in expressions[quotient_index:]))
-        self.assertFalse(any("mulx b modulus.l1" in expr for expr in expressions[quotient_index:]))
-
-        from_mont = "\n".join(gen.skeleton(routines["fromMont"]))
-        self.assertIn("extract_lets -merge +onlyGivenNames n z0_1 cf at hr", from_mont)
-        self.assertIn("have e_z0_1 : z0_1 = (neg z0).1 := rfl", from_mont)
-        self.assertIn("have e_cf : cf = (neg z0).2 := rfl", from_mont)
-        self.assertIn("clear_value", from_mont)
-
     def test_transcription_snapshots_match_committed_files(self):
         self.assertEqual(gen_aarch64.gen_program(), gen_aarch64.OUT_PROGRAM.read_text())
         self.assertEqual(gen_x86_64.gen_program(), gen_x86_64.OUTPUT.read_text())
-
-    def test_all_x86_routines_and_factored_round_generate_shared_skeletons(self):
-        routines = gen_x86_64.all_routines()
-        self.assertEqual(
-            [routine.name for routine in routines],
-            ["addMod", "subMod", "mulMontRound", "mulMont", "squareLo", "squareHi", "fromMont"],
-        )
-        for routine in routines:
-            with self.subTest(routine=routine.name):
-                generated = gen.skeleton(routine)
-                self.assertEqual(
-                    generated[0],
-                    f"  -- generated skeleton for `{routine.name}`: do not edit between the annotations",
-                )
-                self.assertEqual(generated[-1], "  subst hr")
-                self.assertIs(
-                    gen.find_routine(f"X86_64:{routine.name}").emitter.__class__,
-                    routine.emitter.__class__,
-                )
 
     def test_round_argument_fields_are_routine_local(self):
         aarch_round = next(
@@ -758,15 +756,18 @@ class SharedGeneratorTests(unittest.TestCase):
         self.assertEqual(gen.proj("acc", "r4", aarch_round.arg_fields), "2.2.2.2.1")
         self.assertEqual(gen.proj("acc", "r4", x86_round.arg_fields), "2.2.2.2.1")
 
-    def test_bare_skeleton_lookup_retains_aarch64_legacy(self):
-        self.assertEqual(gen.find_routine("addMod").architecture, "AArch64")
+    def test_skeleton_lookup_names_the_architecture(self):
+        self.assertEqual(gen.find_routine("AArch64:addMod").architecture, "AArch64")
         self.assertEqual(gen.find_routine("X86_64:addMod").architecture, "X86_64")
+        # Both backends have an `addMod`, so a bare name would be ambiguous.
+        with self.assertRaisesRegex(ValueError, "expected ARCH:NAME, not addMod"):
+            gen.find_routine("addMod")
 
 
 class SkeletonCheckerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.routine = gen_x86_64.all_routines()[0]
+        cls.routine = gen.find_routine("X86_64:addMod")
         cls.skeleton = "\n".join(gen.skeleton(cls.routine)) + "\n"
 
     def check_text(self, text):
@@ -816,7 +817,7 @@ class SkeletonCheckerTests(unittest.TestCase):
             self.assertIn("cannot read proof file", diagnostics.getvalue())
 
     def test_manifest_selects_existing_files_and_rejects_mismatched(self):
-        add_path = gen.ROOT / "lean/PastaAsm/X86_64/Spec/Add.lean"
+        add_path = gen.ROOT / "lean/PastaCurves/X86_64/Spec/Add.lean"
         available = gen.architecture_routines()
         for name, (arch, expected_names) in gen.SPEC_MANIFEST.items():
             with self.subTest(path=name):
@@ -835,6 +836,84 @@ class SkeletonCheckerTests(unittest.TestCase):
                         gen.parse_spec_manifest(str(manifest_path))
         with self.assertRaisesRegex(ValueError, "belongs to X86_64, not AArch64"):
             gen.parse_spec_manifest(f"AArch64:{add_path}")
+
+
+class KnownAnswerTests(unittest.TestCase):
+    """The known-answer literals of the backend tests, read for `KnownAnswers.lean`."""
+
+    SOURCE = """
+const FP: Field = Field {
+    modulus: fp::MODULUS.0,
+    two_r: [
+        0x1,
+        0x2,
+        0x3,
+        0x4,
+    ],
+};
+"""
+
+    def test_literals_are_read_in_order_and_references_skipped(self):
+        self.assertEqual(gen.parse_known_answers(self.SOURCE), [("FP", "two_r", [1, 2, 3, 4])])
+
+    def test_a_literal_without_a_definition_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "no known-answer definition"):
+            gen.parse_known_answers(self.SOURCE.replace("two_r", "five_r"))
+
+    def test_an_unknown_field_constant_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "unknown field constant"):
+            gen.parse_known_answers(self.SOURCE.replace("const FP", "const FR"))
+
+    def test_the_tests_have_literals(self):
+        with self.assertRaisesRegex(ValueError, "no known-answer literals"):
+            gen.parse_known_answers("")
+
+    def test_each_literal_becomes_one_kernel_checked_example(self):
+        rendered = gen.render_known_answers(self.SOURCE)
+        self.assertEqual(rendered.count("decide +kernel"), 1)
+        self.assertIn(
+            "let x := Limbs.toNat\n"
+            "      ⟨0x0000000000000001, 0x0000000000000002, 0x0000000000000003, "
+            "0x0000000000000004⟩\n",
+            rendered,
+        )
+
+
+class FieldTypeTests(unittest.TestCase):
+    """The field types' constants, read for `FieldTypes.lean`."""
+
+    SOURCE = """
+pub(crate) const MODULUS: Fp = Fp([0x1, 0x2, 0x0, 0x4]);
+pub(crate) const INV: u64 = 0x5;
+pub(crate) const R: Fp = Fp([0x6, 0x7, 0x8, 0x9]);
+pub(crate) const R2: Fp = Fp([
+    0xa,
+    0xb,
+    0xc,
+    0xd,
+]);
+pub(crate) const R3: Fp = Fp([0xe, 0xf, 0x10, 0x11]);
+"""
+
+    def test_constants_are_read_as_the_source_spells_them(self):
+        modulus, inv, powers = gen.parse_field_type(self.SOURCE, "fp.rs")
+        self.assertEqual(modulus, ["0x1", "0x2", "0x0", "0x4"])
+        self.assertEqual(inv, "0x5")
+        self.assertEqual(powers["R2"], ["0xa", "0xb", "0xc", "0xd"])
+
+    def test_a_missing_constant_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "missing R3"):
+            gen.parse_field_type(self.SOURCE.replace("const R3", "const S3"), "fp.rs")
+        with self.assertRaisesRegex(ValueError, "missing INV"):
+            gen.parse_field_type(self.SOURCE.replace("const INV", "const NV"), "fp.rs")
+
+    def test_each_constant_becomes_one_example(self):
+        rendered = gen.render_field_types({"fp": self.SOURCE, "fq": self.SOURCE})
+        self.assertEqual(rendered.count("decide +kernel"), 6)
+        self.assertEqual(rendered.count("  decide\n"), 4)
+        self.assertIn("example : pallasBase.modulus =\n    ⟨0x1, 0x2, 0x0, 0x4⟩ := by\n", rendered)
+        self.assertIn("example : vestaBase.inv = 0x5 := by\n", rendered)
+        self.assertIn("      ⟨0xa, 0xb, 0xc, 0xd⟩\n    x = R^2 % p := by\n", rendered)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,3 @@
-// Copyright the pasta-asm contributors.
-// SPDX-License-Identifier: Apache-2.0
-
 //! The module's entry points, re-exported at its root.
 
 use core::hint::black_box;
