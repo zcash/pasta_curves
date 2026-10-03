@@ -17,8 +17,13 @@ import PastaCurves.Inversion.HullCert
 import PastaCurves.Inversion.SignMag
 import PastaCurves.Inversion.PackedWords
 import PastaCurves.Inversion.Composition
+import PastaCurves.Inversion.Vectors
 import PastaCurves.AArch64
 import PastaCurves.X86_64
+import PastaCurves.Portable.Funs
+import PastaCurves.Portable.Words
+import PastaCurves.Portable.Vectors
+import PastaCurves.Portable.Spec
 
 /-!
 # The assembly routines, formalized

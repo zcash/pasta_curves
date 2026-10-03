@@ -9,7 +9,8 @@
 # Usage, from anywhere in the checkout: scripts/ci.sh
 # LAKE selects the lake that builds the formalization (default: `lake` from PATH, which
 # should be the elan-managed one; see AGENTS.md). PYTHON selects the interpreter that runs the
-# generator and the checkers (default: `python3` from PATH).
+# generator and the checkers (default: `python3` from PATH). CHARON and AENEAS select the binaries
+# that translate the portable blocks (default: those that `lean/scripts/fetch_aeneas.sh` fetches).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -171,11 +172,22 @@ else
 fi
 
 # ---- The formalization (lean.yml) ----
-step "lake build --wfail"
-(cd lean && "$LAKE" build --wfail)
+step "lake build, with warnings outside Aeneas' library failing it"
+LAKE="$LAKE" lean/scripts/build.sh
+LAKE="$LAKE" lean/scripts/test_build.sh
 
 step "the transcription and the proof skeletons are current"
 lean/scripts/check.sh
+
+step "the Aeneas translation is current"
+# The check fails, rather than fetching again, if the pinned release has changed since the fetch.
+if { [ -n "${CHARON:-}" ] && [ -n "${AENEAS:-}" ]; } || [ -e lean/work/aeneas/release ]; then
+  lean/scripts/gen_portable.sh --check
+else
+  skip "the Aeneas translation check" \
+    "  fetch Charon and Aeneas under lean/work/ as CI does (see .github/workflows/lean.yml):
+    lean/scripts/fetch_aeneas.sh"
+fi
 
 step "the export-axiom checker's own tests"
 (cd lean && "$PYTHON" -m unittest discover -s scripts -p 'test_check_export_axioms.py')
