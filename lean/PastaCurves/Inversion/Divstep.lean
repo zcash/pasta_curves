@@ -360,4 +360,74 @@ theorem M_entry_range (n : ℕ) (s : State) :
       have hb : 0 ≤ t.g % 2 ∧ t.g % 2 ≤ 1 := by omega
       refine ⟨⟨?_, ?_⟩, ⟨?_, ?_⟩, ⟨?_, ?_⟩, ⟨?_, ?_⟩⟩ <;> nlinarith
 
+/-! ## The parity and the size of `d` -/
+
+/-- A step keeps the parity of `d`: the new `d` is `2 ± d`. -/
+theorem divstep_d_emod_two (s : State) : (divstep s).d % 2 = s.d % 2 := by
+  unfold divstep; split_ifs <;> dsimp only <;> omega
+
+/-- So `d` stays odd through every batch, as the step theorems on words require. -/
+theorem divsteps_d_emod_two (n : ℕ) (s : State) : (divsteps n s).d % 2 = s.d % 2 := by
+  induction n generalizing s with
+  | zero => rfl
+  | succ n ih => rw [divsteps_succ, ih, divstep_d_emod_two]
+
+/-- A step grows the magnitude of `d` by at most `2`: the new `d` is `2 ± d`. -/
+theorem divstep_d_abs_le (s : State) : |(divstep s).d| ≤ |s.d| + 2 := by
+  have h1 := le_abs_self s.d
+  have h2 := neg_abs_le s.d
+  unfold divstep; split_ifs <;> dsimp only <;> rw [abs_le] <;> constructor <;> omega
+
+/-- After `n` steps the magnitude of `d` has grown by at most `2n`: the bound that keeps the `d`
+word of a block small. -/
+theorem divsteps_d_abs_le (n : ℕ) (s : State) : |(divsteps n s).d| ≤ |s.d| + 2 * n := by
+  induction n generalizing s with
+  | zero => simp
+  | succ n ih =>
+    rw [divsteps_succ]
+    have h1 := ih (divstep s)
+    have h2 := divstep_d_abs_le s
+    push_cast
+    linarith
+
+/-! ## Sign symmetry
+
+The recurrence commutes with negating `f` and `g`, since the branch depends on `d` and the parity of
+`g` only. An implementation may therefore run a batch on negated low words and still read the true
+matrix off them. -/
+
+/-- The step matrix depends on `d` and the parity of `g` only. -/
+theorem T_neg (s : State) : T ⟨s.d, -s.f, -s.g⟩ = T s := by
+  have hpar : (-s.g) % 2 = s.g % 2 := by omega
+  unfold T; simp only [hpar]
+
+/-- Negating `f` and `g` negates the step's `f` and `g` and leaves its `d`, for odd `f`. -/
+theorem divstep_neg (s : State) (hf : s.f % 2 = 1) :
+    divstep ⟨s.d, -s.f, -s.g⟩ = ⟨(divstep s).d, -(divstep s).f, -(divstep s).g⟩ := by
+  have hpar : (-s.g) % 2 = s.g % 2 := by omega
+  unfold divstep
+  simp only [hpar]
+  split_ifs with h
+  · simp only [State.mk.injEq]
+    refine ⟨trivial, trivial, ?_⟩
+    omega
+  · simp only [State.mk.injEq]
+    refine ⟨trivial, trivial, ?_⟩
+    rcases Int.emod_two_eq_zero_or_one s.g with h2 | h2 <;> rw [h2] <;> omega
+
+/-- The symmetry iterated: `n` steps on the negated `f`, `g` are the negation of `n` steps, with
+the same `d`. -/
+theorem divsteps_neg (n : ℕ) (s : State) (hf : s.f % 2 = 1) :
+    divsteps n ⟨s.d, -s.f, -s.g⟩ = ⟨(divsteps n s).d, -(divsteps n s).f, -(divsteps n s).g⟩ := by
+  induction n generalizing s with
+  | zero => rfl
+  | succ n ih => rw [divsteps_succ, divsteps_succ, divstep_neg s hf, ih _ (divstep_f_odd s hf)]
+
+/-- The `n`-step matrix is unchanged by negating `f` and `g`: a block that runs a batch on negated
+words reads the true matrix off it. -/
+theorem M_neg (n : ℕ) (s : State) (hf : s.f % 2 = 1) : M n ⟨s.d, -s.f, -s.g⟩ = M n s := by
+  induction n generalizing s with
+  | zero => rfl
+  | succ n ih => rw [M_succ, M_succ, divstep_neg s hf, ih _ (divstep_f_odd s hf), T_neg]
+
 end PastaCurves.Inversion

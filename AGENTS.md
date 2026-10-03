@@ -97,14 +97,16 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 The `asm` module provides assembly backends for the Pasta field arithmetic. It contains an
 AArch64 backend and an x86-64 backend: Montgomery multiplication and squaring, and modular
 addition and subtraction, as inline `asm!` blocks, and a repeated-squaring chain and conversion
-out of Montgomery form composed from them. It is the one part of the crate that allows unsafe
-code. Its priorities are those of the crate: **correctness, constant-time behaviour, and
-performance**, in that order.
+out of Montgomery form composed from them; and, on AArch64, a constant-time inversion composed
+from six more blocks. It is the one part of the crate that allows unsafe code. Its priorities
+are those of the crate: **correctness, constant-time behaviour, and performance**, in that
+order.
 
-The routines are transcriptions of Supranational's Semolina v0.1.4 (see `src/asm/README.md`).
-The instruction streams are the object of machine-checked correctness proofs, so a change to
-an instruction is a change to a specification: keep the transcription, its documentation, and
-the proofs in step, and do not "improve" the assembly in passing.
+The Montgomery routines are transcriptions of Supranational's Semolina v0.1.4, and the
+inversion's blocks are adapted from s2n-bignum's `bignum_montinv_p256` (see
+`src/asm/README.md`). The instruction streams are the object of machine-checked correctness
+proofs, so a change to an instruction is a change to a specification: keep the transcription,
+its documentation, and the proofs in step, and do not "improve" the assembly in passing.
 
 With the `asm` feature, the module provides a backend on `target_arch = "aarch64"`, and on
 `target_arch = "x86_64"` with 64-bit pointers except on Apple targets (see `src/asm/README.md`).
@@ -125,8 +127,10 @@ allocation.
 
 A cfg-gated test that compiles out still reports success, so CI counts the `#[test]`
 functions under `src/asm` and requires the run of the module's tests to report exactly that
-many passed, in both profiles. CI also builds `core` from source on a nightly toolchain
-instead of using the sysroot, which proves that nothing in the backend reaches for std:
+many passed, in both profiles. A test that needs one architecture lives in that backend's
+file (`aarch64.rs` or `x86_64.rs`), which is only counted on that architecture. CI also
+builds `core` from source on a nightly toolchain instead of using the sysroot, which proves
+that nothing in the backend reaches for std:
 `cargo +nightly build --release --no-default-features -Z build-std=core,compiler_builtins`
 with `--target` set to `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, and
 `x86_64-apple-darwin` in turn, for each backend and for a target without one.
@@ -163,8 +167,9 @@ cd .. && lean/scripts/check.sh   # regenerate the transcription and check the sk
   `lean/scripts/gen.py` from the Rust `asm!` blocks and the reference vectors. Never edit them
   by hand; change the generator or its inputs and regenerate. Architecture-specific
   `Compositions.lean` mirrors the actual Rust compositions, not another backend's implementation.
-  Shared `Compositions.lean` models common operand checks; `Fields.lean` states the two fields'
-  constants. A change on either side changes the other.
+  Shared `Compositions.lean` models common operand checks and the inversion's driver over a
+  record of a backend's blocks; `Fields.lean` states the two fields' constants. A change on
+  either side changes the other.
 - **Every architecture's block proofs use generated, checked skeletons.** Generated skeleton
   lines in `Spec.lean` (or `Spec/*.lean`) are not hand-edited. Only theorem statements and
   `-- BEGIN ... -- END` annotation blocks are hand-written. Skeleton generation and `check_spec`

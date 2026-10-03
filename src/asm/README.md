@@ -2,7 +2,8 @@
 
 Assembly backends for the crate's Pasta (Pallas and Vesta) field arithmetic. The module provides
 AArch64 and x86-64 backends for modular addition and subtraction, Montgomery multiplication and
-squaring, a repeated-squaring chain, and conversion out of Montgomery form.
+squaring, a repeated-squaring chain, and conversion out of Montgomery form, and an AArch64 backend
+for constant-time inversion.
 
 ## Provenance
 
@@ -20,6 +21,15 @@ reaches the chain and the conversion through assembled routines instead. The add
 subtraction blocks, which are not Semolina routines, and `src/asm/x86_64.rs`, an x86-64
 transcription of the same Montgomery routines rescheduled around MULX and ADCX/ADOX, were
 imported from zakura-pasta-curves.
+
+The inversion, `invert`, follows s2n-bignum's `bignum_montinv_p256` at commit
+[`ec62054cc1864839d44b1acc6e6a3f9eff5b6e68`](https://github.com/awslabs/s2n-bignum/blob/ec62054cc1864839d44b1acc6e6a3f9eff5b6e68/arm/p256/bignum_montinv_p256.S)
+(Apache-2.0 OR ISC OR MIT-0), the serial variant of the algorithm of Bernstein, Chen, Harrison,
+Huang, Maxwell, Wang, Wuille, and Yang, "Accelerating and verifying constant-time modular inversion"
+(EUROCRYPT 2026): its `divstep59` macro on named registers with the Pasta constants, its updates of
+`f`, `g`, `u`, and `v` as blocks of one matrix row each, and its almost-Montgomery reduction for the
+Pasta modulus shape, composed in Rust as the book's
+[constant-time inversion](../../book/src/design/inversion.md) page describes.
 
 ## Usage
 
@@ -68,16 +78,20 @@ The squaring blocks and the conversion out of Montgomery form make the same canc
 ## Testing
 
 Where the module has a backend, `cargo test --release --features asm` runs known-answer tests of the
-six entry points for both fields and replays the reference vectors recorded from the AArch64
-assembly; in a debug build it also checks that the operand assertions fire outside the contracts.
-Without the `asm` feature, on unsupported platforms, or with `--cfg pasta_curves_noasm`, the
-backend has no tests to run. `scripts/ci.sh` runs every check CI runs.
+entry points for both fields and replays the reference vectors recorded from the AArch64 assembly;
+in a debug build it also checks that the operand assertions fire outside the contracts. The
+inversion's blocks are also tested one by one against an integer model of the algorithm. Without
+the `asm` feature, on unsupported platforms, or with `--cfg pasta_curves_noasm`, the backend has
+no tests to run. `scripts/ci.sh` runs every check CI runs.
 
 ## Formal verification
 
 `lean/` holds a Lean 4 development that models the routines formally and contributes to assuring
-their correctness. The model is at the instruction level. Individual blocks of assembly are
-proven; from those, each of the six entry points is proved at either Pasta field, under the
-condition that the entry point asserts. The transcription is generated from the module's own
-inline blocks, CI regenerates and diffs it, and the independent `nanoda` implementation of the
-Lean kernel re-checks the build. See [`lean/README.md`](../../lean/README.md).
+their correctness. The model is at the instruction level. Individual blocks of assembly are proven;
+from those, each of the six Montgomery entry points is proved at either Pasta field, under the
+condition that the entry point asserts. The inversion's algorithm is proved on words
+(`montInv_spec`), each of its six blocks is proved to compute its word-level function, and `invert`
+is proved at either field from their composition (`invert_entry_spec`). The transcription is
+generated from the module's own inline blocks, CI regenerates and diffs it, and the independent
+`nanoda` implementation of the Lean kernel re-checks the build. See
+[`lean/README.md`](../../lean/README.md).

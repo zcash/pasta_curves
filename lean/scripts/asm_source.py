@@ -3,6 +3,12 @@
 This module parses only the Rust and ``asm!`` surface syntax needed by the Pasta
 backends. Architecture-specific instruction semantics belong in their emitters.
 Unsupported syntax is rejected rather than guessed.
+
+A template line of an ``asm!`` block may be an invocation of a ``macro_rules!`` macro of the
+same source file (a repeated instruction sequence, written once). `parse_macros` reads the
+definitions, restricted to arms whose pattern is a sequence of plain identifiers and whose body
+is a string literal or a ``concat!`` of literals and earlier arms, and `parse_function` expands
+each invocation into its instructions, recording where they came from in `origins`.
 """
 
 import dataclasses
@@ -17,6 +23,9 @@ class GenerationError(ValueError):
     """The Rust source uses a construct the mechanical model does not accept."""
 
 
+_IDENTIFIER_PATTERN = r"[A-Za-z_]\w*"
+
+
 @dataclasses.dataclass(frozen=True)
 class Declaration:
     name: str
@@ -27,12 +36,25 @@ class Declaration:
 
 
 @dataclasses.dataclass(frozen=True)
+class MacroOrigin:
+    """Where an instruction of an `asm!` block came from, when a macro invocation in template
+    position expanded to it: the macro's name, the arm's pattern (its tokens, space-separated),
+    and the invocation's index among the block's macro invocations."""
+
+    macro: str
+    arm: str
+    site: int
+
+
+@dataclasses.dataclass(frozen=True)
 class ParsedFunction:
     instructions: tuple[str, ...]
     declarations: tuple[Declaration, ...]
     locals: dict[str, tuple[str, int]]
     returns: tuple[str, ...]
     options: set[str]
+    # One entry per instruction: `None` for a literal template string, else its macro origin.
+    origins: tuple[MacroOrigin | None, ...] = ()
 
 
 def _line_comment_end(text: str, start: int) -> int:
@@ -285,21 +307,156 @@ def parse_declaration(
     return Declaration(name, kind, value, output)
 
 
+_MACRO_INVOCATION = re.compile(rf"({_IDENTIFIER_PATTERN})\s*!\s*\(")
+
+
+def _arm_key(pattern: str) -> str:
+    """A macro arm's pattern as a key: its tokens, which must be plain identifiers, joined by
+    single spaces. The empty pattern is the empty key."""
+    tokens = pattern.split()
+    if any(not re.fullmatch(_IDENTIFIER_PATTERN, token) for token in tokens):
+        raise GenerationError(f"unsupported macro pattern `{pattern.strip()}`")
+    return " ".join(tokens)
+
+
+def _macro_literal(text: str, start: int) -> tuple[str, int]:
+    """A string literal of a macro body: only the escape `\\n` is allowed in it."""
+    end, escaped = _quoted_end(text, start)
+    body = text[start + 1 : end - 1]
+    if escaped:
+        if re.search(r"\\[^n]", body):
+            raise GenerationError("macro template strings may escape only `\\n`")
+        body = body.replace("\\n", "\n")
+    return body, end
+
+
+def _expand_macro_body(body: str, macros: dict[str, dict[str, str]], depth: int) -> str:
+    """The text of a macro arm's body: a string literal, or `concat!` of string literals and
+    invocations of already-parsed arms."""
+    pos = _skip_trivia(body, 0)
+    if pos < len(body) and body[pos] == '"':
+        text, end = _macro_literal(body, pos)
+        if _skip_trivia(body, end) != len(body):
+            raise GenerationError("unsupported macro body")
+        return text
+    concat = re.compile(r"concat\s*!\s*\(").match(body, pos)
+    if not concat:
+        raise GenerationError("a macro body must be a string literal or `concat!`")
+    close = matching_delimiter(body, concat.end() - 1, "(", ")")
+    if _skip_trivia(body, close + 1) != len(body):
+        raise GenerationError("unsupported macro body")
+    inner = body[concat.end() : close]
+    pieces: list[str] = []
+    pos = 0
+    while True:
+        pos = _skip_trivia(inner, pos)
+        if pos == len(inner):
+            break
+        if inner[pos] == '"':
+            text, end = _macro_literal(inner, pos)
+            pieces.append(text)
+        else:
+            invocation = _MACRO_INVOCATION.match(inner, pos)
+            if not invocation:
+                raise GenerationError("unsupported item in a macro's `concat!`")
+            end = matching_delimiter(inner, invocation.end() - 1, "(", ")")
+            pieces.append(
+                _expand_invocation(
+                    invocation.group(1), inner[invocation.end() : end], macros, depth + 1
+                )
+            )
+            end += 1
+        pos = _skip_trivia(inner, end)
+        if pos < len(inner):
+            if inner[pos] != ",":
+                raise GenerationError("items of a macro's `concat!` must be comma-separated")
+            pos += 1
+    return "".join(pieces)
+
+
+def _expand_invocation(
+    name: str, pattern: str, macros: dict[str, dict[str, str]], depth: int = 0
+) -> str:
+    if depth > 8:
+        raise GenerationError(f"macro {name}! expands too deeply")
+    arms = macros.get(name)
+    if arms is None:
+        raise GenerationError(f"unknown macro {name}!")
+    key = _arm_key(pattern)
+    if key not in arms:
+        raise GenerationError(f"macro {name}! has no arm for `{key}`")
+    return arms[key]
+
+
+def parse_macros(source: str) -> dict[str, dict[str, tuple[str, ...]]]:
+    """The `macro_rules!` definitions of a source file, restricted to the shape the blocks use:
+    every arm's pattern is a sequence of plain identifiers, and its body is a string literal or
+    a `concat!` of string literals and invocations of arms defined earlier. The result maps a
+    macro's name to its arms, each expanded to its instruction lines; the body's text must end
+    with a newline, and its lines are the instructions."""
+    masked = masked_noncode(source)
+    macros: dict[str, dict[str, str]] = {}
+    for match in re.finditer(rf"\bmacro_rules\s*!\s*({_IDENTIFIER_PATTERN})\s*\{{", masked):
+        name = match.group(1)
+        if name in macros:
+            raise GenerationError(f"macro {name}! is defined twice")
+        close = matching_delimiter(source, match.end() - 1, "{", "}")
+        body = source[match.end() : close]
+        arms: dict[str, str] = {}
+        macros[name] = arms
+        pos = _skip_trivia(body, 0)
+        while pos < len(body):
+            if body[pos] != "(":
+                raise GenerationError(f"macro {name}!: unsupported arm syntax")
+            pattern_close = matching_delimiter(body, pos, "(", ")")
+            key = _arm_key(body[pos + 1 : pattern_close])
+            if key in arms:
+                raise GenerationError(f"macro {name}!: duplicate arm `{key}`")
+            pos = _skip_trivia(body, pattern_close + 1)
+            if not body.startswith("=>", pos):
+                raise GenerationError(f"macro {name}!: unsupported arm syntax")
+            pos = _skip_trivia(body, pos + 2)
+            if pos >= len(body) or body[pos] != "{":
+                raise GenerationError(f"macro {name}!: unsupported arm syntax")
+            body_close = matching_delimiter(body, pos, "{", "}")
+            try:
+                arms[key] = _expand_macro_body(body[pos + 1 : body_close], macros, 0)
+            except GenerationError as error:
+                raise GenerationError(f"macro {name}!: {error}") from error
+            pos = _skip_trivia(body, body_close + 1)
+            if pos < len(body) and body[pos] == ";":
+                pos = _skip_trivia(body, pos + 1)
+    lines: dict[str, dict[str, tuple[str, ...]]] = {}
+    for name, arms in macros.items():
+        lines[name] = {}
+        for key, text in arms.items():
+            if not text.endswith("\n"):
+                raise GenerationError(f"macro {name}!: the arm `{key}` must end with a newline")
+            instructions = tuple(line.strip() for line in text[:-1].split("\n"))
+            if any(not instruction for instruction in instructions):
+                raise GenerationError(f"macro {name}!: the arm `{key}` has an empty line")
+            lines[name][key] = instructions
+    return lines
+
+
 def _parse_asm(
     inner: str,
     function: str,
     *,
+    macros: dict[str, dict[str, tuple[str, ...]]],
     reserved_names: set[str],
     fixed_registers: set[str],
     const_operands: set[str],
     allowed_options: set[str],
     required_options: set[str],
-) -> tuple[tuple[str, ...], tuple[Declaration, ...], set[str]]:
+) -> tuple[tuple[str, ...], tuple[MacroOrigin | None, ...], tuple[Declaration, ...], set[str]]:
     """Consume the complete restricted grammar of one `asm!` invocation."""
     instructions: list[str] = []
+    origins: list[MacroOrigin | None] = []
     declarations: list[Declaration] = []
     options: set[str] | None = None
     operands_started = False
+    sites = 0
     pos = 0
     while True:
         pos = _skip_trivia(inner, pos)
@@ -320,6 +477,26 @@ def _parse_asm(
             if pos >= len(inner) or inner[pos] != ",":
                 raise GenerationError(f"{function}: asm template must be followed by a comma")
             instructions.append(instruction.strip())
+            origins.append(None)
+            pos += 1
+            continue
+        invocation = _MACRO_INVOCATION.match(inner, pos)
+        if invocation and not operands_started:
+            name = invocation.group(1)
+            end = matching_delimiter(inner, invocation.end() - 1, "(", ")")
+            arms = macros.get(name)
+            if arms is None:
+                raise GenerationError(f"{function}: unknown macro {name}! in template position")
+            key = _arm_key(inner[invocation.end() : end])
+            if key not in arms:
+                raise GenerationError(f"{function}: macro {name}! has no arm for `{key}`")
+            pos = _skip_trivia(inner, end + 1)
+            if pos >= len(inner) or inner[pos] != ",":
+                raise GenerationError(f"{function}: asm template must be followed by a comma")
+            origin = MacroOrigin(name, key, sites)
+            sites += 1
+            instructions.extend(arms[key])
+            origins.extend([origin] * len(arms[key]))
             pos += 1
             continue
 
@@ -355,7 +532,7 @@ def _parse_asm(
         raise GenerationError(f"{function}: unsupported options {sorted(unsupported_options)}")
     if not required_options.issubset(options):
         raise GenerationError(f"{function}: requires options {sorted(required_options)}")
-    return tuple(instructions), tuple(declarations), options
+    return tuple(instructions), tuple(origins), tuple(declarations), options
 
 
 _IDENTIFIER = r"[A-Za-z_]\w*"
@@ -548,9 +725,10 @@ def parse_function(
     asm = macros[0]
     asm_open = masked_body.find("(", asm.start())
     asm_close = matching_delimiter(body, asm_open, "(", ")")
-    instructions, declarations, options = _parse_asm(
+    instructions, origins, declarations, options = _parse_asm(
         body[asm_open + 1 : asm_close],
         function,
+        macros=parse_macros(source),
         reserved_names=reserved_names,
         fixed_registers=fixed_registers,
         const_operands=const_operands,
@@ -560,7 +738,7 @@ def parse_function(
 
     locals_map = _parse_function_prefix(body, masked_body, asm.start(), function, expected)
     returns = _parse_function_suffix(body, masked_body, asm_close, function, result_count)
-    return ParsedFunction(instructions, declarations, locals_map, returns, options)
+    return ParsedFunction(instructions, declarations, locals_map, returns, options, origins)
 
 
 def declaration_directions(parsed: ParsedFunction, function: str) -> dict[str, str]:

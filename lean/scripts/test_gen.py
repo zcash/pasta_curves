@@ -19,6 +19,37 @@ import gen_aarch64
 import gen_x86_64
 
 
+def word_step_groups(skeleton):
+    """The names that each `word_step` of a skeleton extracts, in order: a step's items are
+    separated by commas outside brackets, and continue over its indented continuation lines."""
+
+    def names(step):
+        found, depth, item = [], 0, ""
+        for char in step + ",":
+            if char in "([⟨{":
+                depth += 1
+            elif char in ")]⟩}":
+                depth -= 1
+            if char == "," and depth == 0:
+                found.append(item.split()[0])
+                item = ""
+            else:
+                item += char
+        return found
+
+    groups, step = [], None
+    for line in list(skeleton) + [""]:
+        if step is not None and line.startswith("      "):
+            step += " " + line.strip()
+            continue
+        if step is not None:
+            groups.append(names(step))
+            step = None
+        if line.startswith("  word_step "):
+            step = line[len("  word_step ") :].removeprefix("-clear ")
+    return groups
+
+
 class DeclarationTests(unittest.TestCase):
     def test_inout_discard_and_named_outputs_are_parsed(self):
         discarded = gen_x86_64.parse_declaration("z3 = inout(reg) product[3] => _,")
@@ -213,6 +244,96 @@ class AArch64WriteDirectionTests(unittest.TestCase):
         gen_aarch64.Emitter([]).step("mov", ["xzr", "xzr"], "mov xzr, xzr")
 
 
+class AArch64FlagFormTests(unittest.TestCase):
+    """A condition reads the flags in the form the last flag-setting instruction produced."""
+
+    @staticmethod
+    def emitter(*registers):
+        emitter = gen_aarch64.Emitter([], {register: "inout" for register in registers})
+        for register in registers:
+            emitter.bind(register, "0", "argument", reads=())
+        return emitter
+
+    def run_steps(self, emitter, *lines):
+        for line in lines:
+            op, rest = line.split(" ", 1)
+            emitter.step(op, gen_aarch64.tokenize(rest), line)
+
+    def test_carry_condition_after_four_flags_is_rejected(self):
+        emitter = self.emitter("a", "b")
+        self.run_steps(emitter, "tst a, #1")
+        with self.assertRaisesRegex(ValueError, "c read while the flags are not in that form"):
+            self.run_steps(emitter, "csel a, a, b, cs")
+
+    def test_four_flag_condition_after_carry_chain_is_rejected(self):
+        emitter = self.emitter("a", "b")
+        self.run_steps(emitter, "adds a, a, b")
+        with self.assertRaisesRegex(ValueError, "fl read while the flags are not in that form"):
+            self.run_steps(emitter, "csel a, a, b, ne")
+
+    def test_divstep_conditions_and_signed_operations_transcribe(self):
+        emitter = self.emitter("d", "pf", "pg", "t", "m")
+        self.run_steps(
+            emitter,
+            "tst pg, #1",
+            "csel t, pf, xzr, ne",
+            "ccmp d, xzr, #8, ne",
+            "cneg d, d, ge",
+            "csel pf, pg, pf, ge",
+            "add pg, pg, t",
+            "add d, d, #2",
+            "asr pg, pg, #1",
+            "add m, pf, #0x100, lsl #12",
+            "sbfx m, m, #21, #21",
+            "add m, m, m, lsl #21",
+            "cmp m, xzr",
+            "csetm t, mi",
+            "cneg m, m, mi",
+            "mneg t, m, d",
+            "msub m, t, d, pf",
+            "madd m, t, d, pf",
+            "extr m, pf, pg, #59",
+            "eor m, m, t",
+            "neg m, m",
+            "sub m, m, t",
+        )
+        expressions = [entry["expr"] for entry in emitter.entries[5:]]
+        self.assertEqual(
+            expressions,
+            [
+                "tstFlags (andw pg 1)",
+                "cselNe fl pf 0",
+                "ccmpNe fl d 0 8",
+                "cnegGe fl d",
+                "cselGe fl pg pf",
+                "addw pg t",
+                "addw d 2",
+                "asr pg 1",
+                "addw pf 0x100000",
+                "sbfx m 21 21",
+                "addw m (lsl m 21)",
+                "cmpFlags m 0",
+                "csetmMi fl",
+                "cnegMi fl m",
+                "mneg m d",
+                "msub t d pf",
+                "madd t d pf",
+                "extr pf pg 59",
+                "eorw m t",
+                "negw m",
+                "subw m t",
+            ],
+        )
+
+    def test_unsupported_conditions_are_rejected(self):
+        for line in ("csel a, a, b, eq", "cneg a, a, lt", "csetm a, pl", "ccmp a, xzr, #8, ge"):
+            with self.subTest(line=line):
+                emitter = self.emitter("a", "b")
+                self.run_steps(emitter, "tst a, #1")
+                with self.assertRaisesRegex(ValueError, "unexpected condition"):
+                    self.run_steps(emitter, line)
+
+
 class AArch64OperandCountTests(unittest.TestCase):
     def test_shifted_add_is_rejected(self):
         emitter = gen_aarch64.Emitter([])
@@ -250,32 +371,83 @@ class SharedAArch64ParserTests(unittest.TestCase):
         cls.source = gen_aarch64.INLINE.read_text()
 
     def test_all_real_blocks_use_shared_parsed_function_model(self):
-        for rust_name, _lean_name, _doc, arguments in gen_aarch64.INLINE_ROUTINES:
+        for config in gen_aarch64.INLINE_ROUTINES:
+            rust_name = config.rust_name
             with self.subTest(routine=rust_name):
-                rust_arguments = arguments + (["inv"] if rust_name in ("mul", "square") else [])
                 parsed = asm_source.parse_function(
                     self.source,
                     rust_name,
-                    rust_arguments,
-                    4,
+                    config.arg_names,
+                    len(config.result_fields),
                     allowed_options={"pure", "nomem", "nostack"},
                     required_options={"pure", "nomem", "nostack"},
                 )
-                instructions, declarations, locals_map, outputs, returned = (
-                    gen_aarch64.parse_inline(gen_aarch64.INLINE, rust_name, arguments)
+                instructions, declarations, locals_map, outputs, returned, origins = (
+                    gen_aarch64.parse_inline(gen_aarch64.INLINE, config)
                 )
                 self.assertIsInstance(parsed, asm_source.ParsedFunction)
                 self.assertEqual(len(instructions), len(parsed.instructions) + 1)
                 self.assertEqual(
                     declarations,
                     [
-                        (declaration.name, declaration.kind, declaration.value)
+                        (declaration.name, declaration.kind, declaration.value, declaration.output)
                         for declaration in parsed.declarations
                     ],
                 )
                 self.assertEqual(locals_map, parsed.locals)
                 self.assertEqual(outputs, asm_source.output_bindings(parsed, rust_name))
                 self.assertEqual(returned, asm_source.returned_registers(parsed, rust_name))
+                self.assertEqual(origins, parsed.origins)
+                self.assertEqual(len(origins), len(parsed.instructions))
+
+    def test_divstep_macro_expands_to_the_step_body_at_every_site(self):
+        macros = asm_source.parse_macros(self.source)
+        self.assertEqual(set(macros["divstep"]), {"core", "", "last"})
+        core = macros["divstep"]["core"]
+        self.assertEqual(len(core), 7)
+        self.assertEqual(macros["divstep"][""], core + ("tst {pg}, #2", "asr {pg}, {pg}, #1"))
+        self.assertEqual(macros["divstep"]["last"], core + ("asr {pg}, {pg}, #1",))
+        config = next(c for c in gen_aarch64.INLINE_ROUTINES if c.rust_name == "divstep59")
+        instructions, _, _, _, _, origins = gen_aarch64.parse_inline(gen_aarch64.INLINE, config)
+        sites = {}
+        for instruction, origin in zip(instructions, origins):
+            if origin is not None:
+                sites.setdefault(origin, []).append(instruction)
+        arms = [
+            (origin.arm, len(body))
+            for origin, body in sorted(sites.items(), key=lambda s: s[0].site)
+        ]
+        # Batches of 20, 20, and 19 steps, each of full steps and a last one, in invocation order.
+        expected = ([""] * 19 + ["last"]) * 2 + [""] * 18 + ["last"]
+        self.assertEqual([a for a, _ in arms], expected)
+        self.assertEqual({n for a, n in arms if a == ""}, {9})
+        self.assertEqual({n for a, n in arms if a == "last"}, {8})
+        self.assertEqual(
+            [origin.site for origin in sorted(sites, key=lambda o: o.site)], list(range(59))
+        )
+
+    def test_divstep_rounds_are_factored_from_the_macro(self):
+        routines = {routine.name: routine for routine in gen_aarch64.all_routines()}
+        block = routines["divstep59Block"]
+        calls = [entry for entry in block.emitter.entries if entry["fact"][0] == "call"]
+        # A run of consecutive invocations is one call of the round iterated over the run; the
+        # third batch's run breaks where the second batch's matrix products are scheduled.
+        self.assertEqual(
+            [entry["expr"].split(" ")[0] for entry in calls],
+            ["divstepRound^[19]", "divstepLast"] * 2
+            + ["divstepRound^[10]", "divstepRound^[8]", "divstepLast"],
+        )
+        for name in ("divstepRound", "divstepLast"):
+            body = [code for code, _ in routines[name].lines if code is not None]
+            self.assertEqual(
+                body[:4],
+                ["  let d := st.d", "  let pf := st.f", "  let pg := st.g", "  let fl := st.fl"],
+            )
+        self.assertEqual(len(routines["divstepRound"].lines), 4 + 9)
+        self.assertEqual(len(routines["divstepLast"].lines), 4 + 8)
+        # The last step's flags are carried but never read; the block leaves the binding as a comment.
+        comments = [comment for code, comment in block.lines if code is None]
+        self.assertEqual(len([c for c in comments if "fl = step" in c]), 3)
 
     def test_real_named_and_implicit_outputs_are_extracted(self):
         mul = asm_source.parse_function(
@@ -547,32 +719,29 @@ class X86RealSourceTests(unittest.TestCase):
                 prepared = gen_x86_64.SKELETON_BACKEND.prepare(
                     routine.emitter, routine.emitter.entries
                 )
-                extracted, current = [], None
-                for line in gen.skeleton(routine):
-                    if line.startswith("  extract_lets -merge +onlyGivenNames "):
-                        current = line[len("  extract_lets -merge +onlyGivenNames ") :]
-                    elif current is not None:
-                        current += " " + line.strip()
-                    if current is not None and current.endswith(" at hr"):
-                        extracted += current[: -len(" at hr")].split()
-                        current = None
+                groups = word_step_groups(gen.skeleton(routine))
+                extracted = [name for group in groups for name in group]
                 self.assertEqual(sorted(extracted), sorted(prepared.names))
                 self.assertEqual(len(extracted), len(set(extracted)))
-        square_lo = "\n".join(gen.skeleton(routines["squareLo"]))
-        self.assertIn("extract_lets -merge +onlyGivenNames s_2 z4_1 cf_5 at hr", square_lo)
+        square_lo_lines = gen.skeleton(routines["squareLo"])
+        square_lo = "\n".join(square_lo_lines)
+        self.assertIn(["s_2", "z4_1", "cf_5"], word_step_groups(square_lo_lines))
         self.assertNotIn("obtain ⟨cf_5, b_cf_5, l_z4_1⟩", square_lo)
 
         mul_round_routine = routines["mulMontRound"]
-        mul_round = "\n".join(gen.skeleton(mul_round_routine))
+        mul_round_lines = gen.skeleton(mul_round_routine)
+        mul_round = "\n".join(mul_round_lines)
         # The factored round is rendered like every other block: an instruction's pair wrapper
         # and its two projections, extracted together, and read under their own names.
-        self.assertIn("extract_lets -merge +onlyGivenNames m s2 s1_1 at hr", mul_round)
-        self.assertIn("extract_lets -merge +onlyGivenNames s r0_1 cf_1 at hr", mul_round)
-        self.assertIn("have e_r0_1 : r0_1 = (addc r0 s1_1 cf).1 := rfl", mul_round)
-        self.assertIn("have e_cf_1 : cf_1 = (addc r0 s1_1 cf).2 := rfl", mul_round)
+        self.assertIn(["m", "s2", "s1_1"], word_step_groups(mul_round_lines))
+        self.assertIn(["s", "r0_1", "cf_1"], word_step_groups(mul_round_lines))
+        self.assertIn("r0_1 := (addc r0 s1_1 cf).1 using", mul_round)
+        self.assertIn("cf_1 := (addc r0 s1_1 cf).2", mul_round)
         # The round's and the calling block's local definitions stay transparent.
-        self.assertNotIn("clear_value", mul_round)
-        self.assertNotIn("clear_value", "\n".join(gen.skeleton(routines["mulMont"])))
+        for lines in (mul_round_lines, gen.skeleton(routines["mulMont"])):
+            steps = [line for line in lines if line.startswith("  word_step")]
+            self.assertTrue(steps)
+            self.assertTrue(all(line.startswith("  word_step -clear ") for line in steps))
         helper_text = "\n".join(code for code, _ in mul_round_routine.lines)
         self.assertIn("let m := mulx b lhs.l0", helper_text)
         self.assertIn("let s := addc r0 s1 cf", helper_text)
@@ -585,11 +754,12 @@ class X86RealSourceTests(unittest.TestCase):
         self.assertTrue(any("mulx rdx modulus.l1" in expr for expr in expressions[quotient_index:]))
         self.assertFalse(any("mulx b modulus.l1" in expr for expr in expressions[quotient_index:]))
 
-        from_mont = "\n".join(gen.skeleton(routines["fromMont"]))
-        self.assertIn("extract_lets -merge +onlyGivenNames n z0_1 cf at hr", from_mont)
-        self.assertIn("have e_z0_1 : z0_1 = (neg z0).1 := rfl", from_mont)
-        self.assertIn("have e_cf : cf = (neg z0).2 := rfl", from_mont)
-        self.assertIn("clear_value", from_mont)
+        from_mont_lines = gen.skeleton(routines["fromMont"])
+        from_mont = "\n".join(from_mont_lines)
+        self.assertIn(["n", "z0_1", "cf"], word_step_groups(from_mont_lines))
+        self.assertIn("z0_1 := (neg z0).1 using", from_mont)
+        self.assertIn("cf := (neg z0).2", from_mont)
+        self.assertIn("\n  word_step n,", from_mont)
 
     def test_all_x86_routines_and_factored_round_generate_shared_skeletons(self):
         routines = gen_x86_64.all_routines()
@@ -681,8 +851,8 @@ class SharedGeneratorTests(unittest.TestCase):
             )
 
         skeleton = "\n".join(gen.skeleton(routine(StubBackend())))
-        self.assertIn("have e_x : x = lhs.l0 := rfl", skeleton)
-        self.assertIn("have e_y : y = stub x := rfl", skeleton)
+        self.assertIn("  word_step x := lhs.l0 using hlhs.1\n", skeleton)
+        self.assertIn("  word_step y := stub x\n", skeleton)
         self.assertIn("have b_y : y < 2^64 := by sorry", skeleton)
         with self.assertRaisesRegex(ValueError, "unsupported skeleton fact stub"):
             gen.skeleton(routine(gen.SkeletonBackend()))
@@ -877,6 +1047,34 @@ const FP: Field = Field {
             "0x0000000000000004⟩\n",
             rendered,
         )
+
+
+class InversionPairTests(unittest.TestCase):
+    """The inversion pairs of the backend tests, read for `KnownAnswers.lean`."""
+
+    SOURCE = """
+const FP: Field = Field {
+    inversions: [
+        (
+            [0x1, 0x2, 0x3, 0x4],
+            [0x5, 0x6, 0x7, 0x8],
+        ),
+    ],
+};
+"""
+
+    def test_pairs_are_read_in_order(self):
+        self.assertEqual(gen.parse_inversions(self.SOURCE), [("FP", 0, [1, 2, 3, 4], [5, 6, 7, 8])])
+
+    def test_a_pair_that_is_not_two_four_limb_values_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "not two four-limb values"):
+            gen.parse_inversions(self.SOURCE.replace("0x3, 0x4]", "0x3]"))
+
+    def test_each_pair_becomes_one_kernel_checked_example(self):
+        rendered = gen.render_known_answers(
+            self.SOURCE.replace("inversions", "two_r: [0x1, 0x2, 0x3, 0x4,],\n    inversions")
+        )
+        self.assertIn("z < p ∧ (x*z) % p = (if x = 0 then 0 else R^2 % p)", rendered)
 
 
 class FieldTypeTests(unittest.TestCase):

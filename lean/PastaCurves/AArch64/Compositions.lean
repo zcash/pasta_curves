@@ -4,8 +4,10 @@ import PastaCurves.AArch64.Transcription
 /-!
 # The crate's Rust around the blocks
 
-`src/asm/mod.rs` composes the crate's `sqr_n_mul` and `from_mont` from the `square` and `mul`
-blocks. These definitions mirror that Rust: the two compositions.
+`src/asm/entry.rs` composes the crate's `sqr_n_mul` and `from_mont` from the `square` and `mul`
+blocks, and `src/asm/inversion.rs` composes `invert` from a backend's six blocks, which `invert` of
+`PastaCurves/Compositions.lean` mirrors over a record of the blocks. These definitions mirror the
+first two and supply the AArch64 blocks for the third.
 -/
 
 namespace PastaCurves.AArch64
@@ -23,5 +25,12 @@ def sqrN (value modulus : Limbs) (inv : Nat) : Nat → Limbs
 /-- `sqr_n_mul`: the squaring block `count` times, then the multiplication block by `rhs`. -/
 def sqrNMul (value : Limbs) (count : Nat) (rhs modulus : Limbs) (inv : Nat) : Limbs :=
   mulMont (sqrN value modulus inv count) rhs modulus inv
+
+/-! ## The inversion -/
+
+/-- The AArch64 transcriptions of the inversion's six blocks, as `src/asm/inversion.rs` composes
+them. -/
+def invertBlocks : InvertBlocks :=
+  ⟨divstep59Block, signMagBlock, fgRowBlock, uvRowBlock, amontredBlock, condSubBlock⟩
 
 end PastaCurves.AArch64

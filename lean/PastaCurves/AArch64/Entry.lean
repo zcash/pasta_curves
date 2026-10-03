@@ -91,4 +91,17 @@ theorem sub_entry_spec (F : PastaField) (lhs rhs : Limbs) (hlhs : lhs.Bounded)
     ((isCanonical_iff lhs F.modulus hlhs F.bounded).1 hl)
     ((isCanonical_iff rhs F.modulus hrhs F.bounded).1 hr) _ rfl
 
+/-- The crate's `invert` at a Pasta field, on the AArch64 blocks: the shared `invert_entry_spec`
+at `invertBlocks`. The input is canonical, as the entry point asserts, and `v0` is `2^562 mod p`,
+as its contract requires. The result is canonical. For `x = 0` it is `0`; otherwise it is the
+Montgomery inverse, with `x * result ≡ R^2 (mod p)`. -/
+theorem invert_entry_spec (F : PastaField) (x : Limbs) (hx : x.Bounded)
+    (h : isCanonical x F.modulus = true) (v0 : Limbs) (hv0 : v0 = Inversion.startV F) :
+    (invert invertBlocks x F.modulus F.inv v0).Bounded ∧
+      (invert invertBlocks x F.modulus F.inv v0).toNat < F.modulus.toNat ∧
+      (x.toNat = 0 → invert invertBlocks x F.modulus F.inv v0 = Limbs.ofNat 0) ∧
+      (x.toNat ≠ 0 →
+        x.toNat * (invert invertBlocks x F.modulus F.inv v0).toNat ≡ R^2 [MOD F.modulus.toNat]) :=
+  PastaCurves.invert_entry_spec invertBlocks F (invertBlocks_spec F) x hx h v0 hv0
+
 end PastaCurves.AArch64
