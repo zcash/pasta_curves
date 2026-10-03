@@ -253,7 +253,7 @@ theorem PackedStep.Spec.rounds_words {S : PackedStep} (hS : S.Spec) (n : ℕ) (P
     obtain ⟨ihb, ihd, ihf, ihg, ihz⟩ := ih (by omega) (fun j hj => hg j (by omega))
     rw [Function.iterate_succ_apply', divsteps_succ']
     have hsd : |(divsteps n P).d| < 2^62 := by
-      have := divsteps_d_abs_le n P; push_cast at this; omega
+      have := divsteps_d_abs_le n P; omega
     have hsg : |(divsteps n P).g| < 2^63 := by
       rcases n with _ | n
       · exact hg0
@@ -277,7 +277,7 @@ theorem PackedStep.Spec.batch_words {S : PackedStep} (hS : S.Spec) (n : ℕ) (P 
     (fun j hj => hg j (by omega)) st hst ed ef eg hz
   rw [divsteps_succ']
   have hsd : |(divsteps n P).d| < 2^62 := by
-    have := divsteps_d_abs_le n P; push_cast at this; omega
+    have := divsteps_d_abs_le n P; omega
   have hsg : |(divsteps n P).g| < 2^63 := by
     rcases n with _ | m
     · exact hg0

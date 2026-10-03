@@ -22,6 +22,16 @@ extern crate std;
 mod asm;
 pub use asm::BACKEND;
 
+// The limb type of the backends and the inversion, and the checks of their debug assertions.
+mod limbs;
+
+// The constant-time inversion, over the AArch64 assembly blocks or the portable ones.
+mod inversion;
+
+// The fields' constants and known answers for the tests of the backends and the inversion.
+#[cfg(test)]
+mod test_fields;
+
 #[macro_use]
 mod macros;
 mod curves;
