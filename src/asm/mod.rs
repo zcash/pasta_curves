@@ -1,8 +1,6 @@
 // The crate denies unsafe code by default; the assembly backend is the one place that allows
 // it, and its safety argument is the operand contracts stated on each routine.
 #![allow(unsafe_code)]
-// The routines are not yet reached from the field types.
-#![allow(dead_code)]
 
 //! Assembly backends for the Pasta fields.
 //!
