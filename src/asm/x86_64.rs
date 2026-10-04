@@ -61,7 +61,7 @@
 //! Outside both, the accumulator can wrap, or the dropped fifth limb of the
 //! final candidate can be nonzero, and the result is then an incorrect
 //! residue that still looks canonical. `square` needs a canonical input,
-//! which it debug-asserts. Outputs are canonical.
+//! which its entry point debug-asserts. Outputs are canonical.
 //!
 //! The blocks are straight-line: no branches, no data-dependent memory
 //! addresses, and CMOV-based final conditional subtractions, so the code
@@ -424,33 +424,12 @@ pub(super) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs 
     [o0, o1, o2, o3]
 }
 
-/// Squares a canonical Montgomery residue for a Pasta modulus. The input must be
-/// canonical, which the entry point in `entry.rs` debug-asserts.
-///
-/// A transcription of the AArch64 backend's dedicated squaring: the 512-bit
-/// square as cross products, one doubling pass, and the diagonals (ten MULX
-/// against the multiplication's sixteen), then four Montgomery
-/// cancellations on a rotating four-limb window with a carried fifth limb,
-/// the high product half folded in, and a CMOV conditional subtraction. A
-/// canonical input's square is below `R * p`, so, as for [`mul`]'s
-/// candidate, the folded sum stays below `2p` and no carry escapes.
-/// Measured 2–5% ahead of squaring through [`mul`] on Skylake-X (20.0–20.7
-/// vs 21.0 ns across runs), mirroring the AArch64 backend's own
-/// square-over-mul margin.
-///
-/// Kept behind a call boundary for the register-allocation reason documented
-/// on [`mul`].
-#[inline(never)]
-pub(super) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
-    square_hi(square_lo(*value), modulus, inv)
-}
-
 /// Phase one of squaring: the 512-bit product as cross products, one
 /// doubling pass, and the diagonals (ten MULX against the multiplication's
-/// sixteen). Always inlined so that [`sqr_n_mul`]'s loop can pass the
-/// accumulator in registers: the block occupies fifteen simultaneous
-/// registers, which is the most the compiler will allocate to one block in
-/// both the release and dev profiles.
+/// sixteen). Always inlined so that the repeated-squaring loop of
+/// `sqr_n_mul` in `entry.rs` can pass the accumulator in registers. The
+/// block occupies fifteen simultaneous registers, which is the most the
+/// compiler will allocate to one block in both the release and dev profiles.
 ///
 /// # Safety
 ///
@@ -541,9 +520,9 @@ fn square_lo(value: Limbs) -> [u64; 8] {
 
 /// Phase two of squaring: four Montgomery cancellations on the rotating
 /// four-limb window of the low product half, the high product half folded
-/// in (the sum stays below `2p`, so no carry escapes; see [`square`]), and a
-/// CMOV conditional subtraction. Always inlined like [`square_lo`], for the
-/// same loop-accumulator reason.
+/// in (the sum stays below `2p`, so no carry escapes; see `square` in
+/// [`Backend`]), and a CMOV conditional subtraction. Always inlined like
+/// [`square_lo`], for the same loop-accumulator reason.
 ///
 /// # Safety
 ///
@@ -680,35 +659,6 @@ fn square_hi(product: [u64; 8], modulus: &Limbs, inv: u64) -> Limbs {
         );
     }
     [o0, o1, o2, o3]
-}
-
-/// Squares `value` `count` times, then multiplies by `rhs`.
-///
-/// The loop keeps the accumulator in registers: each squaring is the
-/// always-inlined [`square_lo`] and [`square_hi`] pair, so there is no call
-/// boundary or return-value traffic per iteration — the ~250 squarings of a
-/// field inversion would otherwise pay `square`'s call cost each time. The
-/// final multiplication goes through [`mul`]'s call boundary, once.
-///
-/// # Safety
-///
-/// `value` must be canonical, which the entry point in `entry.rs` debug-asserts. Any
-/// four-limb `rhs` is accepted: the accumulator stays canonical, so the final
-/// multiplication is inside [`mul`]'s contract with a canonical `lhs`. The memory
-/// operands read the four modulus limbs.
-#[inline(never)]
-pub(super) fn sqr_n_mul(
-    value: &Limbs,
-    count: usize,
-    rhs: &Limbs,
-    modulus: &Limbs,
-    inv: u64,
-) -> Limbs {
-    let mut acc = *value;
-    for _ in 0..count {
-        acc = square_hi(square_lo(acc), modulus, inv);
-    }
-    mul(&acc, rhs, modulus, inv)
 }
 
 /// Converts a Montgomery residue into its canonical integer, as a
@@ -851,4 +801,56 @@ pub(super) fn from_mont(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
         );
     }
     [o0, o1, o2, o3]
+}
+
+/// The backend's blocks, for the entry points in `entry.rs`.
+pub(super) struct Backend;
+
+impl super::entry::MontgomeryBlocks for Backend {
+    #[inline(always)]
+    fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
+        add(lhs, rhs, modulus)
+    }
+
+    #[inline(always)]
+    fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
+        sub(lhs, rhs, modulus)
+    }
+
+    /// The multiplication block, behind its own call boundary.
+    #[inline(always)]
+    fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
+        mul(lhs, rhs, modulus, inv)
+    }
+
+    /// Squares a canonical Montgomery residue: [`square_hi`] after
+    /// [`square_lo`].
+    ///
+    /// A transcription of the AArch64 backend's dedicated squaring: the
+    /// 512-bit square as cross products, one doubling pass, and the
+    /// diagonals (ten MULX against the multiplication's sixteen), then four
+    /// Montgomery cancellations on a rotating four-limb window with a
+    /// carried fifth limb, the high product half folded in, and a CMOV
+    /// conditional subtraction. A canonical input's square is below `R * p`,
+    /// so, as for [`mul`]'s candidate, the folded sum stays below `2p` and
+    /// no carry escapes. Measured 2–5% ahead of squaring through [`mul`] on
+    /// Skylake-X (20.0–20.7 vs 21.0 ns across runs), mirroring the AArch64
+    /// backend's own square-over-mul margin.
+    ///
+    /// Always inlined, so that the repeated-squaring loop of `sqr_n_mul`
+    /// keeps the accumulator in registers, with no call boundary or
+    /// return-value traffic per iteration. The ~250 squarings of a field
+    /// inversion would otherwise each pay a call's cost. The entry points
+    /// `square` and `sqr_n_mul` are the call boundaries instead, for the
+    /// register-allocation reason documented on [`mul`].
+    #[inline(always)]
+    fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
+        square_hi(square_lo(*value), modulus, inv)
+    }
+
+    /// The dedicated conversion block, rather than AArch64's multiplication by one.
+    #[inline(always)]
+    fn from_mont(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
+        from_mont(value, modulus, inv)
+    }
 }

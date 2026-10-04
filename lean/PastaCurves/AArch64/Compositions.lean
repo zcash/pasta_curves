@@ -4,8 +4,9 @@ import PastaCurves.AArch64.Transcription
 /-!
 # The crate's Rust around the blocks
 
-`src/asm/entry.rs` composes the crate's `sqr_n_mul` and `from_mont` from the `square` and `mul`
-blocks, and `src/inversion.rs` composes `invert` from a backend's six blocks, which `invert` of
+`src/asm/entry.rs` composes the crate's `sqr_n_mul` from the `square` and `mul` blocks, and the
+AArch64 backend in `src/asm/aarch64.rs` implements `from_mont` as the `mul` block with one.
+`src/inversion.rs` composes `invert` from a backend's six blocks, which `invert` of
 `PastaCurves/Compositions.lean` mirrors over a record of the blocks. These definitions mirror the
 first two and supply the AArch64 blocks for the third.
 -/

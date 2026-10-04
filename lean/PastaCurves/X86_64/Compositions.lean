@@ -4,9 +4,10 @@ import PastaCurves.Compositions
 /-!
 # The x86-64 Rust around the blocks
 
-`src/asm/x86_64.rs` implements `square` as `square_hi(square_lo(*value), modulus, inv)`.
-Its repeated-squaring loop uses the same pair, then calls the multiplication block once.
-Unlike AArch64, conversion out of Montgomery form has its own transcribed assembly block.
+The x86-64 backend in `src/asm/x86_64.rs` implements `square` as
+`square_hi(square_lo(*value), modulus, inv)`. The repeated-squaring loop in `src/asm/entry.rs`
+runs it `count` times, then the multiplication block once. Unlike AArch64, conversion out of
+Montgomery form has its own transcribed assembly block.
 -/
 
 namespace PastaCurves.X86_64

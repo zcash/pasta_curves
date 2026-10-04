@@ -1144,8 +1144,39 @@ pub(super) fn cond_sub(value: &Limbs, modulus: &Limbs) -> Limbs {
     [r0, r1, r2, r3]
 }
 
-/// The backend's inversion blocks, for the generic driver of `crate::inversion`.
+/// The backend's blocks: its Montgomery arithmetic, for the entry points in
+/// `entry.rs`, and its inversion blocks, for the generic driver of
+/// `crate::inversion`.
 pub(crate) struct Backend;
+
+impl super::entry::MontgomeryBlocks for Backend {
+    #[inline(always)]
+    fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
+        add(lhs, rhs, modulus)
+    }
+
+    #[inline(always)]
+    fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
+        sub(lhs, rhs, modulus)
+    }
+
+    #[inline(always)]
+    fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
+        mul(lhs, rhs, modulus, inv)
+    }
+
+    #[inline(always)]
+    fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
+        square(value, modulus, inv)
+    }
+
+    /// The multiplication with `1` as its right operand, which is canonical with limbs 1 to 3
+    /// zero, and so inside the multiplication's contract for any left operand.
+    #[inline(always)]
+    fn from_mont(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
+        Self::mul(value, &[1, 0, 0, 0], modulus, inv)
+    }
+}
 
 impl crate::inversion::InvertBlocks for Backend {
     #[inline(always)]
