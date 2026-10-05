@@ -10,7 +10,7 @@
 # LAKE selects the lake that builds the formalization (default: `lake` from PATH, which
 # should be the elan-managed one; see AGENTS.md). PYTHON selects the interpreter that runs the
 # generator and the checkers (default: `python3` from PATH). CHARON and AENEAS select the binaries
-# that translate the portable blocks (default: those that `lean/scripts/fetch_aeneas.sh` fetches).
+# that make the Aeneas translations (default: those that `lean/scripts/fetch_aeneas.sh` fetches).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

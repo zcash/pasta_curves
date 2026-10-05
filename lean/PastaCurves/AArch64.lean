@@ -4,6 +4,7 @@ import PastaCurves.AArch64.Compositions
 import PastaCurves.AArch64.Vectors
 import PastaCurves.AArch64.Spec
 import PastaCurves.AArch64.Entry
+import PastaCurves.AArch64.Backend
 
 /-!
 # The crate's AArch64 Pasta Montgomery routines, formalized

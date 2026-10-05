@@ -48,6 +48,7 @@ jobs:
             translation:
               - '!{book/**,lean/**,sage/**,.github/**,scripts/**,*.md,LICENSE-*,ruff.toml,katex-header.html}'
               - 'lean/PastaCurves/Portable/**'
+              - 'lean/PastaCurves/Glue/**'
               - 'lean/lakefile.toml'
               - 'lean/scripts/fetch_aeneas.sh'
               - 'lean/scripts/gen_aeneas.sh'
@@ -104,7 +105,7 @@ jobs:
       # Charon runs.
       - name: Fetch Charon and Aeneas
         run: lean/scripts/fetch_aeneas.sh
-      - name: Translate the portable blocks and compare
+      - name: Translate the crate's Rust and compare
         run: lean/scripts/gen_aeneas.sh --check
 
   checker-tests:

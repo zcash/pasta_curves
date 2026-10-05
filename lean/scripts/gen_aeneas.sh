@@ -57,8 +57,8 @@ translate() {
     "$CHARON" cargo --preset=aeneas "${starts[@]}" \
     --dest-file "$out/pasta_curves.llbc" "${cargo_args[@]}" > "$out/charon.log" 2>&1 ||
     { cat "$out/charon.log"; exit 1; }
-  "$AENEAS" -backend lean -dest "$out/lean" -subdir "PastaCurves/$dir" -split-files \
-    "$out/pasta_curves.llbc" > "$out/aeneas.log" 2>&1 ||
+  "$AENEAS" -backend lean -all-computable -dest "$out/lean" -subdir "PastaCurves/$dir" \
+    -split-files "$out/pasta_curves.llbc" > "$out/aeneas.log" 2>&1 ||
     { cat "$out/aeneas.log"; exit 1; }
 
   local file fresh committed
@@ -72,6 +72,7 @@ translate() {
         exit 1
       fi
     else
+      mkdir -p "lean/PastaCurves/$dir"
       cp "$fresh" "$committed"
     fi
   done
@@ -84,3 +85,11 @@ translate() {
 # without the assembly backend; the entry point's debug assertion is not part of it.
 translate Portable "--cfg pasta_curves_noasm" "" \
   crate::inversion::invert_with crate::inversion::portable
+
+# The generic compositions that run the entry points over a backend's Montgomery blocks, as the
+# crate compiles them with the assembly backend. They do not reach any backend's blocks, only the
+# trait that declares them, so the translation is the same for every backend.
+translate Glue "" asm \
+  crate::asm::entry::add_with crate::asm::entry::sub_with crate::asm::entry::mul_with \
+  crate::asm::entry::square_with crate::asm::entry::sqr_n_mul_with \
+  crate::asm::entry::from_mont_with

@@ -27,6 +27,9 @@ import PastaCurves.Portable.Funs
 import PastaCurves.Portable.Words
 import PastaCurves.Portable.Vectors
 import PastaCurves.Portable.Spec
+import PastaCurves.Words
+import PastaCurves.Glue.Funs
+import PastaCurves.Glue.Vectors
 
 /-!
 # The assembly routines, formalized
