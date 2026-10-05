@@ -98,9 +98,7 @@ jobs:
   book-ci:
     # The single stable check to mark as a required status check. It runs
     # unless the workflow run was cancelled, and fails only if the book build
-    # actually failed. A run that a newer one cancels (two pushes in quick
-    # succession, as with stacked branches) reports nothing; the newer run
-    # reports instead.
+    # actually failed.
     name: Pasta book CI
     needs: [changes, build]
     if: ${{ !cancelled() }}

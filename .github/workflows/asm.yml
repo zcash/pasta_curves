@@ -166,9 +166,8 @@ jobs:
 
   asm-ci:
     # The single stable check to mark as a required status check. It runs unless the workflow run
-    # was cancelled, and fails only if a job that ran failed. A run that a newer one cancels (two
-    # pushes in quick succession, as with stacked branches) reports nothing; the newer run reports
-    # instead. A failure in any leg of the test matrix fails `test` as a whole.
+    # was cancelled, and fails only if a job that ran failed. A failure in any leg of the test
+    # matrix fails `test` as a whole.
     name: Assembly backend CI
     needs: [changes, test, no-std, intel-macos]
     if: ${{ !cancelled() }}
