@@ -313,6 +313,59 @@ theorem f_dvd_of_g_eq_zero (n : ℕ) (s : State) (hf : s.f % 2 = 1) (hg : (divst
   rw [hg, mul_zero, zero_sub] at h2
   exact ⟨⟨(M n s).d, by rw [h1]; ring⟩, ⟨-(M n s).c, by rw [h2]; ring⟩⟩
 
+/-- Lemma 4, the gcd: `gcd (f_n, g_n) = gcd (f_0, g_0)`. A common divisor of the outputs divides
+the inputs by the adjugate identity; a common divisor of the inputs divides `2^n f_n` and
+`2^n g_n` by Lemma 1, and it is odd because `f_0` is, so it divides `f_n` and `g_n`. -/
+theorem divsteps_gcd (n : ℕ) (s : State) (hf : s.f % 2 = 1) :
+    Int.gcd (divsteps n s).f (divsteps n s).g = Int.gcd s.f s.g := by
+  obtain ⟨hMf, hMg⟩ := M_spec n s hf
+  obtain ⟨hIf, hIg⟩ := M_inv_spec n s hf
+  set fn := (divsteps n s).f
+  set gn := (divsteps n s).g
+  set G : ℤ := (Int.gcd s.f s.g : ℤ)
+  have hGf : G ∣ s.f := Int.gcd_dvd_left _ _
+  have hGg : G ∣ s.g := Int.gcd_dvd_right _ _
+  -- `G` divides the odd `f_0`, so it is prime to `2`.
+  have hG2 : Int.gcd G 2 = 1 := by
+    have h1 : ((Int.gcd G 2 : ℕ) : ℤ) ∣ s.f := (Int.gcd_dvd_left G 2).trans hGf
+    have h2 : Int.gcd G 2 ∣ 2 := by exact_mod_cast Int.gcd_dvd_right G 2
+    have hle : Int.gcd G 2 ≤ 2 := Nat.le_of_dvd (by norm_num) h2
+    obtain ⟨c, hc⟩ := h1
+    rcases (by omega : Int.gcd G 2 = 0 ∨ Int.gcd G 2 = 1 ∨ Int.gcd G 2 = 2) with h | h | h
+    · rw [h] at h2; exact absurd (Nat.eq_zero_of_zero_dvd h2) (by norm_num)
+    · exact h
+    · rw [h] at hc; push_cast at hc; omega
+  -- So it cancels powers of two.
+  have hcancel : ∀ (m : ℕ) (x : ℤ), G ∣ 2^m * x → G ∣ x := by
+    intro m
+    induction m with
+    | zero => intro x h; simpa using h
+    | succ m ih =>
+      intro x h
+      apply ih
+      rw [pow_succ, mul_comm ((2 : ℤ)^m) 2, mul_assoc] at h
+      exact Int.dvd_of_dvd_mul_right_of_gcd_one h hG2
+  apply Nat.dvd_antisymm
+  · apply Int.dvd_gcd
+    · rw [hIf]
+      exact dvd_sub (dvd_mul_of_dvd_right (Int.gcd_dvd_left _ _) _)
+        (dvd_mul_of_dvd_right (Int.gcd_dvd_right _ _) _)
+    · rw [hIg]
+      exact dvd_sub (dvd_mul_of_dvd_right (Int.gcd_dvd_right _ _) _)
+        (dvd_mul_of_dvd_right (Int.gcd_dvd_left _ _) _)
+  · apply Int.dvd_gcd
+    · apply hcancel n
+      rw [hMf]
+      exact dvd_add (dvd_mul_of_dvd_right hGf _) (dvd_mul_of_dvd_right hGg _)
+    · apply hcancel n
+      rw [hMg]
+      exact dvd_add (dvd_mul_of_dvd_right hGf _) (dvd_mul_of_dvd_right hGg _)
+
+/-- Lemma 4, the end state: once `g_n = 0`, `f_n = ± gcd (f_0, g_0)`. -/
+theorem f_natAbs_of_g_eq_zero (n : ℕ) (s : State) (hf : s.f % 2 = 1)
+    (hg : (divsteps n s).g = 0) : (divsteps n s).f.natAbs = Int.gcd s.f s.g := by
+  rw [← divsteps_gcd n s hf, hg, Int.gcd_zero_right]
+
 /-! ## The half-open entry range -/
 
 /-- Associativity. -/
