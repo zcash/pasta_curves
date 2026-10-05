@@ -160,8 +160,8 @@ scripts/test_*.py                        the generator's tests, run by check.sh
 scripts/check.sh                         regenerate and diff, skeleton check, generator tests (CI)
 scripts/build.sh                         lake build, failing on warnings outside Aeneas' library (CI)
 scripts/test_build.sh                    check that build.sh rejects a warning (CI)
-scripts/gen_portable.sh                  regenerate, or check, the Aeneas translation (CI)
-scripts/fetch_aeneas.sh                  fetch the Charon and Aeneas that gen_portable.sh runs (CI)
+scripts/gen_aeneas.sh                    regenerate, or check, the Aeneas translations (CI)
+scripts/fetch_aeneas.sh                  fetch the Charon and Aeneas that gen_aeneas.sh runs (CI)
 scripts/check_nanoda.sh                  re-check the build with an independent kernel (CI)
 scripts/check_export_coverage.py         the export roots reach every module, run by check_nanoda.sh
 scripts/check_export_axioms.py           the axiom census of the export, run by check_nanoda.sh
@@ -174,10 +174,10 @@ without depending on one another. The package is built with Lake from this direc
 (`scripts/build.sh`), with Mathlib and Aeneas' Lean library pinned in `lake-manifest.json`.
 `scripts/ci.sh` at the repository root runs these checks together with the crate's.
 
-`scripts/gen_portable.sh` regenerates or checks the Aeneas translation. It runs the Charon and
+`scripts/gen_aeneas.sh` regenerates or checks the Aeneas translations. It runs the Charon and
 Aeneas binaries from the release that Aeneas' CI built at the pinned revision.
 `scripts/fetch_aeneas.sh` fetches them into `work/aeneas/` and checks them against the recorded
-SHA-256 digests. When the pin moves to another release, `gen_portable.sh` fails until
+SHA-256 digests. When the pin moves to another release, `gen_aeneas.sh` fails until
 `fetch_aeneas.sh` is run again; it never fetches by itself.
 
 ## Value representation

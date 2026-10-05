@@ -164,14 +164,14 @@ corrupts the shared `.lake` cache); the scripts run from any directory:
 lean/scripts/build.sh          # fetch Mathlib's cache, then lake build, as in CI
 lean/scripts/check.sh          # regenerate the transcription and check the skeletons
 lean/scripts/fetch_aeneas.sh   # fetch Charon and Aeneas, once per pinned release
-lean/scripts/gen_portable.sh   # regenerate the Aeneas translation; --check compares instead
+lean/scripts/gen_aeneas.sh     # regenerate the Aeneas translations; --check compares instead
 ```
 
 `lean/scripts/build.sh` fails the build on any warning, as `lake build --wfail` would, except
 for warnings in Aeneas' library. The package requires that library but does not maintain it,
 and Lake cannot exempt one package from `--wfail`.
 
-`lean/scripts/gen_portable.sh` runs the Charon and Aeneas binaries that `fetch_aeneas.sh` fetched.
+`lean/scripts/gen_aeneas.sh` runs the Charon and Aeneas binaries that `fetch_aeneas.sh` fetched.
 When the pin moves to another Aeneas release, it fails until `fetch_aeneas.sh` is run again; it
 never fetches by itself.
 
@@ -217,7 +217,7 @@ describes the tools in more detail.
   Reject unsupported syntax, uninitialized register/flag reads, and unmodeled memory accesses;
   test those rejection paths. For x86, CF and OF are independent and must not be conflated.
 - **The portable blocks' Aeneas translation is generated** (`Portable/Types.lean` and
-  `Funs.lean`, by `lean/scripts/gen_portable.sh`); never edit it by hand. Proofs about it
+  `Funs.lean`, by `lean/scripts/gen_aeneas.sh`); never edit it by hand. Proofs about it
   follow Aeneas' own guidance at the revision that `lean/lakefile.toml` pins: the skill files
   in [`documentation/skills/`](https://github.com/AeneasVerif/aeneas/tree/b86120db3183b0107eb5f2637b11c424cd06ef1c/documentation/skills)
   (`aeneas-lean-core`, `aeneas-tactics-quickref`, `proof-patterns`, and

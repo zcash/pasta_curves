@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Fetch the Charon and Aeneas binaries that `gen_portable.sh` runs. They come from the release that
+# Fetch the Charon and Aeneas binaries that `gen_aeneas.sh` runs. They come from the release that
 # Aeneas' CI built at the revision that `lean/lakefile.toml` pins. The script downloads the release
 # for this platform, checks it against the SHA-256 recorded below, and unpacks the binaries into DIR
 # (default `lean/work/aeneas`). It skips the download when DIR already holds this release. Charon
 # runs the Rust compiler of the nightly toolchain that the release names, so the script also
 # installs that toolchain with rustup, in its minimal profile. Run it again whenever the pin
-# moves: `gen_portable.sh` fails while the default DIR holds another release.
+# moves: `gen_aeneas.sh` fails while the default DIR holds another release.
 #
 # Usage, from anywhere in the checkout: lean/scripts/fetch_aeneas.sh [DIR | --tag]
-# It prints the settings for `gen_portable.sh`, which needs them only for a DIR other than the
+# It prints the settings for `gen_aeneas.sh`, which needs them only for a DIR other than the
 # default: CHARON=DIR/charon AENEAS=DIR/aeneas. With `--tag`, it prints the release's tag instead,
 # and fetches nothing.
 set -euo pipefail

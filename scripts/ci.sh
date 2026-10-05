@@ -182,7 +182,7 @@ lean/scripts/check.sh
 step "the Aeneas translation is current"
 # The check fails, rather than fetching again, if the pinned release has changed since the fetch.
 if { [ -n "${CHARON:-}" ] && [ -n "${AENEAS:-}" ]; } || [ -e lean/work/aeneas/release ]; then
-  lean/scripts/gen_portable.sh --check
+  lean/scripts/gen_aeneas.sh --check
 else
   skip "the Aeneas translation check" \
     "  fetch Charon and Aeneas under lean/work/ as CI does (see .github/workflows/lean.yml):

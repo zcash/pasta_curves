@@ -50,7 +50,7 @@ jobs:
               - 'lean/PastaCurves/Portable/**'
               - 'lean/lakefile.toml'
               - 'lean/scripts/fetch_aeneas.sh'
-              - 'lean/scripts/gen_portable.sh'
+              - 'lean/scripts/gen_aeneas.sh'
               - '.github/workflows/lean.yml'
 
   build:
@@ -105,7 +105,7 @@ jobs:
       - name: Fetch Charon and Aeneas
         run: lean/scripts/fetch_aeneas.sh
       - name: Translate the portable blocks and compare
-        run: lean/scripts/gen_portable.sh --check
+        run: lean/scripts/gen_aeneas.sh --check
 
   checker-tests:
     name: The export-axiom checker's own tests
