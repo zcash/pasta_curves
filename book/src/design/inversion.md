@@ -134,9 +134,11 @@ and is not needed separately. *In Lean:* `M_det`, `M_inv_spec`, and `f_dvd_of_g_
 **Theorem 5 (termination; Bernstein et al. 2026, Theorem 1).** If $\delta_0 = \frac{1}{2}$, $f_0$ is
 odd, $0 \leq g_0 \leq f_0 < 2^b$, and $n \geq \lceil (9437 b + 1) / 4096 \rceil$, then $g_n = 0$.
 For $b = 256$ this is $n = 590$. The paper proves it for all $b$, in HOL Light, and the Lean
-development proves it for all $b$ from a certificate (§5). *In Lean:* stated as `TerminationBound`
-(`Termination.lean`), and proved by `terminationBound_of_certified` (`HullBound.lean`) and by
-`terminationBound` and `terminationBound_256` (`HullCert.lean`).
+development proves it for all $b$ from a certificate (§5). (The paper's hypothesis is
+$f_0 \leq 2^b$; the two forms differ only at $b = 0$.) *In Lean:* stated at
+$n = \lceil (9437 b + 1) / 4096 \rceil$ as `TerminationBound` (`Termination.lean`), extended to
+every larger $n$ by `TerminationBound.ge`, and proved by `terminationBound_of_certified`
+(`HullBound.lean`) and by `terminationBound` and `terminationBound_256` (`HullCert.lean`).
 
 ## 2. Divsteps on packed words
 

@@ -23,4 +23,14 @@ example : iterations 256 = 590 := by decide
 def TerminationBound (b : ℕ) : Prop :=
   ∀ f g : ℤ, f % 2 = 1 → 0 ≤ g → g ≤ f → f < 2^b → (divsteps (iterations b) ⟨1, f, g⟩).g = 0
 
+/-- Theorem 5 as the book states it, for every `n` from the bound on: once `g` is zero it stays
+zero (Lemma 4), so the bound at `iterations b` gives `g_n = 0` for every `n ≥ iterations b`. -/
+theorem TerminationBound.ge {b : ℕ} (h : TerminationBound b) (f g : ℤ) (hf : f % 2 = 1)
+    (hg0 : 0 ≤ g) (hgf : g ≤ f) (hfb : f < 2^b) (n : ℕ) (hn : iterations b ≤ n) :
+    (divsteps n ⟨1, f, g⟩).g = 0 := by
+  obtain ⟨k, rfl⟩ : ∃ k, n = iterations b + k := ⟨n - iterations b, by omega⟩
+  rw [divsteps_add]
+  obtain ⟨-, hz, -⟩ := divsteps_of_g_zero k _ (h f g hf hg0 hgf hfb)
+  exact hz
+
 end PastaCurves.Inversion
