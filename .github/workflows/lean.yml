@@ -123,9 +123,8 @@ jobs:
 
   lean-ci:
     # The single stable check to mark as a required status check. It runs unless the workflow run
-    # was cancelled, and fails only if a job that ran failed. A run that a newer one cancels (two
-    # pushes in quick succession, as with stacked branches) reports nothing; the newer run reports
-    # instead. `nanoda` needs `build`, so it is skipped with it.
+    # was cancelled, and fails only if a job that ran failed. `nanoda` needs `build`, so it is
+    # skipped with it.
     name: Lean CI
     needs: [changes, build, transcription, checker-tests, nanoda]
     if: ${{ !cancelled() }}
