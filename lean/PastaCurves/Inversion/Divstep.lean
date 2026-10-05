@@ -23,7 +23,8 @@ Bernstein and Yang's divstep with the half-delta start of Bernstein, Chen, Harri
 Maxwell, Wang, Wuille, and Yang, "Accelerating and verifying constant-time modular inversion"
 (EUROCRYPT 2026). The paper writes the step as a rational matrix `T(δ, f, g)` and the `n`-step
 map as the product `T_{n-1} ⋯ T_0` with entries `u_n, v_n, q_n, r_n`; here `T` is twice the
-paper's step matrix, so that it is integral, and `M n s = 2^n · T_{n-1} ⋯ T_0`.
+paper's step matrix, so that it is integral, and `M n s` is the product of these integral
+matrices, `2^n` times the paper's product.
 
 The lemma numbers in the docstrings are those of the pen-and-paper argument in the book,
 `book/src/design/inversion.md`.
@@ -110,7 +111,7 @@ theorem divstep_eq (s : State) (hf : s.f % 2 = 1) :
 /-- `f` stays odd through the iteration. -/
 theorem divsteps_f_odd (n : ℕ) (s : State) (hf : s.f % 2 = 1) : (divsteps n s).f % 2 = 1 := by
   induction n generalizing s with
-  | zero => simpa
+  | zero => exact hf
   | succ n ih => rw [divsteps_succ]; exact ih _ (divstep_f_odd s hf)
 
 /-- Lemma 1: `2^n (f_n, g_n) = M_n (f_0, g_0)`. -/
@@ -213,12 +214,6 @@ theorem emod_two_of_emod_pow {a b : ℤ} (n : ℕ) (h : a % 2^(n + 1) = b % 2^(n
   have h2 : (2 : ℤ) ∣ 2^(n + 1) := dvd_pow_self 2 (Nat.succ_ne_zero n)
   rw [← Int.emod_emod_of_dvd a h2, h, Int.emod_emod_of_dvd b h2]
 
-/-- A congruence modulo `2^(n + 1)` gives one modulo `2^n`. -/
-theorem emod_pow_of_emod_pow_succ {a b : ℤ} (n : ℕ) (h : a % 2^(n + 1) = b % 2^(n + 1)) :
-    a % 2^n = b % 2^n := by
-  have h2 : (2 : ℤ)^n ∣ 2^(n + 1) := pow_dvd_pow 2 (Nat.le_succ n)
-  rw [← Int.emod_emod_of_dvd a h2, h, Int.emod_emod_of_dvd b h2]
-
 /-- One step of Lemma 2: states congruent modulo `2^(n+1)` take the same branch and stay
 congruent modulo `2^n`. -/
 theorem divstep_local (n : ℕ) (s s' : State) (hf0 : s.f % 2 = 1) (hd : s.two_delta = s'.two_delta)
@@ -280,7 +275,8 @@ def Mat2.det (m : Mat2) : ℤ := m.u * m.r - m.v * m.q
 theorem Mat2.det_mul (m n : Mat2) : (m.mul n).det = m.det * n.det := by
   simp only [Mat2.mul, Mat2.det]; ring
 
-/-- A step matrix has determinant `2`, twice the paper's unimodular step. -/
+/-- A step matrix has determinant `2`: it is twice the paper's step matrix, whose determinant is
+`1/2`. -/
 theorem T_det (s : State) : (T s).det = 2 := by
   unfold T; split_ifs <;> simp [Mat2.det]
 
@@ -305,7 +301,7 @@ theorem M_inv_spec (n : ℕ) (s : State) (hf : s.f % 2 = 1) :
   · apply mul_left_cancel₀ hpos.ne'
     linear_combination (-(M n s).u) * h2 + (M n s).q * h1 - s.g * hdet
 
-/-- Lemma 4, in the form Theorem 12 uses: once `g_n = 0`, `f_n` divides both inputs. -/
+/-- Lemma 4′, in the form Theorem 12 uses: once `g_n = 0`, `f_n` divides both inputs. -/
 theorem f_dvd_of_g_eq_zero (n : ℕ) (s : State) (hf : s.f % 2 = 1) (hg : (divsteps n s).g = 0) :
     (divsteps n s).f ∣ s.f ∧ (divsteps n s).f ∣ s.g := by
   obtain ⟨h1, h2⟩ := M_inv_spec n s hf

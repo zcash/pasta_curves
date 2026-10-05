@@ -1,4 +1,6 @@
 import PastaCurves.Semantics
+import PastaCurves.Pratt
+import PastaCurves.Primality
 import PastaCurves.Fields
 import PastaCurves.FieldTypes
 import PastaCurves.KnownAnswers

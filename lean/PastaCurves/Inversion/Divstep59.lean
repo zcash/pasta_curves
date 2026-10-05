@@ -41,7 +41,8 @@ theorem emod_mul_ediv (y m c : ℤ) (hm : 0 < m) (hc : 0 < c) :
 /-! ## The block on low words -/
 
 /-- The next low word from a matrix row and the current low words: `(a f + b g) / 2^k`, taken
-modulo `2^64` first, as a 64-bit word computes it. -/
+modulo `2^64` first. An abstract model of the 64-bit computation; each backend's proofs relate
+its instructions to it. -/
 def nextLow (k : ℕ) (a b f g : ℤ) : ℤ := ((a * f + b * g) % 2^64) / 2^k
 
 /-- The matrix read from the two packed words. -/
