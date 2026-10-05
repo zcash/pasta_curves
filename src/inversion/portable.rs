@@ -19,17 +19,6 @@
 use super::InvertBlocks;
 use crate::limbs::Limbs;
 
-/// Runs `$body` once for each index in the list, with `$i` bound to it: a loop of fixed length,
-/// unrolled, so that its translation to Lean is straight-line code.
-macro_rules! unroll {
-    ($i:ident in [$($n:literal),* $(,)?] $body:block) => {
-        $({
-            let $i: usize = $n;
-            $body
-        })*
-    };
-}
-
 /// The mask of a word's sign, read as two's complement: all ones for a negative word, else zero.
 #[inline(always)]
 fn sign_mask(x: u64) -> u64 {

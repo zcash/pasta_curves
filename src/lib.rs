@@ -22,7 +22,9 @@ extern crate std;
 mod asm;
 pub use asm::BACKEND;
 
-// The limb type of the backends and the inversion, and the checks of their debug assertions.
+// The limb type of the backends and the inversion, the checks of their debug assertions, and the
+// `unroll!` macro; declared before the inversion, whose portable blocks use the macro.
+#[macro_use]
 mod limbs;
 
 // The constant-time inversion, over the AArch64 assembly blocks or the portable ones.

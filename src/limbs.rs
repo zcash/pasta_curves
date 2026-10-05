@@ -3,6 +3,17 @@
 
 use core::hint::black_box;
 
+/// Runs `$body` once for each index in the list, with `$i` bound to it: a loop of fixed length,
+/// unrolled, so that its translation to Lean is straight-line code.
+macro_rules! unroll {
+    ($i:ident in [$($n:literal),* $(,)?] $body:block) => {
+        $({
+            let $i: usize = $n;
+            $body
+        })*
+    };
+}
+
 /// Four little-endian 64-bit limbs, least significant first: a field element
 /// (in Montgomery form, or canonical after `from_mont`) or a modulus.
 pub type Limbs = [u64; 4];
@@ -16,11 +27,11 @@ pub type Limbs = [u64; 4];
 #[inline(always)]
 pub(crate) fn is_canonical_word(value: &Limbs, modulus: &Limbs) -> u64 {
     let mut borrow = 0;
-    for (v, m) in value.iter().zip(modulus) {
-        let (difference, underflow) = v.overflowing_sub(*m);
+    unroll!(i in [0, 1, 2, 3] {
+        let (difference, underflow) = value[i].overflowing_sub(modulus[i]);
         let (_, borrow_underflow) = difference.overflowing_sub(borrow);
         borrow = black_box(u64::from(underflow | borrow_underflow));
-    }
+    });
     borrow
 }
 
