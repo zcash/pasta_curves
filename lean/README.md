@@ -114,6 +114,7 @@ PastaCurves/Inversion/Hull.lean          convex regions by half-planes, inclusio
 PastaCurves/Inversion/HullBound.lean     the termination bound from a certificate (the hull-light argument)
 PastaCurves/Inversion/HullData.lean      GENERATED: the certificate's half-planes and Farkas records
 PastaCurves/Inversion/HullCert.lean      the certificate checked by the kernel; `terminationBound_256`
+PastaCurves/Inversion/Correctness.lean   Theorem 12 unconditionally: `montInv_correct`
 PastaCurves/AArch64.lean                 AArch64 umbrella module
 PastaCurves/AArch64/Semantics.lean       AArch64 instruction semantics
 PastaCurves/AArch64/Transcription.lean   GENERATED: the blocks and the round

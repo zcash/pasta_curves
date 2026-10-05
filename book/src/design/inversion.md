@@ -240,13 +240,14 @@ $x \cdot 2^{5i - 562 - 59 + 64} (d_{i+1}, e_{i+1}) = x \cdot 2^{5(i+1) - 562} (d
 ∎ *In Lean:* `rounds_invariant` (`Model.lean`).
 
 **Theorem 12 (correctness).** Assume Theorem 5 for $b = 256$, and $0 < x < p$. After ten rounds (590
-divsteps) $g_{10} = 0$, so $f_{10} = \pm 1$ by Lemma 4 ($\gcd(p, x) = 1$). By Lemma 11 with
+divsteps) $g_{10} = 0$, so $f_{10} = \pm 1$ by Lemma 4′ ($\gcd(p, x) = 1$). By Lemma 11 with
 $i = 10$, $f_{10} \equiv x \cdot 2^{-512} d_{10}$, hence $x \cdot (f_{10} d_{10}) \equiv 2^{512}$.
 The last round computes $d_{10}$ with the sign of $f_{10}$ folded into the matrix row, then reduces
 strictly; by Lemma 10 one conditional subtraction gives the canonical $z \equiv f_{10} d_{10}$, and
 $x z \equiv R^2$. In Montgomery terms, if $x = X R$ and $z = Z R$ then $X Z \equiv 1$. *In Lean:*
-`montInv_spec` (`Model.lean`), with the primality of $p$, which it needs for $\gcd(p, x) = 1$, from
-the Pratt certificates of `lean/PastaCurves/Primality.lean`.
+`montInv_spec` (`Model.lean`), with Theorem 5 as a hypothesis, discharged in `montInv_correct`
+(`Correctness.lean`), and with the primality of $p$, which it needs for $\gcd(p, x) = 1$, from the
+Pratt certificates of `lean/PastaCurves/Primality.lean`.
 
 For $x = 0$: by Lemma 4 every matrix is $\begin{bmatrix} 2^{59} & 0 \\ 0 & 1 \end{bmatrix}$, so
 $d$ stays $0$ through every round, and $z = 0$.
