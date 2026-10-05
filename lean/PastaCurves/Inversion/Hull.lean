@@ -12,8 +12,8 @@ The certificate of the termination bound (Theorem 5 of `book/src/design/inversio
 convex regions of the rational plane as finite conjunctions of half-planes `a x + b y ≤ c`. An
 inclusion `M S ⊆ λ^k T`, that is `∀ p ∈ S, M p / λ^k ∈ T`, is certified edge by edge: every
 half-plane of `T`, pulled back through the linear map, is a nonnegative combination of two
-half-planes of `S`. That is the form of Bernstein's "hull light" certificate and of Harrison's HOL
-Light check of it.
+half-planes of `S`. That is the form of Bernstein's "hull light" certificate, whose Sage script
+generates the HOL Light proof `Divstep/hull_light.ml` of `jrh13/hol-light`.
 
 Pulling a half-plane back through a map means taking its preimage: the points whose image satisfies
 it. Through the linear map `(x, y) ↦ M (x, y) / d`, the preimage of `a x + b y ≤ c` is again a
