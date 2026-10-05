@@ -1,10 +1,10 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Verify hull_certificate.json (schema hull-certificate/2) from the JSON alone,
 in exact arithmetic (fractions.Fraction / int; no floats except in the log).
 
-    python verify_hull_certificate.py [hull_certificate.json] [--results]
+    python3 verify_hull_certificate.py [hull_certificate.json] [--results]
 
-What is checked (see NOTES.md section 6 for the schema):
+What is checked:
 
   P  polygons: integer coprime half-planes; consecutive half-planes meet in a
      corner; the corners form a strictly convex CCW polygon whose edge
@@ -31,8 +31,8 @@ What is checked (see NOTES.md section 6 for the schema):
      s <= fuzziness^4096, and the example 9437 b + 1 <= 4096 n,
      2^b s^n <= fuzziness for (b, n) = (256, 590).
 
-If certificate-v1.json (the corner-list form) is present next to the
-certificate, the derived corners are compared with it as well.
+With --results, a summary of the counts is written to verify_results.json in
+the current directory.
 """
 
 import json
@@ -370,21 +370,6 @@ def main():
         )
         check_lattice(c, polys, s, L, log)
         check_constants(c, s, log)
-        # optional: the corner lists of the v1 certificate (the Sage points)
-        v1 = os.path.join(os.path.dirname(os.path.abspath(path)), "certificate-v1.json")
-        if os.path.exists(v1):
-            with open(v1) as f:
-                old = json.load(f)
-            for name in ("H0", "H1"):
-                pts = [(fr(x), fr(y)) for x, y in old[name]]
-                check(
-                    pts == corners[name],
-                    f"derived corners of {name} differ from certificate-v1.json",
-                )
-            log(
-                "V   corners derived from the half-planes equal the Sage corner lists in "
-                "certificate-v1.json: ok"
-            )
     except Failure as e:
         log(f"VERIFICATION FAILED: {e}")
         sys.exit(1)
@@ -408,7 +393,7 @@ def main():
         f"{summary['max_operand_bits']} bits; {summary['seconds']:.2f}s"
     )
     if "--results" in sys.argv:
-        with open(os.path.join(HERE, "verify_results.json"), "w") as f:
+        with open("verify_results.json", "w") as f:
             json.dump(summary, f, indent=1)
 
 
