@@ -120,8 +120,8 @@ and `divsteps_abs_le` (`Divstep.lean`).
 **Lemma 4 (gcd and the end state).** $\gcd(f_n, g_n) = \gcd(f_0, g_0)$, and $f_n$ is odd. If
 $g_n = 0$ then $f_n = \pm \gcd(f_0, g_0)$. If $g_0 = 0$ then every step is the non-swap case
 with $b = 0$, so $f_n = f_0$, $g_n = 0$, and
-$M_n = \begin{bmatrix} 2^n & 0 \\ 0 & 1 \end{bmatrix}$. *In Lean:* `divsteps_f_odd` and
-`divsteps_of_g_zero` (`Divstep.lean`).
+$M_n = \begin{bmatrix} 2^n & 0 \\ 0 & 1 \end{bmatrix}$. *In Lean:* `divsteps_gcd`,
+`divsteps_f_odd`, `f_natAbs_of_g_eq_zero`, and `divsteps_of_g_zero` (`Divstep.lean`).
 
 **Lemma 4′ (the adjugate).** Each $T_i$ has determinant $2$, so $\det M_n = 2^n$, and the
 adjugate of Lemma 1 gives $f_0 = r_n f_n - v_n g_n$ and $g_0 = u_n g_n - q_n f_n$ exactly
