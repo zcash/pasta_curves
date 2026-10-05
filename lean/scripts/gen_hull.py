@@ -35,8 +35,15 @@ The data is Bernstein's "hull light" certificate of 2023: `hull-light-20230416.s
 `Divstep/hull_light.ml` of `jrh13/hol-light`, where Harrison's files connect it to the definition
 of `divstep`. It consists of half-planes `a x + b y ≤ c` for
 four regions: the stable hulls `H0` and `H1`, the outer box `houter`, and the initial triangle
-`hinit`. For each of the ten inclusions it gives one Farkas record per target half-plane, in the
-target's order. `HullCert.lean` turns these into `Certified H0 H1`.
+`hinit`. A half-plane `⟨a, b, c⟩` of `H0` or `H1` is the edge through two consecutive vertices of
+the script's polygon (vertices with power-of-two denominators, at most `2^16`), scaled by `2^32`
+to integers and divided by the gcd of the three. For each of the ten inclusions it gives one
+Farkas record `⟨i, j, m, n, p, q⟩` per target half-plane, in the target's order: `m` times source
+half-plane `i` plus `n` times source half-plane `j` equals `q` times the target half-plane pulled
+back through the map, in the coefficients of `x` and `y`, and falls short of it by the slack `p`
+in the constant. Each map is also given as the product of the script's divstep matrices `U0`,
+`U1`, and `D` (the step at even `g`, at odd `g` without a swap, and at odd `g` with a swap),
+the rightmost factor acting first. `HullCert.lean` turns these into `Certified H0 H1`.
 -/
 
 namespace PastaCurves.Inversion.Hull
@@ -62,11 +69,58 @@ def region(name, doc, planes):
     return "\n".join(lines) + "\n\n"
 
 
+# The divstep matrices of the hull-light script, acting on column vectors `(x, y)`.
+U0 = ((Fraction(1), Fraction(0)), (Fraction(0), Fraction(1, 2)))
+U1 = ((Fraction(1), Fraction(0)), (Fraction(1, 2), Fraction(1, 2)))
+D = ((Fraction(0), Fraction(1)), (Fraction(-1, 2), Fraction(1, 2)))
+
+
+def mul(*ms):
+    """The matrix product, the rightmost factor acting first."""
+    r = ((Fraction(1), Fraction(0)), (Fraction(0), Fraction(1)))
+    for m in ms:
+        r = tuple(
+            tuple(sum(r[i][k] * m[k][j] for k in range(2)) for j in range(2)) for i in range(2)
+        )
+    return r
+
+
+def inverse(m):
+    det = m[0][0] * m[1][1] - m[0][1] * m[1][0]
+    return ((m[1][1] / det, -m[0][1] / det), (-m[1][0] / det, m[0][0] / det))
+
+
+def scale(c, m):
+    return tuple(tuple(c * x for x in row) for row in m)
+
+
+# Each inclusion's map as the script writes it (`hull-light-20230416.sage`, the `prove_inclusion`
+# calls), checked against the JSON matrix by `generate`.
+STEPS = {
+    "theorem0": ("`U0`", U0),
+    "theorem1": ("`U1`", U1),
+    "theorem3": ("`D`", D),
+    "theorem5": ("`D · U0`", mul(D, U0)),
+    "theorem_2": ("`U0 · D · U0 · U0`", mul(U0, D, U0, U0)),
+    "theorem_1": ("`U1 · D · U0 · U0`", mul(U1, D, U0, U0)),
+    "theorem_4scale": (
+        "`(33/32) (D · U0 · U0)⁻¹ · U0 · D · U0 · U0 · U0`",
+        scale(Fraction(33, 32), mul(inverse(mul(D, U0, U0)), U0, D, U0, U0, U0)),
+    ),
+    "theorem_3scale": (
+        "`(33/32) (D · U0 · U0)⁻¹ · U1 · D · U0 · U0 · U0`",
+        scale(Fraction(33, 32), mul(inverse(mul(D, U0, U0)), U1, D, U0, U0, U0)),
+    ),
+}
+
+
 def farkas(inc):
+    steps = STEPS.get(inc["name"])
+    via = f" ({steps[0]})" if steps else ""
     lines = [
         (
             f"/-- Farkas records for `{inc['name']}`: `{inc['source']}` into `{inc['target']}` under "
-            f"the map `{inc['matrix']}` divided by `s^{inc['k']}`. -/"
+            f"the map `{inc['matrix']}`{via}, divided by `s^{inc['k']}`. -/"
         ),
         f"def farkas_{inc['name']} : List Farkas := [",
     ]
@@ -79,12 +133,32 @@ def farkas(inc):
     return "\n".join(lines) + "\n\n"
 
 
+def box_bounds(planes):
+    """The bounds of the axis-aligned box given by its four half-planes."""
+    xmax = next(
+        Fraction(c) / Fraction(a) for a, b, c in planes if Fraction(b) == 0 and Fraction(a) > 0
+    )
+    ymax = next(
+        Fraction(c) / Fraction(b) for a, b, c in planes if Fraction(a) == 0 and Fraction(b) > 0
+    )
+    return xmax, ymax
+
+
 def generate(cert):
+    for inc in cert["inclusions"]:
+        if inc["name"] in STEPS:
+            want = tuple(tuple(Fraction(x) for x in row) for row in inc["matrix"])
+            if STEPS[inc["name"]][1] != want:
+                raise SystemExit(
+                    f"{inc['name']}: the divstep product does not give the JSON matrix"
+                )
     out = HEADER.format(sha=cert["source"]["sha256"])
     polys = cert["polygons"]
-    out += region("H0", "The stable hull `S_{-1/2}`, 80 half-planes.", polys["H0"])
-    out += region("H1", "The stable hull `S_{1/2}`, 80 half-planes.", polys["H1"])
-    out += region("houter", "The outer box `|x| ≤ 8193/8192`, `|y| ≤ 379/512`.", polys["houter"])
+    n0, n1 = len(polys["H0"]), len(polys["H1"])
+    xmax, ymax = box_bounds(polys["houter"])
+    out += region("H0", f"The stable hull `S_{{-1/2}}`, {n0} half-planes.", polys["H0"])
+    out += region("H1", f"The stable hull `S_{{1/2}}`, {n1} half-planes.", polys["H1"])
+    out += region("houter", f"The outer box `|x| ≤ {xmax}`, `|y| ≤ {ymax}`.", polys["houter"])
     out += region("hinit", "The initial triangle `0 ≤ y ≤ x ≤ 1`.", polys["hinit"])
     for inc in cert["inclusions"]:
         out += farkas(inc)

@@ -10,8 +10,15 @@ The data is Bernstein's "hull light" certificate of 2023: `hull-light-20230416.s
 `Divstep/hull_light.ml` of `jrh13/hol-light`, where Harrison's files connect it to the definition
 of `divstep`. It consists of half-planes `a x + b y ≤ c` for
 four regions: the stable hulls `H0` and `H1`, the outer box `houter`, and the initial triangle
-`hinit`. For each of the ten inclusions it gives one Farkas record per target half-plane, in the
-target's order. `HullCert.lean` turns these into `Certified H0 H1`.
+`hinit`. A half-plane `⟨a, b, c⟩` of `H0` or `H1` is the edge through two consecutive vertices of
+the script's polygon (vertices with power-of-two denominators, at most `2^16`), scaled by `2^32`
+to integers and divided by the gcd of the three. For each of the ten inclusions it gives one
+Farkas record `⟨i, j, m, n, p, q⟩` per target half-plane, in the target's order: `m` times source
+half-plane `i` plus `n` times source half-plane `j` equals `q` times the target half-plane pulled
+back through the map, in the coefficients of `x` and `y`, and falls short of it by the slack `p`
+in the constant. Each map is also given as the product of the script's divstep matrices `U0`,
+`U1`, and `D` (the step at even `g`, at odd `g` without a swap, and at odd `g` with a swap),
+the rightmost factor acting first. `HullCert.lean` turns these into `Certified H0 H1`.
 -/
 
 namespace PastaCurves.Inversion.Hull
@@ -199,7 +206,7 @@ def hinit : Region := [
   ⟨(-1 : ℚ), 1, 0⟩
 ]
 
-/-- Farkas records for `theorem0`: `H0` into `H1` under the map `[['1', '0'], ['0', '1/2']]` divided by `s^1`. -/
+/-- Farkas records for `theorem0`: `H0` into `H1` under the map `[['1', '0'], ['0', '1/2']]` (`U0`), divided by `s^1`. -/
 def farkas_theorem0 : List Farkas := [
   ⟨0, 1, 486238230445, 145706557700, 19234074074758165041, 25936399496866⟩,
   ⟨0, 1, 398730796365, 471429768212920, 2176020743804103466653, 25936399496866⟩,
@@ -283,7 +290,7 @@ def farkas_theorem0 : List Farkas := [
   ⟨79, 0, 8750054537455, 647120815, 2666200250709339617, 959743259423⟩
 ]
 
-/-- Farkas records for `theorem1`: `H0` into `H1` under the map `[['1', '0'], ['1/2', '1/2']]` divided by `s^1`. -/
+/-- Farkas records for `theorem1`: `H0` into `H1` under the map `[['1', '0'], ['1/2', '1/2']]` (`U1`), divided by `s^1`. -/
 def farkas_theorem1 : List Farkas := [
   ⟨79, 0, 151530645035, 77508373745, 1191225354704564972, 3838973037692⟩,
   ⟨0, 1, 12833157256590, 413284021622725, 234741277118662323, 25936399496866⟩,
@@ -367,7 +374,7 @@ def farkas_theorem1 : List Farkas := [
   ⟨78, 79, 605371085, 264254916035, 118998460001722119, 29944657191⟩
 ]
 
-/-- Farkas records for `theorem3`: `H1` into `H1` under the map `[['0', '1'], ['-1/2', '1/2']]` divided by `s^1`. -/
+/-- Farkas records for `theorem3`: `H1` into `H1` under the map `[['0', '1'], ['-1/2', '1/2']]` (`D`), divided by `s^1`. -/
 def farkas_theorem3 : List Farkas := [
   ⟨15, 16, 171783439058, 137774109, 862200676190719, 3144219907694⟩,
   ⟨15, 16, 2301846313712, 16174375623571, 28743965364681507, 3144219907694⟩,
@@ -451,7 +458,7 @@ def farkas_theorem3 : List Farkas := [
   ⟨14, 15, 6308509452190, 10437432500, 14704318120509597, 6935077536463⟩
 ]
 
-/-- Farkas records for `theorem5`: `H1` into `H0` under the map `[['0', '1/2'], ['-1/2', '1/4']]` divided by `s^2`. -/
+/-- Farkas records for `theorem5`: `H1` into `H0` under the map `[['0', '1/2'], ['-1/2', '1/4']]` (`D · U0`), divided by `s^2`. -/
 def farkas_theorem5 : List Farkas := [
   ⟨15, 16, 242564839075857156155, 344860455111173265, 2437979017596068594797746, 97164692744081004466⟩,
   ⟨15, 16, 178400139401711315, 26740063102771112545, 189275354806787656639026, 97164692744081004466⟩,
@@ -535,7 +542,7 @@ def farkas_theorem5 : List Farkas := [
   ⟨14, 15, 19745592371054579425, 31374719191312200, 93608349293876871983458, 214312197546325425857⟩
 ]
 
-/-- Farkas records for `theorem_2`: `H1` into `H0` under the map `[['0', '1/4'], ['-1/4', '1/16']]` divided by `s^4`. -/
+/-- Farkas records for `theorem_2`: `H1` into `H0` under the map `[['0', '1/4'], ['-1/4', '1/16']]` (`U0 · D · U0 · U0`), divided by `s^4`. -/
 def farkas_theorem_2 : List Farkas := [
   ⟨15, 16, 204929635534647025470747692901442625, 3638344403324880127553958167765375, 2694431604612903319067477561320154812474166, 92789667564834664730166985936857586⟩,
   ⟨16, 17, 167959783185043418249156727988728750, 6141127957784722201038723270863125, 2474849543777879224888802025444955207416994, 844687290922823485264389121414603979⟩,
@@ -619,7 +626,7 @@ def farkas_theorem_2 : List Farkas := [
   ⟨14, 15, 17310647413980044835140939659926875, 44433503667840357287748098246250, 63899680603422525290763037393770396514618, 204662383050906187513512909431248097⟩
 ]
 
-/-- Farkas records for `theorem_1`: `H1` into `H0` under the map `[['0', '1/4'], ['-1/4', '3/16']]` divided by `s^4`. -/
+/-- Farkas records for `theorem_1`: `H1` into `H0` under the map `[['0', '1/4'], ['-1/4', '3/16']]` (`U1 · D · U0 · U0`), divided by `s^4`. -/
 def farkas_theorem_1 : List Farkas := [
   ⟨14, 15, 15186194255707404162767752808734375, 470106848579286602671531184984626250, 3925384152977471872498718920682455954540882, 204662383050906187513512909431248097⟩,
   ⟨15, 16, 1539184162524702427790720234036125, 22590714834447720522688113673065875, 77863218754157772608940838858540631046846, 92789667564834664730166985936857586⟩,
@@ -703,7 +710,7 @@ def farkas_theorem_1 : List Farkas := [
   ⟨14, 15, 17106709025350726272204865055155625, 10253885461809313220249561133750, 76302091646435249880155127463385529435868, 204662383050906187513512909431248097⟩
 ]
 
-/-- Farkas records for `theorem_4scale`: `H1` into `H1` under the map `[['33/64', '33/512'], ['0', '33/64']]` divided by `s^2`. -/
+/-- Farkas records for `theorem_4scale`: `H1` into `H1` under the map `[['33/64', '33/512'], ['0', '33/64']]` (`(33/32) (D · U0 · U0)⁻¹ · U0 · D · U0 · U0 · U0`), divided by `s^2`. -/
 def farkas_theorem_4scale : List Farkas := [
   ⟨0, 1, 37569928102589818957725, 460752131404049008425, 14160283044609439173852787438, 76594159682783555139328⟩,
   ⟨2, 3, 10368952944498779465725, 372856291349576648350, 6279660028898779823778681609, 1277494251323432802688⟩,
@@ -787,7 +794,7 @@ def farkas_theorem_4scale : List Farkas := [
   ⟨79, 0, 1278691060721558062425, 10250379601235024065650, 4347282801612336432418966501, 2991495245683510762624⟩
 ]
 
-/-- Farkas records for `theorem_3scale`: `H1` into `H1` under the map `[['33/64', '-33/512'], ['0', '33/64']]` divided by `s^2`. -/
+/-- Farkas records for `theorem_3scale`: `H1` into `H1` under the map `[['33/64', '-33/512'], ['0', '33/64']]` (`(33/32) (D · U0 · U0)⁻¹ · U1 · D · U0 · U0 · U0`), divided by `s^2`. -/
 def farkas_theorem_3scale : List Farkas := [
   ⟨79, 0, 460752131404049008425, 2557382121443116124850, 2863453617442109138317997333, 5982990491367021525248⟩,
   ⟨0, 1, 2585556738239391414175425, 37569928102589818957725, 3144149828839311258106905942054, 76594159682783555139328⟩,
@@ -871,7 +878,7 @@ def farkas_theorem_3scale : List Farkas := [
   ⟨78, 79, 1025037960123502406565, 119115951601769593845, 715791524981720508380690392, 234205242133355396608⟩
 ]
 
-/-- Farkas records for `init2stable`: `hinit` into `H1` under the map `[['2753/4096', '0'], ['0', '2753/4096']]` divided by `s^0`. -/
+/-- Farkas records for `init2stable`: `hinit` into `H1` under the map `[['2753/4096', '0'], ['0', '2753/4096']]`, divided by `s^0`. -/
 def farkas_init2stable : List Farkas := [
   ⟨2, 0, 3942296, 4580992, 6035371, 1⟩,
   ⟨2, 0, 295319816, 420261968, 480443643, 1⟩,
@@ -955,7 +962,7 @@ def farkas_init2stable : List Farkas := [
   ⟨2, 0, 26296656, 24534736, 38657149, 1⟩
 ]
 
-/-- Farkas records for `theoremouter`: `H1` into `houter` under the map `[['1', '0'], ['0', '1']]` divided by `s^0`. -/
+/-- Farkas records for `theoremouter`: `H1` into `houter` under the map `[['1', '0'], ['0', '1']]`, divided by `s^0`. -/
 def farkas_theoremouter : List Farkas := [
   ⟨14, 15, 179, 30, 1122085, 28725376⟩,
   ⟨39, 40, 29, 80, 171311, 195784⟩,
