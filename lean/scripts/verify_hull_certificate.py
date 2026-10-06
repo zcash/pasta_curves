@@ -31,8 +31,7 @@ What is checked:
      s <= fuzziness^4096, and the example 9437 b + 1 <= 4096 n,
      2^b s^n <= fuzziness for (b, n) = (256, 590).
 
-With --results, a summary of the counts is written to verify_results.json in
-the current directory.
+With --results, a summary of the counts is written to verify_results.json in the current directory.
 """
 
 import json
