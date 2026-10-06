@@ -93,12 +93,7 @@ pub(crate) const FP: Field = Field {
         0x8f34d6691037659a,
         0x1e0e3b00e1dd872a,
     ],
-    e0: [
-        0x9a5f583ce5084635,
-        0x4f417e233776c195,
-        0x74634b1a733f7785,
-        0x1c51de5ea66f0f25,
-    ],
+    e0: fp::E0.0,
     inversions: [
         (
             [
@@ -224,12 +219,7 @@ pub(crate) const FQ: Field = Field {
         0xa86f41a73faf20ec,
         0x20857622e89b86ac,
     ],
-    e0: [
-        0xa3efbd8ee5083303,
-        0xfbadea62cefef7a1,
-        0xd6418abb493f6cf9,
-        0x2aa5feb88c401333,
-    ],
+    e0: fq::E0.0,
     inversions: [
         (
             [
