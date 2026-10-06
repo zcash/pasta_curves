@@ -1,6 +1,7 @@
 import Mathlib.Algebra.Order.Ring.Abs
 import Mathlib.Data.Int.GCD
 import Mathlib.Data.Int.ModEq
+import Mathlib.RingTheory.Coprime.Basic
 import Mathlib.Tactic.Ring
 import Mathlib.Tactic.Linarith
 import Mathlib.Tactic.LinearCombination
@@ -321,26 +322,16 @@ theorem divsteps_gcd (n : ℕ) (s : State) (hf : s.f % 2 = 1) :
   set G : ℤ := (Int.gcd s.f s.g : ℤ)
   have hGf : G ∣ s.f := Int.gcd_dvd_left _ _
   have hGg : G ∣ s.g := Int.gcd_dvd_right _ _
-  -- `G` divides the odd `f_0`, so it is prime to `2`.
-  have hG2 : Int.gcd G 2 = 1 := by
-    have h1 : ((Int.gcd G 2 : ℕ) : ℤ) ∣ s.f := (Int.gcd_dvd_left G 2).trans hGf
-    have h2 : Int.gcd G 2 ∣ 2 := by exact_mod_cast Int.gcd_dvd_right G 2
-    have hle : Int.gcd G 2 ≤ 2 := Nat.le_of_dvd (by norm_num) h2
-    obtain ⟨c, hc⟩ := h1
-    rcases (by omega : Int.gcd G 2 = 0 ∨ Int.gcd G 2 = 1 ∨ Int.gcd G 2 = 2) with h | h | h
-    · rw [h] at h2; exact absurd (Nat.eq_zero_of_zero_dvd h2) (by norm_num)
-    · exact h
-    · rw [h] at hc; push_cast at hc; omega
-  -- So it cancels powers of two.
+  -- `G` divides the odd `f_0`, so it is odd too, and cancels every power of `2`.
+  have hcop : IsCoprime G 2 := IsCoprime.of_isCoprime_of_dvd_left ⟨1, -(s.f / 2), by omega⟩ hGf
   have hcancel : ∀ (m : ℕ) (x : ℤ), G ∣ 2^m * x → G ∣ x := by
     intro m
     induction m with
-    | zero => intro x h; simpa using h
+    | zero => simp
     | succ m ih =>
       intro x h
-      apply ih
-      rw [pow_succ, mul_comm ((2 : ℤ)^m) 2, mul_assoc] at h
-      exact Int.dvd_of_dvd_mul_right_of_gcd_one h hG2
+      rw [pow_succ', mul_assoc] at h
+      exact ih x (hcop.dvd_of_dvd_mul_left h)
   apply Nat.dvd_antisymm
   · apply Int.dvd_gcd
     · rw [hIf]
