@@ -106,8 +106,8 @@ and `divsteps_abs_le` (`Divstep.lean`).
 **Lemma 4 (gcd and the end state).** $\gcd(f_n, g_n) = \gcd(f_0, g_0)$, and $f_n$ is odd. If
 $g_n = 0$ then $f_n = \pm \gcd(f_0, g_0)$. If $g_0 = 0$ then every step is the non-swap case
 with $b = 0$, so $f_n = f_0$, $g_n = 0$, and
-$M_n = \begin{bmatrix} 2^n & 0 \\ 0 & 1 \end{bmatrix}$. *In Lean:* `divsteps_f_odd` and
-`divsteps_of_g_zero` (`Divstep.lean`).
+$M_n = \begin{bmatrix} 2^n & 0 \\ 0 & 1 \end{bmatrix}$. *In Lean:* `divsteps_gcd`,
+`divsteps_f_odd`, `f_natAbs_of_g_eq_zero`, and `divsteps_of_g_zero` (`Divstep.lean`).
 
 **Lemma 4′ (the adjugate).** Each $T_i$ has determinant $2$, so $\det M_n = 2^n$, and the
 adjugate of Lemma 1 gives $f_0 = r_n f_n - v_n g_n$ and $g_0 = u_n g_n - q_n f_n$ exactly
@@ -232,7 +232,8 @@ $x \cdot (f_{10} u_{10}) \equiv 2^{512}$. The last round computes $u_{10}$ with 
 $f_{10}$ folded into the matrix row, then reduces strictly; by Lemma 10 one conditional
 subtraction gives the canonical $z \equiv f_{10} u_{10}$, and $x z \equiv R^2$. In Montgomery
 terms, if $x = X R$ and $z = Z R$ then $X Z \equiv 1$. *In Lean:* `montInv_spec` (`Model.lean`),
-with the primality of $p$, which it needs for $\gcd(p, x) = 1$, from the Pratt certificates of
+with Theorem 5 as a hypothesis, discharged in `montInv_correct` (`Correctness.lean`), and with
+the primality of $p$, which it needs for $\gcd(p, x) = 1$, from the Pratt certificates of
 `lean/PastaCurves/Primality.lean`.
 
 For $x = 0$: by Lemma 4 every matrix is $\begin{bmatrix} 2^{59} & 0 \\ 0 & 1 \end{bmatrix}$, so
