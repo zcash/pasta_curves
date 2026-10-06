@@ -139,7 +139,8 @@ pub(crate) fn from_mont_with<B: MontgomeryBlocks>(
 /// # Safety
 ///
 /// Both inputs must be canonical. This is debug-asserted, and under that precondition the
-/// machine-checked proofs in `lean/` establish the result (`add_entry_spec`).
+/// machine-checked proofs in `lean/` establish the result (`add_with_spec` and the backend's
+/// `montgomeryBlocks_spec`).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus. Any other values will
 /// cause undefined results.
@@ -155,7 +156,8 @@ pub fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 /// # Safety
 ///
 /// Both inputs must be canonical. This is debug-asserted, and under that precondition the
-/// machine-checked proofs in `lean/` establish the result (`sub_entry_spec`).
+/// machine-checked proofs in `lean/` establish the result (`sub_with_spec` and the backend's
+/// `montgomeryBlocks_spec`).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus. Any other values will
 /// cause undefined results.
@@ -168,11 +170,11 @@ pub fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 ///
 /// # Safety
 ///
-/// Either `lhs` is canonical (below the modulus) and `rhs` is any four-limb value, or
-/// `rhs` is canonical with each of its limbs 1 to 3 at most `2^64 - 3` and `lhs` is any
-/// four-limb value. This is debug-asserted, and under that precondition the machine-checked
-/// proofs in `lean/` establish the result (`mul_entry_spec`, from `mulMont_spec_of_lhs_lt`
-/// and `mulMont_spec_of_rhs_lt`).
+/// Either `lhs` is canonical (below the modulus) and `rhs` is any four-limb value, or `rhs` is
+/// canonical with each of its limbs 1 to 3 at most `2^64 - 3` and `lhs` is any four-limb value.
+/// This is debug-asserted, and under that precondition the machine-checked proofs in `lean/`
+/// establish the result (`mul_with_spec` and the backend's `montgomeryBlocks_spec`, from
+/// `mulMont_spec_of_lhs_lt` and `mulMont_spec_of_rhs_lt`).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
 /// correctly derived from it. Any other values will cause undefined results.
@@ -187,9 +189,9 @@ pub fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
 ///
 /// # Safety
 ///
-/// The input of `square` must be canonical. This is debug-asserted, and under that
-/// precondition the machine-checked proofs in `lean/` establish the result
-/// (`square_entry_spec`).
+/// The input of `square` must be canonical. This is debug-asserted, and under that precondition the
+/// machine-checked proofs in `lean/` establish the result (`square_with_spec` and the backend's
+/// `montgomeryBlocks_spec`).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
 /// correctly derived from it. Any other values will cause undefined results.
@@ -214,7 +216,8 @@ pub fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
 /// # Safety
 ///
 /// `value` must be canonical. This is debug-asserted, and under that precondition the
-/// machine-checked proofs in `lean/` establish the result (`sqrNMul_entry_spec`).
+/// machine-checked proofs in `lean/` establish the result (`sqr_n_mul_with_spec` and the backend's
+/// `montgomeryBlocks_spec`).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
 /// correctly derived from it. Any other values will cause undefined results.
@@ -229,9 +232,10 @@ pub fn sqr_n_mul(value: &Limbs, count: usize, rhs: &Limbs, modulus: &Limbs, inv:
 /// Montgomery multiplication by one.
 ///
 /// Any four-limb `value` is accepted, and the machine-checked proofs in `lean/` establish the
-/// result (`fromMont_entry_spec`). On AArch64 the conversion is the multiplication block with
-/// `1` as its right operand, which is canonical with limbs 1 to 3 zero and so inside the
-/// multiplication's contract for any left operand. On x86-64 it is a dedicated block.
+/// result (`from_mont_with_spec` and the backend's `montgomeryBlocks_spec`). On AArch64 the
+/// conversion is the multiplication block with `1` as its right operand, which is canonical with
+/// limbs 1 to 3 zero and so inside the multiplication's contract for any left operand. On x86-64 it
+/// is a dedicated block.
 ///
 /// # Safety
 ///

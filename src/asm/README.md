@@ -91,12 +91,14 @@ every check CI runs.
 ## Formal verification
 
 `lean/` holds a Lean 4 development that models the routines formally and contributes to assuring
-their correctness. The model is at the instruction level. Individual blocks of assembly are proven;
-from those, each of the six Montgomery entry points is proved at either Pasta field, under the
-condition that the entry point asserts. The inversion's algorithm is proved on words
-(`montInv_spec`), each of its six AArch64 blocks is proved to compute its word-level function, and
-`invert` over those blocks is proved at either field from their composition (`invert_entry_spec`).
-Of the portable blocks, only `cond_sub` is proved, from its Aeneas translation; all six are checked
-against the same known answers as the assembly blocks. The transcription is generated from the
-module's own inline blocks, CI regenerates and diffs it, and the independent `nanoda` implementation
-of the Lean kernel re-checks the build. See [`lean/README.md`](../../lean/README.md).
+their correctness. The model is at the instruction level. Individual blocks of assembly are proven.
+The generic compositions that run them as the six Montgomery entry points (`entry.rs`) are
+translated to Lean by Aeneas, and proved over any backend whose blocks meet their contracts. So each
+entry point is proved at either Pasta field, under the condition that it asserts. The inversion's
+algorithm is proved on words (`montInv_spec`), each of its six AArch64 blocks is proved to compute
+its word-level function, and `invert` over those blocks is proved at either field from their
+composition (`invert_entry_spec`). Of the portable blocks, only `cond_sub` is proved, from its
+Aeneas translation; all six are checked against the same known answers as the assembly blocks. The
+transcription is generated from the module's own inline blocks, CI regenerates and diffs it, and the
+independent `nanoda` implementation of the Lean kernel re-checks the build. See
+[`lean/README.md`](../../lean/README.md).

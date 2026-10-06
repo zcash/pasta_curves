@@ -18,12 +18,6 @@ namespace PastaCurves.Portable
 
 open Aeneas Aeneas.Std
 
-/-- The value of a Boolean as a word: `1` for true, `0` for false. -/
-@[step_pure core.convert.num.FromU64Bool.from b]
-theorem fromU64Bool_val (b : Bool) :
-    (core.convert.num.FromU64Bool.from b).val = if b then 1 else 0 := by
-  cases b <;> rfl
-
 -- Aeneas' `wrapping_sub_bv_eq` states `(core.num.U64.wrapping_sub x y).bv = x.bv - y.bv`.
 -- `step_pure` makes it a `step` lemma for `lift (core.num.U64.wrapping_sub x y)`, so that `step*`
 -- records each wrapping subtraction's result as that difference of bit vectors, the form that
@@ -59,21 +53,6 @@ theorem select_post (o x y keep nk a d b : Std.U64) (hb : b.val = 0 ∨ b.val = 
   split_ifs with h
   · rw [hval, hobv, if_pos (hcond.1 h)]; rfl
   · rw [hval, hobv, if_neg (fun h' => h (hcond.2 h'))]; rfl
-
-/-- One limb of a borrow chain, from the post-conditions of its two subtractions and of the
-borrow's conversion: the difference word, the subtrahend, and the borrow in make the minuend and
-the borrow out, which is zero or one. -/
-theorem sbb_step (a b cin : Nat) (word word1 bout : Std.U64) (u1 u2 : Bool) (hb : b < 2^64)
-    (hcin : cin ≤ 1)
-    (h1 : if a < b then word.val + b = a + U64.size ∧ u1 = true else word.val = a - b ∧ u1 = false)
-    (h2 : if word.val < cin then word1.val + cin = word.val + U64.size ∧ u2 = true
-      else word1.val = word.val - cin ∧ u2 = false)
-    (h3 : bout.val = if (u1 || u2) = true then 1 else 0) :
-    word1.val + b + cin = a + 2^64 * bout.val ∧ bout.val ≤ 1 := by
-  have hw := word.hBounds
-  have hw1 := word1.hBounds
-  simp only [U64.size] at h1 h2
-  cases u1 <;> cases u2 <;> split_ifs at h1 h2 <;> simp_all <;> scalar_tac
 
 open pasta_curves.inversion.portable in
 /-- `cond_sub` subtracts `m` from `v` exactly when `v` is not below it: the translation meets the

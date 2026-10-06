@@ -29,6 +29,7 @@ import PastaCurves.Portable.Vectors
 import PastaCurves.Portable.Spec
 import PastaCurves.Words
 import PastaCurves.Glue.Funs
+import PastaCurves.Glue.Spec
 import PastaCurves.Glue.Vectors
 
 /-!
