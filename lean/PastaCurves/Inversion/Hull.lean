@@ -13,7 +13,8 @@ convex regions of the rational plane as finite conjunctions of half-planes `a x 
 inclusion `M S ⊆ λ^k T`, that is `∀ p ∈ S, M p / λ^k ∈ T`, is certified edge by edge: every
 half-plane of `T`, pulled back through the linear map, is a nonnegative combination of two
 half-planes of `S`. That is the form of Bernstein's "hull light" certificate, whose Sage script
-generates the HOL Light proof `Divstep/hull_light.ml` of `jrh13/hol-light`.
+generates the HOL Light proof `Divstep/hull_light.ml` of `jrh13/hol-light`
+(<https://github.com/jrh13/hol-light/tree/6f6ac17e8f4bff6c7f6897de0570a004744e4963/Divstep>).
 
 Pulling a half-plane back through a map means taking its preimage: the points whose image satisfies
 it. Through the linear map `(x, y) ↦ M (x, y) / d`, the preimage of `a x + b y ≤ c` is again a

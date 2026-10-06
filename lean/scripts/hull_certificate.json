@@ -6,7 +6,7 @@
   "sha256_hull_light_ml": "efabcff1b4d6dfdba232c9ced36bae02532ae455b1949f2c87273807d2e1f88f",
   "licence": "public domain (HOL Light README)",
   "url": "https://cr.yp.to/2023/hull-light-20230416.sage",
-  "hol_light_dir": "https://github.com/jrh13/hol-light/tree/master/Divstep"
+  "hol_light_dir": "https://github.com/jrh13/hol-light/tree/6f6ac17e8f4bff6c7f6897de0570a004744e4963/Divstep"
  },
  "s": "30902639/41749730",
  "stretch": "2753/4096",
