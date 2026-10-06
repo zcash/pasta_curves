@@ -4,11 +4,10 @@ import PastaCurves.Pratt
 # The two Pasta primes are prime
 
 A Pratt certificate for each of the two Pasta primes (`Pratt.lean`), checked by the kernel. Each
-lists every prime needed, each after the primes of its own factorization, with its Lucas witness
-and the factorization
-of `p - 1`. The large primes of the factorizations are those of CompElliptic's certificates for
-the same primes; the rest of the data was computed by trial division and a search for the
-witnesses, and cross-checked in Sage. The check itself is what is trusted.
+lists every prime needed, each after the primes of its own factorization, with its Lucas witness and
+the factorization of `p - 1`. The large primes of the factorizations are those of CompElliptic's
+certificates for the same primes; the rest of the data was computed by trial division and a search
+for the witnesses, and cross-checked in Sage. The check itself is what is trusted.
 -/
 
 namespace PastaCurves.Pratt

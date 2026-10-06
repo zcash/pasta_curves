@@ -28,10 +28,9 @@ def packedDivsteps (k : ℕ) (two_delta wf wg : ℤ) : ℤ × ℤ × ℤ :=
   let t := divsteps k ⟨two_delta, wf, wg⟩
   (t.two_delta, t.f, t.g)
 
-/-- Lemma 7's decoder: the coefficient pair in the upper bits of a packed word after `k` steps,
-with the first coefficient taken in `(-2^20, 2^20]` for every `k ≤ 20`. `unpack_spec` assumes
-the narrower range `(-2^k, 2^k]`, which is what the entries of `M k s` satisfy
-(`M_entry_range`). -/
+/-- Lemma 7's decoder: the coefficient pair in the upper bits of a packed word after `k` steps, with
+the first coefficient taken in `(-2^20, 2^20]` for every `k ≤ 20`. `unpack_spec` assumes the
+narrower range `(-2^k, 2^k]`, which is what the entries of `M k s` satisfy (`M_entry_range`). -/
 def unpack (k : ℕ) (w : ℤ) : ℤ × ℤ :=
   let t := -w
   let up := (t + 2^(40 - k)) / 2^(41 - k)   -- = u + 2^21 v
