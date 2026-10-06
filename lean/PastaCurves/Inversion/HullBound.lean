@@ -8,8 +8,10 @@ import PastaCurves.Inversion.Termination
 # The termination bound from a hull certificate
 
 The argument of Bernstein's "hull light" certificate (its Sage script generates the HOL Light
-proof `Divstep/hull_light.ml` of `jrh13/hol-light`), stated over two abstract regions `H0` and `H1`
-whose properties, `Certified`, are the finite checks that the certificate data discharges:
+proof `Divstep/hull_light.ml` of `jrh13/hol-light`,
+<https://github.com/jrh13/hol-light/tree/6f6ac17e8f4bff6c7f6897de0570a004744e4963/Divstep>),
+stated over two abstract regions `H0` and `H1` whose properties, `Certified`, are the finite
+checks that the certificate data discharges:
 
 * the eight inclusions `M S ⊆ λ^k T` between `H0`, `H1`, and their images under the step maps;
 * `H1` lies in the outer box `|x| ≤ 8193/8192`, `|y| ≤ 379/512`, and the triangle
