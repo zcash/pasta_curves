@@ -1,4 +1,4 @@
-import PastaCurves.Glue.Funs
+import PastaCurves.Glue.Blocks
 import PastaCurves.Words
 import PastaCurves.Compositions
 import PastaCurves.Fields
@@ -113,6 +113,11 @@ theorem mul_contract_spec (lhs rhs modulus : Std.Array Std.U64 4#usize) :
   simp only [mulContract, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq, hl, hr,
     le_max_sub_two i1_post, h1, h2, h3, and_assoc]
 
+/-- The shape of the entry points' results: `res` is canonical at the field `F`, and its value times
+the weight `k` (`1`, `R`, or a power of `R`) is congruent to `expr` modulo `p`. -/
+abbrev Canonical (F : PastaField) (res : Std.Array Std.U64 4#usize) (k expr : ℕ) : Prop :=
+  (limbsOfArray res).toNat < F.modulus.toNat ∧ k * (limbsOfArray res).toNat ≡ expr [MOD F.modulus.toNat]
+
 /-- What the entry points' compositions need of a backend's Montgomery blocks at the field `F`.
 Each block, at the field's modulus and `inv`, and under the condition that its entry point
 asserts, returns a canonical result with the block's congruence. -/
@@ -122,9 +127,7 @@ structure BlocksSpec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F : Pas
   add : ∀ lhs rhs, isCanonical (limbsOfArray lhs) F.modulus = true →
     isCanonical (limbsOfArray rhs) F.modulus = true →
     Blocks.add lhs rhs (limbsArray F.modulus) ⦃ res =>
-      (limbsOfArray res).toNat < F.modulus.toNat ∧
-        (limbsOfArray res).toNat ≡ (limbsOfArray lhs).toNat + (limbsOfArray rhs).toNat
-          [MOD F.modulus.toNat] ⦄
+      Canonical F res 1 ((limbsOfArray lhs).toNat + (limbsOfArray rhs).toNat) ⦄
   /-- `sub` on canonical operands returns their canonical difference. -/
   sub : ∀ lhs rhs, isCanonical (limbsOfArray lhs) F.modulus = true →
     isCanonical (limbsOfArray rhs) F.modulus = true →
@@ -136,19 +139,14 @@ structure BlocksSpec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F : Pas
   `R * res ≡ lhs * rhs (mod p)`. -/
   mul : ∀ lhs rhs, mulContract (limbsOfArray lhs) (limbsOfArray rhs) F.modulus = true →
     Blocks.mul lhs rhs (limbsArray F.modulus) (word F.inv) ⦃ res =>
-      (limbsOfArray res).toNat < F.modulus.toNat ∧
-        R * (limbsOfArray res).toNat ≡ (limbsOfArray lhs).toNat * (limbsOfArray rhs).toNat
-          [MOD F.modulus.toNat] ⦄
+      Canonical F res R ((limbsOfArray lhs).toNat * (limbsOfArray rhs).toNat) ⦄
   /-- `square` on a canonical operand returns a canonical `res` with `R * res ≡ value² (mod p)`. -/
   square : ∀ value, isCanonical (limbsOfArray value) F.modulus = true →
     Blocks.square value (limbsArray F.modulus) (word F.inv) ⦃ res =>
-      (limbsOfArray res).toNat < F.modulus.toNat ∧
-        R * (limbsOfArray res).toNat ≡ (limbsOfArray value).toNat * (limbsOfArray value).toNat
-          [MOD F.modulus.toNat] ⦄
+      Canonical F res R ((limbsOfArray value).toNat * (limbsOfArray value).toNat) ⦄
   /-- `from_mont` on any operand returns a canonical `res` with `R * res ≡ value (mod p)`. -/
   from_mont : ∀ value, Blocks.from_mont value (limbsArray F.modulus) (word F.inv) ⦃ res =>
-    (limbsOfArray res).toNat < F.modulus.toNat ∧
-      R * (limbsOfArray res).toNat ≡ (limbsOfArray value).toNat [MOD F.modulus.toNat] ⦄
+    Canonical F res R (limbsOfArray value).toNat ⦄
 
 /-- `add_with` at a Pasta field: for canonical operands, as it asserts, the canonical sum. -/
 theorem add_with_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F : PastaField)
@@ -156,9 +154,7 @@ theorem add_with_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F : Pa
     (hl : isCanonical (limbsOfArray lhs) F.modulus = true)
     (hr : isCanonical (limbsOfArray rhs) F.modulus = true) :
     asm.entry.add_with Blocks lhs rhs (limbsArray F.modulus) ⦃ res =>
-      (limbsOfArray res).toNat < F.modulus.toNat ∧
-        (limbsOfArray res).toNat ≡ (limbsOfArray lhs).toNat + (limbsOfArray rhs).toNat
-          [MOD F.modulus.toNat] ⦄ := by
+      Canonical F res 1 ((limbsOfArray lhs).toNat + (limbsOfArray rhs).toNat) ⦄ := by
   unfold asm.entry.add_with
   have hm := limbsOfArray_limbsArray F.modulus F.bounded
   step*
@@ -185,9 +181,7 @@ theorem mul_with_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F : Pa
     (hS : BlocksSpec Blocks F) (lhs rhs : Std.Array Std.U64 4#usize)
     (h : mulContract (limbsOfArray lhs) (limbsOfArray rhs) F.modulus = true) :
     asm.entry.mul_with Blocks lhs rhs (limbsArray F.modulus) (word F.inv) ⦃ res =>
-      (limbsOfArray res).toNat < F.modulus.toNat ∧
-        R * (limbsOfArray res).toNat ≡ (limbsOfArray lhs).toNat * (limbsOfArray rhs).toNat
-          [MOD F.modulus.toNat] ⦄ := by
+      Canonical F res R ((limbsOfArray lhs).toNat * (limbsOfArray rhs).toNat) ⦄ := by
   unfold asm.entry.mul_with
   have hm := limbsOfArray_limbsArray F.modulus F.bounded
   step*
@@ -199,9 +193,7 @@ theorem square_with_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F :
     (hS : BlocksSpec Blocks F) (value : Std.Array Std.U64 4#usize)
     (h : isCanonical (limbsOfArray value) F.modulus = true) :
     asm.entry.square_with Blocks value (limbsArray F.modulus) (word F.inv) ⦃ res =>
-      (limbsOfArray res).toNat < F.modulus.toNat ∧
-        R * (limbsOfArray res).toNat ≡ (limbsOfArray value).toNat * (limbsOfArray value).toNat
-          [MOD F.modulus.toNat] ⦄ := by
+      Canonical F res R ((limbsOfArray value).toNat * (limbsOfArray value).toNat) ⦄ := by
   unfold asm.entry.square_with
   have hm := limbsOfArray_limbsArray F.modulus F.bounded
   step*
@@ -212,8 +204,7 @@ theorem square_with_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F :
 theorem from_mont_with_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F : PastaField)
     (hS : BlocksSpec Blocks F) (value : Std.Array Std.U64 4#usize) :
     asm.entry.from_mont_with Blocks value (limbsArray F.modulus) (word F.inv) ⦃ res =>
-      (limbsOfArray res).toNat < F.modulus.toNat ∧
-        R * (limbsOfArray res).toNat ≡ (limbsOfArray value).toNat [MOD F.modulus.toNat] ⦄ := by
+      Canonical F res R (limbsOfArray value).toNat ⦄ := by
   unfold asm.entry.from_mont_with
   exact hS.from_mont value
 
@@ -258,19 +249,13 @@ after `iter.end` squarings. -/
 theorem sqr_n_mul_with_loop_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B)
     (F : PastaField) (hS : BlocksSpec Blocks F) (v : ℕ) (iter : core.ops.range.Range Std.Usize)
     (acc : Std.Array Std.U64 4#usize) (hle : iter.start.val ≤ iter.«end».val)
-    (hacc : (limbsOfArray acc).toNat < F.modulus.toNat)
-    (hc : R^(2^iter.start.val - 1) * (limbsOfArray acc).toNat ≡ v^(2^iter.start.val)
-      [MOD F.modulus.toNat]) :
+    (hacc : Canonical F acc (R^(2^iter.start.val - 1)) (v^(2^iter.start.val))) :
     asm.entry.sqr_n_mul_with_loop Blocks iter (limbsArray F.modulus) (word F.inv) acc ⦃ res =>
-      (limbsOfArray res).toNat < F.modulus.toNat ∧
-        R^(2^iter.«end».val - 1) * (limbsOfArray res).toNat ≡ v^(2^iter.«end».val)
-          [MOD F.modulus.toNat] ⦄ := by
+      Canonical F res (R^(2^iter.«end».val - 1)) (v^(2^iter.«end».val)) ⦄ := by
   unfold asm.entry.sqr_n_mul_with_loop
   apply loop.spec_decr_nat (fun x => x.1.«end».val - x.1.start.val)
     (fun x => x.1.«end» = iter.«end» ∧ x.1.start.val ≤ x.1.«end».val ∧
-      (limbsOfArray x.2).toNat < F.modulus.toNat ∧
-      R^(2^x.1.start.val - 1) * (limbsOfArray x.2).toNat ≡ v^(2^x.1.start.val)
-        [MOD F.modulus.toNat])
+      Canonical F x.2 (R^(2^x.1.start.val - 1)) (v^(2^x.1.start.val)))
   · rintro ⟨it, a⟩ ⟨hend, hle', ha, hca⟩
     simp only at hend hle' ha hca
     unfold asm.entry.sqr_n_mul_with_loop.body
@@ -293,7 +278,7 @@ theorem sqr_n_mul_with_loop_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks
         rw [hstart]
         exact sqr_weight_step _ hca hc1
       · simp [o_post.1] at hsome
-  · exact ⟨rfl, hle, hacc, hc⟩
+  · exact ⟨rfl, hle, hacc⟩
 
 /-- `sqr_n_mul_with` at a Pasta field: for a canonical `value`, as it asserts, and any `rhs`, a
 canonical `res` with `R^(2^count) * res ≡ value^(2^count) * rhs (mod p)`. The squarings keep the
@@ -302,18 +287,96 @@ theorem sqr_n_mul_with_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (
     (hS : BlocksSpec Blocks F) (value : Std.Array Std.U64 4#usize) (count : Std.Usize)
     (rhs : Std.Array Std.U64 4#usize) (h : isCanonical (limbsOfArray value) F.modulus = true) :
     asm.entry.sqr_n_mul_with Blocks value count rhs (limbsArray F.modulus) (word F.inv) ⦃ res =>
-      (limbsOfArray res).toNat < F.modulus.toNat ∧
-        R^(2^count.val) * (limbsOfArray res).toNat ≡
-          (limbsOfArray value).toNat^(2^count.val) * (limbsOfArray rhs).toNat
-            [MOD F.modulus.toNat] ⦄ := by
+      Canonical F res (R^(2^count.val))
+        ((limbsOfArray value).toNat^(2^count.val) * (limbsOfArray rhs).toNat) ⦄ := by
   unfold asm.entry.sqr_n_mul_with
   have hm := limbsOfArray_limbsArray F.modulus F.bounded
   have hv := (isCanonical_iff _ _ (limbsOfArray_bounded value) F.bounded).1 h
   step*
   step with sqr_n_mul_with_loop_spec Blocks F hS (limbsOfArray value).toNat
-    { start := 0#usize, «end» := count } value (by simp) hv (by simp; rfl) as ⟨acc, hacc, hcacc⟩
+    { start := 0#usize, «end» := count } value (by simp) ⟨hv, by simp; rfl⟩ as ⟨acc, hacc, hcacc⟩
   have hacc' := (isCanonical_iff _ _ (limbsOfArray_bounded acc) F.bounded).2 hacc
   step with mul_with_spec Blocks F hS acc rhs (by simp [mulContract, hacc']) as ⟨res, hres, hcres⟩
   exact ⟨hres, mul_weight_step _ hcacc hcres⟩
+
+/-- The block theorems' form of a result: `res` is bounded, canonical at the field `F`, and
+`k * res ≡ expr (mod p)`. -/
+abbrev LimbsCanonical (F : PastaField) (res : Limbs) (k expr : ℕ) : Prop :=
+  res.Bounded ∧ res.toNat < F.modulus.toNat ∧ k * res.toNat ≡ expr [MOD F.modulus.toNat]
+
+/-- A block's result written back as an array: a result of the block theorems' form gives the
+entry points' form. -/
+theorem ok_limbsArray_spec {F : PastaField} {res : Limbs} {k expr : ℕ} (h : LimbsCanonical F res k expr) :
+    (.ok (limbsArray res) : Result (Std.Array Std.U64 4#usize)) ⦃ s => Canonical F s k expr ⦄ := by
+  simp only [WP.spec_ok, Canonical, limbsOfArray_limbsArray _ h.1]
+  exact h.2
+
+/-- The arithmetic meaning of the canonicity check on an array's limbs. -/
+theorem lt_of_isCanonical {F : PastaField} {x : Std.Array Std.U64 4#usize}
+    (h : isCanonical (limbsOfArray x) F.modulus = true) :
+    (limbsOfArray x).toNat < F.modulus.toNat :=
+  (isCanonical_iff _ _ (limbsOfArray_bounded x) F.bounded).1 h
+
+/-- What a backend's block theorems give at the field `F`, on limbs, in the form that they state
+it: the contracts of `BlocksSpec` for the blocks' models, with `mul` under each of its two
+contracts. -/
+structure LimbsSpec (add sub : Limbs → Limbs → Limbs → Limbs)
+    (mul : Limbs → Limbs → Limbs → Nat → Limbs) (square fromMont : Limbs → Limbs → Nat → Limbs)
+    (F : PastaField) : Prop where
+  /-- `add` on canonical operands is their canonical sum. -/
+  add : ∀ lhs rhs : Limbs, lhs.Bounded → rhs.Bounded → lhs.toNat < F.modulus.toNat →
+    rhs.toNat < F.modulus.toNat → ∀ res, res = add lhs rhs F.modulus →
+      res.Bounded ∧ res.toNat < F.modulus.toNat ∧
+        res.toNat ≡ lhs.toNat + rhs.toNat [MOD F.modulus.toNat]
+  /-- `sub` on canonical operands is their canonical difference. -/
+  sub : ∀ lhs rhs : Limbs, lhs.Bounded → rhs.Bounded → lhs.toNat < F.modulus.toNat →
+    rhs.toNat < F.modulus.toNat → ∀ res, res = sub lhs rhs F.modulus →
+      res.Bounded ∧ res.toNat < F.modulus.toNat ∧
+        res.toNat + rhs.toNat ≡ lhs.toNat [MOD F.modulus.toNat]
+  /-- `mul` with a canonical `lhs` and any `rhs`. -/
+  mul_of_lhs_lt : ∀ lhs rhs : Limbs, lhs.Bounded → rhs.Bounded → lhs.toNat < F.modulus.toNat →
+    ∀ res, res = mul lhs rhs F.modulus F.inv → LimbsCanonical F res R (lhs.toNat * rhs.toNat)
+  /-- `mul` with any `lhs` and a canonical `rhs` whose limbs 1 to 3 are at most `2^64 - 3`. -/
+  mul_of_rhs_lt : ∀ lhs rhs : Limbs, lhs.Bounded → rhs.Bounded → rhs.toNat < F.modulus.toNat →
+    rhs.l1 + 3 ≤ 2^64 ∧ rhs.l2 + 3 ≤ 2^64 ∧ rhs.l3 + 3 ≤ 2^64 →
+    ∀ res, res = mul lhs rhs F.modulus F.inv → LimbsCanonical F res R (lhs.toNat * rhs.toNat)
+  /-- `square` on a canonical operand. -/
+  square : ∀ value : Limbs, value.Bounded → value.toNat < F.modulus.toNat →
+    ∀ res, res = square value F.modulus F.inv → LimbsCanonical F res R (value.toNat * value.toNat)
+  /-- The conversion out of Montgomery form on any operand. -/
+  fromMont : ∀ value : Limbs, value.Bounded →
+    ∀ res, res = fromMont value F.modulus F.inv → LimbsCanonical F res R value.toNat
+
+/-- A backend's record meets the blocks' contracts at the field `F` when its block theorems give
+their contracts there. `mul`'s contract is the one of its two that the condition that `mul_with`
+asserts selects. -/
+theorem blocksOf_spec {add sub : Limbs → Limbs → Limbs → Limbs}
+    {mul : Limbs → Limbs → Limbs → Nat → Limbs} {square fromMont : Limbs → Limbs → Nat → Limbs}
+    (F : PastaField) (h : LimbsSpec add sub mul square fromMont F) :
+    BlocksSpec (blocksOf add sub mul square fromMont) F where
+  add lhs rhs hl hr := by
+    obtain ⟨hr', hlt, hc⟩ := h.add _ _ (limbsOfArray_bounded lhs) (limbsOfArray_bounded rhs)
+      (lt_of_isCanonical hl) (lt_of_isCanonical hr) _ rfl
+    simp only [blocksOf, limbsOfArray_limbsArray _ F.bounded]
+    exact ok_limbsArray_spec ⟨hr', hlt, by rwa [one_mul]⟩
+  sub lhs rhs hl hr := by
+    obtain ⟨hr', hlt, hc⟩ := h.sub _ _ (limbsOfArray_bounded lhs) (limbsOfArray_bounded rhs)
+      (lt_of_isCanonical hl) (lt_of_isCanonical hr) _ rfl
+    simp only [blocksOf, WP.spec_ok, limbsOfArray_limbsArray _ F.bounded,
+      limbsOfArray_limbsArray _ hr']
+    exact ⟨hlt, hc⟩
+  mul lhs rhs hc := by
+    have hb := limbsOfArray_bounded
+    have hc' := (mulContract_iff _ _ F.modulus (hb lhs) (hb rhs) F.bounded).1 hc
+    simp only [blocksOf, limbsOfArray_limbsArray _ F.bounded, word_val _ F.inv_lt]
+    exact ok_limbsArray_spec (hc'.elim
+      (fun hlt => h.mul_of_lhs_lt _ _ (hb lhs) (hb rhs) hlt _ rfl)
+      (fun ⟨hlt, hlimbs⟩ => h.mul_of_rhs_lt _ _ (hb lhs) (hb rhs) hlt hlimbs _ rfl))
+  square value hv := by
+    simp only [blocksOf, limbsOfArray_limbsArray _ F.bounded, word_val _ F.inv_lt]
+    exact ok_limbsArray_spec (h.square _ (limbsOfArray_bounded value) (lt_of_isCanonical hv) _ rfl)
+  from_mont value := by
+    simp only [blocksOf, limbsOfArray_limbsArray _ F.bounded, word_val _ F.inv_lt]
+    exact ok_limbsArray_spec (h.fromMont _ (limbsOfArray_bounded value) _ rfl)
 
 end PastaCurves.Glue

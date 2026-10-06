@@ -19,54 +19,23 @@ compositions, so they hold for the crate's `add`, `sub`, `mul`, `square`, `sqr_n
 
 namespace PastaCurves.X86_64
 
-/-- The x86-64 record meets the blocks' contracts at a Pasta field, by the blocks' theorems: `mul`
-under either of its proved contracts, and the backend's own `from_mont` for every operand. -/
-theorem montgomeryBlocks_spec (F : PastaField) : Glue.BlocksSpec montgomeryBlocks F where
-  add lhs rhs hl hr := by
-    have hb := limbsOfArray_bounded
-    obtain ⟨hr', hlt, hc⟩ := addMod_spec_of_lt _ _ F.modulus (hb lhs) (hb rhs) F.bounded F.shape
-      ((isCanonical_iff _ _ (hb lhs) F.bounded).1 hl)
-      ((isCanonical_iff _ _ (hb rhs) F.bounded).1 hr) _ rfl
-    simp only [montgomeryBlocks, Aeneas.Std.WP.spec_ok, limbsOfArray_limbsArray _ F.bounded,
-      limbsOfArray_limbsArray _ hr']
-    exact ⟨hlt, hc⟩
-  sub lhs rhs hl hr := by
-    have hb := limbsOfArray_bounded
-    obtain ⟨hr', hlt, hc⟩ := subMod_spec_of_lt _ _ F.modulus (hb lhs) (hb rhs) F.bounded F.shape
-      ((isCanonical_iff _ _ (hb lhs) F.bounded).1 hl)
-      ((isCanonical_iff _ _ (hb rhs) F.bounded).1 hr) _ rfl
-    simp only [montgomeryBlocks, Aeneas.Std.WP.spec_ok, limbsOfArray_limbsArray _ F.bounded,
-      limbsOfArray_limbsArray _ hr']
-    exact ⟨hlt, hc⟩
-  mul lhs rhs h := by
-    have hb := limbsOfArray_bounded
-    obtain ⟨hr', hlt, hc⟩ :
-        (mulMont (limbsOfArray lhs) (limbsOfArray rhs) F.modulus F.inv).Bounded ∧
-          (mulMont (limbsOfArray lhs) (limbsOfArray rhs) F.modulus F.inv).toNat <
-            F.modulus.toNat ∧
-          R * (mulMont (limbsOfArray lhs) (limbsOfArray rhs) F.modulus F.inv).toNat ≡
-            (limbsOfArray lhs).toNat * (limbsOfArray rhs).toNat [MOD F.modulus.toNat] := by
-      rcases (mulContract_iff _ _ F.modulus (hb lhs) (hb rhs) F.bounded).1 h with
-        hlt | ⟨hlt, hlimbs⟩
-      · exact mulMont_spec_of_lhs_lt _ _ F.modulus F.inv (hb lhs) (hb rhs) F.bounded F.shape
-          F.inv_lt F.inv_spec hlt _ rfl
-      · exact mulMont_spec_of_rhs_lt _ _ F.modulus F.inv (hb lhs) (hb rhs) F.bounded F.shape
-          F.inv_lt F.inv_spec hlt hlimbs _ rfl
-    simp only [montgomeryBlocks, Aeneas.Std.WP.spec_ok, limbsOfArray_limbsArray _ F.bounded,
-      word_val _ F.inv_lt, limbsOfArray_limbsArray _ hr']
-    exact ⟨hlt, hc⟩
-  square value h := by
-    have hb := limbsOfArray_bounded
-    obtain ⟨hr', hlt, hc⟩ := sqrMont_spec _ F.modulus F.inv (hb value) F.bounded F.shape F.inv_lt
-      F.inv_spec ((isCanonical_iff _ _ (hb value) F.bounded).1 h) _ rfl
-    simp only [montgomeryBlocks, Aeneas.Std.WP.spec_ok, limbsOfArray_limbsArray _ F.bounded,
-      word_val _ F.inv_lt, limbsOfArray_limbsArray _ hr']
-    exact ⟨hlt, hc⟩
-  from_mont value := by
-    obtain ⟨hr', hlt, hc⟩ := fromMont_spec _ F.modulus F.inv (limbsOfArray_bounded value)
-      F.bounded F.shape F.inv_lt F.inv_spec _ rfl
-    simp only [montgomeryBlocks, Aeneas.Std.WP.spec_ok, limbsOfArray_limbsArray _ F.bounded,
-      word_val _ F.inv_lt, limbsOfArray_limbsArray _ hr']
-    exact ⟨hlt, hc⟩
+/-- The x86-64 record meets the blocks' contracts at a Pasta field, by the blocks' theorems,
+including those of its own conversion out of Montgomery form. -/
+theorem montgomeryBlocks_spec (F : PastaField) : Glue.BlocksSpec montgomeryBlocks F :=
+  Glue.blocksOf_spec F
+    { add := fun lhs rhs hl hr hlt hrt =>
+        addMod_spec_of_lt lhs rhs F.modulus hl hr F.bounded F.shape hlt hrt
+      sub := fun lhs rhs hl hr hlt hrt =>
+        subMod_spec_of_lt lhs rhs F.modulus hl hr F.bounded F.shape hlt hrt
+      mul_of_lhs_lt := fun lhs rhs hl hr hlt =>
+        mulMont_spec_of_lhs_lt lhs rhs F.modulus F.inv hl hr F.bounded F.shape F.inv_lt
+          F.inv_spec hlt
+      mul_of_rhs_lt := fun lhs rhs hl hr hlt hlimbs =>
+        mulMont_spec_of_rhs_lt lhs rhs F.modulus F.inv hl hr F.bounded F.shape F.inv_lt
+          F.inv_spec hlt hlimbs
+      square := fun value hv hlt =>
+        sqrMont_spec value F.modulus F.inv hv F.bounded F.shape F.inv_lt F.inv_spec hlt
+      fromMont := fun value hv =>
+        fromMont_spec value F.modulus F.inv hv F.bounded F.shape F.inv_lt F.inv_spec }
 
 end PastaCurves.X86_64
