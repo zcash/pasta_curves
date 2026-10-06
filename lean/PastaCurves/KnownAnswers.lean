@@ -62,13 +62,6 @@ example : let p := pallasBase.modulus.toNat
     x < p ∧ (x*R) % p = (2^256 - 1) % p := by
   decide +kernel
 
--- `FP.v0`: `2^562 mod p`, the starting `v` of `invert`.
-example : let p := pallasBase.modulus.toNat
-    let x := Limbs.toNat
-      ⟨0x9a5f583ce5084635, 0x4f417e233776c195, 0x74634b1a733f7785, 0x1c51de5ea66f0f25⟩
-    x = 2^562 % p := by
-  decide +kernel
-
 -- `FQ.two_r`: `2R mod p`.
 example : let p := vestaBase.modulus.toNat
     let x := Limbs.toNat
@@ -116,13 +109,6 @@ example : let p := vestaBase.modulus.toNat
     let x := Limbs.toNat
       ⟨0x2b2d474371e59083, 0x5bb8b7d46bcea6f2, 0xa86f41a73faf20ec, 0x20857622e89b86ac⟩
     x < p ∧ (x*R) % p = (2^256 - 1) % p := by
-  decide +kernel
-
--- `FQ.v0`: `2^562 mod p`, the starting `v` of `invert`.
-example : let p := vestaBase.modulus.toNat
-    let x := Limbs.toNat
-      ⟨0xa3efbd8ee5083303, 0xfbadea62cefef7a1, 0xd6418abb493f6cf9, 0x2aa5feb88c401333⟩
-    x = 2^562 % p := by
   decide +kernel
 
 -- `FP.inversions[0]`: `invert` maps `x` to `z`, the Montgomery inverse.

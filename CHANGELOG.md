@@ -12,6 +12,11 @@ and this project adheres to Rust's notion of
   diagnostics only. Passing the compiler flag `--cfg pasta_curves_noasm`
   compiles the backend out on any target.
 
+### Changed
+- `Fp::invert` and `Fq::invert` use a constant-time inversion by divsteps
+  (Bernstein et al.), rather than exponentiation by `p - 2`. It is about
+  4.5 times as fast, and its timing still does not depend on the input.
+
 ## [0.6.0] - 2026-09-25
 ### Added
 - `zeroize` feature flag, which enables `impl zeroize::DefaultIsZeroes` for

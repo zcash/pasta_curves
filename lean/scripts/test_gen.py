@@ -1091,6 +1091,7 @@ pub(crate) const R2: Fp = Fp([
     0xd,
 ]);
 pub(crate) const R3: Fp = Fp([0xe, 0xf, 0x10, 0x11]);
+pub(crate) const V0: Fp = Fp([0x12, 0x13, 0x14, 0x15]);
 """
 
     def test_constants_are_read_as_the_source_spells_them(self):
@@ -1102,12 +1103,14 @@ pub(crate) const R3: Fp = Fp([0xe, 0xf, 0x10, 0x11]);
     def test_a_missing_constant_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "missing R3"):
             gen.parse_field_type(self.SOURCE.replace("const R3", "const S3"), "fp.rs")
+        with self.assertRaisesRegex(ValueError, "missing V0"):
+            gen.parse_field_type(self.SOURCE.replace("const V0", "const W0"), "fp.rs")
         with self.assertRaisesRegex(ValueError, "missing INV"):
             gen.parse_field_type(self.SOURCE.replace("const INV", "const NV"), "fp.rs")
 
     def test_each_constant_becomes_one_example(self):
         rendered = gen.render_field_types({"fp": self.SOURCE, "fq": self.SOURCE})
-        self.assertEqual(rendered.count("decide +kernel"), 6)
+        self.assertEqual(rendered.count("decide +kernel"), 8)
         self.assertEqual(rendered.count("  decide\n"), 4)
         self.assertIn("example : pallasBase.modulus =\n    ⟨0x1, 0x2, 0x0, 0x4⟩ := by\n", rendered)
         self.assertIn("example : vestaBase.inv = 0x5 := by\n", rendered)

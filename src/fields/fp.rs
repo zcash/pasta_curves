@@ -210,6 +210,15 @@ pub(crate) const R3: Fp = Fp([
     0x2ae309222d2d9910,
 ]);
 
+/// V0 = 2^562 mod p, the starting `v` of the constant-time inversion
+/// (`crate::inversion::invert`)
+pub(crate) const V0: Fp = Fp([
+    0x9a5f583ce5084635,
+    0x4f417e233776c195,
+    0x74634b1a733f7785,
+    0x1c51de5ea66f0f25,
+]);
+
 /// `GENERATOR = 5 mod p` is a generator of the `p - 1` order multiplicative
 /// subgroup, or in other words a primitive root of the field.
 const GENERATOR: Fp = Fp::from_raw([
@@ -663,13 +672,7 @@ impl ff::Field for Fp {
     /// Computes the multiplicative inverse of this element,
     /// failing if the element is zero.
     fn invert(&self) -> CtOption<Self> {
-        let tmp = self.pow_vartime([
-            0x992d30ecffffffff,
-            0x224698fc094cf91b,
-            0x0,
-            0x4000000000000000,
-        ]);
-
+        let tmp = Fp(crate::inversion::invert(&self.0, &MODULUS.0, INV, &V0.0));
         CtOption::new(tmp, !self.ct_eq(&Self::zero()))
     }
 
