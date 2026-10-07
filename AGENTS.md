@@ -150,8 +150,9 @@ backend, update these conditions and keep doc-only fallback bodies non-executabl
 
 `lean/` is a Lake package (`PastaCurves`) with shared definitions and architecture-specific
 submodules. Its instruction-level models contribute to assuring the backend's routines'
-correctness; see `lean/README.md` for the implemented coverage, trust story, theorems and their
-caveats, and how those theorems are proven. All architectures use the same formalization
+correctness; see `book/src/design/formal-verification.md` for the implemented coverage, trust
+story, theorems and their caveats, and how those theorems are proven, and `lean/README.md` for
+the package's layout. All architectures use the same formalization
 pipeline; adding another architecture extends its existing verification coverage and tooling.
 Build it from that directory with the elan-managed `lake` for its `lean-toolchain` (a `lake` of
 another Lean version corrupts the shared `.lake` cache):

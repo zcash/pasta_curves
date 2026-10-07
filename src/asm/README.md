@@ -93,5 +93,5 @@ condition that the entry point asserts. The inversion's algorithm is proved on w
 (`montInv_spec`), each of its six blocks is proved to compute its word-level function, and `invert`
 is proved at either field from their composition (`invert_entry_spec`). The transcription is
 generated from the module's own inline blocks, CI regenerates and diffs it, and the independent
-`nanoda` implementation of the Lean kernel re-checks the build. See
-[`lean/README.md`](../../lean/README.md).
+`nanoda` implementation of the Lean kernel re-checks the build. See the book's
+[Formal verification](../../book/src/design/formal-verification.md) page.
