@@ -16,8 +16,8 @@
 //! The bit belongs to the running thread: the operating system saves and restores it on a context
 //! switch, a new thread starts with it clear, and user code sets it with `msr dit, #1`. Linux sets
 //! it while running kernel code only. Nothing in the crate sets it otherwise, so the blocks'
-//! constant-timeness, which the Lean model proves relative to the DIT instruction list, is today a
-//! hypothesis that the hardware is not asked to honour.
+//! constant-timeness, which rests on the DIT instruction list, is today a hypothesis that the
+//! hardware is not asked to honour.
 //!
 //! # Where to set it
 //!
