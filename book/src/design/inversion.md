@@ -82,6 +82,10 @@ Both divisions are exact: in the first case $g - f$ is even because both are odd
 second, $g + (g \bmod 2) f$ is even in either parity of $g$. Write $(\delta_n, f_n, g_n)$ for the
 state after $n$ steps from $(\delta_0, f_0, g_0)$.
 
+Storing `two_delta` $= 2\delta$ makes the two update cases more similar: negate `two_delta` or
+not, then add 2, giving $2 - 2\delta$ or $2 + 2\delta$. An integer index such as
+$\delta - \frac{1}{2}$ would instead be negated in the first case and incremented in the second.
+
 **Lemma 1 (linearity).** There are integer matrices $T_i$ with
 $(f_{i+1}, g_{i+1})^\top = \frac{1}{2} T_i (f_i, g_i)^\top$, namely
 $T = \begin{bmatrix} 0 & 2 \\ -1 & 1 \end{bmatrix}$ in the swap case and
