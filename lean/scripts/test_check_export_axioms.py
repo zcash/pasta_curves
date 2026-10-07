@@ -344,13 +344,17 @@ class Export:
         return "".join(json.dumps(o) + "\n" for o in self.lines).encode()
 
 
-def run(export, permitted=("propext",), sources=(), args=()):
+def run(export, permitted=("propext",), sources=(), args=(), root_module=None, package=True):
     """Run the checker over `export` and return the CompletedProcess. It runs in a scratch
     directory standing in for `lean/`, whose `PastaCurves/` holds the `(path, text)` pairs of
-    `sources` as the package's own modules."""
+    `sources` as the package's own modules, and whose `PastaCurves.lean` holds `root_module`, if
+    given. Without `package`, there is no `PastaCurves/` at all."""
     with TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        (tmp / "PastaCurves").mkdir()
+        if package:
+            (tmp / "PastaCurves").mkdir()
+        if root_module is not None:
+            (tmp / "PastaCurves.lean").write_text(root_module)
         for rel, text in sources:
             (tmp / "PastaCurves" / rel).write_text(text)
         ndjson = tmp / "export.ndjson"
@@ -783,11 +787,30 @@ class AeneasExemption(unittest.TestCase):
             "theorem _root_.Aeneas.foo : True := trivial\n",
             "@[simp] def Aeneas.bar : Nat := 0\n",
             "private def Aeneas.baz : Nat := 0\n",
+            "@[aesop safe (rule_sets := [Foo])] def Aeneas.x : Nat := 0\n",
+            "set_option maxHeartbeats 0 in theorem Aeneas.y : True := trivial\n",
+            "/-- doc -/ def Aeneas.z : Nat := 0\n",
+            "scoped instance Aeneas.i : Inhabited Nat := inferInstance\n",
+            "instance (priority := 100) Aeneas.j : Inhabited Nat := inferInstance\n",
+            "irreducible_def Aeneas.w : Nat := 0\n",
+            'syntax (name := Aeneas.s) "s" : term\n',
+            "def f : Nat := 0\n  namespace Aeneas\nend Aeneas\n",
         ):
             with self.subTest(source=source):
                 p = run(baseline(), sources=(("Probe.lean", source),))
                 self.assertEqual(p.returncode, 1, p.stdout)
                 self.assertIn("declares into the `Aeneas` namespace", p.stderr)
+
+    def test_root_module_declaring_into_aeneas_fails(self):
+        p = run(baseline(), root_module="def Aeneas.root : Nat := 0\n")
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("PastaCurves.lean:1 declares into the `Aeneas` namespace", p.stderr)
+
+    def test_missing_package_directory_fails(self):
+        # Run from the wrong directory, the check would find no module and pass vacuously.
+        p = run(baseline(), package=False)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("holds no modules to check", p.stderr)
 
     def test_package_opening_aeneas_passes(self):
         source = (

@@ -61,8 +61,7 @@ them:
     dangling reference.
 
 Usage: scripts/check_export_axioms.py [--nanoda-config OUT] [nanoda-config.json]
-The export path is read from the config (single source of truth). Runs from the
-repository root.
+The export path is read from the config (single source of truth). Runs from `lean/`.
 """
 
 import json
@@ -348,20 +347,29 @@ def is_aeneas(name):
 
 # A `namespace Aeneas`, or a declaration whose name is in the `Aeneas` namespace, in the
 # package's own sources. A textual check: it catches the ways a module would declare into
-# `Aeneas` by accident, and is not a defence against malicious code.
+# `Aeneas` by accident, and is not a defence against malicious code. It is not anchored to the
+# start of a line, so that whatever precedes the keyword (attributes, modifiers, a docstring,
+# `set_option ... in`) cannot hide the declaration; a comment that reads like one is flagged too.
 AENEAS_DECLARATION = re.compile(
-    r"^\s*(?:namespace\s+(?:_root_\.)?Aeneas\b"
-    r"|(?:@\[[^\]]*\]\s*)?(?:(?:private|protected|public|noncomputable|partial|unsafe|nonrec)\s+)*"
-    r"(?:def|theorem|lemma|abbrev|instance|structure|inductive|class|axiom|opaque)\s+"
-    r"(?:_root_\.)?Aeneas\.)",
-    re.MULTILINE,
+    r"\bnamespace\s+(?:_root_\.)?Aeneas\b"
+    r"|\b(?:def|theorem|lemma|abbrev|instance|structure|inductive|class|axiom|opaque"
+    r"|irreducible_def|alias)\s+(?:\([^)]*\)\s*)?(?:_root_\.)?Aeneas\."
+    r"|\(name\s*:=\s*(?:_root_\.)?Aeneas\.",
 )
 
 
-def check_no_aeneas_declarations(sources):
-    """Report a violation for each place in `sources` (the package's own `.lean` files) that
-    declares into the `Aeneas` namespace, which would make `is_aeneas` wrongly vouch for it."""
-    for path in sorted(sources.rglob("*.lean")):
+def check_no_aeneas_declarations(root):
+    """Report a violation for each place in the package's own `.lean` files, the root module
+    `root.lean` and the modules under `root/`, that declares into the `Aeneas` namespace, which
+    would make `is_aeneas` wrongly vouch for it."""
+    if not root.is_dir():
+        violation(f"{root}/ holds no modules to check; run from `lean/`")
+        return
+    paths = sorted(root.rglob("*.lean"))
+    module = root.with_name(f"{root.name}.lean")
+    if module.is_file():
+        paths.insert(0, module)
+    for path in paths:
         text = path.read_text()
         for m in AENEAS_DECLARATION.finditer(text):
             line = text.count("\n", 0, m.start()) + 1
@@ -386,7 +394,7 @@ def main():
     permitted = set(config["permitted_axioms"])
     export_path = Path(config["export_file_path"])
 
-    # Run from `lean/`: the package's own modules are under `PastaCurves/`.
+    # Run from `lean/`: the package's own modules are `PastaCurves.lean` and `PastaCurves/`.
     check_no_aeneas_declarations(Path("PastaCurves"))
     declared_axioms, citers, dependents, const_cited = scan(export_path, TARGETS)
     # The axioms that Aeneas' library declares and the permitted list does not name: a second
