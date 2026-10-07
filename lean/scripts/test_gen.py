@@ -553,8 +553,8 @@ class X86RealSourceTests(unittest.TestCase):
                         current = line[len("  extract_lets -merge +onlyGivenNames ") :]
                     elif current is not None:
                         current += " " + line.strip()
-                    if current is not None and current.endswith(" at hr"):
-                        extracted += current[: -len(" at hr")].split()
+                    if current is not None and current.endswith(" at hres"):
+                        extracted += current[: -len(" at hres")].split()
                         current = None
                 self.assertEqual(sorted(extracted), sorted(prepared.names))
                 self.assertEqual(len(extracted), len(set(extracted)))
@@ -604,7 +604,7 @@ class X86RealSourceTests(unittest.TestCase):
                     generated[0],
                     f"  -- generated skeleton for `{routine.name}`: do not edit between the annotations",
                 )
-                self.assertEqual(generated[-1], "  subst hr")
+                self.assertEqual(generated[-1], "  subst hres")
                 self.assertIs(
                     gen.find_routine(f"X86_64:{routine.name}").emitter.__class__,
                     routine.emitter.__class__,

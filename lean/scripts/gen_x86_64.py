@@ -535,7 +535,7 @@ class SkeletonBackend(gen.SkeletonBackend):
                 if entry["fact"][0] in ("x86_adds", "x86_subs"):
                     entry["group_label"] = names[index + 1]
         # For the factored round and the block that calls it, clearing each extracted value
-        # would recheck the remaining dependent `hr` tail every time; their local definitions
+        # would recheck the remaining dependent `hres` tail every time; their local definitions
         # stay transparent, and the generated facts still record every step.
         return gen.SkeletonPreparation(entries, names, clear_values=emitter.clear_values)
 

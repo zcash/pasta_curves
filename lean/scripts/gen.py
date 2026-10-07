@@ -559,9 +559,9 @@ def proj(arg, field, arg_fields=ARG_FIELDS):
 
 
 def skeleton(routine):
-    """The generated part of the correctness proof of `routine`: unfold the routine in `hr` and
+    """The generated part of the correctness proof of `routine`: unfold the routine in `hres` and
     lift its lets to the top; then, instruction by instruction, extract that instruction's lets
-    from `hr` under SSA names, record their defining equations (by `rfl`, in `%`/`/` form), make
+    from `hres` under SSA names, record their defining equations (by `rfl`, in `%`/`/` form), make
     the locals opaque when requested by the backend, and derive the linear facts from the equations,
     clearing the equations
     the later steps do not need. Each derived fact is an instance of one lemma
@@ -571,7 +571,7 @@ def skeleton(routine):
     marker (`-- <register>: <instruction>`) names the register they need.
 
     Extracting one instruction at a time (`extract_lets +onlyGivenNames`) keeps the rest of the
-    chain folded inside `hr`, so that `clear_value` has one hypothesis to revert and re-check.
+    chain folded inside `hres`, so that `clear_value` has one hypothesis to revert and re-check.
     With every let extracted up front, each `clear_value` re-checks all the later locals and
     equations, which is quadratic in the chain's length and exhausted the heartbeat budget on
     the multiplication routine's 264 locals."""
@@ -587,8 +587,8 @@ def skeleton(routine):
     unit_bound = set()
     out = [
         f"  -- generated skeleton for `{routine.name}`: do not edit between the annotations",
-        f"  unfold {routine.name} at hr",
-        "  lift_lets -merge at hr",
+        f"  unfold {routine.name} at hres",
+        "  lift_lets -merge at hres",
     ]
     products = {}
     eqs = []  # the current group's `have e_... := rfl` lines
@@ -775,13 +775,13 @@ def skeleton(routine):
         out.append(
             f"  -- {label}: {group_entries[0][0]['comment'] if group_entries else en['comment']}"
         )
-        out += wrap_tactic("extract_lets -merge +onlyGivenNames", group, " at hr")
+        out += wrap_tactic("extract_lets -merge +onlyGivenNames", group, " at hres")
         out += eqs
         if prepared.clear_values:
             out.append(f"  clear_value {' '.join(group)}")
         out += lines
         i += fact_context.consumed
-    out.append("  subst hr")
+    out.append("  subst hres")
     return out
 
 

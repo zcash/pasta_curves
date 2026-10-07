@@ -91,66 +91,66 @@ conditional subtraction: for every four-limb `value`, the result is below `p` an
 theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
     (hm : modulus.Bounded) (hshape : modulus.l2 = 0 ∧ modulus.l3 = 2^62)
     (hinv_lt : inv < 2^64) (hinv : (inv * modulus.l0 + 1) % 2^64 = 0) :
-    ∀ r, r = fromMont value modulus inv →
-      r.Bounded ∧ r.toNat < modulus.toNat ∧
-        2^256 * r.toNat ≡ value.toNat [MOD modulus.toNat] := by
-  intro r hr
+    ∀ res, res = fromMont value modulus inv →
+      res.Bounded ∧ res.toNat < modulus.toNat ∧
+        2^256 * res.toNat ≡ value.toNat [MOD modulus.toNat] := by
+  intro res hres
 -- END fromMont_spec statement
   -- generated skeleton for `fromMont`: do not edit between the annotations
-  unfold fromMont at hr
-  lift_lets -merge at hr
+  unfold fromMont at hres
+  lift_lets -merge at hres
   -- z0: input value[0]
-  extract_lets -merge +onlyGivenNames z0 at hr
+  extract_lets -merge +onlyGivenNames z0 at hres
   have e_z0 : z0 = value.l0 := rfl
   clear_value z0
   have b_z0 : z0 < 2^64 := by rw [e_z0]; exact hv.1
   -- z1: input value[1]
-  extract_lets -merge +onlyGivenNames z1 at hr
+  extract_lets -merge +onlyGivenNames z1 at hres
   have e_z1 : z1 = value.l1 := rfl
   clear_value z1
   have b_z1 : z1 < 2^64 := by rw [e_z1]; exact hv.2.1
   -- z2: input value[2]
-  extract_lets -merge +onlyGivenNames z2 at hr
+  extract_lets -merge +onlyGivenNames z2 at hres
   have e_z2 : z2 = value.l2 := rfl
   clear_value z2
   have b_z2 : z2 < 2^64 := by rw [e_z2]; exact hv.2.2.1
   -- z3: input value[3]
-  extract_lets -merge +onlyGivenNames z3 at hr
+  extract_lets -merge +onlyGivenNames z3 at hres
   have e_z3 : z3 = value.l3 := rfl
   clear_value z3
   have b_z3 : z3 < 2^64 := by rw [e_z3]; exact hv.2.2.2
   -- p0: input modulus[0]
-  extract_lets -merge +onlyGivenNames p0 at hr
+  extract_lets -merge +onlyGivenNames p0 at hres
   have e_p0 : p0 = modulus.l0 := rfl
   clear_value p0
   have b_p0 : p0 < 2^64 := by rw [e_p0]; exact hm.1
   -- p1: input modulus[1]
-  extract_lets -merge +onlyGivenNames p1 at hr
+  extract_lets -merge +onlyGivenNames p1 at hres
   have e_p1 : p1 = modulus.l1 := rfl
   clear_value p1
   have b_p1 : p1 < 2^64 := by rw [e_p1]; exact hm.2.1
   -- inv': scalar input
-  extract_lets -merge +onlyGivenNames inv' at hr
+  extract_lets -merge +onlyGivenNames inv' at hres
   have e_inv' : inv' = inv := rfl
   clear_value inv'
   have b_inv' : inv' < 2^64 := by rw [e_inv']; exact hinv_lt
   -- p3: operand p3 = const PASTA_HIGH_LIMB
-  extract_lets -merge +onlyGivenNames p3 at hr
+  extract_lets -merge +onlyGivenNames p3 at hres
   have e_p3 : p3 = 4611686018427387904 := rfl
   clear_value p3
   have b_p3 : p3 < 2^64 := by rw [e_p3]; decide
   -- rdx: mov rdx, {z0}
-  extract_lets -merge +onlyGivenNames rdx at hr
+  extract_lets -merge +onlyGivenNames rdx at hres
   have e_rdx : rdx = z0 := rfl
   clear_value rdx
   have b_rdx : rdx < 2^64 := by rw [e_rdx]; exact b_z0
   -- rdx_1: imul rdx, {inv}
-  extract_lets -merge +onlyGivenNames rdx_1 at hr
+  extract_lets -merge +onlyGivenNames rdx_1 at hres
   have e_rdx_1 : rdx_1 = rdx * inv' % 2^64 := rfl
   clear_value rdx_1
   have b_rdx_1 : rdx_1 < 2^64 := by rw [e_rdx_1]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
   -- m: mulx {t2}, {t1}, {p1}
-  extract_lets -merge +onlyGivenNames m t2 t1 at hr
+  extract_lets -merge +onlyGivenNames m t2 t1 at hres
   have e_t2 : t2 = (mulx rdx_1 p1).1 := rfl
   have e_t1 : t1 = (mulx rdx_1 p1).2 := rfl
   clear_value m t2 t1
@@ -159,19 +159,19 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have d_t2 : t1 + 2^64 * t2 = rdx_1 * p1 := by
     rw [e_t1, e_t2]; exact Nat.mod_add_div _ _
   -- a: mov {a}, rdx
-  extract_lets -merge +onlyGivenNames a at hr
+  extract_lets -merge +onlyGivenNames a at hres
   have e_a : a = rdx_1 := rfl
   clear_value a
   have b_a : a < 2^64 := by rw [e_a]; exact b_rdx_1
   -- a_1: shl {a}, 62
-  extract_lets -merge +onlyGivenNames a_1 at hr
+  extract_lets -merge +onlyGivenNames a_1 at hres
   have e_a_1 : a_1 = a * 2^62 % 2^64 := rfl
   clear_value a_1
   have b_a_1 : a_1 < 2^64 := by rw [e_a_1]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
   have sh_a_1 : a_1 + 2^64 * (a / 2^2) = a * 2^62 := by
     rw [e_a_1]; exact lsl62_lsr2_split _
   -- n: neg {z0}
-  extract_lets -merge +onlyGivenNames n z0_1 cf at hr
+  extract_lets -merge +onlyGivenNames n z0_1 cf at hres
   have e_z0_1 : z0_1 = (neg z0).1 := rfl
   have e_cf : cf = (neg z0).2 := rfl
   clear_value n z0_1 cf
@@ -179,7 +179,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf : cf ≤ 1 := by
     rw [e_cf]; simp only [neg]; split <;> omega
   -- z1_1: adc {z1}, {t1}
-  extract_lets -merge +onlyGivenNames s z1_1 cf_1 at hr
+  extract_lets -merge +onlyGivenNames s z1_1 cf_1 at hres
   have e_z1_1 : z1_1 = (addc z1 t1 cf).1 := rfl
   have e_cf_1 : cf_1 = (addc z1 t1 cf).2 := rfl
   clear_value s z1_1 cf_1
@@ -189,7 +189,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_1 : cf_1 ≤ 1 := by rw [e_cf_1]; exact addc_carry_le_one z1 t1 cf b_z1 b_t1 b_cf
   clear e_z1_1 e_cf_1
   -- z2_1: adc {z2}, 0
-  extract_lets -merge +onlyGivenNames s_1 z2_1 cf_2 at hr
+  extract_lets -merge +onlyGivenNames s_1 z2_1 cf_2 at hres
   have e_z2_1 : z2_1 = (addc z2 0 cf_1).1 := rfl
   have e_cf_2 : cf_2 = (addc z2 0 cf_1).2 := rfl
   clear_value s_1 z2_1 cf_2
@@ -199,7 +199,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_2 : cf_2 ≤ 1 := by rw [e_cf_2]; exact addc_carry_le_one z2 0 cf_1 b_z2 (by decide) b_cf_1
   clear e_z2_1 e_cf_2
   -- z3_1: adc {z3}, {a}
-  extract_lets -merge +onlyGivenNames s_2 z3_1 cf_3 at hr
+  extract_lets -merge +onlyGivenNames s_2 z3_1 cf_3 at hres
   have e_z3_1 : z3_1 = (addc z3 a_1 cf_2).1 := rfl
   have e_cf_3 : cf_3 = (addc z3 a_1 cf_2).2 := rfl
   clear_value s_2 z3_1 cf_3
@@ -209,12 +209,12 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_3 : cf_3 ≤ 1 := by rw [e_cf_3]; exact addc_carry_le_one z3 a_1 cf_2 b_z3 b_a_1 b_cf_2
   clear e_z3_1 e_cf_3
   -- a_2: mov {a}, 0
-  extract_lets -merge +onlyGivenNames a_2 at hr
+  extract_lets -merge +onlyGivenNames a_2 at hres
   have e_a_2 : a_2 = 0 := rfl
   clear_value a_2
   have b_a_2 : a_2 < 2^64 := by rw [e_a_2]; decide
   -- a_3: adc {a}, 0
-  extract_lets -merge +onlyGivenNames s_3 a_3 cf_4 at hr
+  extract_lets -merge +onlyGivenNames s_3 a_3 cf_4 at hres
   have e_a_3 : a_3 = (addc a_2 0 cf_3).1 := rfl
   have e_cf_4 : cf_4 = (addc a_2 0 cf_3).2 := rfl
   clear_value s_3 a_3 cf_4
@@ -224,7 +224,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_4 : cf_4 ≤ 1 := by rw [e_cf_4]; exact addc_carry_le_one a_2 0 cf_3 b_a_2 (by decide) b_cf_3
   clear e_a_3 e_cf_4
   -- m_1: mulx {t1}, {z0}, {p0}
-  extract_lets -merge +onlyGivenNames m_1 t1_1 z0_2 at hr
+  extract_lets -merge +onlyGivenNames m_1 t1_1 z0_2 at hres
   have e_t1_1 : t1_1 = (mulx rdx_1 p0).1 := rfl
   have e_z0_2 : z0_2 = (mulx rdx_1 p0).2 := rfl
   clear_value m_1 t1_1 z0_2
@@ -233,18 +233,18 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have d_t1_1 : z0_2 + 2^64 * t1_1 = rdx_1 * p0 := by
     rw [e_z0_2, e_t1_1]; exact Nat.mod_add_div _ _
   -- z0_3: mov {z0}, rdx
-  extract_lets -merge +onlyGivenNames z0_3 at hr
+  extract_lets -merge +onlyGivenNames z0_3 at hres
   have e_z0_3 : z0_3 = rdx_1 := rfl
   clear_value z0_3
   have b_z0_3 : z0_3 < 2^64 := by rw [e_z0_3]; exact b_rdx_1
   -- z0_4: shr {z0}, 2
-  extract_lets -merge +onlyGivenNames z0_4 at hr
+  extract_lets -merge +onlyGivenNames z0_4 at hres
   have e_z0_4 : z0_4 = z0_3 / 2^2 := rfl
   clear_value z0_4
   have b_z0_4 : z0_4 < 2^62 := by
     rw [e_z0_4]; exact Nat.div_lt_of_lt_mul (lt_of_lt_of_eq b_z0_3 (by norm_num))
   -- z1_2: add {z1}, {t1}
-  extract_lets -merge +onlyGivenNames s_4 z1_2 cf_5 at hr
+  extract_lets -merge +onlyGivenNames s_4 z1_2 cf_5 at hres
   have e_z1_2 : z1_2 = (addc z1_1 t1_1 0).1 := rfl
   have e_cf_5 : cf_5 = (addc z1_1 t1_1 0).2 := rfl
   clear_value s_4 z1_2 cf_5
@@ -254,7 +254,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_5 : cf_5 ≤ 1 := by rw [e_cf_5]; exact addc_carry_le_one z1_1 t1_1 0 b_z1_1 b_t1_1 (by decide)
   clear e_z1_2 e_cf_5
   -- z2_2: adc {z2}, {t2}
-  extract_lets -merge +onlyGivenNames s_5 z2_2 cf_6 at hr
+  extract_lets -merge +onlyGivenNames s_5 z2_2 cf_6 at hres
   have e_z2_2 : z2_2 = (addc z2_1 t2 cf_5).1 := rfl
   have e_cf_6 : cf_6 = (addc z2_1 t2 cf_5).2 := rfl
   clear_value s_5 z2_2 cf_6
@@ -264,7 +264,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_6 : cf_6 ≤ 1 := by rw [e_cf_6]; exact addc_carry_le_one z2_1 t2 cf_5 b_z2_1 b_t2 b_cf_5
   clear e_z2_2 e_cf_6
   -- z3_2: adc {z3}, 0
-  extract_lets -merge +onlyGivenNames s_6 z3_2 cf_7 at hr
+  extract_lets -merge +onlyGivenNames s_6 z3_2 cf_7 at hres
   have e_z3_2 : z3_2 = (addc z3_1 0 cf_6).1 := rfl
   have e_cf_7 : cf_7 = (addc z3_1 0 cf_6).2 := rfl
   clear_value s_6 z3_2 cf_7
@@ -274,7 +274,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_7 : cf_7 ≤ 1 := by rw [e_cf_7]; exact addc_carry_le_one z3_1 0 cf_6 b_z3_1 (by decide) b_cf_6
   clear e_z3_2 e_cf_7
   -- a_4: adc {a}, {z0}
-  extract_lets -merge +onlyGivenNames s_7 a_4 cf_8 at hr
+  extract_lets -merge +onlyGivenNames s_7 a_4 cf_8 at hres
   have e_a_4 : a_4 = (addc a_3 z0_4 cf_7).1 := rfl
   have e_cf_8 : cf_8 = (addc a_3 z0_4 cf_7).2 := rfl
   clear_value s_7 a_4 cf_8
@@ -304,17 +304,17 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
       l_z1_2 l_z2_2 l_z3_2 l_a_4 ⟨z_cf_4, z_cf_8⟩
   -- END fromMont round 0
   -- rdx_2: mov rdx, {z1}
-  extract_lets -merge +onlyGivenNames rdx_2 at hr
+  extract_lets -merge +onlyGivenNames rdx_2 at hres
   have e_rdx_2 : rdx_2 = z1_2 := rfl
   clear_value rdx_2
   have b_rdx_2 : rdx_2 < 2^64 := by rw [e_rdx_2]; exact b_z1_2
   -- rdx_3: imul rdx, {inv}
-  extract_lets -merge +onlyGivenNames rdx_3 at hr
+  extract_lets -merge +onlyGivenNames rdx_3 at hres
   have e_rdx_3 : rdx_3 = rdx_2 * inv' % 2^64 := rfl
   clear_value rdx_3
   have b_rdx_3 : rdx_3 < 2^64 := by rw [e_rdx_3]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
   -- m_2: mulx {t2}, {t1}, {p1}
-  extract_lets -merge +onlyGivenNames m_2 t2_1 t1_2 at hr
+  extract_lets -merge +onlyGivenNames m_2 t2_1 t1_2 at hres
   have e_t2_1 : t2_1 = (mulx rdx_3 p1).1 := rfl
   have e_t1_2 : t1_2 = (mulx rdx_3 p1).2 := rfl
   clear_value m_2 t2_1 t1_2
@@ -323,19 +323,19 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have d_t2_1 : t1_2 + 2^64 * t2_1 = rdx_3 * p1 := by
     rw [e_t1_2, e_t2_1]; exact Nat.mod_add_div _ _
   -- z0_5: mov {z0}, rdx
-  extract_lets -merge +onlyGivenNames z0_5 at hr
+  extract_lets -merge +onlyGivenNames z0_5 at hres
   have e_z0_5 : z0_5 = rdx_3 := rfl
   clear_value z0_5
   have b_z0_5 : z0_5 < 2^64 := by rw [e_z0_5]; exact b_rdx_3
   -- z0_6: shl {z0}, 62
-  extract_lets -merge +onlyGivenNames z0_6 at hr
+  extract_lets -merge +onlyGivenNames z0_6 at hres
   have e_z0_6 : z0_6 = z0_5 * 2^62 % 2^64 := rfl
   clear_value z0_6
   have b_z0_6 : z0_6 < 2^64 := by rw [e_z0_6]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
   have sh_z0_6 : z0_6 + 2^64 * (z0_5 / 2^2) = z0_5 * 2^62 := by
     rw [e_z0_6]; exact lsl62_lsr2_split _
   -- n_1: neg {z1}
-  extract_lets -merge +onlyGivenNames n_1 z1_3 cf_9 at hr
+  extract_lets -merge +onlyGivenNames n_1 z1_3 cf_9 at hres
   have e_z1_3 : z1_3 = (neg z1_2).1 := rfl
   have e_cf_9 : cf_9 = (neg z1_2).2 := rfl
   clear_value n_1 z1_3 cf_9
@@ -343,7 +343,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_9 : cf_9 ≤ 1 := by
     rw [e_cf_9]; simp only [neg]; split <;> omega
   -- z2_3: adc {z2}, {t1}
-  extract_lets -merge +onlyGivenNames s_8 z2_3 cf_10 at hr
+  extract_lets -merge +onlyGivenNames s_8 z2_3 cf_10 at hres
   have e_z2_3 : z2_3 = (addc z2_2 t1_2 cf_9).1 := rfl
   have e_cf_10 : cf_10 = (addc z2_2 t1_2 cf_9).2 := rfl
   clear_value s_8 z2_3 cf_10
@@ -353,7 +353,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_10 : cf_10 ≤ 1 := by rw [e_cf_10]; exact addc_carry_le_one z2_2 t1_2 cf_9 b_z2_2 b_t1_2 b_cf_9
   clear e_z2_3 e_cf_10
   -- z3_3: adc {z3}, 0
-  extract_lets -merge +onlyGivenNames s_9 z3_3 cf_11 at hr
+  extract_lets -merge +onlyGivenNames s_9 z3_3 cf_11 at hres
   have e_z3_3 : z3_3 = (addc z3_2 0 cf_10).1 := rfl
   have e_cf_11 : cf_11 = (addc z3_2 0 cf_10).2 := rfl
   clear_value s_9 z3_3 cf_11
@@ -363,7 +363,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_11 : cf_11 ≤ 1 := by rw [e_cf_11]; exact addc_carry_le_one z3_2 0 cf_10 b_z3_2 (by decide) b_cf_10
   clear e_z3_3 e_cf_11
   -- a_5: adc {a}, {z0}
-  extract_lets -merge +onlyGivenNames s_10 a_5 cf_12 at hr
+  extract_lets -merge +onlyGivenNames s_10 a_5 cf_12 at hres
   have e_a_5 : a_5 = (addc a_4 z0_6 cf_11).1 := rfl
   have e_cf_12 : cf_12 = (addc a_4 z0_6 cf_11).2 := rfl
   clear_value s_10 a_5 cf_12
@@ -373,12 +373,12 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_12 : cf_12 ≤ 1 := by rw [e_cf_12]; exact addc_carry_le_one a_4 z0_6 cf_11 b_a_4 b_z0_6 b_cf_11
   clear e_a_5 e_cf_12
   -- z0_7: mov {z0}, 0
-  extract_lets -merge +onlyGivenNames z0_7 at hr
+  extract_lets -merge +onlyGivenNames z0_7 at hres
   have e_z0_7 : z0_7 = 0 := rfl
   clear_value z0_7
   have b_z0_7 : z0_7 < 2^64 := by rw [e_z0_7]; decide
   -- z0_8: adc {z0}, 0
-  extract_lets -merge +onlyGivenNames s_11 z0_8 cf_13 at hr
+  extract_lets -merge +onlyGivenNames s_11 z0_8 cf_13 at hres
   have e_z0_8 : z0_8 = (addc z0_7 0 cf_12).1 := rfl
   have e_cf_13 : cf_13 = (addc z0_7 0 cf_12).2 := rfl
   clear_value s_11 z0_8 cf_13
@@ -388,7 +388,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_13 : cf_13 ≤ 1 := by rw [e_cf_13]; exact addc_carry_le_one z0_7 0 cf_12 b_z0_7 (by decide) b_cf_12
   clear e_z0_8 e_cf_13
   -- m_3: mulx {t1}, {z1}, {p0}
-  extract_lets -merge +onlyGivenNames m_3 t1_3 z1_4 at hr
+  extract_lets -merge +onlyGivenNames m_3 t1_3 z1_4 at hres
   have e_t1_3 : t1_3 = (mulx rdx_3 p0).1 := rfl
   have e_z1_4 : z1_4 = (mulx rdx_3 p0).2 := rfl
   clear_value m_3 t1_3 z1_4
@@ -397,18 +397,18 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have d_t1_3 : z1_4 + 2^64 * t1_3 = rdx_3 * p0 := by
     rw [e_z1_4, e_t1_3]; exact Nat.mod_add_div _ _
   -- z1_5: mov {z1}, rdx
-  extract_lets -merge +onlyGivenNames z1_5 at hr
+  extract_lets -merge +onlyGivenNames z1_5 at hres
   have e_z1_5 : z1_5 = rdx_3 := rfl
   clear_value z1_5
   have b_z1_5 : z1_5 < 2^64 := by rw [e_z1_5]; exact b_rdx_3
   -- z1_6: shr {z1}, 2
-  extract_lets -merge +onlyGivenNames z1_6 at hr
+  extract_lets -merge +onlyGivenNames z1_6 at hres
   have e_z1_6 : z1_6 = z1_5 / 2^2 := rfl
   clear_value z1_6
   have b_z1_6 : z1_6 < 2^62 := by
     rw [e_z1_6]; exact Nat.div_lt_of_lt_mul (lt_of_lt_of_eq b_z1_5 (by norm_num))
   -- z2_4: add {z2}, {t1}
-  extract_lets -merge +onlyGivenNames s_12 z2_4 cf_14 at hr
+  extract_lets -merge +onlyGivenNames s_12 z2_4 cf_14 at hres
   have e_z2_4 : z2_4 = (addc z2_3 t1_3 0).1 := rfl
   have e_cf_14 : cf_14 = (addc z2_3 t1_3 0).2 := rfl
   clear_value s_12 z2_4 cf_14
@@ -418,7 +418,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_14 : cf_14 ≤ 1 := by rw [e_cf_14]; exact addc_carry_le_one z2_3 t1_3 0 b_z2_3 b_t1_3 (by decide)
   clear e_z2_4 e_cf_14
   -- z3_4: adc {z3}, {t2}
-  extract_lets -merge +onlyGivenNames s_13 z3_4 cf_15 at hr
+  extract_lets -merge +onlyGivenNames s_13 z3_4 cf_15 at hres
   have e_z3_4 : z3_4 = (addc z3_3 t2_1 cf_14).1 := rfl
   have e_cf_15 : cf_15 = (addc z3_3 t2_1 cf_14).2 := rfl
   clear_value s_13 z3_4 cf_15
@@ -428,7 +428,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_15 : cf_15 ≤ 1 := by rw [e_cf_15]; exact addc_carry_le_one z3_3 t2_1 cf_14 b_z3_3 b_t2_1 b_cf_14
   clear e_z3_4 e_cf_15
   -- a_6: adc {a}, 0
-  extract_lets -merge +onlyGivenNames s_14 a_6 cf_16 at hr
+  extract_lets -merge +onlyGivenNames s_14 a_6 cf_16 at hres
   have e_a_6 : a_6 = (addc a_5 0 cf_15).1 := rfl
   have e_cf_16 : cf_16 = (addc a_5 0 cf_15).2 := rfl
   clear_value s_14 a_6 cf_16
@@ -438,7 +438,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_16 : cf_16 ≤ 1 := by rw [e_cf_16]; exact addc_carry_le_one a_5 0 cf_15 b_a_5 (by decide) b_cf_15
   clear e_a_6 e_cf_16
   -- z0_9: adc {z0}, {z1}
-  extract_lets -merge +onlyGivenNames s_15 z0_9 cf_17 at hr
+  extract_lets -merge +onlyGivenNames s_15 z0_9 cf_17 at hres
   have e_z0_9 : z0_9 = (addc z0_8 z1_6 cf_16).1 := rfl
   have e_cf_17 : cf_17 = (addc z0_8 z1_6 cf_16).2 := rfl
   clear_value s_15 z0_9 cf_17
@@ -468,17 +468,17 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
       l_z2_4 l_z3_4 l_a_6 l_z0_9 ⟨z_cf_13, z_cf_17⟩
   -- END fromMont round 1
   -- rdx_4: mov rdx, {z2}
-  extract_lets -merge +onlyGivenNames rdx_4 at hr
+  extract_lets -merge +onlyGivenNames rdx_4 at hres
   have e_rdx_4 : rdx_4 = z2_4 := rfl
   clear_value rdx_4
   have b_rdx_4 : rdx_4 < 2^64 := by rw [e_rdx_4]; exact b_z2_4
   -- rdx_5: imul rdx, {inv}
-  extract_lets -merge +onlyGivenNames rdx_5 at hr
+  extract_lets -merge +onlyGivenNames rdx_5 at hres
   have e_rdx_5 : rdx_5 = rdx_4 * inv' % 2^64 := rfl
   clear_value rdx_5
   have b_rdx_5 : rdx_5 < 2^64 := by rw [e_rdx_5]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
   -- m_4: mulx {t2}, {t1}, {p1}
-  extract_lets -merge +onlyGivenNames m_4 t2_2 t1_4 at hr
+  extract_lets -merge +onlyGivenNames m_4 t2_2 t1_4 at hres
   have e_t2_2 : t2_2 = (mulx rdx_5 p1).1 := rfl
   have e_t1_4 : t1_4 = (mulx rdx_5 p1).2 := rfl
   clear_value m_4 t2_2 t1_4
@@ -487,19 +487,19 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have d_t2_2 : t1_4 + 2^64 * t2_2 = rdx_5 * p1 := by
     rw [e_t1_4, e_t2_2]; exact Nat.mod_add_div _ _
   -- z1_7: mov {z1}, rdx
-  extract_lets -merge +onlyGivenNames z1_7 at hr
+  extract_lets -merge +onlyGivenNames z1_7 at hres
   have e_z1_7 : z1_7 = rdx_5 := rfl
   clear_value z1_7
   have b_z1_7 : z1_7 < 2^64 := by rw [e_z1_7]; exact b_rdx_5
   -- z1_8: shl {z1}, 62
-  extract_lets -merge +onlyGivenNames z1_8 at hr
+  extract_lets -merge +onlyGivenNames z1_8 at hres
   have e_z1_8 : z1_8 = z1_7 * 2^62 % 2^64 := rfl
   clear_value z1_8
   have b_z1_8 : z1_8 < 2^64 := by rw [e_z1_8]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
   have sh_z1_8 : z1_8 + 2^64 * (z1_7 / 2^2) = z1_7 * 2^62 := by
     rw [e_z1_8]; exact lsl62_lsr2_split _
   -- n_2: neg {z2}
-  extract_lets -merge +onlyGivenNames n_2 z2_5 cf_18 at hr
+  extract_lets -merge +onlyGivenNames n_2 z2_5 cf_18 at hres
   have e_z2_5 : z2_5 = (neg z2_4).1 := rfl
   have e_cf_18 : cf_18 = (neg z2_4).2 := rfl
   clear_value n_2 z2_5 cf_18
@@ -507,7 +507,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_18 : cf_18 ≤ 1 := by
     rw [e_cf_18]; simp only [neg]; split <;> omega
   -- z3_5: adc {z3}, {t1}
-  extract_lets -merge +onlyGivenNames s_16 z3_5 cf_19 at hr
+  extract_lets -merge +onlyGivenNames s_16 z3_5 cf_19 at hres
   have e_z3_5 : z3_5 = (addc z3_4 t1_4 cf_18).1 := rfl
   have e_cf_19 : cf_19 = (addc z3_4 t1_4 cf_18).2 := rfl
   clear_value s_16 z3_5 cf_19
@@ -517,7 +517,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_19 : cf_19 ≤ 1 := by rw [e_cf_19]; exact addc_carry_le_one z3_4 t1_4 cf_18 b_z3_4 b_t1_4 b_cf_18
   clear e_z3_5 e_cf_19
   -- a_7: adc {a}, 0
-  extract_lets -merge +onlyGivenNames s_17 a_7 cf_20 at hr
+  extract_lets -merge +onlyGivenNames s_17 a_7 cf_20 at hres
   have e_a_7 : a_7 = (addc a_6 0 cf_19).1 := rfl
   have e_cf_20 : cf_20 = (addc a_6 0 cf_19).2 := rfl
   clear_value s_17 a_7 cf_20
@@ -527,7 +527,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_20 : cf_20 ≤ 1 := by rw [e_cf_20]; exact addc_carry_le_one a_6 0 cf_19 b_a_6 (by decide) b_cf_19
   clear e_a_7 e_cf_20
   -- z0_10: adc {z0}, {z1}
-  extract_lets -merge +onlyGivenNames s_18 z0_10 cf_21 at hr
+  extract_lets -merge +onlyGivenNames s_18 z0_10 cf_21 at hres
   have e_z0_10 : z0_10 = (addc z0_9 z1_8 cf_20).1 := rfl
   have e_cf_21 : cf_21 = (addc z0_9 z1_8 cf_20).2 := rfl
   clear_value s_18 z0_10 cf_21
@@ -537,12 +537,12 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_21 : cf_21 ≤ 1 := by rw [e_cf_21]; exact addc_carry_le_one z0_9 z1_8 cf_20 b_z0_9 b_z1_8 b_cf_20
   clear e_z0_10 e_cf_21
   -- z1_9: mov {z1}, 0
-  extract_lets -merge +onlyGivenNames z1_9 at hr
+  extract_lets -merge +onlyGivenNames z1_9 at hres
   have e_z1_9 : z1_9 = 0 := rfl
   clear_value z1_9
   have b_z1_9 : z1_9 < 2^64 := by rw [e_z1_9]; decide
   -- z1_10: adc {z1}, 0
-  extract_lets -merge +onlyGivenNames s_19 z1_10 cf_22 at hr
+  extract_lets -merge +onlyGivenNames s_19 z1_10 cf_22 at hres
   have e_z1_10 : z1_10 = (addc z1_9 0 cf_21).1 := rfl
   have e_cf_22 : cf_22 = (addc z1_9 0 cf_21).2 := rfl
   clear_value s_19 z1_10 cf_22
@@ -552,7 +552,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_22 : cf_22 ≤ 1 := by rw [e_cf_22]; exact addc_carry_le_one z1_9 0 cf_21 b_z1_9 (by decide) b_cf_21
   clear e_z1_10 e_cf_22
   -- m_5: mulx {t1}, {z2}, {p0}
-  extract_lets -merge +onlyGivenNames m_5 t1_5 z2_6 at hr
+  extract_lets -merge +onlyGivenNames m_5 t1_5 z2_6 at hres
   have e_t1_5 : t1_5 = (mulx rdx_5 p0).1 := rfl
   have e_z2_6 : z2_6 = (mulx rdx_5 p0).2 := rfl
   clear_value m_5 t1_5 z2_6
@@ -561,18 +561,18 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have d_t1_5 : z2_6 + 2^64 * t1_5 = rdx_5 * p0 := by
     rw [e_z2_6, e_t1_5]; exact Nat.mod_add_div _ _
   -- z2_7: mov {z2}, rdx
-  extract_lets -merge +onlyGivenNames z2_7 at hr
+  extract_lets -merge +onlyGivenNames z2_7 at hres
   have e_z2_7 : z2_7 = rdx_5 := rfl
   clear_value z2_7
   have b_z2_7 : z2_7 < 2^64 := by rw [e_z2_7]; exact b_rdx_5
   -- z2_8: shr {z2}, 2
-  extract_lets -merge +onlyGivenNames z2_8 at hr
+  extract_lets -merge +onlyGivenNames z2_8 at hres
   have e_z2_8 : z2_8 = z2_7 / 2^2 := rfl
   clear_value z2_8
   have b_z2_8 : z2_8 < 2^62 := by
     rw [e_z2_8]; exact Nat.div_lt_of_lt_mul (lt_of_lt_of_eq b_z2_7 (by norm_num))
   -- z3_6: add {z3}, {t1}
-  extract_lets -merge +onlyGivenNames s_20 z3_6 cf_23 at hr
+  extract_lets -merge +onlyGivenNames s_20 z3_6 cf_23 at hres
   have e_z3_6 : z3_6 = (addc z3_5 t1_5 0).1 := rfl
   have e_cf_23 : cf_23 = (addc z3_5 t1_5 0).2 := rfl
   clear_value s_20 z3_6 cf_23
@@ -582,7 +582,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_23 : cf_23 ≤ 1 := by rw [e_cf_23]; exact addc_carry_le_one z3_5 t1_5 0 b_z3_5 b_t1_5 (by decide)
   clear e_z3_6 e_cf_23
   -- a_8: adc {a}, {t2}
-  extract_lets -merge +onlyGivenNames s_21 a_8 cf_24 at hr
+  extract_lets -merge +onlyGivenNames s_21 a_8 cf_24 at hres
   have e_a_8 : a_8 = (addc a_7 t2_2 cf_23).1 := rfl
   have e_cf_24 : cf_24 = (addc a_7 t2_2 cf_23).2 := rfl
   clear_value s_21 a_8 cf_24
@@ -592,7 +592,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_24 : cf_24 ≤ 1 := by rw [e_cf_24]; exact addc_carry_le_one a_7 t2_2 cf_23 b_a_7 b_t2_2 b_cf_23
   clear e_a_8 e_cf_24
   -- z0_11: adc {z0}, 0
-  extract_lets -merge +onlyGivenNames s_22 z0_11 cf_25 at hr
+  extract_lets -merge +onlyGivenNames s_22 z0_11 cf_25 at hres
   have e_z0_11 : z0_11 = (addc z0_10 0 cf_24).1 := rfl
   have e_cf_25 : cf_25 = (addc z0_10 0 cf_24).2 := rfl
   clear_value s_22 z0_11 cf_25
@@ -602,7 +602,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_25 : cf_25 ≤ 1 := by rw [e_cf_25]; exact addc_carry_le_one z0_10 0 cf_24 b_z0_10 (by decide) b_cf_24
   clear e_z0_11 e_cf_25
   -- z1_11: adc {z1}, {z2}
-  extract_lets -merge +onlyGivenNames s_23 z1_11 cf_26 at hr
+  extract_lets -merge +onlyGivenNames s_23 z1_11 cf_26 at hres
   have e_z1_11 : z1_11 = (addc z1_10 z2_8 cf_25).1 := rfl
   have e_cf_26 : cf_26 = (addc z1_10 z2_8 cf_25).2 := rfl
   clear_value s_23 z1_11 cf_26
@@ -632,17 +632,17 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
       l_z3_6 l_a_8 l_z0_11 l_z1_11 ⟨z_cf_22, z_cf_26⟩
   -- END fromMont round 2
   -- rdx_6: mov rdx, {z3}
-  extract_lets -merge +onlyGivenNames rdx_6 at hr
+  extract_lets -merge +onlyGivenNames rdx_6 at hres
   have e_rdx_6 : rdx_6 = z3_6 := rfl
   clear_value rdx_6
   have b_rdx_6 : rdx_6 < 2^64 := by rw [e_rdx_6]; exact b_z3_6
   -- rdx_7: imul rdx, {inv}
-  extract_lets -merge +onlyGivenNames rdx_7 at hr
+  extract_lets -merge +onlyGivenNames rdx_7 at hres
   have e_rdx_7 : rdx_7 = rdx_6 * inv' % 2^64 := rfl
   clear_value rdx_7
   have b_rdx_7 : rdx_7 < 2^64 := by rw [e_rdx_7]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
   -- m_6: mulx {t2}, {t1}, {p1}
-  extract_lets -merge +onlyGivenNames m_6 t2_3 t1_6 at hr
+  extract_lets -merge +onlyGivenNames m_6 t2_3 t1_6 at hres
   have e_t2_3 : t2_3 = (mulx rdx_7 p1).1 := rfl
   have e_t1_6 : t1_6 = (mulx rdx_7 p1).2 := rfl
   clear_value m_6 t2_3 t1_6
@@ -651,19 +651,19 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have d_t2_3 : t1_6 + 2^64 * t2_3 = rdx_7 * p1 := by
     rw [e_t1_6, e_t2_3]; exact Nat.mod_add_div _ _
   -- z2_9: mov {z2}, rdx
-  extract_lets -merge +onlyGivenNames z2_9 at hr
+  extract_lets -merge +onlyGivenNames z2_9 at hres
   have e_z2_9 : z2_9 = rdx_7 := rfl
   clear_value z2_9
   have b_z2_9 : z2_9 < 2^64 := by rw [e_z2_9]; exact b_rdx_7
   -- z2_10: shl {z2}, 62
-  extract_lets -merge +onlyGivenNames z2_10 at hr
+  extract_lets -merge +onlyGivenNames z2_10 at hres
   have e_z2_10 : z2_10 = z2_9 * 2^62 % 2^64 := rfl
   clear_value z2_10
   have b_z2_10 : z2_10 < 2^64 := by rw [e_z2_10]; exact Nat.mod_lt _ (Nat.two_pow_pos _)
   have sh_z2_10 : z2_10 + 2^64 * (z2_9 / 2^2) = z2_9 * 2^62 := by
     rw [e_z2_10]; exact lsl62_lsr2_split _
   -- n_3: neg {z3}
-  extract_lets -merge +onlyGivenNames n_3 z3_7 cf_27 at hr
+  extract_lets -merge +onlyGivenNames n_3 z3_7 cf_27 at hres
   have e_z3_7 : z3_7 = (neg z3_6).1 := rfl
   have e_cf_27 : cf_27 = (neg z3_6).2 := rfl
   clear_value n_3 z3_7 cf_27
@@ -671,7 +671,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_27 : cf_27 ≤ 1 := by
     rw [e_cf_27]; simp only [neg]; split <;> omega
   -- a_9: adc {a}, {t1}
-  extract_lets -merge +onlyGivenNames s_24 a_9 cf_28 at hr
+  extract_lets -merge +onlyGivenNames s_24 a_9 cf_28 at hres
   have e_a_9 : a_9 = (addc a_8 t1_6 cf_27).1 := rfl
   have e_cf_28 : cf_28 = (addc a_8 t1_6 cf_27).2 := rfl
   clear_value s_24 a_9 cf_28
@@ -681,7 +681,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_28 : cf_28 ≤ 1 := by rw [e_cf_28]; exact addc_carry_le_one a_8 t1_6 cf_27 b_a_8 b_t1_6 b_cf_27
   clear e_a_9 e_cf_28
   -- z0_12: adc {z0}, 0
-  extract_lets -merge +onlyGivenNames s_25 z0_12 cf_29 at hr
+  extract_lets -merge +onlyGivenNames s_25 z0_12 cf_29 at hres
   have e_z0_12 : z0_12 = (addc z0_11 0 cf_28).1 := rfl
   have e_cf_29 : cf_29 = (addc z0_11 0 cf_28).2 := rfl
   clear_value s_25 z0_12 cf_29
@@ -691,7 +691,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_29 : cf_29 ≤ 1 := by rw [e_cf_29]; exact addc_carry_le_one z0_11 0 cf_28 b_z0_11 (by decide) b_cf_28
   clear e_z0_12 e_cf_29
   -- z1_12: adc {z1}, {z2}
-  extract_lets -merge +onlyGivenNames s_26 z1_12 cf_30 at hr
+  extract_lets -merge +onlyGivenNames s_26 z1_12 cf_30 at hres
   have e_z1_12 : z1_12 = (addc z1_11 z2_10 cf_29).1 := rfl
   have e_cf_30 : cf_30 = (addc z1_11 z2_10 cf_29).2 := rfl
   clear_value s_26 z1_12 cf_30
@@ -701,12 +701,12 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_30 : cf_30 ≤ 1 := by rw [e_cf_30]; exact addc_carry_le_one z1_11 z2_10 cf_29 b_z1_11 b_z2_10 b_cf_29
   clear e_z1_12 e_cf_30
   -- z2_11: mov {z2}, 0
-  extract_lets -merge +onlyGivenNames z2_11 at hr
+  extract_lets -merge +onlyGivenNames z2_11 at hres
   have e_z2_11 : z2_11 = 0 := rfl
   clear_value z2_11
   have b_z2_11 : z2_11 < 2^64 := by rw [e_z2_11]; decide
   -- z2_12: adc {z2}, 0
-  extract_lets -merge +onlyGivenNames s_27 z2_12 cf_31 at hr
+  extract_lets -merge +onlyGivenNames s_27 z2_12 cf_31 at hres
   have e_z2_12 : z2_12 = (addc z2_11 0 cf_30).1 := rfl
   have e_cf_31 : cf_31 = (addc z2_11 0 cf_30).2 := rfl
   clear_value s_27 z2_12 cf_31
@@ -716,7 +716,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_31 : cf_31 ≤ 1 := by rw [e_cf_31]; exact addc_carry_le_one z2_11 0 cf_30 b_z2_11 (by decide) b_cf_30
   clear e_z2_12 e_cf_31
   -- m_7: mulx {t1}, {z3}, {p0}
-  extract_lets -merge +onlyGivenNames m_7 t1_7 z3_8 at hr
+  extract_lets -merge +onlyGivenNames m_7 t1_7 z3_8 at hres
   have e_t1_7 : t1_7 = (mulx rdx_7 p0).1 := rfl
   have e_z3_8 : z3_8 = (mulx rdx_7 p0).2 := rfl
   clear_value m_7 t1_7 z3_8
@@ -725,18 +725,18 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have d_t1_7 : z3_8 + 2^64 * t1_7 = rdx_7 * p0 := by
     rw [e_z3_8, e_t1_7]; exact Nat.mod_add_div _ _
   -- z3_9: mov {z3}, rdx
-  extract_lets -merge +onlyGivenNames z3_9 at hr
+  extract_lets -merge +onlyGivenNames z3_9 at hres
   have e_z3_9 : z3_9 = rdx_7 := rfl
   clear_value z3_9
   have b_z3_9 : z3_9 < 2^64 := by rw [e_z3_9]; exact b_rdx_7
   -- z3_10: shr {z3}, 2
-  extract_lets -merge +onlyGivenNames z3_10 at hr
+  extract_lets -merge +onlyGivenNames z3_10 at hres
   have e_z3_10 : z3_10 = z3_9 / 2^2 := rfl
   clear_value z3_10
   have b_z3_10 : z3_10 < 2^62 := by
     rw [e_z3_10]; exact Nat.div_lt_of_lt_mul (lt_of_lt_of_eq b_z3_9 (by norm_num))
   -- a_10: add {a}, {t1}
-  extract_lets -merge +onlyGivenNames s_28 a_10 cf_32 at hr
+  extract_lets -merge +onlyGivenNames s_28 a_10 cf_32 at hres
   have e_a_10 : a_10 = (addc a_9 t1_7 0).1 := rfl
   have e_cf_32 : cf_32 = (addc a_9 t1_7 0).2 := rfl
   clear_value s_28 a_10 cf_32
@@ -746,7 +746,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_32 : cf_32 ≤ 1 := by rw [e_cf_32]; exact addc_carry_le_one a_9 t1_7 0 b_a_9 b_t1_7 (by decide)
   clear e_a_10 e_cf_32
   -- z0_13: adc {z0}, {t2}
-  extract_lets -merge +onlyGivenNames s_29 z0_13 cf_33 at hr
+  extract_lets -merge +onlyGivenNames s_29 z0_13 cf_33 at hres
   have e_z0_13 : z0_13 = (addc z0_12 t2_3 cf_32).1 := rfl
   have e_cf_33 : cf_33 = (addc z0_12 t2_3 cf_32).2 := rfl
   clear_value s_29 z0_13 cf_33
@@ -756,7 +756,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_33 : cf_33 ≤ 1 := by rw [e_cf_33]; exact addc_carry_le_one z0_12 t2_3 cf_32 b_z0_12 b_t2_3 b_cf_32
   clear e_z0_13 e_cf_33
   -- z1_13: adc {z1}, 0
-  extract_lets -merge +onlyGivenNames s_30 z1_13 cf_34 at hr
+  extract_lets -merge +onlyGivenNames s_30 z1_13 cf_34 at hres
   have e_z1_13 : z1_13 = (addc z1_12 0 cf_33).1 := rfl
   have e_cf_34 : cf_34 = (addc z1_12 0 cf_33).2 := rfl
   clear_value s_30 z1_13 cf_34
@@ -766,7 +766,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_34 : cf_34 ≤ 1 := by rw [e_cf_34]; exact addc_carry_le_one z1_12 0 cf_33 b_z1_12 (by decide) b_cf_33
   clear e_z1_13 e_cf_34
   -- z2_13: adc {z2}, {z3}
-  extract_lets -merge +onlyGivenNames s_31 z2_13 cf_35 at hr
+  extract_lets -merge +onlyGivenNames s_31 z2_13 cf_35 at hres
   have e_z2_13 : z2_13 = (addc z2_12 z3_10 cf_34).1 := rfl
   have e_cf_35 : cf_35 = (addc z2_12 z3_10 cf_34).2 := rfl
   clear_value s_31 z2_13 cf_35
@@ -827,32 +827,32 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
     omega
   -- END fromMont round 3 and candidate
   -- rdx_8: movabs rdx, {p3}
-  extract_lets -merge +onlyGivenNames rdx_8 at hr
+  extract_lets -merge +onlyGivenNames rdx_8 at hres
   have e_rdx_8 : rdx_8 = p3 := rfl
   clear_value rdx_8
   have b_rdx_8 : rdx_8 < 2^64 := by rw [e_rdx_8]; exact b_p3
   -- t1_8: mov {t1}, {a}
-  extract_lets -merge +onlyGivenNames t1_8 at hr
+  extract_lets -merge +onlyGivenNames t1_8 at hres
   have e_t1_8 : t1_8 = a_10 := rfl
   clear_value t1_8
   have b_t1_8 : t1_8 < 2^64 := by rw [e_t1_8]; exact b_a_10
   -- t2_4: mov {t2}, {z0}
-  extract_lets -merge +onlyGivenNames t2_4 at hr
+  extract_lets -merge +onlyGivenNames t2_4 at hres
   have e_t2_4 : t2_4 = z0_13 := rfl
   clear_value t2_4
   have b_t2_4 : t2_4 < 2^64 := by rw [e_t2_4]; exact b_z0_13
   -- z3_11: mov {z3}, {z1}
-  extract_lets -merge +onlyGivenNames z3_11 at hr
+  extract_lets -merge +onlyGivenNames z3_11 at hres
   have e_z3_11 : z3_11 = z1_13 := rfl
   clear_value z3_11
   have b_z3_11 : z3_11 < 2^64 := by rw [e_z3_11]; exact b_z1_13
   -- z4: mov {z4}, {z2}
-  extract_lets -merge +onlyGivenNames z4 at hr
+  extract_lets -merge +onlyGivenNames z4 at hres
   have e_z4 : z4 = z2_13 := rfl
   clear_value z4
   have b_z4 : z4 < 2^64 := by rw [e_z4]; exact b_z2_13
   -- t1_9: sub {t1}, {p0}
-  extract_lets -merge +onlyGivenNames d t1_9 cf_36 at hr
+  extract_lets -merge +onlyGivenNames d t1_9 cf_36 at hres
   have e_t1_9 : t1_9 = (sbb t1_8 p0 0).1 := rfl
   have e_cf_36 : cf_36 = (sbb t1_8 p0 0).2 := rfl
   clear_value d t1_9 cf_36
@@ -862,7 +862,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_36 : cf_36 ≤ 1 := by rw [e_cf_36]; exact sbb_borrow_le_one t1_8 p0 0
   clear e_t1_9 e_cf_36
   -- t2_5: sbb {t2}, {p1}
-  extract_lets -merge +onlyGivenNames d_1 t2_5 cf_37 at hr
+  extract_lets -merge +onlyGivenNames d_1 t2_5 cf_37 at hres
   have e_t2_5 : t2_5 = (sbb t2_4 p1 cf_36).1 := rfl
   have e_cf_37 : cf_37 = (sbb t2_4 p1 cf_36).2 := rfl
   clear_value d_1 t2_5 cf_37
@@ -872,7 +872,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_37 : cf_37 ≤ 1 := by rw [e_cf_37]; exact sbb_borrow_le_one t2_4 p1 cf_36
   clear e_t2_5 e_cf_37
   -- z3_12: sbb {z3}, 0
-  extract_lets -merge +onlyGivenNames d_2 z3_12 cf_38 at hr
+  extract_lets -merge +onlyGivenNames d_2 z3_12 cf_38 at hres
   have e_z3_12 : z3_12 = (sbb z3_11 0 cf_37).1 := rfl
   have e_cf_38 : cf_38 = (sbb z3_11 0 cf_37).2 := rfl
   clear_value d_2 z3_12 cf_38
@@ -882,7 +882,7 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_38 : cf_38 ≤ 1 := by rw [e_cf_38]; exact sbb_borrow_le_one z3_11 0 cf_37
   clear e_z3_12 e_cf_38
   -- z4_1: sbb {z4}, rdx
-  extract_lets -merge +onlyGivenNames d_3 z4_1 cf_39 at hr
+  extract_lets -merge +onlyGivenNames d_3 z4_1 cf_39 at hres
   have e_z4_1 : z4_1 = (sbb z4 rdx_8 cf_38).1 := rfl
   have e_cf_39 : cf_39 = (sbb z4 rdx_8 cf_38).2 := rfl
   clear_value d_3 z4_1 cf_39
@@ -892,30 +892,30 @@ theorem fromMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
   have b_cf_39 : cf_39 ≤ 1 := by rw [e_cf_39]; exact sbb_borrow_le_one z4 rdx_8 cf_38
   clear e_z4_1 e_cf_39
   -- a_11: cmovnc {a}, {t1}
-  extract_lets -merge +onlyGivenNames a_11 at hr
+  extract_lets -merge +onlyGivenNames a_11 at hres
   have e_a_11 : a_11 = (if cf_39 = 0 then t1_9 else a_10) := rfl
   clear_value a_11
   have b_a_11 : a_11 < 2^64 := by
     rw [e_a_11]; split <;> first | exact b_t1_9 | exact b_a_10
   -- z0_14: cmovnc {z0}, {t2}
-  extract_lets -merge +onlyGivenNames z0_14 at hr
+  extract_lets -merge +onlyGivenNames z0_14 at hres
   have e_z0_14 : z0_14 = (if cf_39 = 0 then t2_5 else z0_13) := rfl
   clear_value z0_14
   have b_z0_14 : z0_14 < 2^64 := by
     rw [e_z0_14]; split <;> first | exact b_t2_5 | exact b_z0_13
   -- z1_14: cmovnc {z1}, {z3}
-  extract_lets -merge +onlyGivenNames z1_14 at hr
+  extract_lets -merge +onlyGivenNames z1_14 at hres
   have e_z1_14 : z1_14 = (if cf_39 = 0 then z3_12 else z1_13) := rfl
   clear_value z1_14
   have b_z1_14 : z1_14 < 2^64 := by
     rw [e_z1_14]; split <;> first | exact b_z3_12 | exact b_z1_13
   -- z2_14: cmovnc {z2}, {z4}
-  extract_lets -merge +onlyGivenNames z2_14 at hr
+  extract_lets -merge +onlyGivenNames z2_14 at hres
   have e_z2_14 : z2_14 = (if cf_39 = 0 then z4_1 else z2_13) := rfl
   clear_value z2_14
   have b_z2_14 : z2_14 < 2^64 := by
     rw [e_z2_14]; split <;> first | exact b_z4_1 | exact b_z2_13
-  subst hr
+  subst hres
   -- BEGIN fromMont conclusion
   rw [e_p0, e_t1_8] at l_t1_9
   rw [e_p1, e_t2_4] at l_t2_5
