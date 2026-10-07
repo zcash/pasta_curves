@@ -23,9 +23,13 @@ Aeneas' Lean library, which the translation of the portable inversion blocks imp
 declares axioms of its own for opaque Rust items, and two of its tests leave `sorryAx` citations
 behind. A violation is accepted only when:
 
-  * its axiom is `sorryAx` and every citer is one of Aeneas' tests (an `Aeneas.` name with a
-    `Test` component); or
-  * its axiom is Aeneas' and every citer is in Aeneas.
+  * its axiom is `sorryAx` and every declaration that depends on it is one of Aeneas' tests (an
+    `Aeneas.` name with a `Test` component); or
+  * its axiom is Aeneas' and every declaration that depends on it is in Aeneas.
+
+A declaration depends on an axiom when it cites the axiom, or cites a declaration that depends on
+it. Checking only the citations would let a declaration of the package rely on a `sorry` or on
+one of Aeneas' axioms through one of Aeneas' declarations, which the exceptions accept.
 
 The export does not record the module of a declaration, so a check of the package's own
 sources makes sure none declares into the `Aeneas` namespace. With `--nanoda-config OUT`, a
@@ -128,8 +132,15 @@ def error(msg) -> NoReturn:
 
 def scan(export_path, targets):
     """One pass over the export: the declared axioms, and for each of `targets` the
-    declarations that cite it and whether any expression cites it at all. Stops with an
-    ERROR on any structural surprise."""
+    declarations that cite it, the declarations that depend on it, and whether any expression
+    cites it at all. Stops with an ERROR on any structural surprise.
+
+    A declaration cites a target when one of its own expressions names it. It depends on a
+    target when it cites the target, or names a declaration that depends on it. A declaration
+    is usually read after every declaration that its expressions name, so its dependencies are
+    complete when it is read. One that names a declaration not yet read, or one whose
+    dependencies are not yet complete, is held back and completed after the pass, by a fixed
+    point over the declarations held back."""
     names = {}  # name id -> (prefix id, component)
 
     def resolve(i):
@@ -162,8 +173,13 @@ def scan(export_path, targets):
 
     target_components = {name.rsplit(".", 1)[-1] for name in targets}
     target_name_ids = {}  # name id -> target full name
-    taint = {}  # expr id -> frozenset of target full names
+    cites = {}  # expr id -> frozenset of the target full names it names
+    taint = {}  # expr id -> frozenset of the target full names it depends on
+    pending = {}  # expr id -> frozenset of the name ids whose dependencies are not yet known
+    complete = {}  # name id -> frozenset of the targets its declaration depends on
+    held = []  # (own name ids, display name, dependencies so far, name ids still pending)
     citers = {}  # target full name -> set of citing declaration names
+    dependents = {}  # target full name -> set of depending declaration names
     const_cited = {t: False for t in targets}
     declared_axioms = set()
     max_in = max_il = 0  # id 0: the reserved anonymous name / zero level
@@ -204,21 +220,34 @@ def scan(export_path, targets):
                 (kind,) = rest
                 if kind not in EXPR_KINDS:
                     error(f"unknown expression kind '{kind}' at expression id {i}")
-                t = set()
+                c, t, p = set(), set(), set()
                 if kind == "const":
                     nid = o["const"]["name"]
                     if nid in target_name_ids:
                         full = target_name_ids[nid]
-                        t.add(full)
+                        c.add(full)
                         const_cited[full] = True
+                    if nid in complete:
+                        t |= complete[nid]
+                    else:
+                        p.add(nid)
                 for f2 in EXPR_SUBFIELDS.get(kind, ()):
                     v = o[kind][f2]
                     if not 0 <= v < i:
                         error(f"expression id {i} references non-earlier sub-id {v}")
+                    if v in cites:
+                        c |= cites[v]
                     if v in taint:
                         t |= taint[v]
+                    if v in pending:
+                        p |= pending[v]
+                t |= c
+                if c:
+                    cites[i] = frozenset(c)
                 if t:
                     taint[i] = frozenset(t)
+                if p:
+                    pending[i] = frozenset(p)
             elif "il" in o:
                 i = o["il"]
                 if i != max_il + 1:
@@ -252,24 +281,58 @@ def scan(export_path, targets):
                 d = o[kind]
                 if kind == "axiom":
                     declared_axioms.add(resolve(d["name"]))
-                hit = set()
+                if kind == "inductive":
+                    own = [x["name"] for part in ("types", "ctors", "recs") for x in d[part]]
+                    nm = ", ".join(resolve(ty["name"]) for ty in d["types"])
+                else:
+                    own = [d["name"]]
+                    nm = resolve(d["name"])
+                hit, deps, waits = set(), set(), set()
                 for v in decl_expr_ids(d):
                     if not 0 <= v <= max_ie:
                         error(f"declaration references undefined expression id {v}")
+                    if v in cites:
+                        hit |= cites[v]
                     if v in taint:
-                        hit |= taint[v]
-                if hit:
-                    if kind == "inductive":
-                        nm = ", ".join(resolve(ty["name"]) for ty in d["types"])
-                    else:
-                        nm = resolve(d["name"])
-                    for t2 in hit:
-                        citers.setdefault(t2, set()).add(nm)
+                        deps |= taint[v]
+                    if v in pending:
+                        waits |= pending[v]
+                for t2 in hit:
+                    citers.setdefault(t2, set()).add(nm)
+                waits -= set(own)
+                if waits:
+                    held.append((own, nm, frozenset(deps), waits))
+                else:
+                    deps = frozenset(deps)
+                    for nid in own:
+                        complete[nid] = deps
+                    for t2 in deps:
+                        dependents.setdefault(t2, set()).add(nm)
 
     if not meta_seen:
         error("export has no meta line; format version unverified")
 
-    return declared_axioms, citers, const_cited
+    # The declarations held back, completed by a fixed point: each depends on what the names it
+    # waits on depend on, whether those were read before it, after it, or were held back too. A
+    # name that no declaration defines contributes nothing.
+    final = {nid: deps for own, _, deps, _ in held for nid in own}
+    changed = True
+    while changed:
+        changed = False
+        for own, _, deps, waits in held:
+            new = set(final[own[0]])
+            for nid in waits:
+                new |= complete.get(nid, final.get(nid, frozenset()))
+            if new != final[own[0]]:
+                new = frozenset(new)
+                for nid in own:
+                    final[nid] = new
+                changed = True
+    for own, nm, _, _ in held:
+        for t2 in final[own[0]]:
+            dependents.setdefault(t2, set()).add(nm)
+
+    return declared_axioms, citers, dependents, const_cited
 
 
 def is_aeneas(name):
@@ -325,12 +388,14 @@ def main():
 
     # Run from `lean/`: the package's own modules are under `PastaCurves/`.
     check_no_aeneas_declarations(Path("PastaCurves"))
-    declared_axioms, citers, const_cited = scan(export_path, TARGETS)
+    declared_axioms, citers, dependents, const_cited = scan(export_path, TARGETS)
     # The axioms that Aeneas' library declares and the permitted list does not name: a second
     # scan finds their citers, which must all be Aeneas' own declarations.
     aeneas_axioms = {a for a in declared_axioms - permitted if is_aeneas(a)}
     if aeneas_axioms:
-        declared_axioms, citers, const_cited = scan(export_path, TARGETS | aeneas_axioms)
+        declared_axioms, citers, dependents, const_cited = scan(
+            export_path, TARGETS | aeneas_axioms
+        )
 
     def citers_of(t):
         """The declarations citing `t`, with `<expression>` for a citation that no declaration
@@ -339,6 +404,17 @@ def main():
         if const_cited.get(t) and not found:
             found.add("<expression>")
         return found
+
+    def dependents_of(t):
+        """The declarations depending on `t`, directly or through other declarations, with
+        `<expression>` for a citation that no declaration reaches."""
+        return dependents.get(t, set()) | citers_of(t)
+
+    def listed(names, limit=10):
+        """`names`, sorted, with at most `limit` of them spelled out."""
+        names = sorted(names)
+        more = f" and {len(names) - limit} more" if len(names) > limit else ""
+        return f"{names[:limit]}{more}"
 
     unpermitted = sorted(declared_axioms - permitted - aeneas_axioms)
     undeclared = sorted(permitted - declared_axioms)
@@ -350,15 +426,17 @@ def main():
         )
 
     for a in sorted(aeneas_axioms):
-        outside = sorted(c for c in citers_of(a) if not is_aeneas(c))
+        outside = [c for c in dependents_of(a) if not is_aeneas(c)]
         if outside:
-            violation(f"Aeneas' axiom '{a}' is cited outside Aeneas' library: {outside}")
+            violation(
+                f"Aeneas' axiom '{a}' is depended on outside Aeneas' library: {listed(outside)}"
+            )
     for t in sorted(UNREFERENCED):
-        # `sorryAx` may be cited by Aeneas' tests alone; the others by nothing.
+        # `sorryAx` may be depended on by Aeneas' tests alone; the others by nothing.
         allowed = is_aeneas_test if t == "sorryAx" else (lambda _: False)
-        outside = sorted(c for c in citers_of(t) if not allowed(c))
+        outside = [c for c in dependents_of(t) if not allowed(c)]
         if outside:
-            violation(f"'{t}' is cited by: {outside}")
+            violation(f"'{t}' is depended on by: {listed(outside)}")
     for t, allowed in RESTRICTED.items():
         extra = citers.get(t, set()) - allowed
         if extra:

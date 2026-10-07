@@ -688,6 +688,71 @@ class AeneasExemption(unittest.TestCase):
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("PastaCurves.Test.unfinished", p.stderr)
 
+    def test_sorry_reaching_the_package_through_an_aeneas_test_fails(self):
+        e = baseline()
+        e.axiom("sorryAx")
+        e.defn("Aeneas.Data.ListN.Test.E2", value=e.const("sorryAx"))
+        e.thm("PastaCurves.main", value=e.const("Aeneas.Data.ListN.Test.E2"))
+        p = run(e, ("propext", "sorryAx"))
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("PastaCurves.main", p.stderr)
+
+    def test_aeneas_axiom_reaching_the_package_through_aeneas_fails(self):
+        e = baseline()
+        e.axiom("Aeneas.Std.bad")
+        e.defn("Aeneas.Std.wrap", value=e.const("Aeneas.Std.bad"))
+        e.defn("Aeneas.Std.wrap2", value=e.const("Aeneas.Std.wrap"))
+        e.thm("PastaCurves.main", value=e.app(e.sort(), e.const("Aeneas.Std.wrap2")))
+        p = run(e)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("Aeneas.Std.bad", p.stderr)
+        self.assertIn("PastaCurves.main", p.stderr)
+
+    def test_dependence_staying_in_aeneas_passes(self):
+        e = baseline()
+        e.axiom("Aeneas.Std.bad")
+        e.defn("Aeneas.Std.wrap", value=e.const("Aeneas.Std.bad"))
+        e.thm("Aeneas.Std.wrap.spec", ty=e.const("Aeneas.Std.wrap"))
+        e.thm("PastaCurves.main", value=e.const("Aeneas.Std.other"))
+        p = run(e)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_dependence_on_a_declaration_read_later_is_found(self):
+        # The package's declaration names Aeneas' wrapper before the export declares it, so its
+        # dependencies are completed after the pass.
+        e = baseline()
+        e.axiom("Aeneas.Std.bad")
+        e.thm("PastaCurves.main", value=e.const("Aeneas.Std.wrap"))
+        e.defn("Aeneas.Std.wrap", value=e.const("Aeneas.Std.bad"))
+        p = run(e)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("PastaCurves.main", p.stderr)
+
+    def test_dependence_through_a_cycle_of_declarations_read_later_is_found(self):
+        # `A` and `B` name each other, as mutually recursive unsafe definitions can, and `B` is
+        # the one that reaches the axiom; `main`, read before both, names `A`.
+        e = baseline()
+        e.axiom("Aeneas.Std.bad")
+        e.thm("PastaCurves.main", value=e.const("Aeneas.Std.A"))
+        e.defn("Aeneas.Std.A", value=e.const("Aeneas.Std.B"))
+        e.defn("Aeneas.Std.B", value=e.app(e.const("Aeneas.Std.A"), e.const("Aeneas.Std.bad")))
+        e.thm("PastaCurves.later", value=e.const("Aeneas.Std.A"))
+        p = run(e)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("PastaCurves.main", p.stderr)
+        self.assertIn("PastaCurves.later", p.stderr)
+
+    def test_dependence_through_an_inductive_is_found(self):
+        e = baseline()
+        e.axiom("Aeneas.Std.bad")
+        e.inductive(
+            "Aeneas.Std.I", ctor_ty=e.app(e.const("Aeneas.Std.I"), e.const("Aeneas.Std.bad"))
+        )
+        e.thm("PastaCurves.main", value=e.const("Aeneas.Std.I.rec"))
+        p = run(e)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("PastaCurves.main", p.stderr)
+
     def test_native_decide_stays_forbidden_in_aeneas(self):
         e = baseline()
         e.axiom("Lean.ofReduceBool")
