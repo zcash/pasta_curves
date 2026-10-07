@@ -1,0 +1,10 @@
+% The blueprint's macros. One file beside `web.tex`, not a `macros/` directory: without TeX
+% installed (as in CI), plasTeX cannot find an `\input` file in a subdirectory.
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}

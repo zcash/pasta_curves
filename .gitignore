@@ -5,3 +5,9 @@
 /lean/.lake
 /lean/work
 __pycache__/
+# The blueprint's generated content and its built web version (blueprint/build.sh)
+/blueprint/src/content.tex
+/blueprint/src/web.paux
+/blueprint/lean_decls
+/blueprint/web
+/.venv-blueprint

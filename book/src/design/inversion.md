@@ -68,7 +68,7 @@ Both divisions are exact: in the first case $g - f$ is even because both are odd
 second, $g + (g \bmod 2) f$ is even in either parity of $g$. Write $(d_n, f_n, g_n)$ for the
 state after $n$ steps from $(d_0, f_0, g_0)$.
 
-**Lemma 1 (linearity).** There are integer matrices $T_i$ with
+<a id="lemma-1"></a>**Lemma 1 (linearity).** There are integer matrices $T_i$ with
 $(f_{i+1}, g_{i+1})^\top = \frac{1}{2} T_i (f_i, g_i)^\top$, namely
 $T = \begin{bmatrix} 0 & 2 \\ -1 & 1 \end{bmatrix}$ in the swap case and
 $T = \begin{bmatrix} 2 & 0 \\ b & 1 \end{bmatrix}$, $b = g_i \bmod 2$, otherwise. Hence with
@@ -81,7 +81,7 @@ $$
 Write $M_n = \begin{bmatrix} u_n & v_n \\ q_n & r_n \end{bmatrix}$, so $M_0 = I$. *In Lean:*
 `M_spec` (`Divstep.lean`).
 
-**Lemma 2 (locality).** $d_n$ and $M_n$ depend only on $d_0$, $f_0 \bmod 2^n$, and
+<a id="lemma-2"></a>**Lemma 2 (locality).** $d_n$ and $M_n$ depend only on $d_0$, $f_0 \bmod 2^n$, and
 $g_0 \bmod 2^n$. *Proof.* Induction on $n$. The branch taken at step $i$ depends on $d_i$ and
 $g_i \bmod 2$. If $(f_i, g_i) \equiv (f_i', g_i') \pmod{2^k}$ with $k \geq 1$, the same branch
 is taken and $(f_{i+1}, g_{i+1}) \equiv (f_{i+1}', g_{i+1}') \pmod{2^{k-1}}$, because each new
@@ -89,7 +89,7 @@ component is half of a combination of the old ones. So $n$ steps from states con
 $2^n$ take the same branches, and the branches determine $d_n$ and $M_n$. ∎ *In Lean:*
 `divstep_local` and `divsteps_local` (`Divstep.lean`).
 
-**Lemma 3 (bounds).** For every $n$: $|u_n| + |v_n| \leq 2^n$ and $|q_n| + |r_n| \leq 2^n$;
+<a id="lemma-3"></a>**Lemma 3 (bounds).** For every $n$: $|u_n| + |v_n| \leq 2^n$ and $|q_n| + |r_n| \leq 2^n$;
 moreover each entry lies in $(-2^n, 2^n]$; and $\max(|f_n|, |g_n|) \leq \max(|f_0|, |g_0|)$.
 *Proof.* Row sums: in the swap case the new first row is $2 (q, r)$ and the new second row is
 $(q - u, r - v)$; in the other case the new first row is $2 (u, v)$ and the new second row is
@@ -103,13 +103,13 @@ propagate, and the base case is the identity. The $\max$ bound: $f_{i+1}$ is one
 $g_i$, and $|g_{i+1}| \leq (|f_i| + |g_i|) / 2$. ∎ *In Lean:* `M_rowSum_le`, `M_entry_range`,
 and `divsteps_abs_le` (`Divstep.lean`).
 
-**Lemma 4 (gcd and the end state).** $\gcd(f_n, g_n) = \gcd(f_0, g_0)$, and $f_n$ is odd. If
+<a id="lemma-4"></a>**Lemma 4 (gcd and the end state).** $\gcd(f_n, g_n) = \gcd(f_0, g_0)$, and $f_n$ is odd. If
 $g_n = 0$ then $f_n = \pm \gcd(f_0, g_0)$. If $g_0 = 0$ then every step is the non-swap case with
 $b = 0$, so $f_n = f_0$, $g_n = 0$, and $M_n = \begin{bmatrix} 2^n & 0 \\ 0 & 1 \end{bmatrix}$.
 *In Lean:* `divsteps_gcd`, `divsteps_f_odd`, `f_natAbs_of_g_eq_zero`, and `divsteps_of_g_zero`
 (`Divstep.lean`).
 
-**Lemma 4′ (the adjugate).** Each $T_i$ has determinant $2$, so $\det M_n = 2^n$, and the
+<a id="lemma-4-prime"></a>**Lemma 4′ (the adjugate).** Each $T_i$ has determinant $2$, so $\det M_n = 2^n$, and the
 adjugate of Lemma 1 gives $f_0 = r_n f_n - v_n g_n$ and $g_0 = u_n g_n - q_n f_n$ exactly
 (multiply the two identities of Lemma 1 by the cofactors and cancel $2^n$). Hence if $g_n = 0$
 then $f_n$ divides both $f_0$ and $g_0$; with $\gcd(f_0, g_0) = 1$ that makes $f_n = \pm 1$.
@@ -117,7 +117,7 @@ This is the form that Theorem 12 uses; the gcd invariance of Lemma 4 is the clas
 and is not needed separately. *In Lean:* `M_det`, `M_inv_spec`, and `f_dvd_of_g_eq_zero`
 (`Divstep.lean`).
 
-**Theorem 5 (termination; Bernstein et al. 2026, Theorem 1).** If $d_0 = 1$, $f_0$ is odd,
+<a id="theorem-5"></a>**Theorem 5 (termination; Bernstein et al. 2026, Theorem 1).** If $d_0 = 1$, $f_0$ is odd,
 $0 \leq g_0 \leq f_0 < 2^b$, and $n \geq \lceil (9437 b + 1) / 4096 \rceil$, then $g_n = 0$. For
 $b = 256$ this is $n = 590$. The Pasta primes are below $2^{255}$, so $b = 255$ (588 steps) would
 do, and the certificate's end-to-end form (`endtoend`, §5) with the scale $p$ instead of a power
@@ -142,7 +142,7 @@ $$
 as integers, and run the divstep recurrence on the pair $(w_f, w_g)$ with the same branch
 rule, reading $g$'s parity from $w_g$ and using exact halving.
 
-**Lemma 6 (packing).** After $j \leq k$ steps the packed words are
+<a id="lemma-6"></a>**Lemma 6 (packing).** After $j \leq k$ steps the packed words are
 
 $$
 w_f^{(j)} = \varphi_j - 2^{41-j} u_j - 2^{62-j} v_j, \qquad
@@ -165,7 +165,7 @@ the truncated start; $2^{41-j} |u_j| \leq 2^{41}$ and $2^{62-j} |v_j| \leq 2^{62
 so $|w| < 2^{20} + 2^{41} + 2^{62} < 2^{63}$. ∎ *In Lean:* `divsteps_packedStart` and
 `divsteps_packedStart_abs_lt` (`Packed.lean`).
 
-**Lemma 6′ (the sum does not wrap).** For $j < k$, $|w_g^{(j+1)}| < 2^{62}$. So the word
+<a id="lemma-6-prime"></a>**Lemma 6′ (the sum does not wrap).** For $j < k$, $|w_g^{(j+1)}| < 2^{62}$. So the word
 $w_g^{(j)} \mp w_f^{(j)}$ (or $w_g^{(j)}$ alone) that a step halves, which is $2 w_g^{(j+1)}$,
 is below $2^{63}$ in magnitude and fits a signed 64-bit word. An implementation on machine words
 needs this, and Lemma 6's bound $|w| < 2^{63}$ does not give it. *Proof.* By Lemma 1 applied to
@@ -182,7 +182,7 @@ $q' = 2 q_j + 1 \neq 0$. In every case
 $2^{41} |q'| + 2^{62} |r'| \leq 2^{62} \cdot 2^{j+1} - 2^{62} + 2^{41}$. ∎ *In Lean:*
 `divsteps_packedStart_g_abs_lt` (`Packed.lean`).
 
-**Lemma 7 (unpacking).** From $w_f^{(k)}$, with
+<a id="lemma-7"></a>**Lemma 7 (unpacking).** From $w_f^{(k)}$, with
 $t = -w_f^{(k)} = 2^{41-k} u_k + 2^{62-k} v_k - \varphi_k$ and
 $|\varphi_k| < 2^{20} \leq 2^{40-k}$:
 $\lfloor (t + 2^{40-k}) / 2^{41-k} \rfloor = u_k + 2^{21} v_k$ exactly, and then
@@ -192,7 +192,7 @@ Likewise for the second row from $w_g^{(k)}$. (The half-open range is what makes
 defined: $(2^{20}, 0)$ and $(-2^{20}, 1)$ pack identically.) *In Lean:* `unpack_spec`
 (`Packed.lean`).
 
-**Corollary 8 ($\mathrm{divstep59}$).** With $M^{(1)}$ from 20 packed steps at $d$, $M^{(2)}$
+<a id="corollary-8"></a>**Corollary 8 ($\mathrm{divstep59}$).** With $M^{(1)}$ from 20 packed steps at $d$, $M^{(2)}$
 from 20 packed steps at $d'$ on the state $2^{-20} M^{(1)} (f, g)$ (whose low 20 bits are
 determined by the low 40 bits of $(f, g)$, so by the low words), and $M^{(3)}$ from 19 steps
 likewise, the product $M^{(3)} M^{(2)} M^{(1)}$ is the true 59-step matrix $M_{59}$, and the
@@ -208,12 +208,12 @@ fit machine words is proved with each backend, not in this shared layer.
 Throughout the rounds $|f|, |g| \leq p < 2^{255}$ (Lemma 3's $\max$ bound from $(p, x)$), and
 $0 \leq u, v < 2^{256}$ (Lemma 10 below).
 
-**Lemma 9 ($\mathrm{updateFG}$).** $m_{00} f + m_{01} g$ and $m_{10} f + m_{11} g$ are divisible
+<a id="lemma-9"></a>**Lemma 9 ($\mathrm{updateFG}$).** $m_{00} f + m_{01} g$ and $m_{10} f + m_{11} g$ are divisible
 by $2^{59}$ (Lemma 1), and
 $|m f + m' g| \leq (|m| + |m'|) \max(|f|, |g|) < 2^{59} \cdot 2^{255} = 2^{314}$, so both fit in
 five signed words and the shifts are exact. *In Lean:* `updateFG_spec` (`Round.lean`).
 
-**Lemma 10 ($\mathrm{amontred}$).** Let $t = m_{00} u + m_{01} v$ (or the second row), so
+<a id="lemma-10"></a>**Lemma 10 ($\mathrm{amontred}$).** Let $t = m_{00} u + m_{01} v$ (or the second row), so
 $|t| \leq (|m_{00}| + |m_{01}|) \max(u, v) < 2^{59} \cdot 2^{256} = 2^{315}$. Let
 $s = t + 2^{61} p$. Then $s \geq 2^{61} \cdot 2^{254} - 2^{315} = 0$, and
 $s < 2^{315} + 2^{61} \cdot 2^{255} = 2^{315} + 2^{316} < 2^{317}$. Let
@@ -242,14 +242,14 @@ $(u_i, v_i)$ be the coefficient vector after $i$ rounds: $u_0 = 0$, $v_0 = 2^{56
 and $(u_{i+1}, v_{i+1}) = (\mathrm{amontred}(m_{00} u_i + m_{01} v_i), \mathrm{amontred}(m_{10} u_i + m_{11} v_i))$
 with $M = M_{59}$ of round $i + 1$.
 
-**Lemma 11 (invariant).** $(f_i, g_i) \equiv x \cdot 2^{5i - 562} \cdot (u_i, v_i)$. *Proof.*
+<a id="lemma-11"></a>**Lemma 11 (invariant).** $(f_i, g_i) \equiv x \cdot 2^{5i - 562} \cdot (u_i, v_i)$. *Proof.*
 For $i = 0$: $(p, x) \equiv (0, x) = x \cdot 2^{-562} \cdot (0, 2^{562})$. Step: by Lemma 1,
 $(f_{i+1}, g_{i+1}) = 2^{-59} M (f_i, g_i) \equiv 2^{-59} M \cdot x 2^{5i - 562} (u_i, v_i)$,
 and by Lemma 10 $(u_{i+1}, v_{i+1}) \equiv 2^{-64} M (u_i, v_i)$, so the right side is
 $x \cdot 2^{5i - 562 - 59 + 64} (u_{i+1}, v_{i+1}) = x \cdot 2^{5(i+1) - 562} (u_{i+1}, v_{i+1})$.
 ∎ *In Lean:* `rounds_invariant` (`Model.lean`).
 
-**Theorem 12 (correctness).** Assume Theorem 5 for $b = 256$, and $0 < x < p$. After ten rounds
+<a id="theorem-12"></a>**Theorem 12 (correctness).** Assume Theorem 5 for $b = 256$, and $0 < x < p$. After ten rounds
 (590 divsteps) $g_{10} = 0$, so $f_{10} = \pm 1$ by Lemma 4′ ($\gcd(p, x) = 1$). By Lemma 11 with
 $i = 10$, $f_{10} \equiv x \cdot 2^{-512} u_{10}$, hence $x \cdot (f_{10} u_{10}) \equiv 2^{512}$.
 The last round computes $u_{10}$ with the sign of $f_{10}$ folded into the matrix row, then reduces

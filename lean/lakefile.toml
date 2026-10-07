@@ -4,6 +4,17 @@ defaultTargets = ["PastaCurves"]
 [leanOptions]
 autoImplicit = false
 
+# The blueprint of the inversion's proof (`blueprint/README.md`): the `@[blueprint]` tags of
+# LeanArchitect, applied to the proofs' declarations from outside them. Not a default target, and
+# not imported by `PastaCurves`, so neither the build nor the kernel re-check of the proofs
+# depends on it. Pinned to the commit of LeanArchitect's v4.30.0 tag, which matches
+# `lean-toolchain`. Required before Mathlib so that Mathlib's pins of their shared dependencies
+# (batteries, Cli) take precedence, which `lake exe cache get` needs.
+[[require]]
+name = "LeanArchitect"
+git = "https://github.com/hanwenzhu/LeanArchitect.git"
+rev = "b72ae37b08d264cf371f164f4ba60c5257c17727"
+
 # Pinned to the revision CompElliptic builds against, tagged for Lean v4.30.0.
 [[require]]
 name = "mathlib"
@@ -12,3 +23,6 @@ rev = "c5ea00351c28e24afc9f0f84379aa41082b1188f"
 
 [[lean_lib]]
 name = "PastaCurves"
+
+[[lean_lib]]
+name = "PastaCurvesBlueprint"

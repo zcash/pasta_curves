@@ -1,0 +1,8 @@
+# The blueprint's build tooling (blueprint/build.sh): leanblueprint and its plasTeX plugins.
+# Book tooling only; nothing here enters the crate's dependency graph.
+# Compile with: uv pip compile --generate-hashes blueprint/requirements.in -o blueprint/requirements.txt
+leanblueprint==0.0.20
+# Floors from known advisories: GitPython below 3.1.41 has CVE-2022-24439, CVE-2023-40267,
+# and CVE-2024-22190; Jinja2 below 3.1.6 has its sandbox-escape CVEs.
+GitPython>=3.1.41
+Jinja2>=3.1.6
