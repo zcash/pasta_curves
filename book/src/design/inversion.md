@@ -135,8 +135,8 @@ and is not needed separately. *In Lean:* `M_det`, `M_inv_spec`, and `f_dvd_of_g_
 odd, $0 \leq g_0 \leq f_0 < 2^b$, and $n \geq \lceil (9437 b + 1) / 4096 \rceil$, then $g_n = 0$.
 For $b = 256$ this is $n = 590$. The Pasta primes are below $2^{255}$, so $b = 255$ (588 steps)
 would do, and the certificate's end-to-end form (`endtoend`, §5) with the scale $p$ instead of a
-power of two gives 586; the model uses 590 because it runs whole rounds of 59, and every count from
-532 to 590 takes ten of them. The paper proves it for all $b$, in HOL Light, and the Lean
+power of two gives 586; the model uses 590 because it runs whole rounds of 59 (§3), and every count
+from 532 to 590 takes ten of them. The paper proves it for all $b$, in HOL Light, and the Lean
 development proves it for all $b$ from a certificate (§5). (The paper's hypothesis is
 $f_0 \leq 2^b$; the two forms differ only at $b = 0$.) *In Lean:* stated at
 $n = \lceil (9437 b + 1) / 4096 \rceil$ as `TerminationBound` (`Termination.lean`), extended to
@@ -230,6 +230,15 @@ Pasta bound shows that none is needed.) *In Lean:* `amontredZ_spec` and `amontre
 
 Note that the starting values $e = 2^{562} \bmod p < p < 2^{256}$ and $d = 0$ satisfy the
 range, and Lemma 10 keeps it.
+
+**Why rounds of 59.** A round runs at most 59 divsteps. After $k$ steps $|u| + |v| \leq 2^k$, so
+with $d, e < 2^{256}$ the row combination satisfies $|t| < 2^{k + 256}$. The offset $2^{61} p$
+makes $s$ nonnegative for every Pasta prime only if $2^{k + 256} \leq 2^{61} \cdot 2^{254}$, that
+is $k \leq 59$. (The entries of $M$ alone, as signed 64-bit words, would allow 62.) Ten rounds is
+then the minimum for any count from 586 to 590 steps; even rounds of 62 would need ten. A shorter
+last round, of 57 or 55 steps, would save two or four of the 590 divsteps, at the cost of a second
+block for the shorter batch and a different start value. More rounds that are shorter, such as
+twelve of 49, would run as many divsteps and add two rounds of row updates and reductions.
 
 ## 4. The invariant and the result
 
