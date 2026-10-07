@@ -26,13 +26,17 @@ jobs:
           persist-credentials: false
       # The book is built from `book/` and the root README, which
       # `book/src/README.md` includes; a new include of another file must be
-      # added here.
+      # added here. The blueprint it publishes is built from `blueprint/` and the
+      # Lean package, and links to and checks names in `src/asm/`.
       - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
         id: filter
         with:
           filters: |
             book:
               - 'book/**'
+              - 'blueprint/**'
+              - 'lean/**'
+              - 'src/asm/**'
               - 'README.md'
               - '.github/workflows/book.yml'
 
@@ -64,6 +68,33 @@ jobs:
       - name: Build Pasta book
         run: mdbook build
         working-directory: book
+
+      # The blueprint of the inversion's proof (blueprint/README.md), published
+      # beside the book at `blueprint/`. LeanArchitect extracts its nodes from
+      # the Lean build; its tooling is pinned with hashes, and pygraphviz builds
+      # against the system graphviz. Its source links are pinned to the commit
+      # being built.
+      - name: Extract the blueprint from the Lean build
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1.5.0
+        with:
+          lake-package-directory: lean
+          build-args: PastaCurvesBlueprint:blueprint
+          test: false
+          lint: false
+
+      - name: Install the blueprint's tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends graphviz libgraphviz-dev
+          python3 -m venv "$RUNNER_TEMP/blueprint-venv"
+          "$RUNNER_TEMP/blueprint-venv/bin/pip" install --require-hashes \
+            -r blueprint/requirements.txt
+
+      - name: Build the blueprint
+        run: |
+          REF="$GITHUB_SHA" SKIP_LAKE=1 \
+            PLASTEX="$RUNNER_TEMP/blueprint-venv/bin/plastex" blueprint/build.sh
+          cp -R blueprint/web book/book/blueprint
 
       - name: Upload built book
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
