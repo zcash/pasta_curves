@@ -1,0 +1,55 @@
+% The order of the blueprint's nodes. `blueprint/sources.py` expands it into `content.tex`:
+% `\bookchapter{id}` into a chapter titled by the section of the book page with that anchor,
+% `\leanchapter{path}` into one titled by a Lean file, and `\inputleannode{label}` into the node
+% that LeanArchitect extracted from `lean/PastaCurvesBlueprint.lean`. Every node appears once.
+
+\bookchapter{1-divsteps}
+\inputleannode{PastaCurves.Inversion.divstep}
+\inputleannode{PastaCurves.Inversion.M}
+\inputleannode{lemma-1}
+\inputleannode{lemma-2}
+\inputleannode{lemma-3}
+\inputleannode{lemma-4}
+\inputleannode{lemma-4-prime}
+\inputleannode{theorem-5}
+
+\bookchapter{2-divsteps-on-packed-words}
+\inputleannode{PastaCurves.Inversion.packedStart}
+\inputleannode{lemma-6}
+\inputleannode{lemma-6-prime}
+\inputleannode{lemma-7}
+\inputleannode{PastaCurves.Inversion.divstep59}
+\inputleannode{corollary-8}
+
+\bookchapter{3-the-round-arithmetic}
+\inputleannode{PastaCurves.Inversion.updateFG}
+\inputleannode{lemma-9}
+\inputleannode{PastaCurves.Inversion.amontredZ}
+\inputleannode{lemma-10}
+
+\bookchapter{4-the-invariant-and-the-result}
+\inputleannode{PastaCurves.Inversion.montInvModel}
+\inputleannode{lemma-11}
+\inputleannode{theorem-12}
+
+\leanchapter{lean/PastaCurves/Inversion/Composition.lean}
+\inputleannode{PastaCurves.invert}
+\inputleannode{PastaCurves.invert_eq_model}
+\inputleannode{PastaCurves.invert_entry_spec}
+
+\leanchapter{lean/PastaCurves/AArch64/Spec/Invert.lean}
+\inputleannode{PastaCurves.AArch64.divstep59Block}
+\inputleannode{PastaCurves.AArch64.divstep59Block_spec}
+\inputleannode{PastaCurves.AArch64.signMagBlock}
+\inputleannode{PastaCurves.AArch64.signMagBlock_spec}
+\inputleannode{PastaCurves.AArch64.fgRowBlock}
+\inputleannode{PastaCurves.AArch64.fgRowBlock_spec}
+\inputleannode{PastaCurves.AArch64.uvRowBlock}
+\inputleannode{PastaCurves.AArch64.uvRowBlock_spec}
+\inputleannode{PastaCurves.AArch64.amontredBlock}
+\inputleannode{PastaCurves.AArch64.amontredBlock_spec}
+\inputleannode{PastaCurves.AArch64.condSubBlock}
+\inputleannode{PastaCurves.AArch64.condSubBlock_spec}
+\inputleannode{PastaCurves.AArch64.invertBlocks}
+\inputleannode{PastaCurves.AArch64.invertBlocks_spec}
+\inputleannode{PastaCurves.AArch64.invert_entry_spec}
