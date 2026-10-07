@@ -156,6 +156,8 @@ pub(crate) mod tests {
     use super::{InvertBlocks, invert_with};
     use crate::limbs::Limbs;
     use crate::test_fields::{FIELDS, Field, ZERO, p_minus_1, sub_limbs};
+    use proptest::prelude::*;
+    use proptest::test_runner::{TestCaseResult, TestRunner};
 
     /// The four entries of a transition matrix as words, then the expected magnitudes and masks,
     /// from the round model on both fields.
@@ -1617,6 +1619,92 @@ pub(crate) mod tests {
                 check_inverse::<B>(f, &near_p);
             }
         }
+    }
+
+    /// A canonical residue of the field `FIELDS[i]`, from the families of `invert_random`: small
+    /// values, including `0`; values below `2^254`; values between `2^254` and `p`; and values
+    /// within a 64-bit distance below `p - 1`.
+    fn residue(i: usize) -> impl Strategy<Value = Limbs> {
+        let f = FIELDS[i];
+        let pm1 = p_minus_1(f);
+        prop_oneof![
+            (0..1u64 << 16).prop_map(|k| [k, 0, 0, 0]),
+            any::<[u64; 4]>().prop_map(|[a, b, c, d]| [a, b, c, d >> 2]),
+            (any::<u64>(), 0..f.modulus[1]).prop_map(|(a, b)| [a, b, 0, 1 << 62]),
+            any::<u64>().prop_map(move |k| sub_limbs(&pm1, &[k, 0, 0, 0])),
+        ]
+    }
+
+    /// The index of a field of `FIELDS`, and a canonical residue of it.
+    fn field_and_residue() -> impl Strategy<Value = (usize, Limbs)> {
+        (0..FIELDS.len()).prop_flat_map(|i| (Just(i), residue(i)))
+    }
+
+    /// The index of a field of `FIELDS`, and two canonical residues of it.
+    fn field_and_two_residues() -> impl Strategy<Value = (usize, Limbs, Limbs)> {
+        (0..FIELDS.len()).prop_flat_map(|i| (Just(i), residue(i), residue(i)))
+    }
+
+    /// Runs the property `test` on inputs drawn from `strategy`, and panics with the shrunk
+    /// failing input if it fails. The properties are generic over the blocks, which the
+    /// `proptest!` macro's test functions cannot be, so they drive a runner directly.
+    fn check_property<S: Strategy>(strategy: S, test: impl Fn(S::Value) -> TestCaseResult)
+    where
+        S::Value: core::fmt::Debug,
+    {
+        if let Err(error) = TestRunner::default().run(&strategy, test) {
+            panic!("{error}");
+        }
+    }
+
+    /// `-a` in the field of `f`, for a canonical `a`.
+    fn negate(f: &Field, a: &Limbs) -> Limbs {
+        if *a == ZERO {
+            ZERO
+        } else {
+            sub_limbs(&f.modulus, a)
+        }
+    }
+
+    /// For every canonical `x`, `invert` is the Montgomery inverse (`check_inverse`), and
+    /// `invert(0) = 0`.
+    pub(crate) fn invert_is_the_inverse<B: InvertBlocks>() {
+        check_property(field_and_residue(), |(i, x)| {
+            let f = FIELDS[i];
+            if x == ZERO {
+                prop_assert_eq!(invert_with::<B>(&x, &f.modulus, f.inv, &f.v0), ZERO);
+            } else {
+                check_inverse::<B>(f, &x);
+            }
+            Ok(())
+        });
+    }
+
+    /// The inverse of a product is the product of the inverses, `0` included: inversion is a
+    /// homomorphism of the multiplicative monoid, checked without a reference inverse.
+    pub(crate) fn invert_is_multiplicative<B: InvertBlocks>() {
+        check_property(field_and_two_residues(), |(i, x, y)| {
+            let f = FIELDS[i];
+            let inverse = |a: &Limbs| invert_with::<B>(a, &f.modulus, f.inv, &f.v0);
+            prop_assert_eq!(
+                inverse(&(f.portable_mul)(&x, &y)),
+                (f.portable_mul)(&inverse(&x), &inverse(&y)),
+                "{:x?} {:x?}",
+                x,
+                y
+            );
+            Ok(())
+        });
+    }
+
+    /// The inverse of a negation is the negation of the inverse, `0` included.
+    pub(crate) fn invert_commutes_with_negation<B: InvertBlocks>() {
+        check_property(field_and_residue(), |(i, x)| {
+            let f = FIELDS[i];
+            let inverse = |a: &Limbs| invert_with::<B>(a, &f.modulus, f.inv, &f.v0);
+            prop_assert_eq!(inverse(&negate(f, &x)), negate(f, &inverse(&x)), "{:x?}", x);
+            Ok(())
+        });
     }
 
     /// The entry point `invert` runs the selected blocks, and in a debug build its assertion

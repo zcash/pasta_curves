@@ -1314,4 +1314,19 @@ mod tests {
         crate::inversion::tests::invert_random::<Backend>();
     }
 
+    #[test]
+    fn invert_is_the_inverse() {
+        crate::inversion::tests::invert_is_the_inverse::<Backend>();
+    }
+
+    #[test]
+    fn invert_is_multiplicative() {
+        crate::inversion::tests::invert_is_multiplicative::<Backend>();
+    }
+
+    #[test]
+    fn invert_commutes_with_negation() {
+        crate::inversion::tests::invert_commutes_with_negation::<Backend>();
+    }
+
 }
