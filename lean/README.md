@@ -105,6 +105,7 @@ PastaCurves/AArch64/Semantics.lean       AArch64 instruction semantics
 PastaCurves/AArch64/Transcription.lean   GENERATED: the blocks and the round
 PastaCurves/AArch64/Compositions.lean    compositions of the AArch64 blocks
 PastaCurves/AArch64/Vectors.lean         the AArch64 blocks on the vectors, kernel-checked
+PastaCurves/AArch64/Checks.lean          additional kernel-checked arithmetic examples
 PastaCurves/AArch64/Spec.lean            proofs about the AArch64 blocks and compositions
 PastaCurves/AArch64/Spec/*.lean          the block proofs, one file per block, imported by Spec.lean
 PastaCurves/AArch64/Entry.lean           proofs about the AArch64 entry points at the two fields
