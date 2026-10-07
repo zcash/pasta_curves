@@ -192,9 +192,11 @@ scripts/check_export_axioms.py           the axiom census of the export, run by 
 Shared declarations use namespace `PastaCurves`; architecture declarations use `PastaCurves.AArch64`
 and `PastaCurves.X86_64`; the Aeneas translations use `pasta_curves`, the crate's name, as Aeneas
 names it. Shared modules do not import architecture-specific modules, so both models reuse them
-without depending on one another. The package is built with Lake from this directory
-(`scripts/build.sh`), with Mathlib and Aeneas' Lean library pinned in `lake-manifest.json`.
-`scripts/ci.sh` at the repository root runs these checks together with the crate's.
+without depending on one another. The exception is `Glue/Vectors.lean`, which runs the translated
+glue over both backends' records, and which nothing imports but the root module. The package is
+built with Lake from this directory (`scripts/build.sh`), with Mathlib and Aeneas' Lean library
+pinned in `lake-manifest.json`. `scripts/ci.sh` at the repository root runs these checks together
+with the crate's.
 
 `scripts/gen_aeneas.sh` regenerates or checks the Aeneas translations. It runs the Charon and
 Aeneas binaries from the release that Aeneas' CI built at the pinned revision.
