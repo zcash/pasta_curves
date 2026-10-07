@@ -152,7 +152,7 @@ pub(super) fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 /// operands unreduced the candidate can reach `R`, and the result is then an
 /// incorrect residue that still looks canonical.
 #[inline(always)]
-pub(crate) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
+pub(super) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     let (o0, o1, o2, o3): (u64, u64, u64, u64);
     // SAFETY: straight-line register-only arithmetic; no memory access, no
     // stack use, and outputs depend only on the declared inputs.
@@ -363,7 +363,7 @@ pub(crate) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs 
 ///
 /// The input must be canonical, which the entry point in `entry.rs` debug-asserts.
 #[inline(always)]
-pub(crate) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
+pub(super) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     let mut a0 = value[0];
     let mut a1 = value[1];
     let mut a2 = value[2];
