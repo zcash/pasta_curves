@@ -295,4 +295,19 @@ mod tests {
     fn invert_random() {
         checks::invert_random::<Backend>();
     }
+
+    #[test]
+    fn invert_is_the_inverse() {
+        checks::invert_is_the_inverse::<Backend>();
+    }
+
+    #[test]
+    fn invert_is_multiplicative() {
+        checks::invert_is_multiplicative::<Backend>();
+    }
+
+    #[test]
+    fn invert_commutes_with_negation() {
+        checks::invert_commutes_with_negation::<Backend>();
+    }
 }
