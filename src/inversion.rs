@@ -155,7 +155,11 @@ pub(crate) fn invert(x: &Limbs, modulus: &Limbs, inv: u64, e0: &Limbs) -> Limbs 
 pub(crate) mod tests {
     use super::{InvertBlocks, invert_with};
     use crate::limbs::Limbs;
-    use crate::test_fields::{FIELDS, Field, ZERO, p_minus_1, sub_limbs};
+    use crate::test_fields::{
+        FIELDS, Field, ZERO, check_property, field_and_residue, field_and_two_residues, p_minus_1,
+        sub_limbs,
+    };
+    use proptest::prelude::*;
 
     /// The four entries of a transition matrix as words, then the expected magnitudes and masks,
     /// from the round model on both fields.
@@ -1617,6 +1621,48 @@ pub(crate) mod tests {
                 check_inverse::<B>(f, &near_p);
             }
         }
+    }
+
+    /// For every canonical `x`, `invert` is the Montgomery inverse (`check_inverse`), and
+    /// `invert(0) = 0`.
+    pub(crate) fn invert_is_the_inverse<B: InvertBlocks>() {
+        check_property(field_and_residue(), |(i, x)| {
+            let f = FIELDS[i];
+            if x == ZERO {
+                prop_assert_eq!(invert_with::<B>(&x, &f.modulus, f.inv, &f.e0), ZERO);
+            } else {
+                check_inverse::<B>(f, &x);
+            }
+            Ok(())
+        });
+    }
+
+    /// The inverse of a product is the product of the inverses, `0` included: inversion is a
+    /// homomorphism of the multiplicative monoid, checked without a reference inverse.
+    pub(crate) fn invert_is_multiplicative<B: InvertBlocks>() {
+        check_property(field_and_two_residues(), |(i, x, y)| {
+            let f = FIELDS[i];
+            let inverse = |a: &Limbs| invert_with::<B>(a, &f.modulus, f.inv, &f.e0);
+            prop_assert_eq!(
+                inverse(&(f.portable_mul)(&x, &y)),
+                (f.portable_mul)(&inverse(&x), &inverse(&y)),
+                "{:x?} {:x?}",
+                x,
+                y
+            );
+            Ok(())
+        });
+    }
+
+    /// The inverse of a negation is the negation of the inverse, `0` included.
+    pub(crate) fn invert_commutes_with_negation<B: InvertBlocks>() {
+        check_property(field_and_residue(), |(i, x)| {
+            let f = FIELDS[i];
+            let inverse = |a: &Limbs| invert_with::<B>(a, &f.modulus, f.inv, &f.e0);
+            let neg = f.portable_neg;
+            prop_assert_eq!(inverse(&neg(&x)), neg(&inverse(&x)), "{:x?}", x);
+            Ok(())
+        });
     }
 
     /// The entry point `invert` runs the selected blocks, and in a debug build its assertion

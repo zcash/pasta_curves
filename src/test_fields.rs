@@ -1,5 +1,5 @@
 //! The two fields' constants and known answers for the tests of the assembly backends and of the
-//! inversion. The moduli and the Montgomery constants are the field types' own. The other expected
+//! inversion, and proptest strategies drawing canonical residues of them. The moduli and the Montgomery constants are the field types' own. The other expected
 //! values were computed independently with big-integer Montgomery arithmetic
 //! (`a * b * 2^-256 mod p`) in Python, and a test checks each against the field types' inherent
 //! `const fn`s, which never use the backend. Those also supply the reference products and
@@ -7,6 +7,8 @@
 
 use crate::fields::{fp, fq};
 use crate::limbs::Limbs;
+use proptest::prelude::*;
+use proptest::test_runner::{TestCaseResult, TestRunner};
 
 /// One field's constants, from its field type, and known answers.
 pub(crate) struct Field {
@@ -42,6 +44,8 @@ pub(crate) struct Field {
     pub(crate) portable_mul: fn(&Limbs, &Limbs) -> Limbs,
     /// The Montgomery inverse by the field type's inherent `const fn`s, independent of the backends.
     pub(crate) portable_inverse: fn(&Limbs) -> Limbs,
+    /// The negation by the field type's inherent `const fn`s, independent of the backends.
+    pub(crate) portable_neg: fn(&Limbs) -> Limbs,
 }
 
 /// The Pallas base field (`pasta_curves::Fp`).
@@ -168,6 +172,7 @@ pub(crate) const FP: Field = Field {
     ],
     portable_mul: fp_mul,
     portable_inverse: fp_inverse,
+    portable_neg: fp_neg,
 };
 
 /// The Vesta base field (`pasta_curves::Fq`).
@@ -294,6 +299,7 @@ pub(crate) const FQ: Field = Field {
     ],
     portable_mul: fq_mul,
     portable_inverse: fq_inverse,
+    portable_neg: fq_neg,
 };
 
 pub(crate) const FIELDS: [&Field; 2] = [&FP, &FQ];
@@ -334,6 +340,20 @@ fn fp_mul(x: &Limbs, y: &Limbs) -> Limbs {
 fn fq_mul(x: &Limbs, y: &Limbs) -> Limbs {
     use crate::fields::Fq;
     Fq::mul(&Fq(*x), &Fq(*y)).0
+}
+
+/// The negation of the canonical residue `x` by `Fp`'s inherent `const fn`s, which never use the
+/// backend.
+fn fp_neg(x: &Limbs) -> Limbs {
+    use crate::fields::Fp;
+    Fp::neg(&Fp(*x)).0
+}
+
+/// The negation of the canonical residue `x` by `Fq`'s inherent `const fn`s, which never use the
+/// backend.
+fn fq_neg(x: &Limbs) -> Limbs {
+    use crate::fields::Fq;
+    Fq::neg(&Fq(*x)).0
 }
 
 /// `base` to the power `exponent` by square-and-multiply, over the given Montgomery squaring and
@@ -412,4 +432,51 @@ fn known_answers_match_the_portable_arithmetic() {
     }
     check!(Fp, &FP);
     check!(Fq, &FQ);
+}
+
+/// A canonical residue of the field `FIELDS[i]`, weighted toward the edges of `[0, p)`, where
+/// uniform sampling almost never lands. It is drawn from one of five families:
+///
+/// - `0`, with probability 1/25, enough that the default 256 cases include it with overwhelming
+///   probability;
+/// - a value below `2^64`, with probability 6/25;
+/// - a value below `2^254`, with probability 6/25;
+/// - a value between `2^254` and `p`, whose top limb is `2^62` and whose limb 1 is below the
+///   modulus's, with probability 6/25;
+/// - a value within a 64-bit distance below `p - 1`, with probability 6/25.
+///
+/// The last three families together cover all of `[0, p)`. A failing input shrinks toward the
+/// earlier families, so toward `0`.
+pub(crate) fn residue(i: usize) -> impl Strategy<Value = Limbs> {
+    let f = FIELDS[i];
+    let pm1 = p_minus_1(f);
+    prop_oneof![
+        1 => Just(ZERO),
+        6 => any::<u64>().prop_map(|k| [k, 0, 0, 0]),
+        6 => any::<[u64; 4]>().prop_map(|[a, b, c, d]| [a, b, c, d >> 2]),
+        6 => (any::<u64>(), 0..f.modulus[1]).prop_map(|(a, b)| [a, b, 0, 1 << 62]),
+        6 => any::<u64>().prop_map(move |k| sub_limbs(&pm1, &[k, 0, 0, 0])),
+    ]
+}
+
+/// The index of a field of `FIELDS`, and a canonical residue of it.
+pub(crate) fn field_and_residue() -> impl Strategy<Value = (usize, Limbs)> {
+    (0..FIELDS.len()).prop_flat_map(|i| (Just(i), residue(i)))
+}
+
+/// The index of a field of `FIELDS`, and two canonical residues of it.
+pub(crate) fn field_and_two_residues() -> impl Strategy<Value = (usize, Limbs, Limbs)> {
+    (0..FIELDS.len()).prop_flat_map(|i| (Just(i), residue(i), residue(i)))
+}
+
+/// Runs the property `test` on inputs drawn from `strategy`, and panics with the shrunk failing
+/// input if it fails. Properties generic over a backend's blocks cannot be test functions of the
+/// `proptest!` macro, so they drive a runner directly.
+pub(crate) fn check_property<S: Strategy>(strategy: S, test: impl Fn(S::Value) -> TestCaseResult)
+where
+    S::Value: core::fmt::Debug,
+{
+    if let Err(error) = TestRunner::default().run(&strategy, test) {
+        panic!("{error}");
+    }
 }
