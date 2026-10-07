@@ -55,7 +55,8 @@ translate() {
   mkdir -p "$out"
   RUSTFLAGS="$cfg" CARGO_TARGET_DIR="$out/target" \
     "$CHARON" cargo --preset=aeneas "${starts[@]}" \
-    --dest-file "$out/pasta_curves.llbc" "${cargo_args[@]}" > "$out/charon.log" 2>&1 ||
+    --dest-file "$out/pasta_curves.llbc" ${cargo_args[@]+"${cargo_args[@]}"} \
+    > "$out/charon.log" 2>&1 ||
     { cat "$out/charon.log"; exit 1; }
   "$AENEAS" -backend lean -all-computable -dest "$out/lean" -subdir "PastaCurves/$dir" \
     -split-files "$out/pasta_curves.llbc" > "$out/aeneas.log" 2>&1 ||
