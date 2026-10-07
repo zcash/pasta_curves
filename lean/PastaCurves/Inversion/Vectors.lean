@@ -7,7 +7,8 @@ import PastaCurves.Fields
 The inputs and the expected outputs of each of the inversion's six blocks, computed from the
 integer model of the algorithm's rounds on both fields, as the crate's tests in `src/inversion.rs`
 record them. Each implementation of the blocks is checked against them: the AArch64 transcription
-by the kernel in `AArch64/Vectors.lean`.
+by the kernel in `AArch64/Vectors.lean`, and Aeneas' translation of the portable blocks as compiled
+tests in `Portable/Vectors.lean`.
 -/
 
 namespace PastaCurves.Inversion
