@@ -256,8 +256,10 @@ do not change these instructions or coverage documentation to legitimize an omis
 - During moves or refactoring, preserve existing comments, annotation markers, theorem bodies,
   and generated output unless a change is necessary for the requested implementation. Do not
   rewrite or drop explanatory text as incidental cleanup.
-- **No `sorry`, no `native_decide`, no new axioms.** The nanoda re-check permits only the three
-  standard axioms; concrete facts are checked by `decide +kernel`.
+- **No `sorry`, no `native_decide`, no new axioms.** The nanoda re-check permits the three
+  standard axioms and those that Aeneas' library declares, and the axiom census
+  (`lean/scripts/check_export_axioms.py`) checks that nothing outside Aeneas' library depends on
+  the latter; concrete facts are checked by `decide +kernel`.
 
 ## Build & Test Commands
 

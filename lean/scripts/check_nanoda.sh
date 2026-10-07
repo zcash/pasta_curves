@@ -16,9 +16,9 @@
 # the remaining gap: the axioms that must be permitted because core declares them, but
 # must remain unused (`sorryAx` in particular), are checked to be cited by nothing, so a
 # `sorry` anywhere in the development fails here, and no `native_decide` is admitted. The
-# exceptions are Aeneas' library's: the axioms it declares may be cited by its own declarations,
-# and `sorryAx` by its tests. The census then writes the config nanoda runs with, which permits
-# those axioms too.
+# exceptions are Aeneas' library's: only its own declarations may depend on the axioms it
+# declares, and only its tests on `sorryAx`, whether directly or through other declarations. The
+# census then writes the config nanoda runs with, which permits those axioms too.
 set -euo pipefail
 
 LEAN4EXPORT=${1:?usage: check_nanoda.sh <lean4export-binary> <nanoda-binary>}
