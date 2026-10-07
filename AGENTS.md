@@ -202,11 +202,12 @@ describes the tools in more detail.
 - **Architecture modules have consistent roles.** `Semantics` defines instruction behavior;
   `Transcription` contains generated block models; `Compositions` models Rust around those
   blocks; `Vectors` checks the backend's routines against the shared generated vectors by kernel
-  evaluation; `Spec` proves block and composition correctness; `Entry` contains correctness
-  **theorems** specializing those results to `PastaField` and the actual asserted operand
-  contracts, not redundant value wrappers. Split per-block proof files belong under
-  `<Architecture>/Spec/`, imported by its `Spec.lean`. Shared arithmetic, constants, and
-  architecture-independent lemmas stay outside ISA modules.
+  evaluation; `Spec` proves block and composition correctness; `Backend` builds the backend's
+  record of Montgomery blocks, with `Glue.blocksOf`, that the Aeneas-translated glue runs over;
+  `Entry` contains correctness **theorems** specializing those results to `PastaField` and the
+  actual asserted operand contracts, not redundant value wrappers. Split per-block proof files
+  belong under `<Architecture>/Spec/`, imported by its `Spec.lean`. Shared arithmetic, constants,
+  and architecture-independent lemmas stay outside ISA modules.
 - **Extend the shared generator pipeline.** `gen.py` owns CLI orchestration, binding storage,
   liveness, formatting, vector emission, SSA naming, and proof skeleton generation/checking.
   `asm_source.py` owns the self-contained Rust source parser and operand/output validation.
