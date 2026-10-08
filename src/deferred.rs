@@ -63,7 +63,8 @@ impl<F> Product<F> {
     /// Adds a raw 512-bit product (8 limbs) into this accumulator.
     ///
     /// Each call contributes at most 1 to `carry`; overflow of the 64-bit
-    /// carry requires 2^64 accumulated products (~590 exabytes of input).
+    /// carry requires 2^64 accumulated products (2^70 bytes of products, about
+    /// 1.2 zettabytes).
     #[inline]
     pub(crate) fn accumulate(&mut self, product: [u64; 8]) {
         let (d0, c) = adc(self.limbs[0], product[0], 0);

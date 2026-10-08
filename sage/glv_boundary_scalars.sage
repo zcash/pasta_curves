@@ -123,7 +123,7 @@ def babai_nearest(B, t):
 #
 #  * straddle: f2 in [1/2 - delta, 1/2), so the flip moves c2 up by one;
 #  * escape: with c2 + 1, k2' = k2 - V2B must satisfy |k2'| >= 2^127,
-#    i.e. k2 < V2B - 2^127 — and since k2 = f2*V2B - f1*V1B_NEG (for
+#    i.e. k2 <= V2B - 2^127 — and since k2 = f2*V2B - f1*V1B_NEG (for
 #    f1, f2 < 1/2, up to a negligible fixed-point error), that needs f1
 #    close below 1/2 while f2 sits close above its window's bottom;
 #  * |k2'| < 2^128 and, with the shipped constants, |k1|, |k2| < 2^127:
