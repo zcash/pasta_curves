@@ -44,8 +44,19 @@ def inversion.portable.sbb
   let i ← lift (core.convert.num.FromU64Bool.from (underflow1 || underflow2))
   ok (difference1, i)
 
+/-- [pasta_curves::inversion::portable::adc]:
+    Source: 'src/inversion/portable.rs', lines 46:0-50:1 -/
+def inversion.portable.adc
+  (a : Std.U64) (b : Std.U64) (carry : Std.U64) :
+  Result (Std.U64 × Std.U64)
+  := do
+  let (sum, overflow1) ← lift (core.num.U64.overflowing_add a b)
+  let (sum1, overflow2) ← lift (core.num.U64.overflowing_add sum carry)
+  let i ← lift (core.convert.num.FromU64Bool.from (overflow1 || overflow2))
+  ok (sum1, i)
+
 /-- [pasta_curves::inversion::portable::select]:
-    Source: 'src/inversion/portable.rs', lines 45:0-47:1 -/
+    Source: 'src/inversion/portable.rs', lines 54:0-56:1 -/
 def inversion.portable.select
   (mask : Std.U64) (a : Std.U64) (b : Std.U64) : Result Std.U64 := do
   let i ← lift (mask &&& a)
@@ -54,14 +65,14 @@ def inversion.portable.select
   ok (i ||| i2)
 
 /-- [pasta_curves::inversion::portable::halve]:
-    Source: 'src/inversion/portable.rs', lines 51:0-53:1 -/
+    Source: 'src/inversion/portable.rs', lines 60:0-62:1 -/
 def inversion.portable.halve (x : Std.U64) : Result Std.U64 := do
   let i ← lift (UScalar.hcast .I64 x)
   let i1 ← i >>> 1#i32
   ok (IScalar.hcast .U64 i1)
 
 /-- [pasta_curves::inversion::portable::divstep]:
-    Source: 'src/inversion/portable.rs', lines 60:0-67:1 -/
+    Source: 'src/inversion/portable.rs', lines 69:0-76:1 -/
 def inversion.portable.divstep
   (two_delta : Std.U64) (f : Std.U64) (g : Std.U64) :
   Result (Std.U64 × Std.U64 × Std.U64)
@@ -83,7 +94,7 @@ def inversion.portable.divstep
   ok (two_delta_new, f_new, i8)
 
 /-- [pasta_curves::inversion::portable::unpack]:
-    Source: 'src/inversion/portable.rs', lines 73:0-78:1 -/
+    Source: 'src/inversion/portable.rs', lines 82:0-87:1 -/
 def inversion.portable.unpack
   (k : Std.U32) (w : Std.U64) : Result (Std.U64 × Std.U64) := do
   let i ← lift (core.num.U64.wrapping_sub 0#u64 w)
@@ -104,7 +115,7 @@ def inversion.portable.unpack
   ok (i10, i11)
 
 /-- [pasta_curves::inversion::portable::batch]: loop body 0:
-    Source: 'src/inversion/portable.rs', lines 89:4-91:5 -/
+    Source: 'src/inversion/portable.rs', lines 98:4-100:5 -/
 @[rust_loop_body]
 def inversion.portable.batch_loop.body
   (iter : core.ops.range.Range Std.U32) (two_delta : Std.U64) (pf : Std.U64)
@@ -121,7 +132,7 @@ def inversion.portable.batch_loop.body
     ok (cont (iter1, two_delta1, pf1, pg1))
 
 /-- [pasta_curves::inversion::portable::batch]: loop 0:
-    Source: 'src/inversion/portable.rs', lines 89:4-91:5 -/
+    Source: 'src/inversion/portable.rs', lines 98:4-100:5 -/
 @[rust_loop]
 def inversion.portable.batch_loop
   (iter : core.ops.range.Range Std.U32) (two_delta : Std.U64) (pf : Std.U64)
@@ -134,7 +145,7 @@ def inversion.portable.batch_loop
     (iter, two_delta, pf, pg)
 
 /-- [pasta_curves::inversion::portable::batch]:
-    Source: 'src/inversion/portable.rs', lines 85:0-95:1 -/
+    Source: 'src/inversion/portable.rs', lines 94:0-104:1 -/
 def inversion.portable.batch
   (k : Std.U32) (two_delta : Std.U64) (f : Std.U64) (g : Std.U64) :
   Result (Array Std.U64 5#usize)
@@ -151,7 +162,7 @@ def inversion.portable.batch
   ok (Array.make 5#usize [ two_delta1, u, v, q, r ])
 
 /-- [pasta_curves::inversion::portable::next_low]:
-    Source: 'src/inversion/portable.rs', lines 100:0-102:1 -/
+    Source: 'src/inversion/portable.rs', lines 109:0-111:1 -/
 def inversion.portable.next_low
   (k : Std.U32) (a : Std.U64) (b : Std.U64) (f : Std.U64) (g : Std.U64) :
   Result Std.U64
@@ -162,7 +173,7 @@ def inversion.portable.next_low
   i2 >>> k
 
 /-- [pasta_curves::inversion::portable::mat_mul]:
-    Source: 'src/inversion/portable.rs', lines 106:0-117:1 -/
+    Source: 'src/inversion/portable.rs', lines 115:0-126:1 -/
 def inversion.portable.mat_mul
   (m : Array Std.U64 4#usize) (n : Array Std.U64 4#usize) :
   Result (Array Std.U64 4#usize)
@@ -190,7 +201,7 @@ def inversion.portable.mat_mul
   ok (Array.make 4#usize [ i6, i11, i16, i19 ])
 
 /-- [pasta_curves::inversion::portable::negate]:
-    Source: 'src/inversion/portable.rs', lines 122:0-131:1 -/
+    Source: 'src/inversion/portable.rs', lines 131:0-138:1 -/
 def inversion.portable.negate
   (x : Array Std.U64 5#usize) (s : Std.U64) :
   Result (Array Std.U64 5#usize)
@@ -199,31 +210,46 @@ def inversion.portable.negate
   let carry ← lift (s &&& 1#u64)
   let i ← Array.index_usize x 0#usize
   let i1 ← lift (i ^^^ s)
-  let (word, overflow) ← lift (core.num.U64.overflowing_add i1 carry)
-  let out1 ← Array.update out 0#usize word
-  let carry1 ← lift (core.convert.num.FromU64Bool.from overflow)
-  let i2 ← Array.index_usize x 1#usize
-  let i3 ← lift (i2 ^^^ s)
-  let (word1, overflow1) ← lift (core.num.U64.overflowing_add i3 carry1)
-  let out2 ← Array.update out1 1#usize word1
-  let carry2 ← lift (core.convert.num.FromU64Bool.from overflow1)
-  let i4 ← Array.index_usize x 2#usize
-  let i5 ← lift (i4 ^^^ s)
-  let (word2, overflow2) ← lift (core.num.U64.overflowing_add i5 carry2)
-  let out3 ← Array.update out2 2#usize word2
-  let carry3 ← lift (core.convert.num.FromU64Bool.from overflow2)
-  let i6 ← Array.index_usize x 3#usize
+  let (i2, carry1) ← inversion.portable.adc i1 0#u64 carry
+  let out1 ← Array.update out 0#usize i2
+  let i3 ← Array.index_usize x 1#usize
+  let i4 ← lift (i3 ^^^ s)
+  let (i5, carry2) ← inversion.portable.adc i4 0#u64 carry1
+  let out2 ← Array.update out1 1#usize i5
+  let i6 ← Array.index_usize x 2#usize
   let i7 ← lift (i6 ^^^ s)
-  let (word3, overflow3) ← lift (core.num.U64.overflowing_add i7 carry3)
-  let out4 ← Array.update out3 3#usize word3
-  let carry4 ← lift (core.convert.num.FromU64Bool.from overflow3)
-  let i8 ← Array.index_usize x 4#usize
-  let i9 ← lift (i8 ^^^ s)
-  let (word4, _) ← lift (core.num.U64.overflowing_add i9 carry4)
-  Array.update out4 4#usize word4
+  let (i8, carry3) ← inversion.portable.adc i7 0#u64 carry2
+  let out3 ← Array.update out2 2#usize i8
+  let i9 ← Array.index_usize x 3#usize
+  let i10 ← lift (i9 ^^^ s)
+  let (i11, carry4) ← inversion.portable.adc i10 0#u64 carry3
+  let out4 ← Array.update out3 3#usize i11
+  let i12 ← Array.index_usize x 4#usize
+  let i13 ← lift (i12 ^^^ s)
+  let (i14, _) ← inversion.portable.adc i13 0#u64 carry4
+  Array.update out4 4#usize i14
+
+/-- [pasta_curves::inversion::portable::row_column]:
+    Source: 'src/inversion/portable.rs', lines 144:0-147:1 -/
+def inversion.portable.row_column
+  (carry : Std.U128) (x : Std.U64) (m0 : Std.U64) (y : Std.U64) (m1 : Std.U64)
+  :
+  Result (Std.U64 × Std.U128)
+  := do
+  let i ← lift (core.convert.num.FromU128U64.from x)
+  let i1 ← lift (core.convert.num.FromU128U64.from m0)
+  let i2 ← i * i1
+  let i3 ← carry + i2
+  let i4 ← lift (core.convert.num.FromU128U64.from y)
+  let i5 ← lift (core.convert.num.FromU128U64.from m1)
+  let i6 ← i4 * i5
+  let column ← i3 + i6
+  let i7 ← lift (UScalar.cast .U64 column)
+  let i8 ← column >>> 64#i32
+  ok (i7, i8)
 
 /-- [pasta_curves::inversion::portable::row]:
-    Source: 'src/inversion/portable.rs', lines 138:0-149:1 -/
+    Source: 'src/inversion/portable.rs', lines 154:0-163:1 -/
 def inversion.portable.row
   (x : Array Std.U64 5#usize) (y : Array Std.U64 5#usize) (m0 : Std.U64)
   (m1 : Std.U64) (s0 : Std.U64) (s1 : Std.U64) :
@@ -233,73 +259,28 @@ def inversion.portable.row
   let y1 ← inversion.portable.negate y s1
   let out := Array.repeat 5#usize 0#u64
   let i ← Array.index_usize x1 0#usize
-  let i1 ← lift (core.convert.num.FromU128U64.from i)
-  let i2 ← lift (core.convert.num.FromU128U64.from m0)
-  let i3 ← i1 * i2
-  let i4 ← 0#u128 + i3
-  let i5 ← Array.index_usize y1 0#usize
-  let i6 ← lift (core.convert.num.FromU128U64.from i5)
-  let i7 ← lift (core.convert.num.FromU128U64.from m1)
-  let i8 ← i6 * i7
-  let column ← i4 + i8
-  let i9 ← lift (UScalar.cast .U64 column)
-  let out1 ← Array.update out 0#usize i9
-  let carry ← column >>> 64#i32
-  let i10 ← Array.index_usize x1 1#usize
-  let i11 ← lift (core.convert.num.FromU128U64.from i10)
-  let i12 ← lift (core.convert.num.FromU128U64.from m0)
-  let i13 ← i11 * i12
-  let i14 ← carry + i13
-  let i15 ← Array.index_usize y1 1#usize
-  let i16 ← lift (core.convert.num.FromU128U64.from i15)
-  let i17 ← lift (core.convert.num.FromU128U64.from m1)
-  let i18 ← i16 * i17
-  let column1 ← i14 + i18
-  let i19 ← lift (UScalar.cast .U64 column1)
-  let out2 ← Array.update out1 1#usize i19
-  let carry1 ← column1 >>> 64#i32
-  let i20 ← Array.index_usize x1 2#usize
-  let i21 ← lift (core.convert.num.FromU128U64.from i20)
-  let i22 ← lift (core.convert.num.FromU128U64.from m0)
-  let i23 ← i21 * i22
-  let i24 ← carry1 + i23
-  let i25 ← Array.index_usize y1 2#usize
-  let i26 ← lift (core.convert.num.FromU128U64.from i25)
-  let i27 ← lift (core.convert.num.FromU128U64.from m1)
-  let i28 ← i26 * i27
-  let column2 ← i24 + i28
-  let i29 ← lift (UScalar.cast .U64 column2)
-  let out3 ← Array.update out2 2#usize i29
-  let carry2 ← column2 >>> 64#i32
-  let i30 ← Array.index_usize x1 3#usize
-  let i31 ← lift (core.convert.num.FromU128U64.from i30)
-  let i32 ← lift (core.convert.num.FromU128U64.from m0)
-  let i33 ← i31 * i32
-  let i34 ← carry2 + i33
-  let i35 ← Array.index_usize y1 3#usize
-  let i36 ← lift (core.convert.num.FromU128U64.from i35)
-  let i37 ← lift (core.convert.num.FromU128U64.from m1)
-  let i38 ← i36 * i37
-  let column3 ← i34 + i38
-  let i39 ← lift (UScalar.cast .U64 column3)
-  let out4 ← Array.update out3 3#usize i39
-  let carry3 ← column3 >>> 64#i32
-  let i40 ← Array.index_usize x1 4#usize
-  let i41 ← lift (core.convert.num.FromU128U64.from i40)
-  let i42 ← lift (core.convert.num.FromU128U64.from m0)
-  let i43 ← i41 * i42
-  let i44 ← carry3 + i43
-  let i45 ← Array.index_usize y1 4#usize
-  let i46 ← lift (core.convert.num.FromU128U64.from i45)
-  let i47 ← lift (core.convert.num.FromU128U64.from m1)
-  let i48 ← i46 * i47
-  let column4 ← i44 + i48
-  let i49 ← lift (UScalar.cast .U64 column4)
-  let _ ← column4 >>> 64#i32
-  Array.update out4 4#usize i49
+  let i1 ← Array.index_usize y1 0#usize
+  let (i2, carry) ← inversion.portable.row_column 0#u128 i m0 i1 m1
+  let out1 ← Array.update out 0#usize i2
+  let i3 ← Array.index_usize x1 1#usize
+  let i4 ← Array.index_usize y1 1#usize
+  let (i5, carry1) ← inversion.portable.row_column carry i3 m0 i4 m1
+  let out2 ← Array.update out1 1#usize i5
+  let i6 ← Array.index_usize x1 2#usize
+  let i7 ← Array.index_usize y1 2#usize
+  let (i8, carry2) ← inversion.portable.row_column carry1 i6 m0 i7 m1
+  let out3 ← Array.update out2 2#usize i8
+  let i9 ← Array.index_usize x1 3#usize
+  let i10 ← Array.index_usize y1 3#usize
+  let (i11, carry3) ← inversion.portable.row_column carry2 i9 m0 i10 m1
+  let out4 ← Array.update out3 3#usize i11
+  let i12 ← Array.index_usize x1 4#usize
+  let i13 ← Array.index_usize y1 4#usize
+  let (i14, _) ← inversion.portable.row_column carry3 i12 m0 i13 m1
+  Array.update out4 4#usize i14
 
 /-- [pasta_curves::inversion::portable::add5]:
-    Source: 'src/inversion/portable.rs', lines 154:0-164:1 -/
+    Source: 'src/inversion/portable.rs', lines 168:0-175:1 -/
 def inversion.portable.add5
   (x : Array Std.U64 5#usize) (y : Array Std.U64 5#usize) :
   Result (Array Std.U64 5#usize)
@@ -307,40 +288,27 @@ def inversion.portable.add5
   let out := Array.repeat 5#usize 0#u64
   let i ← Array.index_usize x 0#usize
   let i1 ← Array.index_usize y 0#usize
-  let (sum, overflow1) ← lift (core.num.U64.overflowing_add i i1)
-  let (sum1, overflow2) ← lift (core.num.U64.overflowing_add sum 0#u64)
-  let out1 ← Array.update out 0#usize sum1
-  let carry ←
-    lift (core.convert.num.FromU64Bool.from (overflow1 || overflow2))
-  let i2 ← Array.index_usize x 1#usize
-  let i3 ← Array.index_usize y 1#usize
-  let (sum2, overflow11) ← lift (core.num.U64.overflowing_add i2 i3)
-  let (sum3, overflow21) ← lift (core.num.U64.overflowing_add sum2 carry)
-  let out2 ← Array.update out1 1#usize sum3
-  let carry1 ←
-    lift (core.convert.num.FromU64Bool.from (overflow11 || overflow21))
-  let i4 ← Array.index_usize x 2#usize
-  let i5 ← Array.index_usize y 2#usize
-  let (sum4, overflow12) ← lift (core.num.U64.overflowing_add i4 i5)
-  let (sum5, overflow22) ← lift (core.num.U64.overflowing_add sum4 carry1)
-  let out3 ← Array.update out2 2#usize sum5
-  let carry2 ←
-    lift (core.convert.num.FromU64Bool.from (overflow12 || overflow22))
-  let i6 ← Array.index_usize x 3#usize
-  let i7 ← Array.index_usize y 3#usize
-  let (sum6, overflow13) ← lift (core.num.U64.overflowing_add i6 i7)
-  let (sum7, overflow23) ← lift (core.num.U64.overflowing_add sum6 carry2)
-  let out4 ← Array.update out3 3#usize sum7
-  let carry3 ←
-    lift (core.convert.num.FromU64Bool.from (overflow13 || overflow23))
-  let i8 ← Array.index_usize x 4#usize
-  let i9 ← Array.index_usize y 4#usize
-  let (sum8, _) ← lift (core.num.U64.overflowing_add i8 i9)
-  let (sum9, _) ← lift (core.num.U64.overflowing_add sum8 carry3)
-  Array.update out4 4#usize sum9
+  let (i2, carry) ← inversion.portable.adc i i1 0#u64
+  let out1 ← Array.update out 0#usize i2
+  let i3 ← Array.index_usize x 1#usize
+  let i4 ← Array.index_usize y 1#usize
+  let (i5, carry1) ← inversion.portable.adc i3 i4 carry
+  let out2 ← Array.update out1 1#usize i5
+  let i6 ← Array.index_usize x 2#usize
+  let i7 ← Array.index_usize y 2#usize
+  let (i8, carry2) ← inversion.portable.adc i6 i7 carry1
+  let out3 ← Array.update out2 2#usize i8
+  let i9 ← Array.index_usize x 3#usize
+  let i10 ← Array.index_usize y 3#usize
+  let (i11, carry3) ← inversion.portable.adc i9 i10 carry2
+  let out4 ← Array.update out3 3#usize i11
+  let i12 ← Array.index_usize x 4#usize
+  let i13 ← Array.index_usize y 4#usize
+  let (i14, _) ← inversion.portable.adc i12 i13 carry3
+  Array.update out4 4#usize i14
 
 /-- [pasta_curves::inversion::portable::{impl pasta_curves::inversion::InvertBlocks for pasta_curves::inversion::portable::Backend}::cond_sub]:
-    Source: 'src/inversion/portable.rs', lines 262:4-274:5 -/
+    Source: 'src/inversion/portable.rs', lines 273:4-285:5 -/
 def inversion.portable.Backend.Insts.Pasta_curvesInversionInvertBlocks.cond_sub
   (value : Array Std.U64 4#usize) (modulus : Array Std.U64 4#usize) :
   Result (Array Std.U64 4#usize)
@@ -378,7 +346,7 @@ def inversion.portable.Backend.Insts.Pasta_curvesInversionInvertBlocks.cond_sub
   Array.update out3 3#usize i19
 
 /-- [pasta_curves::inversion::portable::{impl pasta_curves::inversion::InvertBlocks for pasta_curves::inversion::portable::Backend}::amontred]:
-    Source: 'src/inversion/portable.rs', lines 235:4-258:5 -/
+    Source: 'src/inversion/portable.rs', lines 246:4-269:5 -/
 def inversion.portable.Backend.Insts.Pasta_curvesInversionInvertBlocks.amontred
   (t : Array Std.U64 5#usize) (modulus : Array Std.U64 4#usize) (inv : Std.U64)
   :
@@ -443,7 +411,7 @@ def inversion.portable.Backend.Insts.Pasta_curvesInversionInvertBlocks.amontred
   ok (Array.make 4#usize [ i44, i45, i46, i47 ])
 
 /-- [pasta_curves::inversion::portable::{impl pasta_curves::inversion::InvertBlocks for pasta_curves::inversion::portable::Backend}::de_row]:
-    Source: 'src/inversion/portable.rs', lines 225:4-229:5 -/
+    Source: 'src/inversion/portable.rs', lines 236:4-240:5 -/
 def inversion.portable.Backend.Insts.Pasta_curvesInversionInvertBlocks.de_row
   (d : Array Std.U64 4#usize) (e : Array Std.U64 4#usize) (m0 : Std.U64)
   (m1 : Std.U64) (s0 : Std.U64) (s1 : Std.U64) :
@@ -461,7 +429,7 @@ def inversion.portable.Backend.Insts.Pasta_curvesInversionInvertBlocks.de_row
     (Array.make 5#usize [ i4, i5, i6, i7, 0#u64 ]) m0 m1 s0 s1
 
 /-- [pasta_curves::inversion::portable::{impl pasta_curves::inversion::InvertBlocks for pasta_curves::inversion::portable::Backend}::fg_row]:
-    Source: 'src/inversion/portable.rs', lines 212:4-221:5 -/
+    Source: 'src/inversion/portable.rs', lines 223:4-232:5 -/
 def inversion.portable.Backend.Insts.Pasta_curvesInversionInvertBlocks.fg_row
   (f : Array Std.U64 5#usize) (g : Array Std.U64 5#usize) (m0 : Std.U64)
   (m1 : Std.U64) (s0 : Std.U64) (s1 : Std.U64) :
@@ -491,7 +459,7 @@ def inversion.portable.Backend.Insts.Pasta_curvesInversionInvertBlocks.fg_row
   ok (Array.make 5#usize [ i4, i8, i12, i16, i19 ])
 
 /-- [pasta_curves::inversion::portable::{impl pasta_curves::inversion::InvertBlocks for pasta_curves::inversion::portable::Backend}::sign_mag]:
-    Source: 'src/inversion/portable.rs', lines 190:4-207:5 -/
+    Source: 'src/inversion/portable.rs', lines 201:4-218:5 -/
 def inversion.portable.Backend.Insts.Pasta_curvesInversionInvertBlocks.sign_mag
   (u : Std.U64) (v : Std.U64) (q : Std.U64) (r : Std.U64) :
   Result (Array Std.U64 8#usize)
@@ -515,7 +483,7 @@ def inversion.portable.Backend.Insts.Pasta_curvesInversionInvertBlocks.sign_mag
   ok (Array.make 8#usize [ i5, i7, i9, i11, su, sv, sq, sr ])
 
 /-- [pasta_curves::inversion::portable::{impl pasta_curves::inversion::InvertBlocks for pasta_curves::inversion::portable::Backend}::divstep59]:
-    Source: 'src/inversion/portable.rs', lines 173:4-186:5 -/
+    Source: 'src/inversion/portable.rs', lines 184:4-197:5 -/
 def
   inversion.portable.Backend.Insts.Pasta_curvesInversionInvertBlocks.divstep59
   (two_delta : Std.U64) (f0 : Std.U64) (g0 : Std.U64) :
@@ -555,7 +523,7 @@ def
   ok (Array.make 5#usize [ two_delta3, u, v, q, r ])
 
 /-- Trait implementation: [pasta_curves::inversion::portable::{impl pasta_curves::inversion::InvertBlocks for pasta_curves::inversion::portable::Backend}]
-    Source: 'src/inversion/portable.rs', lines 169:0-275:1 -/
+    Source: 'src/inversion/portable.rs', lines 180:0-286:1 -/
 @[reducible]
 def inversion.portable.Backend.Insts.Pasta_curvesInversionInvertBlocks :
   inversion.InvertBlocks inversion.portable.Backend := {

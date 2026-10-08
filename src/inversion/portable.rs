@@ -40,6 +40,15 @@ fn sbb(a: u64, b: u64, borrow: u64) -> (u64, u64) {
     (difference, u64::from(underflow1 | underflow2))
 }
 
+/// `a + b + carry` and the carry out, for a carry in of zero or one: the sum modulo `2^64`, and
+/// one when the addition wraps, else zero.
+#[inline(always)]
+fn adc(a: u64, b: u64, carry: u64) -> (u64, u64) {
+    let (sum, overflow1) = a.overflowing_add(b);
+    let (sum, overflow2) = sum.overflowing_add(carry);
+    (sum, u64::from(overflow1 | overflow2))
+}
+
 /// `a` where the mask is all ones and `b` where it is zero, bit by bit.
 #[inline(always)]
 fn select(mask: u64, a: u64, b: u64) -> u64 {
@@ -123,11 +132,18 @@ fn negate(x: &[u64; 5], s: u64) -> [u64; 5] {
     let mut out = [0u64; 5];
     let mut carry = s & 1;
     unroll!(i in [0, 1, 2, 3, 4] {
-        let (word, overflow) = (x[i] ^ s).overflowing_add(carry);
-        out[i] = word;
-        carry = u64::from(overflow);
+        (out[i], carry) = adc(x[i] ^ s, 0, carry);
     });
     out
+}
+
+/// One column of a row, `carry + x m0 + y m1`, as its low word and the carry into the next
+/// column. With `carry ≤ m0 + m1 ≤ 2^63` the column stays below `2^128`, and the carry out is
+/// again at most `m0 + m1`.
+#[inline(always)]
+fn row_column(carry: u128, x: u64, m0: u64, y: u64, m1: u64) -> (u64, u128) {
+    let column = carry + u128::from(x) * u128::from(m0) + u128::from(y) * u128::from(m1);
+    (column as u64, column >> 64)
 }
 
 /// The row combination `a x + b y` modulo `2^320`, for `a` and `b` given as magnitudes `m0`,
@@ -141,9 +157,7 @@ fn row(x: &[u64; 5], y: &[u64; 5], m0: u64, m1: u64, s0: u64, s1: u64) -> [u64; 
     let mut out = [0u64; 5];
     let mut carry: u128 = 0;
     unroll!(i in [0, 1, 2, 3, 4] {
-        let column = carry + u128::from(x[i]) * u128::from(m0) + u128::from(y[i]) * u128::from(m1);
-        out[i] = column as u64;
-        carry = column >> 64;
+        (out[i], carry) = row_column(carry, x[i], m0, y[i], m1);
     });
     out
 }
@@ -155,10 +169,7 @@ fn add5(x: &[u64; 5], y: &[u64; 5]) -> [u64; 5] {
     let mut out = [0u64; 5];
     let mut carry = 0u64;
     unroll!(i in [0, 1, 2, 3, 4] {
-        let (sum, overflow1) = x[i].overflowing_add(y[i]);
-        let (sum, overflow2) = sum.overflowing_add(carry);
-        out[i] = sum;
-        carry = u64::from(overflow1 | overflow2);
+        (out[i], carry) = adc(x[i], y[i], carry);
     });
     out
 }
