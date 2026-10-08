@@ -101,10 +101,10 @@ theorem cond_sub_spec (v m : Limbs) (hv : v.Bounded) (hm : m.Bounded) :
   simp only [limbsArray, Std.Array.from_val, List.getElem_cons_zero, List.getElem_cons_succ]
     at i_post i1_post i3_post i4_post i6_post i7_post i9_post i10_post
   subst i_post i1_post i3_post i4_post i6_post i7_post i9_post i10_post
-  rw [word_val _ hv0, word_val _ hm0] at i2_post
-  rw [word_val _ hv1, word_val _ hm1] at i5_post
-  rw [word_val _ hv2, word_val _ hm2] at i8_post
-  rw [word_val _ hv3, word_val _ hm3] at i11_post
+  rw [word_val hv0, word_val hm0] at i2_post
+  rw [word_val hv1, word_val hm1] at i5_post
+  rw [word_val hv2, word_val hm2] at i8_post
+  rw [word_val hv3, word_val hm3] at i11_post
   -- The differences, read back from the array they were written to.
   subst difference1_post difference2_post difference3_post difference4_post
   simp at i12_post i14_post i16_post i18_post
@@ -127,8 +127,8 @@ theorem cond_sub_spec (v m : Limbs) (hv : v.Bounded) (hm : m.Bounded) :
     omega
   · have hk' : keep.val ≠ 0 := by omega
     simp only [hk', if_false] at i13_post i15_post i17_post i19_post
-    rw [i13_post, i15_post, i17_post, i19_post, word_val _ hv0, word_val _ hv1, word_val _ hv2,
-      word_val _ hv3]
+    rw [i13_post, i15_post, i17_post, i19_post, word_val hv0, word_val hv1, word_val hv2,
+      word_val hv3]
     rw [hb] at i11_post
     omega
 

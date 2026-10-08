@@ -202,8 +202,8 @@ theorem invert_with_loop_spec (hS : Succeeds I) (F : PastaField) (hB : (pureBloc
       · agrind
       · have hsucc : iter1.start.val.toNat = iter.start.val.toNat + 1 := by agrind
         have hm : limbsOfArray (limbsArray F.modulus) = F.modulus :=
-          limbsOfArray_limbsArray _ F.bounded
-        have hinv : (word F.inv).val = F.inv := word_val _ F.inv_lt
+          limbsOfArray_limbsArray F.bounded
+        have hinv : (word F.inv).val = F.inv := word_val F.inv_lt
         rw [hsucc, Function.iterate_succ_apply', ← hst]
         grind [invertRound, stateOf]
       · agrind
@@ -236,8 +236,8 @@ theorem invert_with_spec (hS : Succeeds I) (F : PastaField) (hB : (pureBlocks I)
   · grind
   · -- The last round, with the sign of the new `f` in the masks of its row, is `invert`'s.
     have hm : limbsOfArray (limbsArray F.modulus) = F.modulus :=
-      limbsOfArray_limbsArray _ F.bounded
-    have hinv : (word F.inv).val = F.inv := word_val _ F.inv_lt
+      limbsOfArray_limbsArray F.bounded
+    have hinv : (word F.inv).val = F.inv := word_val F.inv_lt
     have hsign : sign.val = signWord i8.val i9.val u.val v.val := by
       subst i13
       rw [sign_post, sign_mask_val i14_post]
