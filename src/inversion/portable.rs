@@ -25,6 +25,12 @@ fn sign_mask(x: u64) -> u64 {
     ((x as i64) >> 63) as u64
 }
 
+/// The 64-bit mask of a bit: all ones for one, and zero for zero.
+#[inline(always)]
+fn mask_of_bit(bit: u64) -> u64 {
+    0u64.wrapping_sub(bit)
+}
+
 /// `a - b - borrow` and the borrow out, for a borrow in of zero or one: the difference modulo
 /// `2^64`, and one when the subtraction wraps, else zero.
 #[inline(always)]
@@ -52,7 +58,7 @@ fn halve(x: u64) -> u64 {
 /// far from `-2^63`, so the sign of `-two_delta` decides `two_delta > 0`.
 #[inline(always)]
 fn divstep(two_delta: u64, f: u64, g: u64) -> (u64, u64, u64) {
-    let odd = 0u64.wrapping_sub(g & 1);
+    let odd = mask_of_bit(g & 1);
     let swap = odd & sign_mask(0u64.wrapping_sub(two_delta));
     let two_delta_new = select(swap, 2u64.wrapping_sub(two_delta), two_delta.wrapping_add(2));
     let f_new = select(swap, g, f);
@@ -259,7 +265,7 @@ impl InvertBlocks for Backend {
         unroll!(i in [0, 1, 2, 3] {
             (difference[i], borrow) = sbb(value[i], modulus[i], borrow);
         });
-        let keep = 0u64.wrapping_sub(borrow);
+        let keep = mask_of_bit(borrow);
         let mut out = [0u64; 4];
         unroll!(i in [0, 1, 2, 3] {
             out[i] = select(keep, value[i], difference[i]);

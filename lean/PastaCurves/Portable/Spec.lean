@@ -10,9 +10,9 @@ Each theorem here states that a block of Aeneas' translation of `src/inversion/p
 words (`Words.lean`). The statements are Aeneas' Hoare triples, `f ⦃ res => P res ⦄`, and the proofs
 step through the translation with Aeneas' `step*`, then close the arithmetic by hand.
 
-The blocks' helpers have step lemmas of their own, which `step*` applies at each call: `sbb` is
-one limb of a borrow chain, proved on natural numbers, and `select` is the masked select, proved
-on 64-bit vectors.
+The blocks' helpers have step lemmas of their own, which `step*` applies at each call: `sbb`, one
+limb of a borrow chain, proved on natural numbers; `select`, the masked select, proved on 64-bit
+vectors; and `mask_of_bit`, the 64-bit mask of a bit.
 -/
 
 namespace PastaCurves.Portable
@@ -49,14 +49,21 @@ theorem select_spec (mask a b : Std.U64) (h : mask.val = 0 ∨ mask.val = 2^64 -
       UScalar.bv_not]
     simp [hm]
 
-/-- The mask of a borrow: `0 - b` is zero when the borrow `b` is zero, and all ones when it is
-one. -/
-@[step]
+/-- The 64-bit mask of a bit: `0 - b` is zero when `b` is zero, and all ones when it is one. -/
 theorem wrapping_sub_zero_bit_spec (b : Std.U64) (h : b.val ≤ 1) :
     lift (core.num.U64.wrapping_sub 0#u64 b) ⦃ (mask : Std.U64) =>
       (b.val = 0 ∧ mask.val = 0) ∨ (b.val = 1 ∧ mask.val = 2^64 - 1) ⦄ := by
   simp only [lift, WP.spec_ok, core.num.U64.wrapping_sub_val_eq]
   scalar_tac
+
+open pasta_curves.inversion.portable in
+/-- `mask_of_bit` is all ones for the bit one, and zero for zero. -/
+@[step]
+theorem mask_of_bit_spec (bit : Std.U64) (h : bit.val ≤ 1) :
+    mask_of_bit bit ⦃ (mask : Std.U64) =>
+      (bit.val = 0 ∧ mask.val = 0) ∨ (bit.val = 1 ∧ mask.val = 2^64 - 1) ⦄ := by
+  unfold mask_of_bit
+  exact wrapping_sub_zero_bit_spec bit h
 
 open pasta_curves.inversion.portable in
 /-- `cond_sub` subtracts `m` from `v` exactly when `v` is not below it: the translation meets the
