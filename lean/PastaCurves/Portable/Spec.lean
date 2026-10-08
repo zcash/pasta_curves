@@ -12,9 +12,10 @@ step through the translation with Aeneas' `step*`, then close the arithmetic by 
 
 The blocks' helpers have step lemmas of their own, which `step*` applies at each call: `sbb`, one
 limb of a borrow chain, proved on natural numbers; `adc`, one limb of a carry chain; `row_column`,
-one column of a row, whose bound on the carry passes from each column to the next; `select`, the
-masked select, proved on 64-bit vectors; `mask_of_bit`, the 64-bit mask of a bit; `sign_mask`, the
-mask of a word's sign; and `halve`, the arithmetic shift right by one.
+one column of a row, whose bound on the carry passes from each column to the next; `mac`, one
+column of a multiplication; `select`, the masked select, proved on 64-bit vectors; `mask_of_bit`,
+the 64-bit mask of a bit; `sign_mask`, the mask of a word's sign; and `halve`, the arithmetic shift
+right by one.
 -/
 
 namespace PastaCurves.Portable
@@ -62,6 +63,22 @@ theorem row_column_spec (carry : Std.U128) (x m0 y m1 : Std.U64) (hm : m0.val + 
   refine ⟨?_, Nat.div_le_of_le_mul (by agrind)⟩
   rw [Nat.mod_add_div, column_post, i3_post, i6_post, i2_post, i_post, i1_post, i4_post, i5_post]
   agrind
+
+open pasta_curves.inversion.portable in
+/-- One column of a multiplication: `mac` returns the low and high words of `a + b c + carry`,
+which is below `2^128` for any words. -/
+@[step]
+theorem mac_spec (a b c carry : Std.U64) :
+    mac a b c carry ⦃ (lo : Std.U64) (hi : Std.U64) =>
+      lo.val + 2^64 * hi.val = a.val + b.val * c.val + carry.val ⦄ := by
+  unfold mac
+  have hbc : b.val * c.val ≤ (2^64 - 1) * (2^64 - 1) :=
+    Nat.mul_le_mul (by scalar_tac) (by scalar_tac)
+  step*
+  have hsum : sum.val / 2^64 < 2^64 := Nat.div_lt_of_lt_mul (by scalar_tac)
+  rw [i6_post, i8_post, UScalar.cast_val_eq, UScalar.cast_val_eq, UScalarTy.U64_numBits_eq, i7_post,
+    Nat.shiftRight_eq_div_pow, Nat.mod_eq_of_lt hsum, Nat.mod_add_div, sum_post, i4_post, i3_post,
+    i_post, i1_post, i2_post, i5_post]
 
 open pasta_curves.inversion.portable in
 /-- The masked select: for a mask of all zeros or all ones, `select` returns `b` under the zero
