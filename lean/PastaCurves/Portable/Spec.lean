@@ -46,7 +46,7 @@ theorem select_spec (mask a b : Std.U64) (h : mask.val = 0 ∨ mask.val = 2^64 -
     rw [if_pos h, UScalar.eq_equiv_bv_eq, UScalar.bv_or, i_post1, i2_post1, UScalar.bv_not]
     simp [hm]
   · have hm : mask.bv = BitVec.allOnes 64 := by apply BitVec.eq_of_toNat_eq; simpa using h
-    rw [if_neg (by omega), UScalar.eq_equiv_bv_eq, UScalar.bv_or, i_post1, i2_post1,
+    rw [if_neg (by agrind), UScalar.eq_equiv_bv_eq, UScalar.bv_or, i_post1, i2_post1,
       UScalar.bv_not]
     simp [hm]
 
@@ -86,8 +86,8 @@ theorem halve_spec (x : Std.U64) :
   agrind [asr, Int.bmod]
 
 open pasta_curves.inversion.portable in
-/-- `cond_sub` subtracts `m` from `v` exactly when `v` is not below it: the translation meets the
-`condSub` field of `InvertBlocks.Spec`, at any bounded `m`, not only a field's modulus. -/
+/-- `cond_sub` subtracts `m` from `v` exactly when `v` is not below it: the translation satisfies
+the `condSub` field of `InvertBlocks.Spec`, at any bounded `m`, not only a field's modulus. -/
 theorem cond_sub_spec (v m : Limbs) (hv : v.Bounded) (hm : m.Bounded) :
     Backend.Insts.Pasta_curvesInversionInvertBlocks.cond_sub (limbsArray v) (limbsArray m)
       ⦃ res => (limbsOfArray res).Bounded ∧
@@ -124,12 +124,12 @@ theorem cond_sub_spec (v m : Limbs) (hv : v.Bounded) (hm : m.Bounded) :
   · simp only [hk, if_true] at i13_post i15_post i17_post i19_post
     subst i13_post i15_post i17_post i19_post
     rw [hb] at i11_post
-    omega
-  · have hk' : keep.val ≠ 0 := by omega
+    grind
+  · have hk' : keep.val ≠ 0 := by agrind
     simp only [hk', if_false] at i13_post i15_post i17_post i19_post
     rw [i13_post, i15_post, i17_post, i19_post, word_val hv0, word_val hv1, word_val hv2,
       word_val hv3]
     rw [hb] at i11_post
-    omega
+    agrind
 
 end PastaCurves.Portable
