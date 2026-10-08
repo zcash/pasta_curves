@@ -94,17 +94,23 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ## The assembly backends (`src/asm`)
 
-The `asm` module provides assembly backends for the Pasta field arithmetic. It contains an
-AArch64 backend and an x86-64 backend: Montgomery multiplication and squaring, and modular
-addition and subtraction, as inline `asm!` blocks, and a repeated-squaring chain and conversion
-out of Montgomery form composed from them. It is the one part of the crate that allows unsafe
-code. Its priorities are those of the crate: **correctness, constant-time behaviour, and
-performance**, in that order.
+The `asm` module provides assembly backends for the Pasta field arithmetic, one for AArch64 and one
+for x86-64. Each contains:
 
-The routines are transcriptions of Supranational's Semolina v0.1.4 (see `src/asm/README.md`).
-The instruction streams are the object of machine-checked correctness proofs, so a change to
-an instruction is a change to a specification: keep the transcription, its documentation, and
-the proofs in step, and do not "improve" the assembly in passing.
+- Montgomery multiplication and squaring, and modular addition and subtraction, as inline `asm!`
+  blocks;
+- a repeated-squaring chain, and the conversion out of Montgomery form, composed from those blocks.
+
+The AArch64 backend also contains the six blocks of a constant-time inversion. Their driver,
+`src/inversion.rs`, runs the same six blocks in portable Rust wherever the AArch64 backend is not
+compiled. The module is the one part of the crate that allows unsafe code. Its priorities are those
+of the crate: **correctness, constant-time behaviour, and performance**, in that order.
+
+The Montgomery routines are transcriptions of Supranational's Semolina v0.1.4, and the
+inversion's blocks are adapted from s2n-bignum's `bignum_montinv_p256` (see
+`src/asm/README.md`). The instruction streams are the object of machine-checked correctness
+proofs, so a change to an instruction is a change to a specification: keep the transcription,
+its documentation, and the proofs in step, and do not "improve" the assembly in passing.
 
 With the `asm` feature, the module provides a backend on `target_arch = "aarch64"`, and on
 `target_arch = "x86_64"` with 64-bit pointers except on Apple targets (see `src/asm/README.md`).
@@ -125,8 +131,10 @@ allocation.
 
 A cfg-gated test that compiles out still reports success, so CI counts the `#[test]`
 functions under `src/asm` and requires the run of the module's tests to report exactly that
-many passed, in both profiles. CI also builds `core` from source on a nightly toolchain
-instead of using the sysroot, which proves that nothing in the backend reaches for std:
+many passed, in both profiles. A test that needs one architecture lives in that backend's
+file (`aarch64.rs` or `x86_64.rs`), which is only counted on that architecture. CI also
+builds `core` from source on a nightly toolchain instead of using the sysroot, which proves
+that nothing in the backend reaches for std:
 `cargo +nightly build --release --no-default-features -Z build-std=core,compiler_builtins`
 with `--target` set to `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, and
 `x86_64-apple-darwin` in turn, for each backend and for a target without one.
@@ -149,22 +157,41 @@ submodules. Its instruction-level models contribute to assuring the backend's ro
 correctness; see `lean/README.md` for the implemented coverage, trust story, theorems and their
 caveats, and how those theorems are proven. All architectures use the same formalization
 pipeline; adding another architecture extends its existing verification coverage and tooling.
-Build it from that directory with the elan-managed `lake` for its `lean-toolchain` (a `lake` of
-another Lean version corrupts the shared `.lake` cache):
+Build it with the elan-managed `lake` for its `lean-toolchain` (a `lake` of another Lean version
+corrupts the shared `.lake` cache); the scripts run from any directory:
 
 ```sh
-cd lean
-lake exe cache get          # Mathlib's prebuilt oleans, once
-lake build --wfail          # warnings fail the build, as in CI
-cd .. && lean/scripts/check.sh   # regenerate the transcription and check the skeletons
+lean/scripts/build.sh          # fetch Mathlib's cache, then lake build, as in CI
+lean/scripts/check.sh          # regenerate the transcription and check the skeletons
+lean/scripts/fetch_aeneas.sh   # fetch Charon and Aeneas, once per pinned release
+lean/scripts/gen_aeneas.sh     # regenerate the Aeneas translations; --check compares instead
 ```
+
+`lean/scripts/build.sh` fails the build on any warning, as `lake build --wfail` would, except
+for warnings in Aeneas' library. The package requires that library but does not maintain it,
+and Lake cannot exempt one package from `--wfail`.
+
+`lean/scripts/gen_aeneas.sh` runs the Charon and Aeneas binaries that `fetch_aeneas.sh` fetched.
+When the pin moves to another Aeneas release, it fails until `fetch_aeneas.sh` is run again; it
+never fetches by itself.
+
+For proof work, connect to the Lean language server through
+[lean-lsp-mcp](https://github.com/oOo0oOo/lean-lsp-mcp), for example with
+`claude mcp add --scope user lean-lsp -- uvx lean-lsp-mcp` for Claude Code. Its tools show the goals
+at any point of a proof, try several tactics there without editing the file, and report a file's
+diagnostics, without a rebuild. A proof develops one step at a time against the real goal, where a
+rebuild after each edit would mean guessing at goals between builds. Build the package once before
+the first use, so the server starts from current `.olean` files. The server runs `lake serve` with
+the `lake` it finds on the path, which must be elan's (see above). Aeneas' skill file `lean-lsp-mcp`
+describes the tools in more detail.
 
 - **Every architecture's `Transcription.lean` and the shared `Vectors.lean` are generated** by
   `lean/scripts/gen.py` from the Rust `asm!` blocks and the reference vectors. Never edit them
   by hand; change the generator or its inputs and regenerate. Architecture-specific
   `Compositions.lean` mirrors the actual Rust compositions, not another backend's implementation.
-  Shared `Compositions.lean` models common operand checks; `Fields.lean` states the two fields'
-  constants. A change on either side changes the other.
+  Shared `Compositions.lean` models common operand checks and the inversion's driver over a
+  record of a backend's blocks; `Fields.lean` states the two fields' constants. A change on
+  either side changes the other.
 - **Every architecture's block proofs use generated, checked skeletons.** Generated skeleton
   lines in `Spec.lean` (or `Spec/*.lean`) are not hand-edited. Only theorem statements and
   `-- BEGIN ... -- END` annotation blocks are hand-written. Skeleton generation and `check_spec`
@@ -175,11 +202,12 @@ cd .. && lean/scripts/check.sh   # regenerate the transcription and check the sk
 - **Architecture modules have consistent roles.** `Semantics` defines instruction behavior;
   `Transcription` contains generated block models; `Compositions` models Rust around those
   blocks; `Vectors` checks the backend's routines against the shared generated vectors by kernel
-  evaluation; `Spec` proves block and composition correctness; `Entry` contains correctness
-  **theorems** specializing those results to `PastaField` and the actual asserted operand
-  contracts, not redundant value wrappers. Split per-block proof files belong under
-  `<Architecture>/Spec/`, imported by its `Spec.lean`. Shared arithmetic, constants, and
-  architecture-independent lemmas stay outside ISA modules.
+  evaluation; `Spec` proves block and composition correctness; `Backend` builds the backend's
+  record of Montgomery blocks, with `Glue.blocksOf`, that the Aeneas-translated glue runs over;
+  `Entry` contains correctness **theorems** specializing those results to `PastaField` and the
+  actual asserted operand contracts, not redundant value wrappers. Split per-block proof files
+  belong under `<Architecture>/Spec/`, imported by its `Spec.lean`. Shared arithmetic, constants,
+  and architecture-independent lemmas stay outside ISA modules.
 - **Extend the shared generator pipeline.** `gen.py` owns CLI orchestration, binding storage,
   liveness, formatting, vector emission, SSA naming, and proof skeleton generation/checking.
   `asm_source.py` owns the self-contained Rust source parser and operand/output validation.
@@ -189,6 +217,14 @@ cd .. && lean/scripts/check.sh   # regenerate the transcription and check the sk
   self-contained responsibility. Extend shared components rather than duplicating them.
   Reject unsupported syntax, uninitialized register/flag reads, and unmodeled memory accesses;
   test those rejection paths. For x86, CF and OF are independent and must not be conflated.
+- **The Aeneas translations are generated** (`Types.lean` and `Funs.lean` under `Portable/`
+  and `Glue/`, by `lean/scripts/gen_aeneas.sh`); never edit them by hand. `Glue/FunsExternal.lean`
+  is written by hand: it defines the one external function that the glue calls. Proofs about the
+  translations follow Aeneas' own guidance at the revision that `lean/lakefile.toml` pins: the
+  skill files in [`documentation/skills/`](https://github.com/AeneasVerif/aeneas/tree/b86120db3183b0107eb5f2637b11c424cd06ef1c/documentation/skills)
+  (`aeneas-lean-core`, `aeneas-tactics-quickref`, `proof-patterns`, and
+  `aeneas-crypto-verification` are the ones for proofs) and the guides beside them in
+  `documentation/`. A build fetches the same files to `lean/.lake/packages/aeneas/`.
 
 ### Adding or extending an architecture
 
@@ -214,15 +250,17 @@ do not change these instructions or coverage documentation to legitimize an omis
   and proof skeletons, and run generator validation tests. Register every completed module in
   the root import closure so the independent-kernel export includes it. A passing `lake build`
   does not validate files that the build never imports.
-- Work in small self-contained commits, each building with `lake build --wfail` and passing
+- Work in small self-contained commits, each building with `lean/scripts/build.sh` and passing
   the relevant generation/skeleton tests. Intermediate coverage may be incomplete, but must be
   explicitly tracked to completion; do not claim architecture support is complete until the
   parity checklist is satisfied. Report any unavailable independent-kernel check separately.
 - During moves or refactoring, preserve existing comments, annotation markers, theorem bodies,
   and generated output unless a change is necessary for the requested implementation. Do not
   rewrite or drop explanatory text as incidental cleanup.
-- **No `sorry`, no `native_decide`, no new axioms.** The nanoda re-check permits only the three
-  standard axioms; concrete facts are checked by `decide +kernel`.
+- **No `sorry`, no `native_decide`, no new axioms.** The nanoda re-check permits the three
+  standard axioms and those that Aeneas' library declares, and the axiom census
+  (`lean/scripts/check_export_axioms.py`) checks that nothing outside Aeneas' library depends on
+  the latter; concrete facts are checked by `decide +kernel`.
 
 ## Build & Test Commands
 

@@ -2,10 +2,13 @@ import PastaCurves.Compositions
 import PastaCurves.AArch64.Transcription
 
 /-!
-# The crate's Rust around the blocks
+# The AArch64 Rust around the blocks
 
-`src/asm/mod.rs` composes the crate's `sqr_n_mul` and `from_mont` from the `square` and `mul`
-blocks. These definitions mirror that Rust: the two compositions.
+The AArch64 backend in `src/asm/aarch64.rs` implements `from_mont` as the `mul` block with one,
+which `fromMont` mirrors. `src/inversion.rs` composes `invert` from a backend's six blocks, which
+`invert` of `PastaCurves/Compositions.lean` mirrors over a record of the blocks, and
+`invertBlocks` supplies the AArch64 blocks. The entry points' compositions of the Montgomery blocks
+are Aeneas' translation in `Glue/Funs.lean`, run over the record in `AArch64/Backend.lean`.
 -/
 
 namespace PastaCurves.AArch64
@@ -15,13 +18,11 @@ namespace PastaCurves.AArch64
 def fromMont (value modulus : Limbs) (inv : Nat) : Limbs :=
   mulMont value ⟨1, 0, 0, 0⟩ modulus inv
 
-/-- The squaring block applied `count` times. -/
-def sqrN (value modulus : Limbs) (inv : Nat) : Nat → Limbs
-  | 0 => value
-  | count + 1 => sqrMont (sqrN value modulus inv count) modulus inv
+/-! ## The inversion -/
 
-/-- `sqr_n_mul`: the squaring block `count` times, then the multiplication block by `rhs`. -/
-def sqrNMul (value : Limbs) (count : Nat) (rhs modulus : Limbs) (inv : Nat) : Limbs :=
-  mulMont (sqrN value modulus inv count) rhs modulus inv
+/-- The AArch64 transcriptions of the inversion's six blocks, as `src/inversion.rs` composes
+them. -/
+def invertBlocks : InvertBlocks :=
+  ⟨divstep59Block, signMagBlock, fgRowBlock, deRowBlock, amontredBlock, condSubBlock⟩
 
 end PastaCurves.AArch64

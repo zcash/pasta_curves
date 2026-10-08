@@ -1,33 +1,12 @@
-//! The module's entry points, re-exported at its root.
+//! The module's entry points, re-exported at its root. Each runs a generic composition, the
+//! matching `_with` function, over the blocks of the target's backend, which implements
+//! [`MontgomeryBlocks`].
 
 use core::hint::black_box;
 
-/// Four little-endian 64-bit limbs, least significant first: a field element
-/// (in Montgomery form, or canonical after [`from_mont`]) or a modulus.
-pub type Limbs = [u64; 4];
-
-/// `1` when `value < modulus` as little-endian 256-bit integers, else `0`: the borrow out of
-/// the four-limb subtraction `value - modulus`, computed limb by limb. The debug assertions
-/// must leave the routines' timing as it is, so the check has no data-dependent branch, and
-/// each borrow passes through [`black_box`], the barrier that `subtle` uses, which keeps the
-/// optimizer from turning the chain or its callers' combinations back into branches: an
-/// opaque word can only be combined arithmetically.
-#[inline(always)]
-fn is_canonical_word(value: &Limbs, modulus: &Limbs) -> u64 {
-    let mut borrow = 0;
-    for (v, m) in value.iter().zip(modulus) {
-        let (difference, underflow) = v.overflowing_sub(*m);
-        let (_, borrow_underflow) = difference.overflowing_sub(borrow);
-        borrow = black_box(u64::from(underflow | borrow_underflow));
-    }
-    borrow
-}
-
-/// Whether `value < modulus` as little-endian 256-bit integers; see [`is_canonical_word`].
-#[inline(always)]
-pub(crate) fn is_canonical(value: &Limbs, modulus: &Limbs) -> bool {
-    is_canonical_word(value, modulus) == 1
-}
+pub use crate::limbs::Limbs;
+pub(crate) use crate::limbs::is_canonical;
+use crate::limbs::is_canonical_word;
 
 /// The condition that `mul` asserts: a canonical `lhs`, or a canonical `rhs` whose limbs 1 to 3
 /// are at most `2^64 - 3`, combined as opaque words (see [`is_canonical_word`]) so that the
@@ -40,19 +19,37 @@ pub(crate) fn mul_contract(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> bool {
     (is_canonical_word(lhs, modulus) | (is_canonical_word(rhs, modulus) & rhs_limbs_ok)) == 1
 }
 
-/// Adds two residues for a Pasta modulus and conditionally subtracts the modulus.
-///
-/// Outputs are canonical.
-///
-/// # Safety
-///
-/// Both inputs must be canonical. This is debug-asserted, and under that precondition the
-/// machine-checked proofs in `lean/` establish the result (`add_entry_spec`).
-///
-/// `modulus` must be either the Pallas or Vesta field modulus. Any other values will
-/// cause undefined results.
+/// The Montgomery arithmetic of a backend: the blocks that the entry points run. Each method
+/// has the contract of the entry point of the same name, which states it and debug-asserts it.
+/// As with `crate::inversion::InvertBlocks`, one generic composition runs over any backend's
+/// blocks.
+pub(super) trait MontgomeryBlocks {
+    /// Adds two canonical residues and conditionally subtracts the modulus, as [`add`].
+    fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs;
+
+    /// Subtracts two canonical residues, adding the modulus back on underflow, as [`sub`].
+    fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs;
+
+    /// Multiplies two Montgomery residues under either of the contracts of [`mul`].
+    fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs;
+
+    /// Squares a canonical Montgomery residue, as [`square`].
+    fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs;
+
+    /// Converts any four-limb Montgomery residue into its canonical integer, as [`from_mont`].
+    fn from_mont(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs;
+}
+
+/// The blocks that the entry points run: the backend of the target architecture.
+#[cfg(target_arch = "aarch64")]
+type Selected = super::aarch64::Backend;
+/// The blocks that the entry points run: the backend of the target architecture.
+#[cfg(target_arch = "x86_64")]
+type Selected = super::x86_64::Backend;
+
+/// [`add`] over the blocks `B`, with its debug assertions.
 #[inline(always)]
-pub fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
+fn add_with<B: MontgomeryBlocks>(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
     debug_assert!(
         is_canonical(lhs, modulus),
         "pasta_curves::asm::add requires a canonical lhs"
@@ -61,16 +58,95 @@ pub fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
         is_canonical(rhs, modulus),
         "pasta_curves::asm::add requires a canonical rhs"
     );
+    B::add(lhs, rhs, modulus)
+}
 
-    #[cfg(target_arch = "aarch64")]
-    {
-        super::aarch64::add(lhs, rhs, modulus)
-    }
+/// [`sub`] over the blocks `B`, with its debug assertions.
+#[inline(always)]
+fn sub_with<B: MontgomeryBlocks>(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
+    debug_assert!(
+        is_canonical(lhs, modulus),
+        "pasta_curves::asm::sub requires a canonical lhs"
+    );
+    debug_assert!(
+        is_canonical(rhs, modulus),
+        "pasta_curves::asm::sub requires a canonical rhs"
+    );
+    B::sub(lhs, rhs, modulus)
+}
 
-    #[cfg(target_arch = "x86_64")]
-    {
-        super::x86_64::add(lhs, rhs, modulus)
+/// [`mul`] over the blocks `B`, with its debug assertion.
+#[inline(always)]
+fn mul_with<B: MontgomeryBlocks>(
+    lhs: &Limbs,
+    rhs: &Limbs,
+    modulus: &Limbs,
+    inv: u64,
+) -> Limbs {
+    debug_assert!(
+        mul_contract(lhs, rhs, modulus),
+        "pasta_curves::asm::mul requires a canonical lhs, or a canonical rhs with limbs 1 to 3 \
+         at most 2^64 - 3"
+    );
+    B::mul(lhs, rhs, modulus, inv)
+}
+
+/// [`square`] over the blocks `B`, with its debug assertion.
+#[inline(always)]
+fn square_with<B: MontgomeryBlocks>(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
+    debug_assert!(
+        is_canonical(value, modulus),
+        "pasta_curves::asm::square requires a canonical input"
+    );
+    B::square(value, modulus, inv)
+}
+
+/// [`sqr_n_mul`] over the blocks `B`: the input's debug assertion, then [`square_with`] `count`
+/// times and [`mul_with`], each with its own.
+#[inline(always)]
+fn sqr_n_mul_with<B: MontgomeryBlocks>(
+    value: &Limbs,
+    count: usize,
+    rhs: &Limbs,
+    modulus: &Limbs,
+    inv: u64,
+) -> Limbs {
+    debug_assert!(
+        is_canonical(value, modulus),
+        "pasta_curves::asm::sqr_n_mul requires a canonical value"
+    );
+    let mut acc = *value;
+    for _ in 0..count {
+        acc = square_with::<B>(&acc, modulus, inv);
     }
+    mul_with::<B>(&acc, rhs, modulus, inv)
+}
+
+/// [`from_mont`] over the blocks `B`. It asserts nothing, since it accepts every input.
+#[inline(always)]
+fn from_mont_with<B: MontgomeryBlocks>(
+    value: &Limbs,
+    modulus: &Limbs,
+    inv: u64,
+) -> Limbs {
+    B::from_mont(value, modulus, inv)
+}
+
+/// Adds two residues for a Pasta modulus and conditionally subtracts the modulus.
+///
+/// Outputs are canonical.
+///
+/// # Safety
+///
+/// Both inputs must be canonical. This is debug-asserted, and under that precondition the
+/// machine-checked proofs in `lean/` establish the result (`add_with_spec` and the backend's
+/// `montgomeryBlocks_spec`).
+///
+/// `modulus` must be either the Pallas or Vesta field modulus. Any other values will
+/// cause undefined results.
+#[inline(always)]
+pub fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
+    add_with::<Selected>(lhs, rhs, modulus)
 }
 
 /// Subtracts two residues for a Pasta modulus, adding the modulus back on underflow.
@@ -80,61 +156,31 @@ pub fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
 /// # Safety
 ///
 /// Both inputs must be canonical. This is debug-asserted, and under that precondition the
-/// machine-checked proofs in `lean/` establish the result (`sub_entry_spec`).
+/// machine-checked proofs in `lean/` establish the result (`sub_with_spec` and the backend's
+/// `montgomeryBlocks_spec`).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus. Any other values will
 /// cause undefined results.
 #[inline(always)]
 pub fn sub(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
-    debug_assert!(
-        is_canonical(lhs, modulus),
-        "pasta_curves::asm::sub requires a canonical lhs"
-    );
-    debug_assert!(
-        is_canonical(rhs, modulus),
-        "pasta_curves::asm::sub requires a canonical rhs"
-    );
-
-    #[cfg(target_arch = "aarch64")]
-    {
-        super::aarch64::sub(lhs, rhs, modulus)
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    {
-        super::x86_64::sub(lhs, rhs, modulus)
-    }
+    sub_with::<Selected>(lhs, rhs, modulus)
 }
 
 /// Multiplies two Montgomery residues for a Pasta modulus.
 ///
 /// # Safety
 ///
-/// Either `lhs` is canonical (below the modulus) and `rhs` is any four-limb value, or
-/// `rhs` is canonical with each of its limbs 1 to 3 at most `2^64 - 3` and `lhs` is any
-/// four-limb value. This is debug-asserted, and under that precondition the machine-checked
-/// proofs in `lean/` establish the result (`mul_entry_spec`, from `mulMont_spec_of_lhs_lt`
-/// and `mulMont_spec_of_rhs_lt`).
+/// Either `lhs` is canonical (below the modulus) and `rhs` is any four-limb value, or `rhs` is
+/// canonical with each of its limbs 1 to 3 at most `2^64 - 3` and `lhs` is any four-limb value.
+/// This is debug-asserted, and under that precondition the machine-checked proofs in `lean/`
+/// establish the result (`mul_with_spec` and the backend's `montgomeryBlocks_spec`, from
+/// `mulMont_spec_of_lhs_lt` and `mulMont_spec_of_rhs_lt`).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
 /// correctly derived from it. Any other values will cause undefined results.
 #[inline(always)]
 pub fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
-    debug_assert!(
-        mul_contract(lhs, rhs, modulus),
-        "pasta_curves::asm::mul requires a canonical lhs, or a canonical rhs with limbs 1 to 3 \
-         at most 2^64 - 3"
-    );
-
-    #[cfg(target_arch = "aarch64")]
-    {
-        super::aarch64::mul(lhs, rhs, modulus, inv)
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    {
-        super::x86_64::mul(lhs, rhs, modulus, inv)
-    }
+    mul_with::<Selected>(lhs, rhs, modulus, inv)
 }
 
 /// Squares a canonical Montgomery residue for a Pasta modulus.
@@ -143,28 +189,19 @@ pub fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
 ///
 /// # Safety
 ///
-/// The input of `square` must be canonical. This is debug-asserted, and under that
-/// precondition the machine-checked proofs in `lean/` establish the result
-/// (`square_entry_spec`).
+/// The input of `square` must be canonical. This is debug-asserted, and under that precondition the
+/// machine-checked proofs in `lean/` establish the result (`square_with_spec` and the backend's
+/// `montgomeryBlocks_spec`).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
 /// correctly derived from it. Any other values will cause undefined results.
-#[inline(always)]
+// On x86-64 the backend always inlines the squaring blocks, which take nearly every register.
+// So the entry point keeps them behind a call boundary, for the reason given on the
+// multiplication block in `x86_64.rs`.
+#[cfg_attr(target_arch = "aarch64", inline(always))]
+#[cfg_attr(target_arch = "x86_64", inline(never))]
 pub fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
-    debug_assert!(
-        is_canonical(value, modulus),
-        "pasta_curves::asm::square requires a canonical input"
-    );
-
-    #[cfg(target_arch = "aarch64")]
-    {
-        super::aarch64::square(value, modulus, inv)
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    {
-        super::x86_64::square(value, modulus, inv)
-    }
+    square_with::<Selected>(value, modulus, inv)
 }
 
 /// Squares a canonical Montgomery residue `count` times, then multiplies the
@@ -179,37 +216,26 @@ pub fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
 /// # Safety
 ///
 /// `value` must be canonical. This is debug-asserted, and under that precondition the
-/// machine-checked proofs in `lean/` establish the result (`sqrNMul_entry_spec`).
+/// machine-checked proofs in `lean/` establish the result (`sqr_n_mul_with_spec` and the backend's
+/// `montgomeryBlocks_spec`).
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, and `inv` must be
 /// correctly derived from it. Any other values will cause undefined results.
-#[inline]
+// On x86-64 the loop is kept behind a call boundary, as `square` is.
+#[cfg_attr(target_arch = "aarch64", inline)]
+#[cfg_attr(target_arch = "x86_64", inline(never))]
 pub fn sqr_n_mul(value: &Limbs, count: usize, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
-    // On aarch64, `square` and `mul` can be inlined and optimised by Rust.
-    #[cfg(target_arch = "aarch64")]
-    {
-        let mut acc = *value;
-        for _ in 0..count {
-            acc = square(&acc, modulus, inv);
-        }
-        mul(&acc, rhs, modulus, inv)
-    }
-
-    // On x86_64, `square` and `mul` can't be inlined due to register pressure, so the backend
-    // has its own loop over the always-inlined squaring blocks.
-    #[cfg(target_arch = "x86_64")]
-    {
-        super::x86_64::sqr_n_mul(value, count, rhs, modulus, inv)
-    }
+    sqr_n_mul_with::<Selected>(value, count, rhs, modulus, inv)
 }
 
 /// Converts a Montgomery residue into its canonical integer, `value * 2^-256 mod p`: a
 /// Montgomery multiplication by one.
 ///
 /// Any four-limb `value` is accepted, and the machine-checked proofs in `lean/` establish the
-/// result (`fromMont_entry_spec`). On AArch64 the conversion is the multiplication block with
-/// `1` as its right operand, which is canonical with limbs 1 to 3 zero and so inside the
-/// multiplication's contract for any left operand. On x86-64 it is a dedicated block.
+/// result (`from_mont_with_spec` and the backend's `montgomeryBlocks_spec`). On AArch64 the
+/// conversion is the multiplication block with `1` as its right operand, which is canonical with
+/// limbs 1 to 3 zero and so inside the multiplication's contract for any left operand. On x86-64 it
+/// is a dedicated block.
 ///
 /// # Safety
 ///
@@ -217,16 +243,5 @@ pub fn sqr_n_mul(value: &Limbs, count: usize, rhs: &Limbs, modulus: &Limbs, inv:
 /// correctly derived from it. Any other values will cause undefined results.
 #[inline]
 pub fn from_mont(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
-    // On aarch64, `mul` can be inlined and optimised by Rust.
-    #[cfg(target_arch = "aarch64")]
-    {
-        mul(value, &[1, 0, 0, 0], modulus, inv)
-    }
-
-    // On x86_64, `mul` can't be inlined due to register pressure, so we use a dedicated
-    // register-only assembly implementation instead.
-    #[cfg(target_arch = "x86_64")]
-    {
-        super::x86_64::from_mont(value, modulus, inv)
-    }
+    from_mont_with::<Selected>(value, modulus, inv)
 }

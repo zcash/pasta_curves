@@ -1,4 +1,5 @@
 import PastaCurves.Semantics
+import PastaCurves.Primality
 
 /-!
 # The crate's two fields
@@ -7,8 +8,8 @@ The crate's routines take the modulus limbs and `inv` from the caller, for eithe
 field. This module states those constants once, with the facts about them that the theorems in
 `AArch64/Spec.lean` assume: the limbs are `[p0, p1, 0, 2^62]` and `inv * p0 ≡ -1 (mod 2^64)`. Each
 fact is closed by `decide`, and two examples check that the limbs encode the primes as pasta_curves
-states them. The vectors in `AArch64/Vectors.lean` exercise both fields' constants against the
-hardware outputs.
+states them. The modulus is prime, by the Pratt certificates of `Primality.lean`. The vectors in
+`AArch64/Vectors.lean` exercise both fields' constants against the hardware outputs.
 -/
 
 namespace PastaCurves
@@ -32,6 +33,8 @@ structure PastaField where
   inv_lt : inv < 2^64
   /-- `inv * p0 ≡ -1 (mod 2^64)`, which is what makes the Montgomery cancellation work. -/
   inv_spec : (inv * modulus.l0 + 1) % 2^64 = 0
+  /-- The modulus is prime. -/
+  prime : Nat.Prime modulus.toNat
 
 /-- The Pallas base field, `pasta_curves::Fp`: its `MODULUS` limbs and `INV` in `src/fields/fp.rs`,
 which `FieldTypes.lean` checks against these. -/
@@ -42,6 +45,7 @@ def pallasBase : PastaField where
   shape := by decide
   inv_lt := by decide
   inv_spec := by decide
+  prime := Pratt.pallasBase_prime
 
 -- The limbs encode `p` as pasta_curves states it.
 example : pallasBase.modulus.toNat =
@@ -56,6 +60,7 @@ def vestaBase : PastaField where
   shape := by decide
   inv_lt := by decide
   inv_spec := by decide
+  prime := Pratt.vestaBase_prime
 
 -- The limbs encode `q` as pasta_curves states it.
 example : vestaBase.modulus.toNat =

@@ -118,5 +118,117 @@ class SurroundingCodeTests(unittest.TestCase):
                 self.assertEqual(generate(commented), expected)
 
 
+class MacroTests(unittest.TestCase):
+    def parse(self, definitions):
+        return asm_source.parse_macros(definitions)
+
+    def test_arms_expand_literals_and_earlier_arms(self):
+        macros = self.parse(
+            "macro_rules! step {\n"
+            '    (core) => { concat!("add {a}, {a}, #1\\n", "sub {b}, {b}, #1\\n") };\n'
+            '    () => { concat!(step!(core), "tst {b}, #2\\n") };\n'
+            '    (last) => { "add {a}, {a}, #2\\n" };\n'
+            "}\n"
+        )
+        self.assertEqual(
+            macros,
+            {
+                "step": {
+                    "core": ("add {a}, {a}, #1", "sub {b}, {b}, #1"),
+                    "": ("add {a}, {a}, #1", "sub {b}, {b}, #1", "tst {b}, #2"),
+                    "last": ("add {a}, {a}, #2",),
+                }
+            },
+        )
+
+    def test_malformed_macros_are_rejected(self):
+        cases = {
+            "must end with a newline": 'macro_rules! m { () => { "add {a}, {a}, #1" }; }',
+            "escape only": 'macro_rules! m { () => { "add {a}, {a}, #1\\t\\n" }; }',
+            "no arm for `x`": 'macro_rules! m { () => { concat!(m!(x), "a\\n") }; }',
+            "unknown macro n!": 'macro_rules! m { () => { concat!(n!(), "a\\n") }; }',
+            "duplicate arm": 'macro_rules! m { () => { "a\\n" }; () => { "b\\n" }; }',
+            "unsupported macro pattern": 'macro_rules! m { ($x:tt) => { "a\\n" }; }',
+            "string literal or `concat!`": 'macro_rules! m { () => { format!("a\\n") }; }',
+            "empty line": 'macro_rules! m { () => { "a\\n\\n" }; }',
+        }
+        for message, source in cases.items():
+            with (
+                self.subTest(message=message),
+                self.assertRaisesRegex(asm_source.GenerationError, message),
+            ):
+                self.parse(source)
+
+    def test_invocations_in_template_position_expand_with_origins(self):
+        source = (
+            'macro_rules! step { () => { concat!("add {a}, {a}, #1\\n", "add {a}, {a}, #1\\n") }; }\n'
+            "fn f(mut a: u64) -> [u64; 1] {\n"
+            "    unsafe {\n"
+            '        asm!("mov {a}, {a}", step!(), step!(), "mov {a}, {a}", a = inout(reg) a,\n'
+            "            options(pure, nomem, nostack));\n"
+            "    }\n"
+            "    [a]\n"
+            "}\n"
+        )
+        parsed = asm_source.parse_function(
+            source, "f", ["a"], 1, required_options={"pure", "nomem", "nostack"}
+        )
+        self.assertEqual(len(parsed.instructions), 6)
+        self.assertEqual(
+            parsed.origins,
+            (
+                None,
+                asm_source.MacroOrigin("step", "", 0),
+                asm_source.MacroOrigin("step", "", 0),
+                asm_source.MacroOrigin("step", "", 1),
+                asm_source.MacroOrigin("step", "", 1),
+                None,
+            ),
+        )
+        with self.assertRaisesRegex(asm_source.GenerationError, "unknown macro other!"):
+            asm_source.parse_function(
+                source.replace("step!(), step!()", "other!()"),
+                "f",
+                ["a"],
+                1,
+                required_options={"pure", "nomem", "nostack"},
+            )
+        with self.assertRaisesRegex(asm_source.GenerationError, "has no arm for `last`"):
+            asm_source.parse_function(
+                source.replace("step!(), step!()", "step!(last)"),
+                "f",
+                ["a"],
+                1,
+                required_options={"pure", "nomem", "nostack"},
+            )
+
+    def test_block_function_is_the_top_level_one(self):
+        # A trait implementation's method of the same name, which forwards to the block, is
+        # indented and so not the block; a second top-level definition is an error.
+        block = (
+            "fn f(mut a: u64) -> [u64; 1] {\n"
+            "    unsafe {\n"
+            '        asm!("mov {a}, {a}", a = inout(reg) a, options(pure, nomem, nostack));\n'
+            "    }\n"
+            "    [a]\n"
+            "}\n"
+        )
+        forwarding = (
+            "impl Blocks for Backend {\n"
+            "    fn f(a: u64) -> [u64; 1] {\n"
+            "        f(a)\n"
+            "    }\n"
+            "}\n"
+        )  # fmt: skip
+        parsed = asm_source.parse_function(
+            block + forwarding, "f", ["a"], 1, required_options={"pure", "nomem", "nostack"}
+        )
+        self.assertEqual(len(parsed.instructions), 1)
+        with self.assertRaisesRegex(asm_source.GenerationError, "expected exactly one `fn f\\(`"):
+            asm_source.parse_function(
+                block + block, "f", ["a"], 1, required_options={"pure", "nomem", "nostack"}
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

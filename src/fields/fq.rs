@@ -210,6 +210,15 @@ pub(crate) const R3: Fq = Fq([
     0x07dd97a06e6792c8,
 ]);
 
+/// E0 = 2^562 mod q, the starting `e` of the constant-time inversion
+/// (`crate::inversion::invert`)
+pub(crate) const E0: Fq = Fq([
+    0xa3efbd8ee5083303,
+    0xfbadea62cefef7a1,
+    0xd6418abb493f6cf9,
+    0x2aa5feb88c401333,
+]);
+
 /// `GENERATOR = 5 mod q` is a generator of the `q - 1` order multiplicative
 /// subgroup, or in other words a primitive root of the field.
 const GENERATOR: Fq = Fq::from_raw([
@@ -659,13 +668,7 @@ impl ff::Field for Fq {
     /// Computes the multiplicative inverse of this element,
     /// failing if the element is zero.
     fn invert(&self) -> CtOption<Self> {
-        let tmp = self.pow_vartime([
-            0x8c46eb20ffffffff,
-            0x224698fc0994a8dd,
-            0x0,
-            0x4000000000000000,
-        ]);
-
+        let tmp = Fq(crate::inversion::invert(&self.0, &MODULUS.0, INV, &E0.0));
         CtOption::new(tmp, !self.ct_eq(&Self::zero()))
     }
 

@@ -1,3 +1,4 @@
+import Mathlib.Logic.Function.Iterate
 
 /-!
 # Generic semantics for the Pasta arithmetic routines
@@ -30,6 +31,37 @@ def lsl (a k : Nat) : Nat := a * 2^k % regMod
 /-- `lsr` by an immediate. -/
 def lsr (a k : Nat) : Nat := a / 2^k
 
+/-! ## Flagless word arithmetic, the signed shifts, and the bitwise operations
+
+The inversion's blocks use these on every architecture; they are named after the AArch64 mnemonics,
+like `lsl` and `lsr`. A signed quantity is its two's-complement word, and the signed operations are
+spelled out on that word. -/
+
+/-- `add` without flags: the low 64 bits of the sum. -/
+def addw (a b : Nat) : Nat := (a + b) % regMod
+
+/-- `sub` without flags: the low 64 bits of the difference. -/
+def subw (a b : Nat) : Nat := (a + regMod - b) % regMod
+
+/-- `neg`: the two's-complement negation. -/
+def negw (a : Nat) : Nat := (regMod - a) % regMod
+
+/-- `asr` by an immediate `k`, `0 < k < 64`: the floor of the signed value over `2^k`, as a
+word. For a negative word the high `k` bits of the result are set. -/
+def asr (a k : Nat) : Nat := if a < 2^63 then a / 2^k else a / 2^k + (regMod - 2^(64 - k))
+
+/-- `extr d, hi, lo, #k`: bits `k` to `k + 63` of the double word `hi : lo`. -/
+def extr (hi lo k : Nat) : Nat := (lo / 2^k + hi * 2^(64 - k)) % regMod
+
+/-- `and`. -/
+def andw (a b : Nat) : Nat := a &&& b
+
+/-- `orr`. -/
+def orrw (a b : Nat) : Nat := a ||| b
+
+/-- `eor`. -/
+def eorw (a b : Nat) : Nat := a ^^^ b
+
 /-- Four little-endian 64-bit limbs, the shape of every operand of the routines. -/
 structure Limbs where
   /-- Limb of weight `2^0`. -/
@@ -55,5 +87,57 @@ def ofNat (n : Nat) : Limbs :=
 def Bounded (x : Limbs) : Prop := x.l0 < 2^64 ∧ x.l1 < 2^64 ∧ x.l2 < 2^64 ∧ x.l3 < 2^64
 
 end Limbs
+
+/-- Five words, the top one carrying the sign: the value is
+`l0 + 2^64 l1 + 2^128 l2 + 2^192 l3 + 2^256 · (signed l4)`. The shape of the inversion's
+signed intermediate values (`f`, `g`, and the row combinations of `d` and `e`). -/
+structure Signed5 where
+  /-- Word of weight `2^0`. -/
+  l0 : Nat
+  /-- Word of weight `2^64`. -/
+  l1 : Nat
+  /-- Word of weight `2^128`. -/
+  l2 : Nat
+  /-- Word of weight `2^192`. -/
+  l3 : Nat
+  /-- Word of weight `2^256`, read as a two's-complement word. -/
+  l4 : Nat
+  deriving DecidableEq, Repr
+
+namespace Signed5
+
+/-- The integer that the five words represent. -/
+def toInt (x : Signed5) : Int :=
+  x.l0 + 2^64 * x.l1 + 2^128 * x.l2 + 2^192 * x.l3
+    + 2^256 * (if x.l4 < 2^63 then (x.l4 : Int) else (x.l4 : Int) - 2^64)
+
+/-- Every word is below `2^64`. -/
+def Bounded (x : Signed5) : Prop :=
+  x.l0 < 2^64 ∧ x.l1 < 2^64 ∧ x.l2 < 2^64 ∧ x.l3 < 2^64 ∧ x.l4 < 2^64
+
+end Signed5
+
+/-- The result of a backend's `divstep59` block: the new `two_delta` and the entries of the 59-step
+matrix, each a two's-complement word. -/
+structure Divstep59Result where
+  two_delta : Nat
+  u : Nat
+  v : Nat
+  q : Nat
+  r : Nat
+  deriving DecidableEq, Repr
+
+/-- The result of a backend's `sign_mag` block: the magnitudes `u`, `v`, `q`, and `r` of the
+matrix entries and their sign masks `su`, `sv`, `sq`, and `sr`. -/
+structure SignMag where
+  u : Nat
+  v : Nat
+  q : Nat
+  r : Nat
+  su : Nat
+  sv : Nat
+  sq : Nat
+  sr : Nat
+  deriving DecidableEq, Repr
 
 end PastaCurves

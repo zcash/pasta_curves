@@ -8,11 +8,15 @@
 #
 # Usage, from anywhere in the checkout: scripts/ci.sh
 # LAKE selects the lake that builds the formalization (default: `lake` from PATH, which
-# should be the elan-managed one; see AGENTS.md).
+# should be the elan-managed one; see AGENTS.md). PYTHON selects the interpreter that runs the
+# generator and the checkers (default: `python3` from PATH). CHARON and AENEAS select the binaries
+# that make the Aeneas translations (default: those that `lean/scripts/fetch_aeneas.sh` fetches).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 LAKE=${LAKE:-lake}
+PYTHON=${PYTHON:-python3}
+export PYTHON PYTHONDONTWRITEBYTECODE=1
 skipped=""
 
 step() { printf '\n==> %s\n' "$1"; }
@@ -70,12 +74,17 @@ done
 
 # ---- The assembly backend (asm.yml) ----
 # On a host with a backend, the backend's tests run, and the run must report exactly as many
-# passed as `src/asm` declares, so that a test that compiles out cannot pass silently. An x86-64
-# host has a backend unless it is Apple's; its CPU needs BMI2 and ADX to run it.
+# passed as `src/asm` declares, so that a test that compiles out cannot pass silently. A test
+# that needs one architecture lives in that backend's file, which is only counted on that
+# architecture. An x86-64 host has a backend unless it is Apple's; its CPU needs BMI2 and
+# ADX to run it.
 arch=$(uname -m)
 if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ] ||
    { [ "$arch" = "x86_64" ] && [ "$(uname -s)" != "Darwin" ]; }; then
-  expected=$(grep -rh '^\s*#\[test\]' src/asm | wc -l | tr -d ' ')
+  own=src/asm/x86_64.rs
+  if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then own=src/asm/aarch64.rs; fi
+  expected=$({ grep -rh --exclude=aarch64.rs --exclude=x86_64.rs '^\s*#\[test\]' src/asm
+    grep -h '^\s*#\[test\]' "$own" || true; } | wc -l | tr -d ' ')
   echo "tests in the backend: $expected"
   test "$expected" -gt 0
   count() {
@@ -163,14 +172,25 @@ else
 fi
 
 # ---- The formalization (lean.yml) ----
-step "lake build --wfail"
-(cd lean && "$LAKE" build --wfail)
+step "lake build, with warnings outside Aeneas' library failing it"
+LAKE="$LAKE" lean/scripts/build.sh
+LAKE="$LAKE" lean/scripts/test_build.sh
 
 step "the transcription and the proof skeletons are current"
 lean/scripts/check.sh
 
+step "the Aeneas translation is current"
+# The check fails, rather than fetching again, if the pinned release has changed since the fetch.
+if { [ -n "${CHARON:-}" ] && [ -n "${AENEAS:-}" ]; } || [ -e lean/work/aeneas/release ]; then
+  lean/scripts/gen_aeneas.sh --check
+else
+  skip "the Aeneas translation check" \
+    "  fetch Charon and Aeneas under lean/work/ as CI does (see .github/workflows/lean.yml):
+    lean/scripts/fetch_aeneas.sh"
+fi
+
 step "the export-axiom checker's own tests"
-(cd lean && python3 -m unittest discover -s scripts -p 'test_check_export_axioms.py')
+(cd lean && "$PYTHON" -m unittest discover -s scripts -p 'test_check_export_axioms.py')
 
 step "nanoda re-check"
 lean4export=lean/work/lean4export/.lake/build/bin/lean4export

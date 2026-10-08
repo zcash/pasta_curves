@@ -14,10 +14,6 @@ on:
     branches: [main]
   pull_request:
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
-
 permissions:
   contents: read
 
@@ -78,13 +74,18 @@ jobs:
         # A cfg-gated test that silently compiles out still reports success,
         # so count the `#[test]` functions under `src/asm` and require the
         # run of the module's tests to report exactly that many passed. A test
-        # added to the module then raises the expectation by itself. The runs
-        # are the debug profile, the release profile with the debug assertions
-        # and overflow checks, and the release profile as shipped. The last is
-        # a run of its own because the assertions change the code around each
-        # `asm!` block, which can affect the compiler's register allocation.
+        # added to the module then raises the expectation by itself. A test
+        # that needs one architecture lives in that backend's file, which is
+        # only counted on that architecture. The runs are the debug profile,
+        # the release profile with the debug assertions and overflow checks,
+        # and the release profile as shipped. The last is a run of its own
+        # because the assertions change the code around each `asm!` block,
+        # which can affect the compiler's register allocation.
         run: |
-          expected=$(grep -rh '^\s*#\[test\]' src/asm | wc -l | tr -d ' ')
+          own=src/asm/x86_64.rs
+          if [ "$RUNNER_ARCH" = ARM64 ]; then own=src/asm/aarch64.rs; fi
+          expected=$({ grep -rh --exclude=aarch64.rs --exclude=x86_64.rs '^\s*#\[test\]' src/asm
+            grep -h '^\s*#\[test\]' "$own" || true; } | wc -l | tr -d ' ')
           echo "tests in the backend: $expected"
           test "$expected" -gt 0
           count() {
@@ -170,9 +171,8 @@ jobs:
 
   asm-ci:
     # The single stable check to mark as a required status check. It runs unless the workflow run
-    # was cancelled, and fails only if a job that ran failed. A run that a newer one cancels (two
-    # pushes in quick succession, as with stacked branches) reports nothing; the newer run reports
-    # instead. A failure in any leg of the test matrix fails `test` as a whole.
+    # was cancelled, and fails only if a job that ran failed. A failure in any leg of the test
+    # matrix fails `test` as a whole.
     name: Assembly backend CI
     needs: [changes, test, no-std, intel-macos]
     if: ${{ !cancelled() }}

@@ -344,10 +344,19 @@ class Export:
         return "".join(json.dumps(o) + "\n" for o in self.lines).encode()
 
 
-def run(export, permitted=("propext",)):
-    """Run the checker over `export` and return the CompletedProcess."""
+def run(export, permitted=("propext",), sources=(), args=(), root_module=None, package=True):
+    """Run the checker over `export` and return the CompletedProcess. It runs in a scratch
+    directory standing in for `lean/`, whose `PastaCurves/` holds the `(path, text)` pairs of
+    `sources` as the package's own modules, and whose `PastaCurves.lean` holds `root_module`, if
+    given. Without `package`, there is no `PastaCurves/` at all."""
     with TemporaryDirectory() as tmp:
         tmp = Path(tmp)
+        if package:
+            (tmp / "PastaCurves").mkdir()
+        if root_module is not None:
+            (tmp / "PastaCurves.lean").write_text(root_module)
+        for rel, text in sources:
+            (tmp / "PastaCurves" / rel).write_text(text)
         ndjson = tmp / "export.ndjson"
         ndjson.write_bytes(export.render())
         config = tmp / "config.json"
@@ -355,7 +364,11 @@ def run(export, permitted=("propext",)):
             json.dumps({"export_file_path": str(ndjson), "permitted_axioms": list(permitted)})
         )
         return subprocess.run(
-            [sys.executable, str(SCRIPT), str(config)], capture_output=True, text=True, check=False
+            [sys.executable, str(SCRIPT), *args, str(config)],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=tmp,
         )
 
 
@@ -627,6 +640,184 @@ class AxiomCensus(unittest.TestCase):
         self.assertEqual(p.returncode, 1)
         self.assertIn("export axiom census", p.stdout)
         self.assertIn("MyAxiom", p.stdout)
+
+
+class AeneasExemption(unittest.TestCase):
+    """Aeneas' library declares axioms of its own, and two of its tests cite `sorryAx`. A
+    violation is accepted only when its axiom is `sorryAx` or Aeneas', and every citer is
+    Aeneas' (for `sorryAx`, one of Aeneas' tests)."""
+
+    def test_aeneas_axiom_cited_only_by_aeneas_passes(self):
+        e = baseline()
+        e.axiom("Aeneas.Std.core.fmt.Formatter")
+        e.defn("Aeneas.Std.core.fmt.write", value=e.const("Aeneas.Std.core.fmt.Formatter"))
+        p = run(e)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_aeneas_axiom_cited_outside_aeneas_fails(self):
+        e = baseline()
+        e.axiom("Aeneas.Std.core.fmt.Formatter")
+        e.defn("PastaCurves.uses", value=e.const("Aeneas.Std.core.fmt.Formatter"))
+        p = run(e)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("PastaCurves.uses", p.stderr)
+
+    def test_axiom_neither_permitted_nor_aeneas_fails(self):
+        e = baseline()
+        e.axiom("PastaCurves.myAxiom")
+        p = run(e)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("PastaCurves.myAxiom", p.stderr)
+
+    def test_sorry_in_an_aeneas_test_passes(self):
+        e = baseline()
+        e.axiom("sorryAx")
+        e.defn("Aeneas.Data.ListN.Test.E2", value=e.const("sorryAx"))
+        p = run(e, ("propext", "sorryAx"))
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_sorry_in_aeneas_outside_its_tests_fails(self):
+        e = baseline()
+        e.axiom("sorryAx")
+        e.defn("Aeneas.Data.ListN.helper", value=e.const("sorryAx"))
+        p = run(e, ("propext", "sorryAx"))
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("Aeneas.Data.ListN.helper", p.stderr)
+
+    def test_sorry_outside_aeneas_fails(self):
+        e = baseline()
+        e.axiom("sorryAx")
+        e.defn("PastaCurves.Test.unfinished", value=e.const("sorryAx"))
+        p = run(e, ("propext", "sorryAx"))
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("PastaCurves.Test.unfinished", p.stderr)
+
+    def test_sorry_reaching_the_package_through_an_aeneas_test_fails(self):
+        e = baseline()
+        e.axiom("sorryAx")
+        e.defn("Aeneas.Data.ListN.Test.E2", value=e.const("sorryAx"))
+        e.thm("PastaCurves.main", value=e.const("Aeneas.Data.ListN.Test.E2"))
+        p = run(e, ("propext", "sorryAx"))
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("PastaCurves.main", p.stderr)
+
+    def test_aeneas_axiom_reaching_the_package_through_aeneas_fails(self):
+        e = baseline()
+        e.axiom("Aeneas.Std.bad")
+        e.defn("Aeneas.Std.wrap", value=e.const("Aeneas.Std.bad"))
+        e.defn("Aeneas.Std.wrap2", value=e.const("Aeneas.Std.wrap"))
+        e.thm("PastaCurves.main", value=e.app(e.sort(), e.const("Aeneas.Std.wrap2")))
+        p = run(e)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("Aeneas.Std.bad", p.stderr)
+        self.assertIn("PastaCurves.main", p.stderr)
+
+    def test_dependence_staying_in_aeneas_passes(self):
+        e = baseline()
+        e.axiom("Aeneas.Std.bad")
+        e.defn("Aeneas.Std.wrap", value=e.const("Aeneas.Std.bad"))
+        e.thm("Aeneas.Std.wrap.spec", ty=e.const("Aeneas.Std.wrap"))
+        e.thm("PastaCurves.main", value=e.const("Aeneas.Std.other"))
+        p = run(e)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_dependence_on_a_declaration_read_later_is_found(self):
+        # The package's declaration names Aeneas' wrapper before the export declares it, so its
+        # dependencies are completed after the pass.
+        e = baseline()
+        e.axiom("Aeneas.Std.bad")
+        e.thm("PastaCurves.main", value=e.const("Aeneas.Std.wrap"))
+        e.defn("Aeneas.Std.wrap", value=e.const("Aeneas.Std.bad"))
+        p = run(e)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("PastaCurves.main", p.stderr)
+
+    def test_dependence_through_a_cycle_of_declarations_read_later_is_found(self):
+        # `A` and `B` name each other, as mutually recursive unsafe definitions can, and `B` is
+        # the one that reaches the axiom; `main`, read before both, names `A`.
+        e = baseline()
+        e.axiom("Aeneas.Std.bad")
+        e.thm("PastaCurves.main", value=e.const("Aeneas.Std.A"))
+        e.defn("Aeneas.Std.A", value=e.const("Aeneas.Std.B"))
+        e.defn("Aeneas.Std.B", value=e.app(e.const("Aeneas.Std.A"), e.const("Aeneas.Std.bad")))
+        e.thm("PastaCurves.later", value=e.const("Aeneas.Std.A"))
+        p = run(e)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("PastaCurves.main", p.stderr)
+        self.assertIn("PastaCurves.later", p.stderr)
+
+    def test_dependence_through_an_inductive_is_found(self):
+        e = baseline()
+        e.axiom("Aeneas.Std.bad")
+        e.inductive(
+            "Aeneas.Std.I", ctor_ty=e.app(e.const("Aeneas.Std.I"), e.const("Aeneas.Std.bad"))
+        )
+        e.thm("PastaCurves.main", value=e.const("Aeneas.Std.I.rec"))
+        p = run(e)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("PastaCurves.main", p.stderr)
+
+    def test_native_decide_stays_forbidden_in_aeneas(self):
+        e = baseline()
+        e.axiom("Lean.ofReduceBool")
+        e.defn("Aeneas.Tactic.Test.fast", value=e.const("Lean.ofReduceBool"))
+        p = run(e, ("propext", "Lean.ofReduceBool"))
+        self.assertEqual(p.returncode, 1, p.stdout)
+
+    def test_nanoda_config_gains_aeneas_axioms_only_when_clean(self):
+        e = baseline()
+        e.axiom("Aeneas.Std.get_target")
+        with TemporaryDirectory() as out:
+            out = Path(out) / "nanoda.json"
+            p = run(e, args=("--nanoda-config", str(out)))
+            self.assertEqual(p.returncode, 0, p.stderr)
+            permitted = json.loads(out.read_text())["permitted_axioms"]
+            self.assertEqual(permitted, ["propext", "Aeneas.Std.get_target"])
+        e.defn("PastaCurves.uses", value=e.const("Aeneas.Std.get_target"))
+        with TemporaryDirectory() as out:
+            out = Path(out) / "nanoda.json"
+            p = run(e, args=("--nanoda-config", str(out)))
+            self.assertEqual(p.returncode, 1, p.stdout)
+            self.assertFalse(out.exists())
+
+    def test_package_declaring_into_aeneas_fails(self):
+        for source in (
+            "namespace Aeneas\ndef foo : Nat := 0\nend Aeneas\n",
+            "namespace Aeneas.Std\nend Aeneas.Std\n",
+            "theorem _root_.Aeneas.foo : True := trivial\n",
+            "@[simp] def Aeneas.bar : Nat := 0\n",
+            "private def Aeneas.baz : Nat := 0\n",
+            "@[aesop safe (rule_sets := [Foo])] def Aeneas.x : Nat := 0\n",
+            "set_option maxHeartbeats 0 in theorem Aeneas.y : True := trivial\n",
+            "/-- doc -/ def Aeneas.z : Nat := 0\n",
+            "scoped instance Aeneas.i : Inhabited Nat := inferInstance\n",
+            "instance (priority := 100) Aeneas.j : Inhabited Nat := inferInstance\n",
+            "irreducible_def Aeneas.w : Nat := 0\n",
+            'syntax (name := Aeneas.s) "s" : term\n',
+            "def f : Nat := 0\n  namespace Aeneas\nend Aeneas\n",
+        ):
+            with self.subTest(source=source):
+                p = run(baseline(), sources=(("Probe.lean", source),))
+                self.assertEqual(p.returncode, 1, p.stdout)
+                self.assertIn("declares into the `Aeneas` namespace", p.stderr)
+
+    def test_root_module_declaring_into_aeneas_fails(self):
+        p = run(baseline(), root_module="def Aeneas.root : Nat := 0\n")
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("PastaCurves.lean:1 declares into the `Aeneas` namespace", p.stderr)
+
+    def test_missing_package_directory_fails(self):
+        # Run from the wrong directory, the check would find no module and pass vacuously.
+        p = run(baseline(), package=False)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("holds no modules to check", p.stderr)
+
+    def test_package_opening_aeneas_passes(self):
+        source = (
+            "open Aeneas Aeneas.Std\nnamespace pasta_curves\ndef f : Nat := 0\nend pasta_curves\n"
+        )
+        p = run(baseline(), sources=(("Probe.lean", source),))
+        self.assertEqual(p.returncode, 0, p.stderr)
 
 
 class StructuralErrors(unittest.TestCase):

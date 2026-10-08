@@ -535,7 +535,7 @@ class SkeletonBackend(gen.SkeletonBackend):
                 if entry["fact"][0] in ("x86_adds", "x86_subs"):
                     entry["group_label"] = names[index + 1]
         # For the factored round and the block that calls it, clearing each extracted value
-        # would recheck the remaining dependent `hr` tail every time; their local definitions
+        # would recheck the remaining dependent `hres` tail every time; their local definitions
         # stay transparent, and the generated facts still record every step.
         return gen.SkeletonPreparation(entries, names, clear_values=emitter.clear_values)
 
@@ -546,19 +546,13 @@ class SkeletonBackend(gen.SkeletonBackend):
             a, b = ops
             high, low = group_names[1:3]
             context.eq(high, f"(mulx {a} {b}).1")
-            context.lines.append(
-                f"  have b_{high} : {high} < 2^64 := by rw [e_{high}]; "
-                "exact Nat.div_lt_of_lt_mul (Nat.mul_lt_mul'' "
-                f"{context.lt64(a)} {context.lt64(b)})"
+            context.bound(
+                high,
+                f"Nat.div_lt_of_lt_mul (Nat.mul_lt_mul'' {context.lt64(a)} {context.lt64(b)})",
             )
-            context.bnd[high] = f"b_{high}"
             context.ren[group[1][0]["name"]] = high
             context.eq(low, f"(mulx {a} {b}).2")
-            context.lines.append(
-                f"  have b_{low} : {low} < 2^64 := by rw [e_{low}]; "
-                "exact Nat.mod_lt _ (Nat.two_pow_pos _)"
-            )
-            context.bnd[low] = f"b_{low}"
+            context.bound(low, "Nat.mod_lt _ (Nat.two_pow_pos _)")
             context.ren[group[2][0]["name"]] = low
             context.lines.append(f"  have d_{high} : {low} + 2^64 * {high} = {a} * {b} := by")
             context.lines.append(f"    rw [e_{low}, e_{high}]; exact Nat.mod_add_div _ _")
@@ -579,12 +573,9 @@ class SkeletonBackend(gen.SkeletonBackend):
                 linear_proof = f"sbb_lin {a} {b} {carry} {context.lt64(a)} {context.lt64(b)} {context.le1(carry)}"
                 value_proof = f"sbb_value_lt {a} {b} {carry}"
                 flag_proof = f"sbb_borrow_le_one {a} {b} {carry}"
+            context.bound(value_name, value_proof)
             context.lines.append(f"  have l_{value_name} : {linear} := by")
             context.lines.append(f"    rw [e_{value_name}, e_{flag_name}]; exact {linear_proof}")
-            context.lines.append(
-                f"  have b_{value_name} : {value_name} < 2^64 := by rw [e_{value_name}]; "
-                f"exact {value_proof}"
-            )
             context.lines.append(
                 f"  have b_{flag_name} : {flag_name} ≤ 1 := by rw [e_{flag_name}]; "
                 f"exact {flag_proof}"
@@ -592,19 +583,15 @@ class SkeletonBackend(gen.SkeletonBackend):
             context.lines.append(f"  clear e_{value_name} e_{flag_name}")
             context.ren[group[2][0]["name"]] = flag_name
             context.ren[group[1][0]["name"]] = value_name
-            context.bnd[value_name], context.bnd[flag_name] = f"b_{value_name}", f"b_{flag_name}"
+            context.bnd[flag_name] = f"b_{flag_name}"
             context.unit_bound.add(flag_name)
             return True
         if kind == "x86_neg":
             (operand,) = ops
             value_name, flag_name = group_names[1:3]
             context.eq(value_name, f"(neg {operand}).1")
-            context.lines.append(
-                f"  have b_{value_name} : {value_name} < 2^64 := by rw [e_{value_name}]; "
-                f"exact sbb_value_lt 0 {operand} 0"
-            )
+            context.bound(value_name, f"sbb_value_lt 0 {operand} 0")
             context.ren[group[1][0]["name"]] = value_name
-            context.bnd[value_name] = f"b_{value_name}"
             context.eq(flag_name, f"(neg {operand}).2")
             context.lines.append(f"  have b_{flag_name} : {flag_name} ≤ 1 := by")
             context.lines.append(f"    rw [e_{flag_name}]; simp only [neg]; split <;> omega")
@@ -615,11 +602,8 @@ class SkeletonBackend(gen.SkeletonBackend):
         if kind == "x86_xor":
             data_name, cf_name, of_name = group_names
             context.eq(data_name, "0")
-            context.lines.append(
-                f"  have b_{data_name} : {data_name} < 2^64 := by rw [e_{data_name}]; decide"
-            )
+            context.bound(data_name, "(by decide)")
             context.ren[group[0][0]["name"]] = data_name
-            context.bnd[data_name] = f"b_{data_name}"
             for flag, member in ((cf_name, group[1][0]), (of_name, group[2][0])):
                 context.eq(flag, "0")
                 context.lines.append(f"  have b_{flag} : {flag} ≤ 1 := by rw [e_{flag}]; decide")

@@ -4,11 +4,20 @@ defaultTargets = ["PastaCurves"]
 [leanOptions]
 autoImplicit = false
 
-# Pinned to the revision CompElliptic builds against, tagged for Lean v4.30.0.
+# Pinned to the revision tagged for Lean v4.31.0, which Aeneas' Lean library pins too.
 [[require]]
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4"
-rev = "c5ea00351c28e24afc9f0f84379aa41082b1188f"
+rev = "fabf563a7c95a166b8d7b6efca11c8b4dc9d911f"
+
+# Aeneas' Lean library, which the translation of the portable inversion blocks
+# (`PastaCurves/Portable/`) imports; pinned to the revision whose Charon and Aeneas binaries
+# generate that translation.
+[[require]]
+name = "aeneas"
+git = "https://github.com/AeneasVerif/aeneas"
+rev = "b86120db3183b0107eb5f2637b11c424cd06ef1c"
+subDir = "backends/lean"
 
 [[lean_lib]]
 name = "PastaCurves"
