@@ -46,9 +46,9 @@ The crate's `invert` is a Rust composition of assembly blocks on AArch64, and is
 The portable Rust blocks of `invert` (`src/inversion/portable.rs`), which every other target runs,
 are translated to Lean by Aeneas, with the driver they run under (`PastaCurves/Portable/`). The
 translation is run, as compiled code, on the blocks' known answers and against the model. Of its
-blocks, `cond_sub` is proved to meet its contract. The translated driver is proved to compute the
-composition over the blocks that it runs, so it returns the inverse whenever they meet their
-contracts.
+blocks, `cond_sub` and `divstep59` are proved to meet their contracts. The translated driver is
+proved to compute the composition over the blocks that it runs, so it returns the inverse whenever
+they meet their contracts.
 
 The generic compositions that run the entry points over a backend's blocks (`src/asm/entry.rs`) are
 translated too (`PastaCurves/Glue/`). That translation is run over both backends' blocks, on the
