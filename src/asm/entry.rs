@@ -23,7 +23,7 @@ pub(crate) fn mul_contract(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> bool {
 /// has the contract of the entry point of the same name, which states it and debug-asserts it.
 /// As with `crate::inversion::InvertBlocks`, one generic composition runs over any backend's
 /// blocks.
-pub(crate) trait MontgomeryBlocks {
+pub(super) trait MontgomeryBlocks {
     /// Adds two canonical residues and conditionally subtracts the modulus, as [`add`].
     fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs;
 
@@ -49,7 +49,7 @@ type Selected = super::x86_64::Backend;
 
 /// [`add`] over the blocks `B`, with its debug assertions.
 #[inline(always)]
-pub(crate) fn add_with<B: MontgomeryBlocks>(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
+fn add_with<B: MontgomeryBlocks>(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
     debug_assert!(
         is_canonical(lhs, modulus),
         "pasta_curves::asm::add requires a canonical lhs"
@@ -63,7 +63,7 @@ pub(crate) fn add_with<B: MontgomeryBlocks>(lhs: &Limbs, rhs: &Limbs, modulus: &
 
 /// [`sub`] over the blocks `B`, with its debug assertions.
 #[inline(always)]
-pub(crate) fn sub_with<B: MontgomeryBlocks>(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
+fn sub_with<B: MontgomeryBlocks>(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
     debug_assert!(
         is_canonical(lhs, modulus),
         "pasta_curves::asm::sub requires a canonical lhs"
@@ -77,7 +77,7 @@ pub(crate) fn sub_with<B: MontgomeryBlocks>(lhs: &Limbs, rhs: &Limbs, modulus: &
 
 /// [`mul`] over the blocks `B`, with its debug assertion.
 #[inline(always)]
-pub(crate) fn mul_with<B: MontgomeryBlocks>(
+fn mul_with<B: MontgomeryBlocks>(
     lhs: &Limbs,
     rhs: &Limbs,
     modulus: &Limbs,
@@ -93,7 +93,7 @@ pub(crate) fn mul_with<B: MontgomeryBlocks>(
 
 /// [`square`] over the blocks `B`, with its debug assertion.
 #[inline(always)]
-pub(crate) fn square_with<B: MontgomeryBlocks>(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
+fn square_with<B: MontgomeryBlocks>(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     debug_assert!(
         is_canonical(value, modulus),
         "pasta_curves::asm::square requires a canonical input"
@@ -104,7 +104,7 @@ pub(crate) fn square_with<B: MontgomeryBlocks>(value: &Limbs, modulus: &Limbs, i
 /// [`sqr_n_mul`] over the blocks `B`: the input's debug assertion, then [`square_with`] `count`
 /// times and [`mul_with`], each with its own.
 #[inline(always)]
-pub(crate) fn sqr_n_mul_with<B: MontgomeryBlocks>(
+fn sqr_n_mul_with<B: MontgomeryBlocks>(
     value: &Limbs,
     count: usize,
     rhs: &Limbs,
@@ -124,7 +124,7 @@ pub(crate) fn sqr_n_mul_with<B: MontgomeryBlocks>(
 
 /// [`from_mont`] over the blocks `B`. It asserts nothing, since it accepts every input.
 #[inline(always)]
-pub(crate) fn from_mont_with<B: MontgomeryBlocks>(
+fn from_mont_with<B: MontgomeryBlocks>(
     value: &Limbs,
     modulus: &Limbs,
     inv: u64,
