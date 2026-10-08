@@ -22,9 +22,7 @@ the bounds of the true divstep state after `59 i` steps. The last round is the s
 word xored into the masks of its row, which negates the represented entries exactly when the
 model's `finalD` negates the row.
 
-The relation after each of the nine rounds is `invert_carries`. `invertRound_rows_le` states one
-fact that a round's proof derives on the way: the magnitudes of each row of the matrix sum to at
-most `2^59`, within the `2^63` under which the portable blocks' rows are proved to succeed.
+The relation after each of the nine rounds is `invert_carries`.
 
 The proofs name the true state, the model's state, the matrix, and the blocks' results by
 `generalize` rather than `set`: those terms are iterates and long `let` chains, and a `let`-bound
@@ -212,45 +210,6 @@ theorem invert_carries (B : InvertBlocks) (F : PastaField) (hB : B.Spec F) (x : 
   | succ i ih =>
     rw [Function.iterate_succ_apply']
     exact invertRound_carries B F hB x hx i hi _ (ih (by omega))
-
-/-- In a round of `invert` over blocks that meet their specification, on a word state carrying
-the model's, the magnitudes of each row of the matrix sum to at most `2^59`. This is within the
-`2^63` under which a row's columns are proved to stay within 128 bits in the portable blocks. -/
-theorem invertRound_rows_le (B : InvertBlocks) (F : PastaField) (hB : B.Spec F) (x : Limbs)
-    (hx : x.Bounded) (i : ℕ) (hi : i ≤ 9) (st : InvertState) (h : Carries st (rounds F x i)) :
-    let dm := B.divstep59 st.two_delta st.f.l0 st.g.l0
-    let sm := B.signMag dm.u dm.v dm.q dm.r
-    sm.u + sm.v ≤ 2^59 ∧ sm.q + sm.r ≤ 2^59 := by
-  obtain ⟨s_two_delta, sf, sg, sd, se⟩ := st
-  obtain ⟨htwo_delta, hf, hg, -, -⟩ := h
-  simp only at htwo_delta hf hg ⊢
-  subst hf hg
-  obtain ⟨hdT, hfb, hgb, hfT, hgT, -, -, -, -, -⟩ := Inversion.rounds_invariant F x hx i
-  obtain ⟨hodd, hdodd, hdD, -, -⟩ := trueState_facts F x hx i hi
-  generalize rounds F x i = rs at *
-  generalize trueState F x i = t at *
-  have hfl : (rs.f.l0 : ℤ) = t.f % 2^64 := by
-    rw [← hfT]; exact (Inversion.Signed5.toInt_emod _ hfb).symm
-  have hgl : (rs.g.l0 : ℤ) = t.g % 2^64 := by
-    rw [← hgT]; exact (Inversion.Signed5.toInt_emod _ hgb).symm
-  have hdw : (s_two_delta : ℤ) = t.two_delta % 2^64 := by rw [htwo_delta, hdT]
-  have hspec := hB.divstep59 s_two_delta rs.f.l0 rs.g.l0 t hodd hdodd hdD hdw hfl hgl
-  generalize B.divstep59 s_two_delta rs.f.l0 rs.g.l0 = dm at hspec ⊢
-  obtain ⟨-, hMu, hMv, hMq, hMr⟩ := hspec
-  obtain ⟨hrow1, hrow2⟩ := Inversion.M_rowSum_le 59 t
-  generalize M 59 t = N at *
-  have hu0 := abs_nonneg N.u
-  have hv0 := abs_nonneg N.v
-  have hq0 := abs_nonneg N.q
-  have hr0 := abs_nonneg N.r
-  rw [hB.signMag N.u N.v N.q N.r dm.u dm.v dm.q dm.r (by omega) (by omega) (by omega) (by omega)
-    hMu hMv hMq hMr]
-  have eu := Int.natCast_natAbs N.u
-  have ev := Int.natCast_natAbs N.v
-  have eq := Int.natCast_natAbs N.q
-  have er := Int.natCast_natAbs N.r
-  dsimp only
-  constructor <;> omega
 
 /-- The composition over blocks that meet their specification computes the model. -/
 theorem invert_eq_model (B : InvertBlocks) (F : PastaField) (hB : B.Spec F) (x : Limbs)

@@ -146,11 +146,13 @@ fn negate(x: &[u64; 5], s: u64) -> [u64; 5] {
 }
 
 /// One column of a row, `carry + x m0 + y m1`, as its low word and the carry into the next
-/// column. With `carry ≤ m0 + m1 ≤ 2^63` the column stays below `2^128`, and the carry out is
-/// again at most `m0 + m1`.
+/// column. The additions wrap rather than panic, but with `carry ≤ m0 + m1 ≤ 2^63` the column
+/// stays below `2^128`, and the carry out is again at most `m0 + m1`.
 #[inline(always)]
 fn row_column(carry: u128, x: u64, m0: u64, y: u64, m1: u64) -> (u64, u128) {
-    let column = carry + u128::from(x) * u128::from(m0) + u128::from(y) * u128::from(m1);
+    let column = carry
+        .wrapping_add(u128::from(x) * u128::from(m0))
+        .wrapping_add(u128::from(y) * u128::from(m1));
     (column as u64, column >> 64)
 }
 

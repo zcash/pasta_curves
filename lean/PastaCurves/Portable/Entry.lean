@@ -6,16 +6,14 @@ import PastaCurves.Portable.Driver
 /-!
 # The portable blocks at the crate's fields
 
-The translated portable blocks succeed where the driver needs them to (`blocks_succeeds`). As
+The translated portable blocks succeed whatever words they are given (`blocks_succeeds`). As
 functions on the model's values, they satisfy `InvertBlocks.Spec` at any Pasta field
 (`blocks_spec`), by the blocks' theorems. So Aeneas' translation of `invert_with` over them returns
 the Montgomery inverse at either of the crate's fields (`invert_entry_spec`), as the AArch64 blocks
 do.
 
-Every block but `fg_row` and `de_row` succeeds whatever words it is given. Those two succeed when
-the magnitudes `m0` and `m1` of their row's entries sum to at most `2^63`. The contracts' step
-lemmas assume more than that, so the proofs of success (`divstep59_ok` and the others) name the
-callee's own success lemma wherever `step*` would apply a contract.
+The contracts' step lemmas assume more than success needs, so the proofs of success (`divstep59_ok`
+and the others) name the callee's own success lemma wherever `step*` would apply a contract.
 -/
 
 set_option exponentiation.threshold 400
@@ -111,33 +109,45 @@ theorem negate_ok (x : Std.Array Std.U64 5#usize) (s : Std.U64) : negate x s ⦃
   exact Nat.and_le_right
 
 open pasta_curves.inversion.portable in
-/-- `row` succeeds on any words and masks when the magnitudes sum to at most `2^63`. -/
-theorem row_ok (x y : Std.Array Std.U64 5#usize) (m0 m1 s0 s1 : Std.U64)
-    (hm : m0.val + m1.val ≤ 2^63) :
+/-- One column of a row succeeds on any words: its products fit in 128 bits, and its additions
+wrap. -/
+theorem row_column_ok (carry : Std.U128) (x m0 y m1 : Std.U64) :
+    row_column carry x m0 y m1 ⦃ _ => True ⦄ := by
+  unfold row_column
+  step*
+
+open pasta_curves.inversion.portable in
+/-- `row` succeeds on any words and masks. -/
+theorem row_ok (x y : Std.Array Std.U64 5#usize) (m0 m1 s0 s1 : Std.U64) :
     row x y m0 m1 s0 s1 ⦃ _ => True ⦄ := by
   unfold row
   step with negate_ok x s0
   step with negate_ok y s1
+  -- Each column: two reads, the column, then its word written out.
+  iterate 4
+    iterate 2 step
+    step with row_column_ok
+    step
+  iterate 2 step
+  step with row_column_ok
   step*
 
 open pasta_curves.inversion.portable in
-/-- `fg_row` succeeds on any words and masks when the magnitudes sum to at most `2^63`. -/
-theorem fg_row_ok (f g : Std.Array Std.U64 5#usize) (m0 m1 s0 s1 : Std.U64)
-    (hm : m0.val + m1.val ≤ 2^63) :
+/-- `fg_row` succeeds on any words and masks. -/
+theorem fg_row_ok (f g : Std.Array Std.U64 5#usize) (m0 m1 s0 s1 : Std.U64) :
     Backend.Insts.Pasta_curvesInversionInvertBlocks.fg_row f g m0 m1 s0 s1 ⦃ _ => True ⦄ := by
   unfold Backend.Insts.Pasta_curvesInversionInvertBlocks.fg_row
-  step with row_ok f g m0 m1 s0 s1 hm
+  step with row_ok f g m0 m1 s0 s1
   step*
 
 open pasta_curves.inversion.portable in
-/-- `de_row` succeeds on any words and masks when the magnitudes sum to at most `2^63`. -/
-theorem de_row_ok (d e : Std.Array Std.U64 4#usize) (m0 m1 s0 s1 : Std.U64)
-    (hm : m0.val + m1.val ≤ 2^63) :
+/-- `de_row` succeeds on any words and masks. -/
+theorem de_row_ok (d e : Std.Array Std.U64 4#usize) (m0 m1 s0 s1 : Std.U64) :
     Backend.Insts.Pasta_curvesInversionInvertBlocks.de_row d e m0 m1 s0 s1 ⦃ _ => True ⦄ := by
   unfold Backend.Insts.Pasta_curvesInversionInvertBlocks.de_row
   -- The eight limb reads, then the row.
   iterate 8 step
-  step with row_ok _ _ m0 m1 s0 s1 hm
+  step with row_ok _ _ m0 m1 s0 s1
 
 open pasta_curves.inversion.portable in
 /-- `amontred` succeeds on any words. -/
@@ -168,14 +178,12 @@ theorem getD_of_spec {α : Type} {m : Result α} {P : α → Prop} (h : m ⦃ a 
   obtain ⟨a, rfl, ha⟩ := WP.spec_imp_exists h
   simpa [Option.ofResult] using ha
 
-/-- The portable blocks succeed where the driver needs them to. Every block but `fg_row` and
-`de_row` succeeds whatever words it is given. Those two succeed when the magnitudes `m0` and `m1` of
-their row's entries sum to at most `2^63`. -/
+/-- The portable blocks succeed whatever words they are given. -/
 theorem blocks_succeeds : Succeeds blocks where
   divstep59 two_delta f0 g0 := ok_of_spec (divstep59_ok two_delta f0 g0)
   signMag u v q r := ok_of_spec (sign_mag_ok u v q r)
-  fgRow f g m0 m1 s0 s1 hm := ok_of_spec (fg_row_ok f g m0 m1 s0 s1 hm)
-  deRow d e m0 m1 s0 s1 hm := ok_of_spec (de_row_ok d e m0 m1 s0 s1 hm)
+  fgRow f g m0 m1 s0 s1 := ok_of_spec (fg_row_ok f g m0 m1 s0 s1)
+  deRow d e m0 m1 s0 s1 := ok_of_spec (de_row_ok d e m0 m1 s0 s1)
   amontred t modulus inv := ok_of_spec (amontred_ok t modulus inv)
   condSub value modulus := ok_of_spec (cond_sub_ok value modulus)
 

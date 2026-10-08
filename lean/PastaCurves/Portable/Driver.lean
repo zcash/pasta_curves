@@ -5,17 +5,11 @@ import PastaCurves.Inversion.Composition
 # The translated driver computes the composition
 
 Aeneas translates the crate's generic `invert_with` (`src/inversion.rs`) along with the portable
-blocks, over any record of the trait's six blocks. Over a record whose blocks succeed where the
-portable ones do (`Succeeds`), the translation returns the composition `invert` of
-`Compositions.lean` over the record's blocks read as functions on the model's values
-(`pureBlocks`). So when those functions satisfy `InvertBlocks.Spec` at a Pasta field, the
-translation returns the canonical Montgomery inverse of a canonical input, or `0` for `0`, by
-`invert_entry_spec`.
-
-Every portable block but `fg_row` and `de_row` succeeds whatever words it is given. Those two
-succeed whenever the magnitudes `m0` and `m1` of their row's entries sum to at most `2^63`, which
-keeps their 128-bit columns from overflowing. Along the composition they sum to at most `2^59`
-(`invertRound_rows_le`).
+blocks, over any record of the trait's six blocks. Over a record whose blocks always succeed
+(`Succeeds`), the translation returns the composition `invert` of `Compositions.lean` over the
+record's blocks read as functions on the model's values (`pureBlocks`). So when those functions
+satisfy `InvertBlocks.Spec` at a Pasta field, the translation returns the canonical Montgomery
+inverse of a canonical input, or `0` for `0`, by `invert_entry_spec`.
 -/
 
 namespace PastaCurves.Portable
@@ -52,18 +46,16 @@ def pureBlocks {B : Type} (I : inversion.InvertBlocks B) : InvertBlocks where
     ((Option.ofResult (I.cond_sub (limbsArray value) (limbsArray modulus))).getD
       (Std.Array.repeat 4#usize 0#u64))
 
-/-- Where a translated record's blocks succeed. Every block but `fg_row` and `de_row` succeeds
-whatever words it is given. Those two succeed when the magnitudes `m0` and `m1` of their row's
-entries sum to at most `2^63`. -/
+/-- A translated record's blocks succeed whatever words they are given. -/
 structure Succeeds {B : Type} (I : inversion.InvertBlocks B) : Prop where
   /-- `divstep59` succeeds on all inputs. -/
   divstep59 : ∀ two_delta f0 g0, ∃ a, I.divstep59 two_delta f0 g0 = .ok a
   /-- `sign_mag` succeeds on all inputs. -/
   signMag : ∀ u v q r, ∃ a, I.sign_mag u v q r = .ok a
-  /-- `fg_row` succeeds when the magnitudes of the row sum to at most `2^63`. -/
-  fgRow : ∀ f g m0 m1 s0 s1, m0.val + m1.val ≤ 2^63 → ∃ a, I.fg_row f g m0 m1 s0 s1 = .ok a
-  /-- `de_row` succeeds when the magnitudes of the row sum to at most `2^63`. -/
-  deRow : ∀ d e m0 m1 s0 s1, m0.val + m1.val ≤ 2^63 → ∃ a, I.de_row d e m0 m1 s0 s1 = .ok a
+  /-- `fg_row` succeeds on all inputs. -/
+  fgRow : ∀ f g m0 m1 s0 s1, ∃ a, I.fg_row f g m0 m1 s0 s1 = .ok a
+  /-- `de_row` succeeds on all inputs. -/
+  deRow : ∀ d e m0 m1 s0 s1, ∃ a, I.de_row d e m0 m1 s0 s1 = .ok a
   /-- `amontred` succeeds on all inputs. -/
   amontred : ∀ t modulus inv, ∃ a, I.amontred t modulus inv = .ok a
   /-- `cond_sub` succeeds on all inputs. -/
@@ -88,22 +80,18 @@ theorem Succeeds.sign_mag_spec (u v q r : Std.U64) :
   obtain ⟨a, ha⟩ := hS.signMag u v q r
   simp [ha, pureBlocks, Option.ofResult, word_val_self]
 
-/-- `fg_row`, on a row whose magnitudes sum to at most `2^63`, returns the words of its function
-on the model's values. -/
-theorem Succeeds.fg_row_spec (f g : Std.Array Std.U64 5#usize) (m0 m1 s0 s1 : Std.U64)
-    (h : m0.val + m1.val ≤ 2^63) :
+/-- `fg_row` returns the words of its function on the model's values. -/
+theorem Succeeds.fg_row_spec (f g : Std.Array Std.U64 5#usize) (m0 m1 s0 s1 : Std.U64) :
     I.fg_row f g m0 m1 s0 s1 ⦃ a => (pureBlocks I).fgRow (signed5OfArray f) (signed5OfArray g)
       m0.val m1.val s0.val s1.val = signed5OfArray a ⦄ := by
-  obtain ⟨a, ha⟩ := hS.fgRow f g m0 m1 s0 s1 h
+  obtain ⟨a, ha⟩ := hS.fgRow f g m0 m1 s0 s1
   simp [ha, pureBlocks, Option.ofResult, word_val_self, signed5Array_signed5OfArray]
 
-/-- `de_row`, on a row whose magnitudes sum to at most `2^63`, returns the words of its function
-on the model's values. -/
-theorem Succeeds.de_row_spec (d e : Std.Array Std.U64 4#usize) (m0 m1 s0 s1 : Std.U64)
-    (h : m0.val + m1.val ≤ 2^63) :
+/-- `de_row` returns the words of its function on the model's values. -/
+theorem Succeeds.de_row_spec (d e : Std.Array Std.U64 4#usize) (m0 m1 s0 s1 : Std.U64) :
     I.de_row d e m0 m1 s0 s1 ⦃ a => (pureBlocks I).deRow (limbsOfArray d) (limbsOfArray e)
       m0.val m1.val s0.val s1.val = signed5OfArray a ⦄ := by
-  obtain ⟨a, ha⟩ := hS.deRow d e m0 m1 s0 s1 h
+  obtain ⟨a, ha⟩ := hS.deRow d e m0 m1 s0 s1
   simp [ha, pureBlocks, Option.ofResult, word_val_self, limbsArray_limbsOfArray]
 
 /-- `amontred` returns the words of its function on the model's values. -/
@@ -163,8 +151,8 @@ attribute [local grind =] divstep59OfArray signMagOfArray signed5OfArray
 
 /-- The loop of `invert_with`, from any point of its nine rounds: words whose state is the
 composition's after `iter.start` rounds end with its state after nine. -/
-theorem invert_with_loop_spec (hS : Succeeds I) (F : PastaField) (hB : (pureBlocks I).Spec F)
-    (x : Limbs) (hx : x.Bounded) (iter : core.ops.range.Range Std.I32) (two_delta : Std.U64)
+theorem invert_with_loop_spec (hS : Succeeds I) (F : PastaField) (x : Limbs)
+    (iter : core.ops.range.Range Std.I32) (two_delta : Std.U64)
     (f g : Std.Array Std.U64 5#usize) (d e : Std.Array Std.U64 4#usize)
     (hend : iter.«end».val = 9) (h0 : 0 ≤ iter.start.val) (h9 : iter.start.val ≤ 9)
     (hst : stateOf two_delta f g d e =
@@ -182,20 +170,9 @@ theorem invert_with_loop_spec (hS : Succeeds I) (F : PastaField) (hB : (pureBloc
           (invertRound (pureBlocks I) F.modulus F.inv)^[iter.start.val.toNat] (startState F x))
   · clear hend h0 h9 hst
     rintro ⟨iter, two_delta, f, g, d, e⟩ ⟨hend, h0, h9, hst⟩
-    -- The round's state carries the model's, so the rows meet their bound.
-    have hcarry :
-        Carries (stateOf two_delta f g d e) (Inversion.rounds F x iter.start.val.toNat) := by
-      rw [hst]
-      exact invert_carries _ F hB x hx _ (by agrind)
-    have hrows := invertRound_rows_le _ F hB x hx _ (by agrind) _ hcarry
-    dsimp only [stateOf, signed5OfArray] at hrows
     unfold inversion.invert_with_loop.body
     step*
     · agrind
-    · grind
-    · grind
-    · grind
-    · grind
     · split_conjs
       · agrind
       · agrind
@@ -209,43 +186,34 @@ theorem invert_with_loop_spec (hS : Succeeds I) (F : PastaField) (hB : (pureBloc
       · agrind
   · exact ⟨hend, h0, h9, hst⟩
 
-/-- `invert_with` over a translated record whose blocks succeed where the portable ones do, and
-whose functions on the model's values satisfy `InvertBlocks.Spec` at `F`, returns the
-composition `invert` over those functions. -/
-theorem invert_with_spec (hS : Succeeds I) (F : PastaField) (hB : (pureBlocks I).Spec F)
-    (x : Limbs) (hx : x.Bounded) :
+/-- `invert_with` over a translated record whose blocks always succeed returns the composition
+`invert` over those blocks, read as functions on the model's values. -/
+theorem invert_with_spec (hS : Succeeds I) (F : PastaField) (x : Limbs) (hx : x.Bounded) :
     inversion.invert_with I (limbsArray x) (limbsArray F.modulus) (word F.inv)
       (limbsArray (Inversion.startE F))
     ⦃ (res : Std.Array Std.U64 4#usize) =>
       limbsOfArray res = invert (pureBlocks I) x F.modulus F.inv (Inversion.startE F) ⦄ := by
   unfold inversion.invert_with
   step*
-  step with invert_with_loop_spec hS F hB x hx as ⟨two_delta, f, g, d, e, hloop⟩
+  step with invert_with_loop_spec hS F x as ⟨two_delta, f, g, d, e, hloop⟩
   · -- The words that the loop starts from are `invert`'s starting state.
     obtain ⟨hm0, hm1, hm2, hm3⟩ := F.bounded
     obtain ⟨hx0, hx1, hx2, hx3⟩ := hx
     obtain ⟨he0, he1, he2, he3⟩ : (Inversion.startE F).Bounded := Limbs.ofNat_bounded _
     simp [startState, stateOf, signed5OfArray, limbsOfArray, limbsArray, word_val, *]
-  -- The last round's state carries the model's, so its row meets the bound.
-  have hcarry : Carries (stateOf two_delta f g d e) (Inversion.rounds F x 9) := by
-    rw [hloop]
-    exact invert_carries _ F hB x hx 9 (by agrind)
-  have hrows := invertRound_rows_le _ F hB x hx 9 (by agrind) _ hcarry
-  dsimp only [stateOf, signed5OfArray] at hrows
   step*
-  · grind
-  · -- The last round, with the sign of the new `f` in the masks of its row, is `invert`'s.
-    have hm : limbsOfArray (limbsArray F.modulus) = F.modulus :=
-      limbsOfArray_limbsArray F.bounded
-    have hinv : (word F.inv).val = F.inv := word_val F.inv_lt
-    have hsign : sign.val = signWord i8.val i9.val u.val v.val := by
-      subst i13
-      rw [sign_post, sign_mask_val i14_post]
-      simp [signWord, addw, mulLo, regMod, U64.size, U64.numBits, i12_post, i10_post, i11_post]
-    simp only [startState] at hloop
-    simp only [invert]
-    rw [← hloop]
-    grind [stateOf]
+  -- The last round, with the sign of the new `f` in the masks of its row, is `invert`'s.
+  have hm : limbsOfArray (limbsArray F.modulus) = F.modulus :=
+    limbsOfArray_limbsArray F.bounded
+  have hinv : (word F.inv).val = F.inv := word_val F.inv_lt
+  have hsign : sign.val = signWord i8.val i9.val u.val v.val := by
+    subst i13
+    rw [sign_post, sign_mask_val i14_post]
+    simp [signWord, addw, mulLo, regMod, U64.size, U64.numBits, i12_post, i10_post, i11_post]
+  simp only [startState] at hloop
+  simp only [invert]
+  rw [← hloop]
+  grind [stateOf]
 
 /-- `invert_with` over such a record, at a Pasta field, on a canonical input: the result is
 canonical, and it is `0` for `x = 0` and the Montgomery inverse otherwise. -/
@@ -258,7 +226,7 @@ theorem invert_with_entry_spec (hS : Succeeds I) (F : PastaField) (hB : (pureBlo
         (x.toNat = 0 → limbsOfArray res = Limbs.ofNat 0) ∧
         (x.toNat ≠ 0 →
           x.toNat * (limbsOfArray res).toNat ≡ R^2 [MOD F.modulus.toNat]) ⦄ := by
-  apply WP.spec_mono (invert_with_spec hS F hB x hx)
+  apply WP.spec_mono (invert_with_spec hS F x hx)
   intro res hres
   obtain ⟨-, hlt, hzero, hinverse⟩ := invert_entry_spec _ F hB x hx h _ rfl
   rw [hres]

@@ -59,9 +59,14 @@ theorem row_column_spec (carry : Std.U128) (x m0 y m1 : Std.U64) (hm : m0.val + 
   have hxm : x.val * m0.val ≤ (2^64 - 1) * m0.val := Nat.mul_le_mul_right _ (by scalar_tac)
   have hym : y.val * m1.val ≤ (2^64 - 1) * m1.val := Nat.mul_le_mul_right _ (by scalar_tac)
   step*
+  -- Neither addition wraps: the column is at most `2^64 (m0 + m1) ≤ 2^127`.
+  have hcol : column.val = carry.val + x.val * m0.val + y.val * m1.val := by
+    rw [column_post, core.num.U128.wrapping_add_val_eq, i3_post, core.num.U128.wrapping_add_val_eq,
+      i2_post, i6_post, i_post, i1_post, i4_post, i5_post]
+    scalar_tac
   rw [i7_post, UScalar.cast_val_eq, UScalarTy.U64_numBits_eq, i8_post, Nat.shiftRight_eq_div_pow]
   refine ⟨?_, Nat.div_le_of_le_mul (by agrind)⟩
-  rw [Nat.mod_add_div, column_post, i3_post, i6_post, i2_post, i_post, i1_post, i4_post, i5_post]
+  rw [Nat.mod_add_div, hcol]
   agrind
 
 open pasta_curves.inversion.portable in
