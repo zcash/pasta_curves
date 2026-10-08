@@ -8,7 +8,7 @@
 //! ADCX/ADOX dual carry chains (ADX) in the multiplication rows. Two negative
 //! scheduling results are pinned here so they are not retried on this
 //! microarchitecture family: routing squaring
-//! through the multiplication measured 2–5% *slower* (run-dependent) than
+//! through the multiplication measured 1–5% *slower* (run-dependent) than
 //! the dedicated squaring below (21.0 vs 20.0–20.7 ns on Skylake-X —
 //! mirroring the AArch64 backend, whose inline square also beats its
 //! multiplication; an earlier contrary reading came from a benchmark cell
@@ -109,7 +109,7 @@ pub(super) fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
             "adc {r3}, {b3}",
             // Subtract the modulus in place; the canonical sum is below 2p,
             // so the top carry is zero and the tentative difference lies in
-            // (-p, p).
+            // [-p, p).
             "sub {r0}, {p0}",
             "sbb {r1}, {p1}",
             "sbb {r2}, 0",
@@ -833,7 +833,7 @@ impl super::entry::MontgomeryBlocks for Backend {
     /// carried fifth limb, the high product half folded in, and a CMOV
     /// conditional subtraction. A canonical input's square is below `R * p`,
     /// so, as for [`mul`]'s candidate, the folded sum stays below `2p` and
-    /// no carry escapes. Measured 2–5% ahead of squaring through [`mul`] on
+    /// no carry escapes. Measured 1–5% ahead of squaring through [`mul`] on
     /// Skylake-X (20.0–20.7 vs 21.0 ns across runs), mirroring the AArch64
     /// backend's own square-over-mul margin.
     ///

@@ -14,7 +14,8 @@ chain adds those selected limbs and deliberately discards its final carry.
 namespace PastaCurves.X86_64
 
 -- BEGIN subMod_spec statement
-/-- The subtraction block returns either the exact difference or the difference plus one modulus. -/
+/-- For `rhs` below `p`, the subtraction block returns either the exact difference or the difference
+plus one modulus. -/
 theorem subMod_spec (lhs rhs modulus : Limbs) (hlhs : lhs.Bounded) (hrhs : rhs.Bounded)
     (hm : modulus.Bounded) (hshape : modulus.l2 = 0 ∧ modulus.l3 = 2^62)
     (hrhs_lt : rhs.toNat < modulus.toNat) :

@@ -14,10 +14,10 @@ See the parent module's documentation for details.
 namespace PastaCurves.AArch64
 
 -- BEGIN subMod_spec statement
-/-- Modular subtraction by the inline block, for operands with `rhs ≤ lhs + p` (so the add-back of
-`p` does not wrap): the result is the difference when `lhs ≥ rhs`, and the difference plus `p`
-otherwise, since the subtraction borrows exactly when `lhs < rhs` and the block then adds `p`
-back. -/
+/-- Modular subtraction by the inline block, for operands with `rhs ≤ lhs + p` (so the difference
+plus `p` is nonnegative): the result is the difference when `lhs ≥ rhs`, and the difference plus `p`
+otherwise, since the subtraction borrows exactly when `lhs < rhs` and the block then adds `p` back.
+-/
 theorem subMod_spec (lhs rhs modulus : Limbs) (hlhs : lhs.Bounded) (hrhs : rhs.Bounded)
     (hm : modulus.Bounded) (hshape : modulus.l2 = 0 ∧ modulus.l3 = 2^62)
     (hle : rhs.toNat ≤ lhs.toNat + modulus.toNat) :

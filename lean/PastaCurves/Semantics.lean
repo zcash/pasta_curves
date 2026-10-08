@@ -3,11 +3,11 @@ import Mathlib.Logic.Function.Iterate
 /-!
 # Generic semantics for the Pasta arithmetic routines
 
-A register value is a natural number below `2^64`. The bound is maintained by construction:
-every instruction reduces its result modulo `2^64`, and the carry flag is the quotient of the
-same sum by `2^64`, so it is `0` or `1` whenever the inputs are in range. Working in `Nat`
-rather than a fixed-width type keeps the proofs in `omega`'s fragment (`%` and `/` by
-literals) and lets the reference vectors be checked by the kernel with `decide`.
+A register value is a natural number below `2^64`. The bound is maintained by construction: every
+instruction reduces its result modulo `2^64`, and the carry flag is the quotient of the same sum by
+`2^64`, so it is `0` or `1` whenever the operands are below `2^64` and the carry in is `0` or `1`.
+Working in `Nat` rather than a fixed-width type keeps the proofs in `omega`'s fragment (`%` and `/`
+by literals) and lets the reference vectors be checked by the kernel with `decide`.
 -/
 
 namespace PastaCurves

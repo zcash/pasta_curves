@@ -15,8 +15,9 @@ namespace PastaCurves.X86_64
 
 -- BEGIN addMod_spec statement
 /-- Modular addition by the inline block, for operands whose sum fits in four limbs (so the carry
-that the block drops is `0`): the result is the sum when that is below `p`, and the sum minus `p`
-otherwise, since the subtraction of `p` borrows exactly when the sum is below `p`. -/
+out of the addition, which the block drops, is `0`): the result is the sum when that is below `p`,
+and the sum minus `p` otherwise, since the subtraction of `p` borrows exactly when the sum is below
+`p`. -/
 theorem addMod_spec (lhs rhs modulus : Limbs) (hlhs : lhs.Bounded) (hrhs : rhs.Bounded)
     (hm : modulus.Bounded) (hshape : modulus.l2 = 0 ∧ modulus.l3 = 2^62)
     (hsum : lhs.toNat + rhs.toNat < 2^256) :

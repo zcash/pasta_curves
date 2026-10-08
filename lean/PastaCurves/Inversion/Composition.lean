@@ -33,8 +33,9 @@ namespace PastaCurves
 open Inversion (State divsteps M RoundState rounds trueState round initState startE montInvModel
   signWordOf finalD updateFG updateDE amontredZ Mat2 SignMagRep signMask mul_word addw_word)
 
-/-- What the composition needs of a backend's blocks at a field `F`: each block, on bounded
-inputs, computes the word-level function of the shared layer that the round model composes. -/
+/-- What the composition needs of a backend's blocks at a field `F`: each block, under the
+hypotheses of its field, computes the word-level function of the shared layer that the round model
+composes. -/
 structure InvertBlocks.Spec (B : InvertBlocks) (F : PastaField) : Prop where
   /-- `divstep59` on the words of a true state with `f` and `two_delta` odd and `two_delta` small
   returns `two_delta` and the entries of the 59-step matrix, modulo `2^64`. -/

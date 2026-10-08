@@ -125,8 +125,8 @@ def updateFG (M : Mat2) (f g : Signed5) : Signed5 × Signed5 :=
   (Signed5.ofInt ((M.u * f.toInt + M.v * g.toInt) / 2^59),
    Signed5.ofInt ((M.q * f.toInt + M.r * g.toInt) / 2^59))
 
-/-- A row combination is below `B · C` when the row sum is at most `B` and both values are
-below `C`. -/
+/-- A row combination is below `B · C` in magnitude when the row sum is at most a positive `B` and
+both values are below `C` in magnitude. -/
 theorem row_abs_lt (a b f g B C : ℤ) (hab : |a| + |b| ≤ B) (hf : |f| < C) (hg : |g| < C)
     (hB : 0 < B) : |a * f + b * g| < B * C := by
   have hC : 0 < C := lt_of_le_of_lt (abs_nonneg f) hf
@@ -139,8 +139,9 @@ theorem row_abs_lt (a b f g B C : ℤ) (hab : |a| + |b| ≤ B) (hf : |f| < C) (h
     _ ≤ B * (C - 1) := mul_le_mul_of_nonneg_right hab (by omega)
     _ < B * C := by linarith
 
-/-- Lemma 9: the words are bounded and decode to the quotients, given the bounds that the
-rounds maintain (`|f|, |g| < 2^256`, which admits a non-canonical four-word input). -/
+/-- Lemma 9: the words are bounded and decode to the quotients, given the bounds that the rounds
+maintain (`|f|, |g| < 2^256`, which admits a non-canonical four-word input; and row sums of at most
+`2^59`). -/
 theorem updateFG_spec (M : Mat2) (f g : Signed5)
     (hfv : |f.toInt| < 2^256) (hgv : |g.toInt| < 2^256)
     (hM : |M.u| + |M.v| ≤ 2^59 ∧ |M.q| + |M.r| ≤ 2^59) :
@@ -232,7 +233,8 @@ def updateDE (M : Mat2) (d e : Limbs) (modulus : Limbs) (inv : ℕ) : Limbs × L
   (Limbs.ofNat (amontredZ (M.u * d.toNat + M.v * e.toNat) modulus.toNat inv).toNat,
    Limbs.ofNat (amontredZ (M.q * d.toNat + M.r * e.toNat) modulus.toNat inv).toNat)
 
-/-- The integer form of the reduced row: bounded, below `2p`, congruent to the row over `2^64`. -/
+/-- The integer form of the reduced row, under the given hypotheses: bounded, below `2p`, congruent
+to the row over `2^64`. -/
 theorem amontredZ_row (F : PastaField) (a b : ℤ) (d e : Limbs) (hd : d.Bounded) (he : e.Bounded)
     (hab : |a| + |b| ≤ 2^59) :
     (Limbs.ofNat (amontredZ (a * d.toNat + b * e.toNat) F.modulus.toNat F.inv).toNat).Bounded ∧

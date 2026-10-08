@@ -309,7 +309,7 @@ code assumes) and `inv · p0 ≡ −1 (mod 2^64)`:
   accumulate additions without reduction and still enter the multiplication under
   `mulMont_spec_of_rhs_lt`; `addMod_spec_of_lt`, for canonical operands, gives a canonical
   result. Both have `output ≡ lhs + rhs (mod p)`.
-* `subMod_spec` (proved): for `rhs ≤ lhs + p` (so the add-back of `p` does not wrap), the
+* `subMod_spec` (proved): for `rhs ≤ lhs + p` (so the difference plus `p` is nonnegative), the
   subtraction block returns `lhs − rhs` when `lhs ≥ rhs` and `lhs − rhs + p` otherwise. Its
   corollaries `subMod_spec_of_rhs_lt` (for `lhs < 2^255` and `rhs < p`, a result below
   `2^255`) and `subMod_spec_of_lt` (canonical operands, a canonical result) both have
@@ -321,21 +321,23 @@ The inversion's blocks, each equated with the word-level function of the shared 
 * `condSubBlock_spec` (proved): the conditional subtraction block returns its input when that
   is below `p` and the input minus `p` otherwise, so a value below `2 · p` becomes canonical.
 * `amontredBlock_spec` (proved): the reduction block computes the round's `amontred`, one word
-  of Montgomery reduction of a five-word value after adding `2^61 · p`. By Lemma 10 the result
-  is below `2 · p` and below `2^256`, so the top carry that the block drops is `0`.
+  of Montgomery reduction of a five-word value below `2^315` in magnitude after adding
+  `2^61 · p`. By Lemma 10 the result is below `2 · p` and below `2^256`, so the top carry that the
+  block drops is `0`.
 * `signMagBlock_spec` (proved): the block converts the four matrix entries from two's
   complement to magnitudes and sign masks.
 * `deRowBlock_spec` and `fgRowBlock_spec` (proved): one matrix row of the `d`, `e` combination,
   the exact `a · d + b · e` in five words, and of the `f`, `g` update, the exact
-  `(a · f + b · g) / 2^59`, each under the row bound `|a| + |b| ≤ 2^63`. Both are stated over
-  the sign-magnitude representation, which admits a zero entry with an all-ones mask, since the
-  last round's masking by the sign word produces one.
+  `(a · f + b · g) / 2^59`, each under the row bound `|a| + |b| ≤ 2^63` (and, for `fg_row`, `f`
+  and `g` below `2^256` in magnitude). Both are stated over the sign-magnitude representation,
+  which admits a zero entry with an all-ones mask, since the last round's masking by the sign word
+  produces one.
 * `divstepRound_spec` and `divstepLast_spec` (proved): one packed half-delta divstep of the
   `divstep59` macro is the recurrence of `Inversion/Packed.lean`, under the no-wrap bound on
   the packed `g` (Lemma 6′).
-* `divstep59Block_spec` (proved): the block's three batches compute `divstep59`'s `two_delta` and the
-  entries of the 59-step matrix modulo `2^64`. The assembly's negated decoder is absorbed by
-  the recurrence's sign symmetry.
+* `divstep59Block_spec` (proved): for `f` and `two_delta` odd and `|two_delta| < 2^61`, the
+  block's three batches compute `divstep59`'s `two_delta` and the entries of the 59-step matrix
+  modulo `2^64`. The assembly's negated decoder is absorbed by the recurrence's sign symmetry.
 * `invert_eq_model` (proved, in `Inversion/Composition.lean`): the composition `invert` of
   `PastaCurves/Compositions.lean`, which mirrors the Rust driver over a record of the six blocks,
   computes `montInvModel` for any backend whose blocks meet `InvertBlocks.Spec`, the record of
@@ -366,7 +368,7 @@ above.
 backend's `from_mont` is its own: on AArch64 the multiplication by one (`fromMont_spec` of
 `AArch64/Spec/Mul.lean`), and on x86-64 the conversion block (`fromMont_spec` of
 `X86_64/Spec/FromMont.lean`). `invert_entry_spec` (proved) restates `montInv_spec` for the crate's
-`invert`. The input is canonical, as the entry point asserts, and `v0` is `2^562 mod p`, as its
+`invert`. The input is canonical, as the entry point asserts, and `e0` is `2^562 mod p`, as its
 contract requires. The result is canonical. For `x = 0` it is `0`, and otherwise it is the
 Montgomery inverse, with `x · result ≡ R^2 (mod p)`. The primality of the modulus is the field's
 `prime`, and the termination bound is `terminationBound_256`.
@@ -384,8 +386,9 @@ against a step-by-step trace of one batch. The proofs cover:
   form for every input: the x86-64 conversion block, and on AArch64 the multiplication block at
   `1`;
 * the squaring block for a canonical input;
-* the addition and subtraction blocks for every pair of operands on which they are exact, with
-  their corollaries for a lazily reduced left operand and for canonical operands;
+* the addition and subtraction blocks for every pair of operands on which they are exact (on
+  x86-64, the subtraction for `rhs < p`), with their corollaries for canonical operands and, on
+  AArch64, for a lazily reduced left operand;
 * the inversion's six AArch64 blocks against the word-level functions of the shared layer, and
   `invert` over any backend's blocks against `montInvModel`, instantiated for AArch64;
 * Aeneas' translation of the entry points' compositions, with their assertions, over any

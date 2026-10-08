@@ -40,8 +40,8 @@ fn divstep(two_delta: u64, f: u64, g: u64) -> (u64, u64, u64) {
 }
 
 /// The coefficient pair in the upper bits of a packed word after `k` steps, as `Packed.lean`'s
-/// `unpack` reads it: negate the word, take the upper part rounded to the nearest at bit
-/// `41 - k`, and split it at bit 21, with the first coefficient taken in `(-2^k, 2^k]`.
+/// `unpack` reads it: negate the word, round its upper part to the nearest at bit `41 - k`, and
+/// split that at bit 21, with the first coefficient in `(-2^20, 2^20]` for every `k`.
 #[inline(always)]
 fn unpack(k: u32, w: u64) -> (u64, u64) {
     let t = 0u64.wrapping_sub(w) as i64;

@@ -83,7 +83,7 @@ theorem hinit_mem (x y : ℚ) (h0 : 0 ≤ y) (hxy : y ≤ x) (hx1 : x ≤ 1) : h
   rcases hh with rfl | rfl | rfl <;> simp only [HalfPlane.holds] <;> linarith
 
 /-- The lattice endgame at the smallest scale: no integer point of the box with `y ≠ 0` lies in
-`H1 / L`, by enumerating the box. -/
+`L · H1`, by enumerating the box. -/
 theorem lat0 (x y : ℤ) (hx : |x| ≤ 1) (hy : |y| ≤ 1) (hne : y ≠ 0) :
     ¬ H1.mem (x / L) (y / L) := by
   intro hmem

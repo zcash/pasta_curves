@@ -19,8 +19,8 @@ vector of each field, the squaring of `0`, that way; those two lines were re-add
 
 The operands are, per field: seventeen singles (eleven fixed values, among them `0`, `1`, `R`,
 `R^2`, `R^3`, `p - 1`, and limb patterns at the carry boundaries, and six random values below
-`2^254`), each converted out of Montgomery form, each squared, and every ordered pair
-multiplied; and six unreduced values (`2^256 - 1`, `p`, `p + 1`, and patterns of all-ones limbs),
-each multiplied in both orders with the fixed singles and with each other. The multiplications
-with an unreduced operand are the vectors outside the crate's contracts; `src/asm/tests.rs` says
-which of them are run.
+`2^254`), each converted out of Montgomery form, each squared, and every ordered pair multiplied;
+and six unreduced values (`2^256 - 1`, `p`, `p + 1`, and patterns of all-ones limbs), each
+multiplied in both orders with the fixed singles and with each other. The 180 vectors outside the
+crate's contracts are among those multiplications with an unreduced operand; the others fall within
+one of the two contracts. `src/asm/tests.rs` says which of them are run.

@@ -115,8 +115,8 @@ $(q + b u, r + b v)$. Each new row sum is at most twice the larger old row sum. 
 range: build $M_n$ from the left, $M_{n+1} = T_n M_n$, so with
 $M_n = \begin{bmatrix} u & v \\ q & r \end{bmatrix}$ the new entries are $2q, 2r, q - u, r - v$
 in the swap case and $2u, 2v, q + b u, r + b v$ otherwise. If every old entry lies in
-$(-2^n, 2^n]$, then each new entry is twice an old one, or an old one plus or minus another, so
-it lies in $(-2^{n+1}, 2^{n+1}]$; the strict lower bound and the closed upper bound both
+$(-2^n, 2^n]$, then each new entry is twice an old one, an old one, or an old one plus or minus
+another, so it lies in $(-2^{n+1}, 2^{n+1}]$; the strict lower bound and the closed upper bound both
 propagate, and the base case is the identity. The $\max$ bound: $f_{i+1}$ is one of $f_i$ and
 $g_i$, and $|g_{i+1}| \leq (|f_i| + |g_i|) / 2$. ∎ *In Lean:* `M_rowSum_le`, `M_entry_range`,
 and `divsteps_abs_le` (`Divstep.lean`).
