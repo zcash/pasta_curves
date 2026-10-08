@@ -10,12 +10,16 @@ Each theorem here states that a block of Aeneas' translation of `src/inversion/p
 words (`Words.lean`). The statements are Aeneas' Hoare triples, `f ⦃ res => P res ⦄`, and the proofs
 step through the translation with Aeneas' `step*`, then close the arithmetic by hand.
 
-The blocks' helpers have step lemmas of their own, which `step*` applies at each call: `sbb`, one
-limb of a borrow chain, proved on natural numbers; `adc`, one limb of a carry chain; `row_column`,
-one column of a row, whose bound on the carry passes from each column to the next; `mac`, one
-column of a multiplication; `select`, the masked select, proved on 64-bit vectors; `mask_of_bit`,
-the 64-bit mask of a bit; `sign_mask`, the mask of a word's sign; and `halve`, the arithmetic shift
-right by one.
+The blocks' helpers have step lemmas of their own, which `step*` applies at each call:
+
+- `sbb`, one limb of a borrow chain, proved on natural numbers;
+- `adc`, one limb of a carry chain;
+- `row_column`, one column of a row, whose bound on the carry passes from each column to the next;
+- `mac`, one column of a multiplication;
+- `select`, the masked select, proved on 64-bit vectors;
+- `mask_of_bit`, the 64-bit mask of a bit;
+- `sign_mask`, the mask of a word's sign; and
+- `halve`, the arithmetic shift right by one.
 -/
 
 namespace PastaCurves.Portable
