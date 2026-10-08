@@ -11,9 +11,10 @@ words (`Words.lean`). The statements are Aeneas' Hoare triples, `f ⦃ res => P 
 step through the translation with Aeneas' `step*`, then close the arithmetic by hand.
 
 The blocks' helpers have step lemmas of their own, which `step*` applies at each call: `sbb`, one
-limb of a borrow chain, proved on natural numbers; `select`, the masked select, proved on 64-bit
-vectors; `mask_of_bit`, the 64-bit mask of a bit; `sign_mask`, the mask of a word's sign; and
-`halve`, the arithmetic shift right by one.
+limb of a borrow chain, proved on natural numbers; `adc`, one limb of a carry chain; `row_column`,
+one column of a row, whose bound on the carry passes from each column to the next; `select`, the
+masked select, proved on 64-bit vectors; `mask_of_bit`, the 64-bit mask of a bit; `sign_mask`, the
+mask of a word's sign; and `halve`, the arithmetic shift right by one.
 -/
 
 namespace PastaCurves.Portable
@@ -31,6 +32,36 @@ theorem sbb_spec (a b borrow : Std.U64) (h : borrow.val ≤ 1) :
   unfold sbb
   step*
   split_ifs at * <;> scalar_tac
+
+open pasta_curves.inversion.portable in
+/-- One limb of a carry chain: with a carry in of zero or one, `adc` returns the sum word and the
+carry out, which make up the sum of the operands and the carry in; the carry out is zero or one. -/
+@[step]
+theorem adc_spec (a b carry : Std.U64) (h : carry.val ≤ 1) :
+    adc a b carry ⦃ (sum : Std.U64) (carry' : Std.U64) =>
+      sum.val + 2^64 * carry'.val = a.val + b.val + carry.val ∧ carry'.val ≤ 1 ⦄ := by
+  unfold adc
+  step*
+  split_ifs at * <;> scalar_tac
+
+open pasta_curves.inversion.portable in
+/-- One column of a row: with `carry ≤ m0 + m1 ≤ 2^63`, `row_column` returns the column's low word
+and the carry into the next column, which make up `x m0 + y m1 + carry`; the carry out is again
+at most `m0 + m1`. -/
+@[step]
+theorem row_column_spec (carry : Std.U128) (x m0 y m1 : Std.U64) (hm : m0.val + m1.val ≤ 2^63)
+    (hc : carry.val ≤ m0.val + m1.val) :
+    row_column carry x m0 y m1 ⦃ (word : Std.U64) (carry' : Std.U128) =>
+      word.val + 2^64 * carry'.val = x.val * m0.val + y.val * m1.val + carry.val ∧
+        carry'.val ≤ m0.val + m1.val ⦄ := by
+  unfold row_column
+  have hxm : x.val * m0.val ≤ (2^64 - 1) * m0.val := Nat.mul_le_mul_right _ (by scalar_tac)
+  have hym : y.val * m1.val ≤ (2^64 - 1) * m1.val := Nat.mul_le_mul_right _ (by scalar_tac)
+  step*
+  rw [i7_post, UScalar.cast_val_eq, UScalarTy.U64_numBits_eq, i8_post, Nat.shiftRight_eq_div_pow]
+  refine ⟨?_, Nat.div_le_of_le_mul (by agrind)⟩
+  rw [Nat.mod_add_div, column_post, i3_post, i6_post, i2_post, i_post, i1_post, i4_post, i5_post]
+  agrind
 
 open pasta_curves.inversion.portable in
 /-- The masked select: for a mask of all zeros or all ones, `select` returns `b` under the zero

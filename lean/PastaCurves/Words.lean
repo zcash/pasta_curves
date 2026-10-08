@@ -68,6 +68,11 @@ theorem fromU64Bool_val (b : Bool) :
     (core.convert.num.FromU64Bool.from b).val = if b then 1 else 0 := by
   cases b <;> rfl
 
+/-- The value of a word widened to 128 bits: the word's own. -/
+@[step_pure core.convert.num.FromU128U64.from x]
+theorem fromU128U64_val (x : Std.U64) : (core.convert.num.FromU128U64.from x).val = x.val :=
+  core.convert.num.FromU128U64.from_val_eq x
+
 /-- One limb of a borrow chain, from the post-conditions of its two subtractions and of the
 borrow's conversion: the difference word, the subtrahend, and the borrow in make the minuend and
 the borrow out, which is zero or one. -/
@@ -91,5 +96,16 @@ theorem limbsOfArray_bounded (a : Std.Array Std.U64 4#usize) : (limbsOfArray a).
 theorem limbsOfArray_limbsArray {x : Limbs} (hx : x.Bounded) : limbsOfArray (limbsArray x) = x := by
   obtain ⟨h0, h1, h2, h3⟩ := hx
   simp [limbsOfArray, limbsArray, word_val h0, word_val h1, word_val h2, word_val h3]
+
+/-- The five words read from an array of words are bounded. -/
+theorem signed5OfArray_bounded (a : Std.Array Std.U64 5#usize) : (signed5OfArray a).Bounded :=
+  ⟨a[0].hBounds, a[1].hBounds, a[2].hBounds, a[3].hBounds, a[4].hBounds⟩
+
+/-- Five bounded words, written as an array of words, read back as themselves. -/
+theorem signed5OfArray_signed5Array {x : Signed5} (hx : x.Bounded) :
+    signed5OfArray (signed5Array x) = x := by
+  obtain ⟨h0, h1, h2, h3, h4⟩ := hx
+  simp [signed5OfArray, signed5Array, word_val h0, word_val h1, word_val h2, word_val h3,
+    word_val h4]
 
 end PastaCurves
