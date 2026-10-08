@@ -31,6 +31,12 @@ A declaration depends on an axiom when it cites the axiom, or cites a declaratio
 it. Checking only the citations would let a declaration of the package rely on a `sorry` or on
 one of Aeneas' axioms through one of Aeneas' declarations, which the exceptions accept.
 
+The scan reads the export once and records which expressions and declarations refer to which, as
+a graph. A declaration depends on an axiom exactly when the axiom is reachable from it, so a
+breadth-first search over the reversed edges, starting at the axiom, finds its dependents; one
+that stops at the first declarations finds its citers. Each search costs time linear in what it
+visits, and the graph is held in dense arrays, in memory linear in the export.
+
 The export does not record the module of a declaration, so a check of the package's own
 sources makes sure none declares into the `Aeneas` namespace. With `--nanoda-config OUT`, a
 clean census writes nanoda's config to OUT, permitting Aeneas' axioms as well, since
@@ -56,9 +62,9 @@ them:
   * name, expression, and level ids are dense — each new id increments the previous
     by exactly 1 (names and levels from 1, id 0 being the reserved anonymous name and
     zero level; expressions from 0) — and every referenced sub-id is strictly smaller
-    than the id being defined, so a referenced id is always already defined and the
-    single-pass citation propagation over the expression DAG cannot miss a forward or
-    dangling reference.
+    than the id being defined, so a referenced expression is always already defined;
+    and every name that an expression cites or a declaration declares is defined, so the
+    graph has no dangling reference.
 
 Usage: scripts/check_export_axioms.py [--nanoda-config OUT] [nanoda-config.json]
 The export path is read from the config (single source of truth). Runs from `lean/`.
@@ -67,6 +73,7 @@ The export path is read from the config (single source of truth). Runs from `lea
 import json
 import re
 import sys
+from array import array
 from pathlib import Path
 from typing import NoReturn
 
@@ -129,17 +136,95 @@ def error(msg) -> NoReturn:
     sys.exit(2)
 
 
-def scan(export_path, targets):
-    """One pass over the export: the declared axioms, and for each of `targets` the
-    declarations that cite it, the declarations that depend on it, and whether any expression
-    cites it at all. Stops with an ERROR on any structural surprise.
+def grouped(n, keys, values):
+    """`values` grouped by `keys`, which are below `n`, in compressed sparse row form: the values
+    for the key `k` are `out[start[k]:start[k + 1]]`. A counting sort, in two linear passes."""
+    start = array("I", [0]) * (n + 1)
+    for k in keys:
+        start[k + 1] += 1
+    for k in range(n):
+        start[k + 1] += start[k]
+    out = array("I", [0]) * len(keys)
+    fill = array("I", start)
+    for k, v in zip(keys, values):
+        out[fill[k]] = v
+        fill[k] += 1
+    return start, out
 
-    A declaration cites a target when one of its own expressions names it. It depends on a
-    target when it cites the target, or names a declaration that depends on it. A declaration
-    is usually read after every declaration that its expressions name, so its dependencies are
-    complete when it is read. One that names a declaration not yet read, or one whose
-    dependencies are not yet complete, is held back and completed after the pass, by a fixed
-    point over the declarations held back."""
+
+class Export:
+    """What the census needs from an export: its declared axioms, and which expressions and
+    declarations refer to which, as a graph stored in dense arrays.
+
+    The graph's edges run from a declaration to its expressions, from an expression to its
+    subexpressions, and from a `const` expression to the name that it cites; a declaration
+    depends on an axiom exactly when the axiom's name is reachable from it. The arrays hold the
+    edges reversed, for searches that start at an axiom: each expression's parents, the `const`
+    expressions that cite each name, and the declarations that hold each expression at the top
+    level."""
+
+    def __init__(self, axioms, parents, citing, holders, owns, labels):
+        self.axioms = axioms  # axiom name -> name id
+        self.parents = parents  # expression id -> the expressions it is a subexpression of
+        self.citing = citing  # name id -> the `const` expressions citing it
+        self.holders = holders  # expression id -> the declarations holding it at the top level
+        self.owns = owns  # declaration index -> the name ids that it declares
+        self.labels = labels  # declaration index -> its name, as the census reports it
+
+    def cited(self, axiom):
+        """Whether any expression cites `axiom`."""
+        start, _ = self.citing
+        i = self.axioms.get(axiom)
+        return i is not None and start[i + 1] > start[i]
+
+    def reaching(self, axiom, across):
+        """The names of the declarations that cite `axiom`, and if `across`, also those that
+        cite a declaration that reaches it: a breadth-first search over the reversed edges,
+        which visits each expression, declaration, and name at most once. Without `across`, it
+        stops at the first declarations, which are the citers."""
+        i = self.axioms.get(axiom)
+        if i is None:
+            return set()
+        p_start, p_out = self.parents
+        c_start, c_out = self.citing
+        h_start, h_out = self.holders
+        names, seen_names = [i], {i}
+        seen_exprs, seen_decls = set(), set()
+        while names:
+            n = names.pop()
+            todo = []
+            for e in c_out[c_start[n] : c_start[n + 1]]:
+                if e not in seen_exprs:
+                    seen_exprs.add(e)
+                    todo.append(e)
+            while todo:
+                e = todo.pop()
+                for d in h_out[h_start[e] : h_start[e + 1]]:
+                    if d not in seen_decls:
+                        seen_decls.add(d)
+                        if across:
+                            for m in self.owns[d]:
+                                if m not in seen_names:
+                                    seen_names.add(m)
+                                    names.append(m)
+                for q in p_out[p_start[e] : p_start[e + 1]]:
+                    if q not in seen_exprs:
+                        seen_exprs.add(q)
+                        todo.append(q)
+        return {self.labels[d] for d in seen_decls}
+
+    def citers(self, axiom):
+        """The declarations whose own expressions cite `axiom`."""
+        return self.reaching(axiom, across=False)
+
+    def dependents(self, axiom):
+        """The declarations that depend on `axiom`, directly or through other declarations."""
+        return self.reaching(axiom, across=True)
+
+
+def scan(export_path):
+    """One pass over the export, building the `Export` graph. Stops with an ERROR on any
+    structural surprise."""
     names = {}  # name id -> (prefix id, component)
 
     def resolve(i):
@@ -170,17 +255,13 @@ def scan(export_path, targets):
                 todo.extend(x)
         return out
 
-    target_components = {name.rsplit(".", 1)[-1] for name in targets}
-    target_name_ids = {}  # name id -> target full name
-    cites = {}  # expr id -> frozenset of the target full names it names
-    taint = {}  # expr id -> frozenset of the target full names it depends on
-    pending = {}  # expr id -> frozenset of the name ids whose dependencies are not yet known
-    complete = {}  # name id -> frozenset of the targets its declaration depends on
-    held = []  # (own name ids, display name, dependencies so far, name ids still pending)
-    citers = {}  # target full name -> set of citing declaration names
-    dependents = {}  # target full name -> set of depending declaration names
-    const_cited = {t: False for t in targets}
-    declared_axioms = set()
+    # The graph's edges, reversed, as parallel arrays of (key, value) pairs; `grouped` turns
+    # each into compressed sparse rows after the pass.
+    sub_ids, sub_parents = array("I"), array("I")  # subexpression -> expression
+    cited_names, citing_exprs = array("I"), array("I")  # name -> `const` expression
+    held_exprs, holding_decls = array("I"), array("I")  # top-level expression -> declaration
+    owns, labels = [], []  # declaration index -> its own name ids; its reported name
+    axioms = {}  # declared axiom name -> name id
     max_in = max_il = 0  # id 0: the reserved anonymous name / zero level
     max_ie = -1
     meta_seen = False
@@ -204,10 +285,6 @@ def scan(export_path, targets):
                 if not (pre == 0 or pre < i):
                     error(f"name id {i} references non-earlier prefix {pre}")
                 names[i] = (pre, comp)
-                if comp in target_components:
-                    full = resolve(i)
-                    if full in targets:
-                        target_name_ids[i] = full
             elif "ie" in o:
                 i = o["ie"]
                 if i != max_ie + 1:
@@ -219,34 +296,15 @@ def scan(export_path, targets):
                 (kind,) = rest
                 if kind not in EXPR_KINDS:
                     error(f"unknown expression kind '{kind}' at expression id {i}")
-                c, t, p = set(), set(), set()
                 if kind == "const":
-                    nid = o["const"]["name"]
-                    if nid in target_name_ids:
-                        full = target_name_ids[nid]
-                        c.add(full)
-                        const_cited[full] = True
-                    if nid in complete:
-                        t |= complete[nid]
-                    else:
-                        p.add(nid)
+                    cited_names.append(o["const"]["name"])
+                    citing_exprs.append(i)
                 for f2 in EXPR_SUBFIELDS.get(kind, ()):
                     v = o[kind][f2]
                     if not 0 <= v < i:
                         error(f"expression id {i} references non-earlier sub-id {v}")
-                    if v in cites:
-                        c |= cites[v]
-                    if v in taint:
-                        t |= taint[v]
-                    if v in pending:
-                        p |= pending[v]
-                t |= c
-                if c:
-                    cites[i] = frozenset(c)
-                if t:
-                    taint[i] = frozenset(t)
-                if p:
-                    pending[i] = frozenset(p)
+                    sub_ids.append(v)
+                    sub_parents.append(i)
             elif "il" in o:
                 i = o["il"]
                 if i != max_il + 1:
@@ -279,59 +337,39 @@ def scan(export_path, targets):
                 (kind,) = kinds
                 d = o[kind]
                 if kind == "axiom":
-                    declared_axioms.add(resolve(d["name"]))
+                    axioms[resolve(d["name"])] = d["name"]
                 if kind == "inductive":
-                    own = [x["name"] for part in ("types", "ctors", "recs") for x in d[part]]
+                    own = tuple(x["name"] for part in ("types", "ctors", "recs") for x in d[part])
                     nm = ", ".join(resolve(ty["name"]) for ty in d["types"])
                 else:
-                    own = [d["name"]]
+                    own = (d["name"],)
                     nm = resolve(d["name"])
-                hit, deps, waits = set(), set(), set()
+                k = len(owns)
+                owns.append(own)
+                labels.append(nm)
                 for v in decl_expr_ids(d):
                     if not 0 <= v <= max_ie:
                         error(f"declaration references undefined expression id {v}")
-                    if v in cites:
-                        hit |= cites[v]
-                    if v in taint:
-                        deps |= taint[v]
-                    if v in pending:
-                        waits |= pending[v]
-                for t2 in hit:
-                    citers.setdefault(t2, set()).add(nm)
-                waits -= set(own)
-                if waits:
-                    held.append((own, nm, frozenset(deps), waits))
-                else:
-                    deps = frozenset(deps)
-                    for nid in own:
-                        complete[nid] = deps
-                    for t2 in deps:
-                        dependents.setdefault(t2, set()).add(nm)
+                    held_exprs.append(v)
+                    holding_decls.append(k)
 
     if not meta_seen:
         error("export has no meta line; format version unverified")
+    for nid in cited_names:
+        if not 0 < nid <= max_in:
+            error(f"an expression cites undefined name id {nid}")
+    for own in owns:
+        for nid in own:
+            if not 0 < nid <= max_in:
+                error(f"a declaration declares undefined name id {nid}")
 
-    # The declarations held back, completed by a fixed point: each depends on what the names it
-    # waits on depend on, whether those were read before it, after it, or were held back too. A
-    # name that no declaration defines contributes nothing.
-    final = {nid: deps for own, _, deps, _ in held for nid in own}
-    changed = True
-    while changed:
-        changed = False
-        for own, _, deps, waits in held:
-            new = set(final[own[0]])
-            for nid in waits:
-                new |= complete.get(nid, final.get(nid, frozenset()))
-            if new != final[own[0]]:
-                new = frozenset(new)
-                for nid in own:
-                    final[nid] = new
-                changed = True
-    for own, nm, _, _ in held:
-        for t2 in final[own[0]]:
-            dependents.setdefault(t2, set()).add(nm)
-
-    return declared_axioms, citers, dependents, const_cited
+    n_exprs, n_names = max_ie + 1, max_in + 1
+    parents = grouped(n_exprs, sub_ids, sub_parents)
+    del sub_ids, sub_parents
+    citing = grouped(n_names, cited_names, citing_exprs)
+    del cited_names, citing_exprs
+    holders = grouped(n_exprs, held_exprs, holding_decls)
+    return Export(axioms, parents, citing, holders, owns, labels)
 
 
 def is_aeneas(name):
@@ -396,27 +434,25 @@ def main():
 
     # Run from `lean/`: the package's own modules are `PastaCurves.lean` and `PastaCurves/`.
     check_no_aeneas_declarations(Path("PastaCurves"))
-    declared_axioms, citers, dependents, const_cited = scan(export_path, TARGETS)
-    # The axioms that Aeneas' library declares and the permitted list does not name: a second
-    # scan finds their citers, which must all be Aeneas' own declarations.
+    export = scan(export_path)
+    declared_axioms = set(export.axioms)
+    # The axioms that Aeneas' library declares and the permitted list does not name: only
+    # Aeneas' own declarations may depend on them.
     aeneas_axioms = {a for a in declared_axioms - permitted if is_aeneas(a)}
-    if aeneas_axioms:
-        declared_axioms, citers, dependents, const_cited = scan(
-            export_path, TARGETS | aeneas_axioms
-        )
+    citers = {t: export.citers(t) for t in TARGETS | aeneas_axioms}
 
     def citers_of(t):
         """The declarations citing `t`, with `<expression>` for a citation that no declaration
         reaches."""
         found = set(citers.get(t, set()))
-        if const_cited.get(t) and not found:
+        if export.cited(t) and not found:
             found.add("<expression>")
         return found
 
     def dependents_of(t):
         """The declarations depending on `t`, directly or through other declarations, with
         `<expression>` for a citation that no declaration reaches."""
-        return dependents.get(t, set()) | citers_of(t)
+        return export.dependents(t) | citers_of(t)
 
     def listed(names, limit=10):
         """`names`, sorted, with at most `limit` of them spelled out."""
