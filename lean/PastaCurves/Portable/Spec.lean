@@ -12,7 +12,8 @@ step through the translation with Aeneas' `step*`, then close the arithmetic by 
 
 The blocks' helpers have step lemmas of their own, which `step*` applies at each call: `sbb`, one
 limb of a borrow chain, proved on natural numbers; `select`, the masked select, proved on 64-bit
-vectors; and `mask_of_bit`, the 64-bit mask of a bit.
+vectors; `mask_of_bit`, the 64-bit mask of a bit; `sign_mask`, the mask of a word's sign; and
+`halve`, the arithmetic shift right by one.
 -/
 
 namespace PastaCurves.Portable
@@ -64,6 +65,25 @@ theorem mask_of_bit_spec (bit : Std.U64) (h : bit.val ≤ 1) :
       (bit.val = 0 ∧ mask.val = 0) ∨ (bit.val = 1 ∧ mask.val = 2^64 - 1) ⦄ := by
   unfold mask_of_bit
   exact wrapping_sub_zero_bit_spec bit h
+
+open pasta_curves.inversion.portable in
+/-- The mask of a word's sign: zero for a word below `2^63`, and all ones otherwise. -/
+@[step]
+theorem sign_mask_spec (x : Std.U64) :
+    sign_mask x ⦃ (res : Std.U64) => res.val = if x.val < 2^63 then 0 else 2^64 - 1 ⦄ := by
+  unfold sign_mask
+  step*
+  exact sign_mask_val (by rw [i1_post, i_post])
+
+open pasta_curves.inversion.portable in
+/-- `halve` is the arithmetic shift right by one, `asr` of `Semantics.lean`. -/
+@[step]
+theorem halve_spec (x : Std.U64) :
+    halve x ⦃ (res : Std.U64) => res.val = asr x.val 1 ⦄ := by
+  unfold halve
+  step*
+  rw [IScalar.hcast_val_eq, i1_post, i_post, UScalar.hcast_val_eq, Int.shiftRight_eq_div_pow]
+  agrind [asr, Int.bmod]
 
 open pasta_curves.inversion.portable in
 /-- `cond_sub` subtracts `m` from `v` exactly when `v` is not below it: the translation meets the

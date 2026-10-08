@@ -27,6 +27,7 @@ import PastaCurves.Portable.Funs
 import PastaCurves.Portable.Words
 import PastaCurves.Portable.Vectors
 import PastaCurves.Portable.Spec
+import PastaCurves.Portable.Divstep59
 import PastaCurves.Portable.Driver
 import PastaCurves.Words
 import PastaCurves.Glue.Funs
