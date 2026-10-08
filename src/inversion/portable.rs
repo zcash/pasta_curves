@@ -49,6 +49,14 @@ fn adc(a: u64, b: u64, carry: u64) -> (u64, u64) {
     (sum, u64::from(overflow1 | overflow2))
 }
 
+/// `a + b c + carry` as its low word and its high word: one column of a multiplication. The sum is
+/// below `2^128` for any words, so neither part overflows.
+#[inline(always)]
+fn mac(a: u64, b: u64, c: u64, carry: u64) -> (u64, u64) {
+    let sum = u128::from(a) + u128::from(b) * u128::from(c) + u128::from(carry);
+    (sum as u64, (sum >> 64) as u64)
+}
+
 /// `a` where the mask is all ones and `b` where it is zero, bit by bit.
 #[inline(always)]
 fn select(mask: u64, a: u64, b: u64) -> u64 {
@@ -255,17 +263,11 @@ impl InvertBlocks for Backend {
         let s = add5(t, &p61);
         let w = s[0].wrapping_mul(inv);
         // The low word cancels: `s[0] + w p[0] ≡ 0 (mod 2^64)`.
-        let carry = (u128::from(s[0]) + u128::from(w) * u128::from(p[0])) >> 64;
-        let column1 = carry + u128::from(s[1]) + u128::from(w) * u128::from(p[1]);
-        let column2 = (column1 >> 64) + u128::from(s[2]) + u128::from(w) * u128::from(p[2]);
-        let column3 = (column2 >> 64) + u128::from(s[3]) + u128::from(w) * u128::from(p[3]);
-        let column4 = (column3 >> 64) + u128::from(s[4]);
-        [
-            column1 as u64,
-            column2 as u64,
-            column3 as u64,
-            column4 as u64,
-        ]
+        let (_, carry) = mac(s[0], w, p[0], 0);
+        let (r0, carry) = mac(s[1], w, p[1], carry);
+        let (r1, carry) = mac(s[2], w, p[2], carry);
+        let (r2, carry) = mac(s[3], w, p[3], carry);
+        [r0, r1, r2, s[4].wrapping_add(carry)]
     }
 
     /// The four-word subtraction of the modulus, kept unless it borrows out of the top word.
