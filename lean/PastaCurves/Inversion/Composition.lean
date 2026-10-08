@@ -293,24 +293,24 @@ theorem invert_eq_model (B : InvertBlocks) (F : PastaField) (hB : B.Spec F) (x :
   have htv : |σ * (N.u * rs.d.toNat + N.v * rs.e.toNat)| < 2^315 := by
     rw [← hval, ← show (2 : ℤ)^59 * 2^256 = 2^315 by norm_num]
     exact Inversion.row_abs_lt (σ * N.u) (σ * N.v) _ _ _ _ hrow' hd' he' (by positivity)
-  set r : ℤ := amontredZ (σ * (N.u * rs.d.toNat + N.v * rs.e.toNat)) F.modulus.toNat F.inv
-    with hr
+  set t' : ℤ := amontredZ (σ * (N.u * rs.d.toNat + N.v * rs.e.toNat)) F.modulus.toNat F.inv
+    with ht'
   have hA : B.amontred (B.deRow rs.d rs.e sm.u sm.v
       (sm.su ^^^ (if sw < 2^63 then 0 else 2^64 - 1))
       (sm.sv ^^^ (if sw < 2^63 then 0 else 2^64 - 1))) F.modulus F.inv
-      = Limbs.ofNat r.toNat := by
+      = Limbs.ofNat t'.toNat := by
     rw [hB.amontred _ hTb (by rw [hT, hval]; exact htv)]
     unfold Inversion.amontred
     rw [hT, hval]
-  obtain ⟨hr0, -, hr2p, hr256, -⟩ := Inversion.amontredZ_spec F _ htv
-  rw [← hr] at hr0 hr2p hr256
+  obtain ⟨ht'0, -, ht'2p, ht'256, -⟩ := Inversion.amontredZ_spec F _ htv
+  rw [← ht'] at ht'0 ht'2p ht'256
   -- The conditional subtraction is the model's.
   have hp254 : 2^254 ≤ F.modulus.toNat := F.two_pow_le_modulus
   have hp255 : F.modulus.toNat < 2^255 := F.modulus_lt
-  have hAt : (Limbs.ofNat r.toNat).toNat = r.toNat := Limbs.toNat_ofNat _ (by omega)
-  obtain ⟨hRb, hR⟩ := hB.condSub (Limbs.ofNat r.toNat) (Limbs.ofNat_bounded _)
+  have hAt : (Limbs.ofNat t'.toNat).toNat = t'.toNat := Limbs.toNat_ofNat _ (by omega)
+  obtain ⟨hRb, hR⟩ := hB.condSub (Limbs.ofNat t'.toNat) (Limbs.ofNat_bounded _)
   rw [hAt] at hR
-  have hqlt : (if r < F.modulus.toNat then r else r - F.modulus.toNat).toNat < 2^256 := by
+  have hqlt : (if t' < F.modulus.toNat then t' else t' - F.modulus.toNat).toNat < 2^256 := by
     split_ifs <;> omega
   rw [hA]
   apply Limbs.ext_of_toNat _ _ hRb (Limbs.ofNat_bounded _)
