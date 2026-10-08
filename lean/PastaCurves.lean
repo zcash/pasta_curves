@@ -27,6 +27,7 @@ import PastaCurves.Portable.Funs
 import PastaCurves.Portable.Words
 import PastaCurves.Portable.Vectors
 import PastaCurves.Portable.Spec
+import PastaCurves.Portable.Driver
 import PastaCurves.Words
 import PastaCurves.Glue.Funs
 import PastaCurves.Glue.Blocks
