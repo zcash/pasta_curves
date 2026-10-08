@@ -32,6 +32,7 @@ import PastaCurves.Portable.SignMag
 import PastaCurves.Portable.Row
 import PastaCurves.Portable.Amontred
 import PastaCurves.Portable.Driver
+import PastaCurves.Portable.Entry
 import PastaCurves.Words
 import PastaCurves.Glue.Funs
 import PastaCurves.Glue.Blocks
