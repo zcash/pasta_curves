@@ -26,7 +26,7 @@ def signed5Array (x : Signed5) : Std.Array Std.U64 5#usize :=
 
 /-- Four limbs from Aeneas' array of four words. -/
 def limbsOfArray (a : Std.Array Std.U64 4#usize) : Limbs :=
-  ⟨a.val[0]!.val, a.val[1]!.val, a.val[2]!.val, a.val[3]!.val⟩
+  ⟨a[0].val, a[1].val, a[2].val, a[3].val⟩
 
 /-- A number below `2^64` is the value of its word. -/
 theorem word_val (x : Nat) (hx : x < 2^64) : (word x).val = x := by
@@ -56,7 +56,7 @@ theorem sbb_step (a b cin : Nat) (word word1 bout : Std.U64) (u1 u2 : Bool) (hb 
 
 /-- The limbs read from an array of words are bounded. -/
 theorem limbsOfArray_bounded (a : Std.Array Std.U64 4#usize) : (limbsOfArray a).Bounded :=
-  ⟨a.val[0]!.hBounds, a.val[1]!.hBounds, a.val[2]!.hBounds, a.val[3]!.hBounds⟩
+  ⟨a[0].hBounds, a[1].hBounds, a[2].hBounds, a[3].hBounds⟩
 
 /-- Bounded limbs, written as an array of words, read back as themselves. -/
 theorem limbsOfArray_limbsArray (x : Limbs) (hx : x.Bounded) : limbsOfArray (limbsArray x) = x := by
