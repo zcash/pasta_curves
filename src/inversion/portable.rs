@@ -25,6 +25,21 @@ fn sign_mask(x: u64) -> u64 {
     ((x as i64) >> 63) as u64
 }
 
+/// `a - b - borrow` and the borrow out, for a borrow in of zero or one: the difference modulo
+/// `2^64`, and one when the subtraction wraps, else zero.
+#[inline(always)]
+fn sbb(a: u64, b: u64, borrow: u64) -> (u64, u64) {
+    let (difference, underflow1) = a.overflowing_sub(b);
+    let (difference, underflow2) = difference.overflowing_sub(borrow);
+    (difference, u64::from(underflow1 | underflow2))
+}
+
+/// `a` where the mask is all ones and `b` where it is zero, bit by bit.
+#[inline(always)]
+fn select(mask: u64, a: u64, b: u64) -> u64 {
+    (mask & a) | (!mask & b)
+}
+
 /// One packed divstep: the recurrence of `Packed.lean` on the packed state `(two_delta, f, g)`, in
 /// two's-complement words. When `two_delta > 0` and `g` is odd, the step is `(2 - two_delta, g, (g - f) / 2)`;
 /// otherwise it is `(2 + two_delta, f, (g + (g mod 2) f) / 2)`, the divisions rounding down. `two_delta` stays
@@ -236,15 +251,12 @@ impl InvertBlocks for Backend {
         let mut difference = [0u64; 4];
         let mut borrow = 0u64;
         unroll!(i in [0, 1, 2, 3] {
-            let (word, underflow1) = value[i].overflowing_sub(modulus[i]);
-            let (word, underflow2) = word.overflowing_sub(borrow);
-            difference[i] = word;
-            borrow = u64::from(underflow1 | underflow2);
+            (difference[i], borrow) = sbb(value[i], modulus[i], borrow);
         });
         let keep = 0u64.wrapping_sub(borrow);
         let mut out = [0u64; 4];
         unroll!(i in [0, 1, 2, 3] {
-            out[i] = (keep & value[i]) | (!keep & difference[i]);
+            out[i] = select(keep, value[i], difference[i]);
         });
         out
     }
