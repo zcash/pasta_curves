@@ -22,6 +22,10 @@ the bounds of the true divstep state after `59 i` steps. The last round is the s
 word xored into the masks of its row, which negates the represented entries exactly when the
 model's `finalD` negates the row.
 
+The relation after each of the nine rounds is `invert_carries`. `invertRound_rows_le` states one
+fact that a round's proof derives on the way: the magnitudes of each row of the matrix sum to at
+most `2^59`, within the `2^63` under which the portable blocks' rows are proved to succeed.
+
 The proofs name the true state, the model's state, the matrix, and the blocks' results by
 `generalize` rather than `set`: those terms are iterates and long `let` chains, and a `let`-bound
 name lets `omega`, `rw`, and `show` unfold them to the recursion limit. -/
@@ -196,27 +200,67 @@ theorem invertRound_carries (B : InvertBlocks) (F : PastaField) (hB : B.Spec F) 
   dsimp only
   exact ⟨hD, hfeq, hgeq, hdeq, heeq⟩
 
+/-- The word state after `i` of the nine rounds of `invert` carries the model's state after `i`
+rounds. -/
+theorem invert_carries (B : InvertBlocks) (F : PastaField) (hB : B.Spec F) (x : Limbs)
+    (hx : x.Bounded) (i : ℕ) (hi : i ≤ 9) :
+    Carries ((invertRound B F.modulus F.inv)^[i]
+      ⟨1, ⟨F.modulus.l0, F.modulus.l1, F.modulus.l2, F.modulus.l3, 0⟩,
+        ⟨x.l0, x.l1, x.l2, x.l3, 0⟩, ⟨0, 0, 0, 0⟩, startE F⟩) (rounds F x i) := by
+  induction i with
+  | zero => exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+  | succ i ih =>
+    rw [Function.iterate_succ_apply']
+    exact invertRound_carries B F hB x hx i hi _ (ih (by omega))
+
+/-- In a round of `invert` over blocks that meet their specification, on a word state carrying
+the model's, the magnitudes of each row of the matrix sum to at most `2^59`. This is within the
+`2^63` under which a row's columns are proved to stay within 128 bits in the portable blocks. -/
+theorem invertRound_rows_le (B : InvertBlocks) (F : PastaField) (hB : B.Spec F) (x : Limbs)
+    (hx : x.Bounded) (i : ℕ) (hi : i ≤ 9) (st : InvertState) (h : Carries st (rounds F x i)) :
+    let dm := B.divstep59 st.two_delta st.f.l0 st.g.l0
+    let sm := B.signMag dm.u dm.v dm.q dm.r
+    sm.u + sm.v ≤ 2^59 ∧ sm.q + sm.r ≤ 2^59 := by
+  obtain ⟨s_two_delta, sf, sg, sd, se⟩ := st
+  obtain ⟨htwo_delta, hf, hg, -, -⟩ := h
+  simp only at htwo_delta hf hg ⊢
+  subst hf hg
+  obtain ⟨hdT, hfb, hgb, hfT, hgT, -, -, -, -, -⟩ := Inversion.rounds_invariant F x hx i
+  obtain ⟨hodd, hdodd, hdD, -, -⟩ := trueState_facts F x hx i hi
+  generalize rounds F x i = rs at *
+  generalize trueState F x i = t at *
+  have hfl : (rs.f.l0 : ℤ) = t.f % 2^64 := by
+    rw [← hfT]; exact (Inversion.Signed5.toInt_emod _ hfb).symm
+  have hgl : (rs.g.l0 : ℤ) = t.g % 2^64 := by
+    rw [← hgT]; exact (Inversion.Signed5.toInt_emod _ hgb).symm
+  have hdw : (s_two_delta : ℤ) = t.two_delta % 2^64 := by rw [htwo_delta, hdT]
+  have hspec := hB.divstep59 s_two_delta rs.f.l0 rs.g.l0 t hodd hdodd hdD hdw hfl hgl
+  generalize B.divstep59 s_two_delta rs.f.l0 rs.g.l0 = dm at hspec ⊢
+  obtain ⟨-, hMu, hMv, hMq, hMr⟩ := hspec
+  obtain ⟨hrow1, hrow2⟩ := Inversion.M_rowSum_le 59 t
+  generalize M 59 t = N at *
+  have hu0 := abs_nonneg N.u
+  have hv0 := abs_nonneg N.v
+  have hq0 := abs_nonneg N.q
+  have hr0 := abs_nonneg N.r
+  rw [hB.signMag N.u N.v N.q N.r dm.u dm.v dm.q dm.r (by omega) (by omega) (by omega) (by omega)
+    hMu hMv hMq hMr]
+  have eu := Int.natCast_natAbs N.u
+  have ev := Int.natCast_natAbs N.v
+  have eq := Int.natCast_natAbs N.q
+  have er := Int.natCast_natAbs N.r
+  dsimp only
+  constructor <;> omega
+
 /-- The composition over blocks that meet their specification computes the model. -/
 theorem invert_eq_model (B : InvertBlocks) (F : PastaField) (hB : B.Spec F) (x : Limbs)
     (hx : x.Bounded) : invert B x F.modulus F.inv (startE F) = montInvModel F x := by
   -- The nine rounds.
   simp only [invert, montInvModel, finalD]
-  generalize hst0 : (⟨1, ⟨F.modulus.l0, F.modulus.l1, F.modulus.l2, F.modulus.l3, 0⟩,
-    ⟨x.l0, x.l1, x.l2, x.l3, 0⟩, ⟨0, 0, 0, 0⟩, startE F⟩ : InvertState) = st0
-  have hcarry : ∀ i, i ≤ 9 →
-      Carries ((invertRound B F.modulus F.inv)^[i] st0) (rounds F x i) := by
-    intro i
-    induction i with
-    | zero =>
-      intro _
-      rw [← hst0]
-      exact ⟨rfl, rfl, rfl, rfl, rfl⟩
-    | succ i ih =>
-      intro hi
-      rw [Function.iterate_succ_apply']
-      exact invertRound_carries B F hB x hx i hi _ (ih (by omega))
-  obtain ⟨htwo_delta, hf, hg, hd, he⟩ := hcarry 9 (le_refl _)
-  generalize hst : (invertRound B F.modulus F.inv)^[9] st0 = st at htwo_delta hf hg hd he ⊢
+  obtain ⟨htwo_delta, hf, hg, hd, he⟩ := invert_carries B F hB x hx 9 (le_refl _)
+  generalize hst : (invertRound B F.modulus F.inv)^[9]
+    ⟨1, ⟨F.modulus.l0, F.modulus.l1, F.modulus.l2, F.modulus.l3, 0⟩,
+      ⟨x.l0, x.l1, x.l2, x.l3, 0⟩, ⟨0, 0, 0, 0⟩, startE F⟩ = st at htwo_delta hf hg hd he ⊢
   rw [hf, hg, hd, he]
   obtain ⟨hdT, hfb, hgb, hfT, hgT, hdb, heb, -, -, -⟩ := Inversion.rounds_invariant F x hx 9
   obtain ⟨hodd, hdodd, hdD, hfv, hgv⟩ := trueState_facts F x hx 9 (le_refl _)
