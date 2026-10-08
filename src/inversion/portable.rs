@@ -40,6 +40,12 @@ fn select(mask: u64, a: u64, b: u64) -> u64 {
     (mask & a) | (!mask & b)
 }
 
+/// `x` read as two's complement, halved and rounded down: the arithmetic shift right by one.
+#[inline(always)]
+fn halve(x: u64) -> u64 {
+    ((x as i64) >> 1) as u64
+}
+
 /// One packed divstep: the recurrence of `Packed.lean` on the packed state `(two_delta, f, g)`, in
 /// two's-complement words. When `two_delta > 0` and `g` is odd, the step is `(2 - two_delta, g, (g - f) / 2)`;
 /// otherwise it is `(2 + two_delta, f, (g + (g mod 2) f) / 2)`, the divisions rounding down. `two_delta` stays
@@ -48,10 +54,10 @@ fn select(mask: u64, a: u64, b: u64) -> u64 {
 fn divstep(two_delta: u64, f: u64, g: u64) -> (u64, u64, u64) {
     let odd = 0u64.wrapping_sub(g & 1);
     let swap = odd & sign_mask(0u64.wrapping_sub(two_delta));
-    let two_delta_new = (swap & 2u64.wrapping_sub(two_delta)) | (!swap & two_delta.wrapping_add(2));
-    let f_new = (swap & g) | (!swap & f);
-    let sum = (swap & g.wrapping_sub(f)) | (!swap & g.wrapping_add(odd & f));
-    (two_delta_new, f_new, ((sum as i64) >> 1) as u64)
+    let two_delta_new = select(swap, 2u64.wrapping_sub(two_delta), two_delta.wrapping_add(2));
+    let f_new = select(swap, g, f);
+    let sum = select(swap, g.wrapping_sub(f), g.wrapping_add(odd & f));
+    (two_delta_new, f_new, halve(sum))
 }
 
 /// The coefficient pair in the upper bits of a packed word after `k` steps, as `Packed.lean`'s
