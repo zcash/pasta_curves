@@ -17,7 +17,7 @@
 //! mask, and the rows fold each matrix entry's sign in by a conditional negation under its mask.
 
 use super::InvertBlocks;
-use crate::limbs::Limbs;
+use crate::limbs::{Limbs, unroll};
 
 /// The mask of a word's sign, read as two's complement: all ones for a negative word, else zero.
 #[inline(always)]

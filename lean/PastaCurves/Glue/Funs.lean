@@ -22,7 +22,7 @@ set_option maxRecDepth 2048
 namespace pasta_curves
 
 /-- [pasta_curves::limbs::is_canonical_word]:
-    Source: 'src/limbs.rs', lines 28:0-36:1 -/
+    Source: 'src/limbs.rs', lines 29:0-37:1 -/
 def limbs.is_canonical_word
   (value : Array Std.U64 4#usize) (modulus : Array Std.U64 4#usize) :
   Result Std.U64
@@ -86,7 +86,7 @@ def asm.entry.mul_contract
   ok (i14 = 1#u64)
 
 /-- [pasta_curves::limbs::is_canonical]:
-    Source: 'src/limbs.rs', lines 40:0-42:1 -/
+    Source: 'src/limbs.rs', lines 41:0-43:1 -/
 def limbs.is_canonical
   (value : Array Std.U64 4#usize) (modulus : Array Std.U64 4#usize) :
   Result Bool

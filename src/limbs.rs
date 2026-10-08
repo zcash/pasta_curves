@@ -13,6 +13,7 @@ macro_rules! unroll {
         })*
     };
 }
+pub(crate) use unroll;
 
 /// Four little-endian 64-bit limbs, least significant first: a field element
 /// (in Montgomery form, or canonical after `from_mont`) or a modulus.
