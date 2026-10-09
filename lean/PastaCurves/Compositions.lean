@@ -13,8 +13,8 @@ definitions mirror that Rust: the canonicity check `is_canonical`, a borrow chai
 namespace PastaCurves
 
 /-- The crate's `is_canonical`: whether `value < modulus`, as the borrow out of the four-limb
-subtraction `value - modulus`, limb by limb from the least significant, as `src/asm/entry.rs`
-computes it. A limb borrows when it is below the other limb plus the borrow in. -/
+subtraction `value - modulus`, limb by limb from the least significant, as `src/limbs.rs` computes
+it. A limb borrows when it is below the other limb plus the borrow in. -/
 def isCanonical (value modulus : Limbs) : Bool :=
   let borrow0 := if value.l0 < modulus.l0 then 1 else 0
   let borrow1 := if value.l1 < modulus.l1 + borrow0 then 1 else 0
