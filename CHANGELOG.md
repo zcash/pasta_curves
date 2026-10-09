@@ -6,6 +6,8 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.6.1] - 2026-10-09
 ### Added
 - `asm` feature flag, which enables assembly field arithmetic on supported
   targets. Passing the compiler flag `--cfg pasta_curves_noasm` compiles the
