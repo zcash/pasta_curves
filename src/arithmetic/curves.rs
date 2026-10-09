@@ -129,6 +129,17 @@ pub trait CurveExt:
     }
 }
 
+/// Internal construction for coordinates produced by trusted curve formulas.
+#[cfg(feature = "alloc")]
+pub(crate) trait CurveExtUnchecked: CurveExt {
+    /// Constructs a point without validating that the coordinates are on the
+    /// curve.
+    ///
+    /// Callers must ensure that the coordinates satisfy the curve equation or
+    /// represent the identity.
+    fn new_jacobian_unchecked(x: Self::Base, y: Self::Base, z: Self::Base) -> Self;
+}
+
 /// This trait is the affine counterpart to `Curve` and is used for
 /// serialization, storage in memory, and inspection of $x$ and $y$ coordinates.
 ///
