@@ -7,28 +7,20 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 ### Added
-- `pasta_curves::BACKEND`, the name of the assembly backend compiled into
-  the build (`"aarch64"`, `"x86-64"`, or `"portable"`), intended for
-  diagnostics only. Passing the compiler flag `--cfg pasta_curves_noasm`
-  compiles the backend out on any target.
-- `CurveExt::batch_mul_same_scalar_vartime`, for component-wise
-  multiplication of affine points by the same public scalar. Pallas and Vesta
-  use batched GLV multiplication when the `glv` feature is enabled.
+- `asm` feature flag, which enables assembly field arithmetic on supported
+  targets. Passing the compiler flag `--cfg pasta_curves_noasm` compiles the
+  assembly backend out on any target even if the feature flag is enabled.
+- `pasta_curves::BACKEND`, a diagnostic constant identifying the selected
+  arithmetic backend (`"aarch64"`, `"x86-64"`, or `"portable"`).
+- `CurveExt::batch_mul_same_scalar_vartime`, for multiplying a batch of affine
+  points by the same public scalar. It has a default implementation and panics
+  if the input and output slices have different lengths.
 
 ### Changed
-- `Fp::invert` and `Fq::invert` use a constant-time inversion by divsteps
-  (Bernstein et al.), rather than exponentiation by `p - 2`. It is about
-  4.5 times as fast, and its timing still does not depend on the input.
-- `Fp` and `Fq` square-root table lookups now hash their normalized Montgomery
-  representations directly, with generated multiply-and-shift perfect hashes.
-  This removes four Montgomery reductions and four integer remainders per
-  square root, and implements the `get_lower_32` TODO this crate already
-  carried. Measured at 2.3% on `Fp::sqrt` and 1.8% on `Fq::sqrt`, on Apple
-  AArch64 with the assembly backend.
-- Hash-to-curve no longer re-checks the curve equation in release builds after
-  the simplified SWU and isogeny formulas, which produce on-curve points by
-  construction; the debug assertions are retained. About 5% faster for Vesta
-  hash-to-curve on Apple AArch64.
+- `Fp::invert` and `Fq::invert` are faster, while remaining constant-time.
+- The `sqrt-table` feature is faster, improving the performance of
+  `{Fp, Fq}::{sqrt, sqrt_alt, sqrt_ratio}`.
+- `CurveExt::hash_to_curve` is faster in release builds.
 
 ## [0.6.0] - 2026-09-25
 ### Added
