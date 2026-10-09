@@ -18,7 +18,7 @@ open Aeneas Aeneas.Std
 /-- The record of a backend's Montgomery blocks, from their models on limbs. -/
 def blocksOf (add sub : Limbs → Limbs → Limbs → Limbs)
     (mul : Limbs → Limbs → Limbs → Nat → Limbs) (square fromMont : Limbs → Limbs → Nat → Limbs) :
-    pasta_curves.asm.entry.MontgomeryBlocks Unit where
+    pasta_curves.montgomery.MontgomeryBlocks Unit where
   add lhs rhs modulus :=
     .ok (limbsArray (add (limbsOfArray lhs) (limbsOfArray rhs) (limbsOfArray modulus)))
   sub lhs rhs modulus :=

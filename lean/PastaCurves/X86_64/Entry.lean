@@ -47,7 +47,7 @@ asserts, the canonical sum. -/
 theorem add_entry_spec (F : PastaField) (lhs rhs : Std.Array Std.U64 4#usize)
     (hl : isCanonical (limbsOfArray lhs) F.modulus = true)
     (hr : isCanonical (limbsOfArray rhs) F.modulus = true) :
-    asm.entry.add_with montgomeryBlocks lhs rhs (limbsArray F.modulus) ⦃ res =>
+    montgomery.add_with montgomeryBlocks lhs rhs (limbsArray F.modulus) ⦃ res =>
       Canonical F res 1 ((limbsOfArray lhs).toNat + (limbsOfArray rhs).toNat) ⦄ :=
   add_with_spec montgomeryBlocks F (montgomeryBlocks_spec F) lhs rhs hl hr
 
@@ -56,7 +56,7 @@ asserts, the canonical difference. -/
 theorem sub_entry_spec (F : PastaField) (lhs rhs : Std.Array Std.U64 4#usize)
     (hl : isCanonical (limbsOfArray lhs) F.modulus = true)
     (hr : isCanonical (limbsOfArray rhs) F.modulus = true) :
-    asm.entry.sub_with montgomeryBlocks lhs rhs (limbsArray F.modulus) ⦃ res =>
+    montgomery.sub_with montgomeryBlocks lhs rhs (limbsArray F.modulus) ⦃ res =>
       (limbsOfArray res).toNat < F.modulus.toNat ∧
         (limbsOfArray res).toNat + (limbsOfArray rhs).toNat ≡ (limbsOfArray lhs).toNat
           [MOD F.modulus.toNat] ⦄ :=
@@ -66,7 +66,7 @@ theorem sub_entry_spec (F : PastaField) (lhs rhs : Std.Array Std.U64 4#usize)
 a canonical `res` with `R * res ≡ lhs * rhs (mod p)`. -/
 theorem mul_entry_spec (F : PastaField) (lhs rhs : Std.Array Std.U64 4#usize)
     (h : mulContract (limbsOfArray lhs) (limbsOfArray rhs) F.modulus = true) :
-    asm.entry.mul_with montgomeryBlocks lhs rhs (limbsArray F.modulus) (word F.inv) ⦃ res =>
+    montgomery.mul_with montgomeryBlocks lhs rhs (limbsArray F.modulus) (word F.inv) ⦃ res =>
       Canonical F res R ((limbsOfArray lhs).toNat * (limbsOfArray rhs).toNat) ⦄ :=
   mul_with_spec montgomeryBlocks F (montgomeryBlocks_spec F) lhs rhs h
 
@@ -74,7 +74,7 @@ theorem mul_entry_spec (F : PastaField) (lhs rhs : Std.Array Std.U64 4#usize)
 asserts, a canonical `res` with `R * res ≡ value² (mod p)`. -/
 theorem square_entry_spec (F : PastaField) (value : Std.Array Std.U64 4#usize)
     (h : isCanonical (limbsOfArray value) F.modulus = true) :
-    asm.entry.square_with montgomeryBlocks value (limbsArray F.modulus) (word F.inv) ⦃ res =>
+    montgomery.square_with montgomeryBlocks value (limbsArray F.modulus) (word F.inv) ⦃ res =>
       Canonical F res R ((limbsOfArray value).toNat * (limbsOfArray value).toNat) ⦄ :=
   square_with_spec montgomeryBlocks F (montgomeryBlocks_spec F) value h
 
@@ -83,7 +83,7 @@ it asserts, a canonical `res` with `R^(2^count) * res ≡ value^(2^count) * rhs 
 theorem sqr_n_mul_entry_spec (F : PastaField) (value : Std.Array Std.U64 4#usize)
     (count : Std.Usize) (rhs : Std.Array Std.U64 4#usize)
     (h : isCanonical (limbsOfArray value) F.modulus = true) :
-    asm.entry.sqr_n_mul_with montgomeryBlocks value count rhs (limbsArray F.modulus)
+    montgomery.sqr_n_mul_with montgomeryBlocks value count rhs (limbsArray F.modulus)
       (word F.inv) ⦃ res =>
       Canonical F res (R^(2^count.val))
         ((limbsOfArray value).toNat^(2^count.val) * (limbsOfArray rhs).toNat) ⦄ :=
@@ -92,7 +92,7 @@ theorem sqr_n_mul_entry_spec (F : PastaField) (value : Std.Array Std.U64 4#usize
 /-- The crate's `from_mont` on the x86-64 backend, at a Pasta field: for any operand, a canonical
 `res` with `R * res ≡ value (mod p)`. -/
 theorem from_mont_entry_spec (F : PastaField) (value : Std.Array Std.U64 4#usize) :
-    asm.entry.from_mont_with montgomeryBlocks value (limbsArray F.modulus) (word F.inv) ⦃ res =>
+    montgomery.from_mont_with montgomeryBlocks value (limbsArray F.modulus) (word F.inv) ⦃ res =>
       Canonical F res R (limbsOfArray value).toNat ⦄ :=
   from_mont_with_spec montgomeryBlocks F (montgomeryBlocks_spec F) value
 

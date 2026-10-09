@@ -26,7 +26,7 @@ namespace PastaCurves.Glue
 open Aeneas Aeneas.Std
 
 /-- The two backends' records of the Montgomery blocks. -/
-def backends : List (pasta_curves.asm.entry.MontgomeryBlocks Unit) :=
+def backends : List (pasta_curves.montgomery.MontgomeryBlocks Unit) :=
   [AArch64.montgomeryBlocks, X86_64.montgomeryBlocks]
 
 /-- The limbs of a result that succeeds, and `none` for one that fails, diverges, or panics. -/
@@ -34,15 +34,15 @@ def resultLimbs (res : Result (Std.Array Std.U64 4#usize)) : Option Limbs :=
   (Option.ofResult res).map limbsOfArray
 
 #guard backends.all fun B => mulVectors.all fun (_, F, a, b, res) =>
-  resultLimbs (pasta_curves.asm.entry.mul_with B (limbsArray a) (limbsArray b)
+  resultLimbs (pasta_curves.montgomery.mul_with B (limbsArray a) (limbsArray b)
     (limbsArray F.modulus) (word F.inv)) == some res
 
 #guard backends.all fun B => sqrVectors.all fun (_, F, a, res) =>
-  resultLimbs (pasta_curves.asm.entry.square_with B (limbsArray a) (limbsArray F.modulus)
+  resultLimbs (pasta_curves.montgomery.square_with B (limbsArray a) (limbsArray F.modulus)
     (word F.inv)) == some res
 
 #guard backends.all fun B => fromVectors.all fun (_, F, a, res) =>
-  resultLimbs (pasta_curves.asm.entry.from_mont_with B (limbsArray a) (limbsArray F.modulus)
+  resultLimbs (pasta_curves.montgomery.from_mont_with B (limbsArray a) (limbsArray F.modulus)
     (word F.inv)) == some res
 
 /-- `R^k mod p` at the field `F`, the Montgomery form of `R^(k-1)`. -/
@@ -51,7 +51,7 @@ def rPow (F : PastaField) (k : Nat) : Limbs := Limbs.ofNat (R^k % F.modulus.toNa
 -- The known answers of the crate's `sqr_n_mul_known_answers` test.
 #guard backends.all fun B => [pallasBase, vestaBase].all fun F =>
   [(2, 0, 3, 4), (1, 1, 2, 2), (2, 1, 1, 3), (2, 2, 3, 7)].all fun (v, n, w, res) =>
-    resultLimbs (pasta_curves.asm.entry.sqr_n_mul_with B (limbsArray (rPow F v))
+    resultLimbs (pasta_curves.montgomery.sqr_n_mul_with B (limbsArray (rPow F v))
       ⟨BitVec.ofNat _ n⟩ (limbsArray (rPow F w)) (limbsArray F.modulus) (word F.inv)) ==
       some (rPow F res)
 
@@ -62,9 +62,9 @@ def inputs (F : PastaField) : List Nat :=
 #guard backends.all fun B => [pallasBase, vestaBase].all fun F =>
   let p := F.modulus.toNat
   (inputs F).all fun x => (inputs F).all fun y =>
-    resultLimbs (pasta_curves.asm.entry.add_with B (limbsArray (Limbs.ofNat x))
+    resultLimbs (pasta_curves.montgomery.add_with B (limbsArray (Limbs.ofNat x))
       (limbsArray (Limbs.ofNat y)) (limbsArray F.modulus)) == some (Limbs.ofNat ((x + y) % p)) &&
-    resultLimbs (pasta_curves.asm.entry.sub_with B (limbsArray (Limbs.ofNat x))
+    resultLimbs (pasta_curves.montgomery.sub_with B (limbsArray (Limbs.ofNat x))
       (limbsArray (Limbs.ofNat y)) (limbsArray F.modulus)) ==
       some (Limbs.ofNat ((x + p - y) % p))
 
@@ -74,11 +74,11 @@ def inputs (F : PastaField) : List Nat :=
   let m := limbsArray F.modulus
   let one := limbsArray (Limbs.ofNat 1)
   let ones := limbsArray (Limbs.ofNat (2^256 - 1))
-  resultLimbs (pasta_curves.asm.entry.add_with B m one m) == none &&
-    resultLimbs (pasta_curves.asm.entry.sub_with B one m m) == none &&
-    resultLimbs (pasta_curves.asm.entry.square_with B m m (word F.inv)) == none &&
-    resultLimbs (pasta_curves.asm.entry.sqr_n_mul_with B m ⟨BitVec.ofNat _ 0⟩ one m
+  resultLimbs (pasta_curves.montgomery.add_with B m one m) == none &&
+    resultLimbs (pasta_curves.montgomery.sub_with B one m m) == none &&
+    resultLimbs (pasta_curves.montgomery.square_with B m m (word F.inv)) == none &&
+    resultLimbs (pasta_curves.montgomery.sqr_n_mul_with B m ⟨BitVec.ofNat _ 0⟩ one m
       (word F.inv)) == none &&
-    resultLimbs (pasta_curves.asm.entry.mul_with B ones ones m (word F.inv)) == none
+    resultLimbs (pasta_curves.montgomery.mul_with B ones ones m (word F.inv)) == none
 
 end PastaCurves.Glue

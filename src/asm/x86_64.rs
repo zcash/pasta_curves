@@ -806,7 +806,7 @@ pub(super) fn from_mont(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
 /// The backend's blocks, for the entry points in `entry.rs`.
 pub(super) struct Backend;
 
-impl super::entry::MontgomeryBlocks for Backend {
+impl crate::montgomery::MontgomeryBlocks for Backend {
     #[inline(always)]
     fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
         add(lhs, rhs, modulus)

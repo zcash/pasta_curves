@@ -4,7 +4,7 @@ import Mathlib.Tactic.Ring
 /-!
 # The crate's Rust around the blocks
 
-`src/asm/entry.rs`, in a debug build, checks the operand contracts of `mul` and `square` before
+`src/montgomery.rs`, in a debug build, checks the operand contracts of `mul` and `square` before
 entering the blocks, and `src/inversion.rs` composes `invert` from a backend's six blocks. These
 definitions mirror that Rust: the canonicity check `is_canonical`, a borrow chain, the condition
 `mul_contract` that `mul` asserts, and `invert` over a record of the blocks.

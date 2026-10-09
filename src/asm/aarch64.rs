@@ -1149,7 +1149,7 @@ pub(super) fn cond_sub(value: &Limbs, modulus: &Limbs) -> Limbs {
 /// `crate::inversion`.
 pub(crate) struct Backend;
 
-impl super::entry::MontgomeryBlocks for Backend {
+impl crate::montgomery::MontgomeryBlocks for Backend {
     #[inline(always)]
     fn add(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs) -> Limbs {
         add(lhs, rhs, modulus)

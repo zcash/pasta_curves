@@ -62,7 +62,7 @@ fn entry_points_match_the_portable_arithmetic() {
                     assert_eq!(mul(a, b, &f.modulus, f.inv), product, "{a:x?} {b:x?}");
                     // The other contract: any left operand, with a canonical right operand
                     // whose limbs 1 to 3 are at most `2^64 - 3`.
-                    if super::mul_contract(b, a, &f.modulus) {
+                    if crate::montgomery::mul_contract(b, a, &f.modulus) {
                         assert_eq!(mul(b, a, &f.modulus, f.inv), product, "{b:x?} {a:x?}");
                     }
                     let mut power = *a;
@@ -91,7 +91,7 @@ fn entry_points_match_the_portable_arithmetic() {
             // to wrapping: an unreduced left operand, and a canonical right operand whose limbs 1
             // to 3 are at most `2^64 - 3`. Each case asserts that it is within the contract.
             let second_contract = |lhs: Limbs, rhs: Limbs| {
-                assert!(super::mul_contract(&lhs, &rhs, &f.modulus), "{lhs:x?} {rhs:x?}");
+                assert!(crate::montgomery::mul_contract(&lhs, &rhs, &f.modulus), "{lhs:x?} {rhs:x?}");
                 let product = portable_mul(&lhs, &rhs);
                 assert_eq!(mul(&lhs, &rhs, &f.modulus, f.inv), product, "{lhs:x?} {rhs:x?}");
             };
@@ -128,7 +128,7 @@ fn entry_points_match_the_portable_arithmetic() {
                 if rng.next_u32() & 1 == 1 {
                     rhs[1] = rhs[1].wrapping_sub(rng.next_u64() >> 60);
                 }
-                if super::mul_contract(&lhs, &rhs, &f.modulus) {
+                if crate::montgomery::mul_contract(&lhs, &rhs, &f.modulus) {
                     n += 1;
                     second_contract(lhs, rhs);
                 }
@@ -267,14 +267,14 @@ fn in_contract(op: &str, f: &Field, first: &Limbs, second: Option<&Limbs>) -> bo
     match op {
         "MUL" => {
             let rhs = second.unwrap();
-            super::is_canonical(first, &f.modulus)
-                || (super::is_canonical(rhs, &f.modulus)
+            crate::limbs::is_canonical(first, &f.modulus)
+                || (crate::limbs::is_canonical(rhs, &f.modulus)
                     && rhs[1..].iter().all(|&limb| limb <= u64::MAX - 2))
         }
-        "SQR" => super::is_canonical(first, &f.modulus),
+        "SQR" => crate::limbs::is_canonical(first, &f.modulus),
         "ADD" | "SUB" => {
-            super::is_canonical(first, &f.modulus)
-                && super::is_canonical(second.unwrap(), &f.modulus)
+            crate::limbs::is_canonical(first, &f.modulus)
+                && crate::limbs::is_canonical(second.unwrap(), &f.modulus)
         }
         "FROM" => true,
         _ => panic!("unknown routine {op}"),

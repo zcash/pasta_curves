@@ -87,9 +87,9 @@ theorem le_max_sub_two {w m : Std.U64} (hm : m.val = U64.rMax - 2) : w ≤ m ↔
 /-- The translated `mul_contract` is the model's `mulContract` on the limbs that it reads. -/
 @[step]
 theorem mul_contract_spec (lhs rhs modulus : Std.Array Std.U64 4#usize) :
-    asm.entry.mul_contract lhs rhs modulus ⦃ b =>
+    montgomery.mul_contract lhs rhs modulus ⦃ b =>
       b = mulContract (limbsOfArray lhs) (limbsOfArray rhs) (limbsOfArray modulus) ⦄ := by
-  unfold asm.entry.mul_contract
+  unfold montgomery.mul_contract
   step*
   · decide
   have e14 : i14 = i11 ||| i13 := UScalar.eq_of_val_eq i14_post
@@ -118,7 +118,7 @@ abbrev Canonical (F : PastaField) (res : Std.Array Std.U64 4#usize) (k expr : �
 /-- What the entry points' compositions need of a backend's Montgomery blocks at the field `F`.
 Each block, at the field's modulus and `inv`, and under the condition that its entry point
 asserts, returns a canonical result with the block's congruence. -/
-structure BlocksSpec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F : PastaField) :
+structure BlocksSpec {B : Type} (Blocks : montgomery.MontgomeryBlocks B) (F : PastaField) :
     Prop where
   /-- `add` on canonical operands returns their canonical sum. -/
   add : ∀ lhs rhs, isCanonical (limbsOfArray lhs) F.modulus = true →
@@ -146,63 +146,63 @@ structure BlocksSpec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F : Pas
     Canonical F res R (limbsOfArray value).toNat ⦄
 
 /-- `add_with` at a Pasta field: for canonical operands, as it asserts, the canonical sum. -/
-theorem add_with_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F : PastaField)
+theorem add_with_spec {B : Type} (Blocks : montgomery.MontgomeryBlocks B) (F : PastaField)
     (hS : BlocksSpec Blocks F) (lhs rhs : Std.Array Std.U64 4#usize)
     (hl : isCanonical (limbsOfArray lhs) F.modulus = true)
     (hr : isCanonical (limbsOfArray rhs) F.modulus = true) :
-    asm.entry.add_with Blocks lhs rhs (limbsArray F.modulus) ⦃ res =>
+    montgomery.add_with Blocks lhs rhs (limbsArray F.modulus) ⦃ res =>
       Canonical F res 1 ((limbsOfArray lhs).toNat + (limbsOfArray rhs).toNat) ⦄ := by
-  unfold asm.entry.add_with
+  unfold montgomery.add_with
   have hm := limbsOfArray_limbsArray F.bounded
   step*
   exact hS.add lhs rhs hl hr
 
 /-- `sub_with` at a Pasta field: for canonical operands, as it asserts, the canonical
 difference. -/
-theorem sub_with_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F : PastaField)
+theorem sub_with_spec {B : Type} (Blocks : montgomery.MontgomeryBlocks B) (F : PastaField)
     (hS : BlocksSpec Blocks F) (lhs rhs : Std.Array Std.U64 4#usize)
     (hl : isCanonical (limbsOfArray lhs) F.modulus = true)
     (hr : isCanonical (limbsOfArray rhs) F.modulus = true) :
-    asm.entry.sub_with Blocks lhs rhs (limbsArray F.modulus) ⦃ res =>
+    montgomery.sub_with Blocks lhs rhs (limbsArray F.modulus) ⦃ res =>
       (limbsOfArray res).toNat < F.modulus.toNat ∧
         (limbsOfArray res).toNat + (limbsOfArray rhs).toNat ≡ (limbsOfArray lhs).toNat
           [MOD F.modulus.toNat] ⦄ := by
-  unfold asm.entry.sub_with
+  unfold montgomery.sub_with
   have hm := limbsOfArray_limbsArray F.bounded
   step*
   exact hS.sub lhs rhs hl hr
 
 /-- `mul_with` at a Pasta field: when the condition that it asserts holds, a canonical `res` with
 `R * res ≡ lhs * rhs (mod p)`. -/
-theorem mul_with_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F : PastaField)
+theorem mul_with_spec {B : Type} (Blocks : montgomery.MontgomeryBlocks B) (F : PastaField)
     (hS : BlocksSpec Blocks F) (lhs rhs : Std.Array Std.U64 4#usize)
     (h : mulContract (limbsOfArray lhs) (limbsOfArray rhs) F.modulus = true) :
-    asm.entry.mul_with Blocks lhs rhs (limbsArray F.modulus) (word F.inv) ⦃ res =>
+    montgomery.mul_with Blocks lhs rhs (limbsArray F.modulus) (word F.inv) ⦃ res =>
       Canonical F res R ((limbsOfArray lhs).toNat * (limbsOfArray rhs).toNat) ⦄ := by
-  unfold asm.entry.mul_with
+  unfold montgomery.mul_with
   have hm := limbsOfArray_limbsArray F.bounded
   step*
   exact hS.mul lhs rhs h
 
 /-- `square_with` at a Pasta field: for a canonical operand, as it asserts, a canonical `res` with
 `R * res ≡ value² (mod p)`. -/
-theorem square_with_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F : PastaField)
+theorem square_with_spec {B : Type} (Blocks : montgomery.MontgomeryBlocks B) (F : PastaField)
     (hS : BlocksSpec Blocks F) (value : Std.Array Std.U64 4#usize)
     (h : isCanonical (limbsOfArray value) F.modulus = true) :
-    asm.entry.square_with Blocks value (limbsArray F.modulus) (word F.inv) ⦃ res =>
+    montgomery.square_with Blocks value (limbsArray F.modulus) (word F.inv) ⦃ res =>
       Canonical F res R ((limbsOfArray value).toNat * (limbsOfArray value).toNat) ⦄ := by
-  unfold asm.entry.square_with
+  unfold montgomery.square_with
   have hm := limbsOfArray_limbsArray F.bounded
   step*
   exact hS.square value h
 
 /-- `from_mont_with` at a Pasta field: for any operand, a canonical `res` with
 `R * res ≡ value (mod p)`. -/
-theorem from_mont_with_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F : PastaField)
+theorem from_mont_with_spec {B : Type} (Blocks : montgomery.MontgomeryBlocks B) (F : PastaField)
     (hS : BlocksSpec Blocks F) (value : Std.Array Std.U64 4#usize) :
-    asm.entry.from_mont_with Blocks value (limbsArray F.modulus) (word F.inv) ⦃ res =>
+    montgomery.from_mont_with Blocks value (limbsArray F.modulus) (word F.inv) ⦃ res =>
       Canonical F res R (limbsOfArray value).toNat ⦄ := by
-  unfold asm.entry.from_mont_with
+  unfold montgomery.from_mont_with
   exact hS.from_mont value
 
 /-- One squaring of the accumulator of `sqr_n_mul`: a Montgomery square of an accumulator with
@@ -243,19 +243,19 @@ theorem mul_weight_step {p a res v w : ℕ} (k : ℕ) (hc : R^(2^k - 1) * a ≡ 
 /-- The loop of `sqr_n_mul_with`, from any point of its range: a canonical accumulator whose
 weight relation with `v` holds after `iter.start` squarings ends canonical, with the relation
 after `iter.end` squarings. -/
-theorem sqr_n_mul_with_loop_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B)
+theorem sqr_n_mul_with_loop_spec {B : Type} (Blocks : montgomery.MontgomeryBlocks B)
     (F : PastaField) (hS : BlocksSpec Blocks F) (v : ℕ) (iter : core.ops.range.Range Std.Usize)
     (acc : Std.Array Std.U64 4#usize) (hle : iter.start.val ≤ iter.«end».val)
     (hacc : Canonical F acc (R^(2^iter.start.val - 1)) (v^(2^iter.start.val))) :
-    asm.entry.sqr_n_mul_with_loop Blocks iter (limbsArray F.modulus) (word F.inv) acc ⦃ res =>
+    montgomery.sqr_n_mul_with_loop Blocks iter (limbsArray F.modulus) (word F.inv) acc ⦃ res =>
       Canonical F res (R^(2^iter.«end».val - 1)) (v^(2^iter.«end».val)) ⦄ := by
-  unfold asm.entry.sqr_n_mul_with_loop
+  unfold montgomery.sqr_n_mul_with_loop
   apply loop.spec_decr_nat (fun x => x.1.«end».val - x.1.start.val)
     (fun x => x.1.«end» = iter.«end» ∧ x.1.start.val ≤ x.1.«end».val ∧
       Canonical F x.2 (R^(2^x.1.start.val - 1)) (v^(2^x.1.start.val)))
   · rintro ⟨it, a⟩ ⟨hend, hle', ha, hca⟩
     simp only at hend hle' ha hca
-    unfold asm.entry.sqr_n_mul_with_loop.body
+    unfold montgomery.sqr_n_mul_with_loop.body
     step*
     · -- The range is exhausted, so `it.start` is `iter.end`.
       rename_i hnone
@@ -280,13 +280,13 @@ theorem sqr_n_mul_with_loop_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks
 /-- `sqr_n_mul_with` at a Pasta field: for a canonical `value`, as it asserts, and any `rhs`, a
 canonical `res` with `R^(2^count) * res ≡ value^(2^count) * rhs (mod p)`. The squarings keep the
 accumulator canonical, so the multiplication is under its first contract. -/
-theorem sqr_n_mul_with_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F : PastaField)
+theorem sqr_n_mul_with_spec {B : Type} (Blocks : montgomery.MontgomeryBlocks B) (F : PastaField)
     (hS : BlocksSpec Blocks F) (value : Std.Array Std.U64 4#usize) (count : Std.Usize)
     (rhs : Std.Array Std.U64 4#usize) (h : isCanonical (limbsOfArray value) F.modulus = true) :
-    asm.entry.sqr_n_mul_with Blocks value count rhs (limbsArray F.modulus) (word F.inv) ⦃ res =>
+    montgomery.sqr_n_mul_with Blocks value count rhs (limbsArray F.modulus) (word F.inv) ⦃ res =>
       Canonical F res (R^(2^count.val))
         ((limbsOfArray value).toNat^(2^count.val) * (limbsOfArray rhs).toNat) ⦄ := by
-  unfold asm.entry.sqr_n_mul_with
+  unfold montgomery.sqr_n_mul_with
   have hm := limbsOfArray_limbsArray F.bounded
   have hv := (isCanonical_iff _ _ (limbsOfArray_bounded value) F.bounded).1 h
   step*

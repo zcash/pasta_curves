@@ -131,8 +131,8 @@ translate Portable "--cfg pasta_curves_noasm" "" \
 # crate compiles them with the assembly backend. They do not reach any backend's blocks, only the
 # trait that declares them, so the translation is the same for every backend.
 translate Glue "" asm \
-  crate::asm::entry::add_with crate::asm::entry::sub_with crate::asm::entry::mul_with \
-  crate::asm::entry::square_with crate::asm::entry::sqr_n_mul_with \
-  crate::asm::entry::from_mont_with
+  crate::montgomery::add_with crate::montgomery::sub_with crate::montgomery::mul_with \
+  crate::montgomery::square_with crate::montgomery::sqr_n_mul_with \
+  crate::montgomery::from_mont_with
 
 log "done: $translations translations in $((SECONDS - start))s"

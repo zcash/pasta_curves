@@ -51,7 +51,7 @@ composition over the blocks that it runs, so it returns the inverse whenever the
 contracts. Since the portable blocks meet them at either of the crate's fields, the translation is
 proved to return the Montgomery inverse there.
 
-The generic compositions that run the entry points over a backend's blocks (`src/asm/entry.rs`) are
+The generic compositions that run the entry points over a backend's blocks (`src/montgomery.rs`) are
 translated too (`PastaCurves/Glue/`). That translation is run over both backends' blocks, on the
 reference vectors and the entry points' known answers. It is also proved to meet the entry points'
 contracts over any backend whose blocks meet theirs, and both backends' blocks are proved to meet
@@ -358,7 +358,7 @@ The inversion's blocks, each equated with the word-level function of the shared 
 
 The crate's Montgomery entry points, in `Glue/Spec.lean`: `add_with_spec`, `sub_with_spec`,
 `mul_with_spec`, `square_with_spec`, `sqr_n_mul_with_spec`, and `from_mont_with_spec` (all proved)
-are about Aeneas' translation of the generic compositions in `src/asm/entry.rs`. Each holds at
+are about Aeneas' translation of the generic compositions in `src/montgomery.rs`. Each holds at
 either of the crate's fields (a `PastaField`, that is `pallasBase` or `vestaBase`), over any backend
 whose blocks meet `BlocksSpec`, the record of the blocks' contracts at that field. Each holds under
 the condition that its entry point checks in a debug build. For `mul` that is `mulContract`. For the

@@ -12,7 +12,7 @@ The x86-64 backend's record of Montgomery blocks, which the translated compositi
 namespace PastaCurves.X86_64
 
 /-- The x86-64 backend as the translation's record of `MontgomeryBlocks`. -/
-def montgomeryBlocks : pasta_curves.asm.entry.MontgomeryBlocks Unit :=
+def montgomeryBlocks : pasta_curves.montgomery.MontgomeryBlocks Unit :=
   Glue.blocksOf addMod subMod mulMont sqrMont fromMont
 
 end PastaCurves.X86_64

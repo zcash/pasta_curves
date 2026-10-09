@@ -11,7 +11,7 @@ The AArch64 backend's record of Montgomery blocks, which the translated composit
 namespace PastaCurves.AArch64
 
 /-- The AArch64 backend as the translation's record of `MontgomeryBlocks`. -/
-def montgomeryBlocks : pasta_curves.asm.entry.MontgomeryBlocks Unit :=
+def montgomeryBlocks : pasta_curves.montgomery.MontgomeryBlocks Unit :=
   Glue.blocksOf addMod subMod mulMont sqrMont fromMont
 
 end PastaCurves.AArch64

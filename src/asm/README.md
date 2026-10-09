@@ -92,7 +92,7 @@ every check CI runs.
 
 `lean/` holds a Lean 4 development that models the routines formally and contributes to assuring
 their correctness. The model is at the instruction level. Individual blocks of assembly are proven.
-The generic compositions that run them as the six Montgomery entry points (`entry.rs`) are
+The generic compositions that run them as the six Montgomery entry points (`src/montgomery.rs`) are
 translated to Lean by Aeneas, and proved over any backend whose blocks meet their contracts. So each
 entry point is proved at either Pasta field, under the condition that it asserts. The inversion's
 algorithm is proved on words (`montInv_spec`), each of its six AArch64 blocks is proved to compute
