@@ -105,8 +105,8 @@ const _: () = {
 };
 
 /// A signed multi-word integer in radix $2^{62}$, least-significant limb
-/// first. In canonical form all limbs below the active length are in
-/// $[0, 2^{62})$ and the top active limb carries the sign, so the sign of the
+/// first. In canonical form all limbs below the top active limb are in
+/// $[0, 2^{62})$, and the top active limb carries the sign, so the sign of the
 /// value is the sign of that limb.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Signed62([i64; 5]);
@@ -308,7 +308,7 @@ fn divsteps_62_var(mut eta: i64, f0: u64, g0: u64) -> (Trans2x2, i64) {
             q.wrapping_mul(f0).wrapping_add(r.wrapping_mul(g0)) == g << (62 - i),
             "bottom row of T must reproduce g"
         );
-        // eta starts at -1 and moves by at most one per divstep, and a full
+        // |eta| starts at 1 and grows by at most one per divstep, and a full
         // inversion performs at most 744 divsteps.
         verify!((-745..=745).contains(&eta), "eta out of range");
         let limit;
@@ -370,8 +370,10 @@ fn divsteps_62_var(mut eta: i64, f0: u64, g0: u64) -> (Trans2x2, i64) {
         q: q as i64,
         r: r as i64,
     };
-    // The determinant of T must be a power of two: this guarantees the
-    // matrix-vector products below preserve the relative sizes of f and g.
+    // The determinant of T must be a power of two: this guarantees that
+    // multiplying by T changes gcd(f, g) only by a power of two, which is
+    // divided out again. Each divstep's matrix has determinant 2, so 62 of
+    // them have determinant 2^62.
     verify!(
         i128::from(t.u) * i128::from(t.r) - i128::from(t.v) * i128::from(t.q) == 1 << 62,
         "determinant of T must be 2^62"
@@ -695,7 +697,7 @@ fn update_d_only_62<P: InvParams>(d: &mut Signed62, e: &Signed62, u: i64, v: i64
     checks::assert_coeff_range::<P>(d, "new d");
 }
 
-/// Normalizes `r` from $(-2m, m)$ to $[0, m)$, negating first if `sign` is
+/// Normalizes `r` from $(-2m, m)$ to $[0, m)$, negated if `sign` is
 /// negative. Upstream's `secp256k1_modinv64_normalize_62` (the mask-based
 /// sequence, kept for 1:1 auditability even though this path is
 /// variable-time).
@@ -824,8 +826,7 @@ pub(crate) fn invert_counted<P: InvParams>(x: &[u64; 4]) -> Option<([u64; 4], u3
     // (|r| <= 2^62 < m) r = 0, and then q*m = 2^62*g' = 0 forces q = 0 —
     // making det T = u*r - v*q = 0, contradicting det T = 2^62. Even if this
     // reasoning were somehow violated, the next batch's divsteps on g0 = 0
-    // produce the exact identity matrix scaled by 2^62, and batch 2
-    // terminates correctly.
+    // produce the matrix diag(2^62, 1), and batch 2 terminates correctly.
     let (t, new_eta) = divsteps_62_var(eta, f.0[0] as u64, g.0[0] as u64);
     eta = new_eta;
     update_fg_62_first::<P>(&mut f, &mut g, &t);
@@ -1379,8 +1380,8 @@ mod tests {
                 #[test]
                 fn divsteps_zero_g_identity() {
                     // T10: with g0 = 0 the whole batch is halvings, giving
-                    // the identity matrix scaled by 2^62; update_fg then
-                    // keeps f and shifts g down one limb.
+                    // the matrix diag(2^62, 1); update_fg then keeps f and
+                    // shifts g down one limb.
                     let mut rng = XorShiftRng::from_seed(SEED);
                     for _ in 0..64 {
                         let f0 = rng.next_u64() | 1;

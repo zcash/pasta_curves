@@ -87,12 +87,12 @@ def glv_params(n, lam):
     assert V1A * V2B + V1B_NEG * V2A == n
     assert max(V1A, V1B_NEG, V2A, V2B) < 2 ^ 128  # each fits a u128
 
-    # The Babai rounding coefficients: fixed-point approximations of
-    # V2B/n and V1B_NEG/n with 384 fractional bits, so that
-    # c1 = round(G1*k / 2^384) and c2 = round(G2*k / 2^384) recover the
-    # nearest-lattice-point coefficients round(k*V2B/n), round(k*V1B_NEG/n)
-    # for every scalar k (the crate's `decompose` tests check the
-    # resulting halves stay in bounds over the whole field).
+    # The Babai rounding coefficients: fixed-point approximations of V2B/n and
+    # V1B_NEG/n with 384 fractional bits. c1 = round(G1*k / 2^384) and
+    # c2 = round(G2*k / 2^384) are within 1/2 + 2^-130 of the exact
+    # coefficients k*V2B/n and k*V1B_NEG/n, which keeps both halves below
+    # 2^127 for every scalar (the crate's `decompose` tests check that on
+    # edge cases and 1000 random scalars).
     G1 = iround(2 ^ 384 * V2B, n)
     G2 = iround(2 ^ 384 * V1B_NEG, n)
     assert max(G1, G2) < 2 ^ 320  # each fits five u64 limbs

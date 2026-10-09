@@ -108,9 +108,10 @@ impl<F: SqrtTableHelpers> SqrtHasher<F> {
     /// Returns a perfect hash of x for use with SqrtTables::inv.
     fn hash(&self, x: &F) -> usize {
         // This is just the simplest constant-time perfect hash construction that could
-        // possibly work. The 32 low-order bits are unique within the 2^S order subgroup,
-        // then the xor acts as "salt" to injectively randomize the output when taken modulo
-        // `hash_mod`. Since the table is small, we do not need anything more complicated.
+        // possibly work. The 32 low-order bits are unique within the subgroup of order 2^8,
+        // whose elements (the values of gtab[3]) are the only ones hashed. The xor then
+        // acts as "salt" to injectively randomize the output when taken modulo `hash_mod`.
+        // Since the table is small, we do not need anything more complicated.
         ((x.get_lower_32() ^ self.hash_xor) as usize) % self.hash_mod
     }
 }

@@ -556,7 +556,7 @@ mod tests {
         }
     }
 
-    /// The algebraic gate: k1 + k2*lambda == k (mod n) with both halves at most
+    /// The algebraic gate: k1 + k2*lambda == k (mod n) with both halves below
     /// 2^127, for full-width scalars and the edge cases. Wrong GLV
     /// constants cannot pass this.
     fn decompose_reconstructs<C: GlvParams>() {
@@ -775,8 +775,8 @@ mod tests {
     /// `sage/glv_boundary_scalars.sage`) to sit on the Babai rounding
     /// boundary: flipping bit 127 of `G2` — a corruption that the suite
     /// predating `babai_coefficient_verify` provably accepted, since it
-    /// leaves the `round_mul_shift` known-answer test unmoved and shifts
-    /// `c2` for only ~2^-16 of random scalars — moves `c2` by one *here*
+    /// leaves the `round_mul_shift` known-answer test unmoved and keeps
+    /// random scalars' halves within their bound — moves `c2` by one *here*
     /// and pushes `|k2|` past the half-width bound that `wnaf_digits` and
     /// `MAX_WNAF_DIGITS` rely on.
     ///
@@ -846,10 +846,12 @@ mod tests {
     /// does so for exactly the suite-invisible corruption identified
     /// above (`G2[1] ^= 1 << 63`): the decomposition half leaves its
     /// 2^127 bound and the pipeline panics on a bound assertion in debug
-    /// builds — how tests run. (Any corruption small enough to evade the
-    /// known-answer tests keeps `|k2| < 2^128`, which the wNAF ladder
-    /// still multiplies correctly, so release products stay numerically
-    /// right; the broken invariant is the observable, not a wrong point.)
+    /// builds — how tests run. (At these witnesses the flip pushes `|k2|`
+    /// only just past `2^127`, where its wNAF digits still fit in
+    /// `MAX_WNAF_DIGITS`, so release products stay numerically right. The
+    /// broken invariant is the observable, not a wrong point. A magnitude
+    /// nearer `2^128` could need a 129th digit, and would panic even in
+    /// release.)
     /// On the pre-`babai_coefficient_verify` code, this test alone
     /// detects the flip; nothing else in that suite did.
     fn native_vs_glv_boundary<C: GlvParams>(limbs: [u64; 4]) {
