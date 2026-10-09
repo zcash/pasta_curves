@@ -7,11 +7,11 @@ import PastaCurves.AArch64.Spec.DeRow
 /-!
 # Correctness of the inversion's `f`, `g` row block
 
-See the parent module's documentation for details. The block is the accumulation of the `d`, `e`
-row block on five-word signed inputs, followed by the shift right by `59`. The sign word of each
-input enters only the top correction: `(f4 ^ s0) & m0`, negated, is `-|a|` exactly when `a f` is
-negative, which is the top word of the two's-complement product. The shift is four `extr`s and an
-`asr`, which together divide the 320-bit two's-complement value by `2^59`, rounding down.
+See the parent module's documentation for details. The block is the accumulation of the `d`, `e` row
+block on five-word signed inputs, followed by the shift right by `59`. The sign word of each input
+enters only the top correction: `(f4 ^ s0) & m0`, negated, is `-|a|` when the sign word of `f` and
+the mask of `a` differ, and `0` otherwise (`row_side5`). The shift is four `extr`s and an `asr`,
+which together divide the 320-bit two's-complement value by `2^59`, rounding down.
 -/
 
 set_option exponentiation.threshold 400

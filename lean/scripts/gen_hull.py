@@ -42,10 +42,10 @@ consecutive vertices of the script's polygon (vertices with power-of-two denomin
 inclusions it gives one Farkas record `⟨i, j, m, n, p, q⟩` per target half-plane, in the target's
 order: `m` times source half-plane `i` plus `n` times source half-plane `j` equals `q` times the
 target half-plane pulled back through the map, in the coefficients of `x` and `y`, and falls short
-of it by the slack `p` in the constant. Each map is also given as the product of the script's
-divstep matrices `U0`, `U1`, and `D` (the step at even `g`, at odd `g` without a swap, and at odd
-`g` with a swap), the rightmost factor acting first. `HullCert.lean` turns these into
-`Certified H0 H1`.
+of it by the slack `p` in the constant. Each map of a divstep inclusion (all but `init2stable` and
+`theoremouter`) is also given as the product of the script's divstep matrices `U0`, `U1`, and `D`
+(the step at even `g`, at odd `g` without a swap, and at odd `g` with a swap), the rightmost factor
+acting first. `HullCert.lean` turns these into `Certified H0 H1`.
 -/
 
 namespace PastaCurves.Inversion.Hull

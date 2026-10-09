@@ -22,9 +22,9 @@ namespace PastaCurves.AArch64
 open Inversion (SignMagRep row_side)
 
 -- BEGIN deRowBlock_spec statement
-/-- The row `a d + b e` of `updateDE` before its `amontred`, as the exact integer in five words.
-The row bound `|a| + |b| ≤ 2^63` is what keeps every column's carry within the next word; the
-rows of a 59-step matrix are at most `2^59`. `row_side` supplies the sign handling. -/
+/-- The row `a d + b e` of `updateDE` before its `amontred`, as the exact integer in five words. The
+row bound `|a| + |b| ≤ 2^63` is what keeps every column's carry within the next word; the magnitudes
+of each row of a 59-step matrix sum to at most `2^59`. `row_side` supplies the sign handling. -/
 theorem deRowBlock_spec (a b : ℤ) (d e : Limbs) (m0 m1 s0 s1 : Nat)
     (hd : d.Bounded) (he : e.Bounded) (hab : |a| + |b| ≤ 2^63)
     (hrep0 : SignMagRep m0 s0 a) (hrep1 : SignMagRep m1 s1 b) :

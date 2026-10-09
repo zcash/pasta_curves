@@ -17,9 +17,9 @@ condition `0 < two_delta ∧ g odd`. The step ends by testing bit 1 of the unhal
 parity of the halved one, for the next step. `divstepLast` is the same step without that test.
 
 The one subtlety is the sum `g ± f`, which the step forms in a word before halving it. The halving
-is exact only when the sum does not wrap, that is when the halved result is below `2^62` in
-magnitude. The row-sum bound on the transition matrix does not give this by itself: both packed
-words can approach `2^62` in magnitude, and their sum would reach `2^63` exactly when both rows of
+is exact only when the sum does not wrap, as when the halved result is below `2^62` in magnitude.
+The row-sum bound on the transition matrix does not give this by itself: both packed words can
+approach `2^62` in magnitude, and their sum could reach `2^63` in magnitude only when both rows of
 the matrix are at their extreme, which the determinant of the matrix rules out. The step theorems
 take the bound as the hypothesis `hG'`, and the batch proof supplies it for every step.
 -/

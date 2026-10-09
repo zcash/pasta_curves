@@ -309,10 +309,10 @@ impl Fq {
         // Convert to Montgomery form. `d0` and `d1` are unreduced, so use the
         // portable multiplication: its classical 8-limb reduction is valid for
         // any 256-bit value times a canonical constant, with no precondition
-        // on the constant's limbs. The inline-assembly `mul` tolerates an
-        // unreduced lhs only while every rhs limb stays at most `2^64 - 3`
-        // (see `crate::asm::mul`); this cold path is not worth carrying that
-        // coupling, and hashing dominates its callers anyway.
+        // on the constant's limbs. The inline-assembly `mul` takes an unreduced
+        // lhs only with a canonical rhs whose limbs 1 to 3 are at most
+        // `2^64 - 3` (see `crate::asm::mul`); this cold path is not worth
+        // carrying that coupling, and hashing dominates its callers anyway.
         Fq::mul_portable(&d0, &R2).add(&Fq::mul_portable(&d1, &R3))
     }
 
@@ -1389,7 +1389,7 @@ fn test_zeroize() {
     assert_eq!(a, Fq::zero());
 }
 
-/// Whether `x` holds a reduced residue (limbs below the modulus).
+/// Whether `x` holds a reduced residue (a value below the modulus).
 #[cfg(test)]
 fn is_canonical(x: &Fq) -> bool {
     for i in (0..4).rev() {

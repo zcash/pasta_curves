@@ -27,6 +27,12 @@ import PastaCurves.Portable.Funs
 import PastaCurves.Portable.Words
 import PastaCurves.Portable.Vectors
 import PastaCurves.Portable.Spec
+import PastaCurves.Portable.Divstep59
+import PastaCurves.Portable.SignMag
+import PastaCurves.Portable.Row
+import PastaCurves.Portable.Amontred
+import PastaCurves.Portable.Driver
+import PastaCurves.Portable.Entry
 import PastaCurves.Words
 import PastaCurves.Glue.Funs
 import PastaCurves.Glue.Blocks

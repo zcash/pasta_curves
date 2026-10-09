@@ -25,14 +25,11 @@ theorem is_canonical_word_spec (value modulus : Std.Array Std.U64 4#usize) :
   unfold limbs.is_canonical_word
   step*
   subst borrow_post borrow1_post borrow2_post w_post
-  obtain ⟨c0, b0⟩ := sbb_step i.val i1.val 0 difference _ borrow underflow borrow_underflow
-    (by scalar_tac) (by omega) difference_post (by assumption) i2_post
-  obtain ⟨c1, b1⟩ := sbb_step i3.val i4.val borrow.val difference1 _ borrow1 underflow1
-    borrow_underflow1 (by scalar_tac) b0 difference1_post (by assumption) i5_post
-  obtain ⟨c2, b2⟩ := sbb_step i6.val i7.val borrow1.val difference2 _ borrow2 underflow2
-    borrow_underflow2 (by scalar_tac) b1 difference2_post (by assumption) i8_post
-  obtain ⟨c3, b3⟩ := sbb_step i9.val i10.val borrow2.val difference3 _ w underflow3
-    borrow_underflow3 (by scalar_tac) b2 difference3_post (by assumption) i11_post
+  obtain ⟨c0, b0⟩ := sbb_step (by scalar_tac) (Nat.zero_le 1) difference_post
+    (by assumption) i2_post
+  obtain ⟨c1, b1⟩ := sbb_step (by scalar_tac) b0 difference1_post (by assumption) i5_post
+  obtain ⟨c2, b2⟩ := sbb_step (by scalar_tac) b1 difference2_post (by assumption) i8_post
+  obtain ⟨c3, b3⟩ := sbb_step (by scalar_tac) b2 difference3_post (by assumption) i11_post
   have hv : limbsOfArray value = ⟨i.val, i3.val, i6.val, i9.val⟩ := by
     simp [limbsOfArray, i_post, i3_post, i6_post, i9_post]
   have hm : limbsOfArray modulus = ⟨i1.val, i4.val, i7.val, i10.val⟩ := by
@@ -156,7 +153,7 @@ theorem add_with_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F : Pa
     asm.entry.add_with Blocks lhs rhs (limbsArray F.modulus) ⦃ res =>
       Canonical F res 1 ((limbsOfArray lhs).toNat + (limbsOfArray rhs).toNat) ⦄ := by
   unfold asm.entry.add_with
-  have hm := limbsOfArray_limbsArray F.modulus F.bounded
+  have hm := limbsOfArray_limbsArray F.bounded
   step*
   exact hS.add lhs rhs hl hr
 
@@ -171,7 +168,7 @@ theorem sub_with_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F : Pa
         (limbsOfArray res).toNat + (limbsOfArray rhs).toNat ≡ (limbsOfArray lhs).toNat
           [MOD F.modulus.toNat] ⦄ := by
   unfold asm.entry.sub_with
-  have hm := limbsOfArray_limbsArray F.modulus F.bounded
+  have hm := limbsOfArray_limbsArray F.bounded
   step*
   exact hS.sub lhs rhs hl hr
 
@@ -183,7 +180,7 @@ theorem mul_with_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F : Pa
     asm.entry.mul_with Blocks lhs rhs (limbsArray F.modulus) (word F.inv) ⦃ res =>
       Canonical F res R ((limbsOfArray lhs).toNat * (limbsOfArray rhs).toNat) ⦄ := by
   unfold asm.entry.mul_with
-  have hm := limbsOfArray_limbsArray F.modulus F.bounded
+  have hm := limbsOfArray_limbsArray F.bounded
   step*
   exact hS.mul lhs rhs h
 
@@ -195,7 +192,7 @@ theorem square_with_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (F :
     asm.entry.square_with Blocks value (limbsArray F.modulus) (word F.inv) ⦃ res =>
       Canonical F res R ((limbsOfArray value).toNat * (limbsOfArray value).toNat) ⦄ := by
   unfold asm.entry.square_with
-  have hm := limbsOfArray_limbsArray F.modulus F.bounded
+  have hm := limbsOfArray_limbsArray F.bounded
   step*
   exact hS.square value h
 
@@ -290,7 +287,7 @@ theorem sqr_n_mul_with_spec {B : Type} (Blocks : asm.entry.MontgomeryBlocks B) (
       Canonical F res (R^(2^count.val))
         ((limbsOfArray value).toNat^(2^count.val) * (limbsOfArray rhs).toNat) ⦄ := by
   unfold asm.entry.sqr_n_mul_with
-  have hm := limbsOfArray_limbsArray F.modulus F.bounded
+  have hm := limbsOfArray_limbsArray F.bounded
   have hv := (isCanonical_iff _ _ (limbsOfArray_bounded value) F.bounded).1 h
   step*
   step with sqr_n_mul_with_loop_spec Blocks F hS (limbsOfArray value).toNat
@@ -308,7 +305,7 @@ abbrev LimbsCanonical (F : PastaField) (res : Limbs) (k expr : ℕ) : Prop :=
 entry points' form. -/
 theorem ok_limbsArray_spec {F : PastaField} {res : Limbs} {k expr : ℕ} (h : LimbsCanonical F res k expr) :
     (.ok (limbsArray res) : Result (Std.Array Std.U64 4#usize)) ⦃ s => Canonical F s k expr ⦄ := by
-  simp only [WP.spec_ok, Canonical, limbsOfArray_limbsArray _ h.1]
+  simp only [WP.spec_ok, Canonical, limbsOfArray_limbsArray h.1]
   exact h.2
 
 /-- The arithmetic meaning of the canonicity check on an array's limbs. -/
@@ -357,26 +354,26 @@ theorem blocksOf_spec {add sub : Limbs → Limbs → Limbs → Limbs}
   add lhs rhs hl hr := by
     obtain ⟨hr', hlt, hc⟩ := h.add _ _ (limbsOfArray_bounded lhs) (limbsOfArray_bounded rhs)
       (lt_of_isCanonical hl) (lt_of_isCanonical hr) _ rfl
-    simp only [blocksOf, limbsOfArray_limbsArray _ F.bounded]
+    simp only [blocksOf, limbsOfArray_limbsArray F.bounded]
     exact ok_limbsArray_spec ⟨hr', hlt, by rwa [one_mul]⟩
   sub lhs rhs hl hr := by
     obtain ⟨hr', hlt, hc⟩ := h.sub _ _ (limbsOfArray_bounded lhs) (limbsOfArray_bounded rhs)
       (lt_of_isCanonical hl) (lt_of_isCanonical hr) _ rfl
-    simp only [blocksOf, WP.spec_ok, limbsOfArray_limbsArray _ F.bounded,
-      limbsOfArray_limbsArray _ hr']
+    simp only [blocksOf, WP.spec_ok, limbsOfArray_limbsArray F.bounded,
+      limbsOfArray_limbsArray hr']
     exact ⟨hlt, hc⟩
   mul lhs rhs hc := by
     have hb := limbsOfArray_bounded
     have hc' := (mulContract_iff _ _ F.modulus (hb lhs) (hb rhs) F.bounded).1 hc
-    simp only [blocksOf, limbsOfArray_limbsArray _ F.bounded, word_val _ F.inv_lt]
+    simp only [blocksOf, limbsOfArray_limbsArray F.bounded, word_val F.inv_lt]
     exact ok_limbsArray_spec (hc'.elim
       (fun hlt => h.mul_of_lhs_lt _ _ (hb lhs) (hb rhs) hlt _ rfl)
       (fun ⟨hlt, hlimbs⟩ => h.mul_of_rhs_lt _ _ (hb lhs) (hb rhs) hlt hlimbs _ rfl))
   square value hv := by
-    simp only [blocksOf, limbsOfArray_limbsArray _ F.bounded, word_val _ F.inv_lt]
+    simp only [blocksOf, limbsOfArray_limbsArray F.bounded, word_val F.inv_lt]
     exact ok_limbsArray_spec (h.square _ (limbsOfArray_bounded value) (lt_of_isCanonical hv) _ rfl)
   from_mont value := by
-    simp only [blocksOf, limbsOfArray_limbsArray _ F.bounded, word_val _ F.inv_lt]
+    simp only [blocksOf, limbsOfArray_limbsArray F.bounded, word_val F.inv_lt]
     exact ok_limbsArray_spec (h.fromMont _ (limbsOfArray_bounded value) _ rfl)
 
 end PastaCurves.Glue

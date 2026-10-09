@@ -121,7 +121,8 @@ theorem row_side (z : ℤ) (hz : |z| < 2^64) (x : Limbs) (hx : x.Bounded) (m s :
     ring
 
 /-- `row_side` for a five-word signed `x`: the sign word of `x`, complemented by the mask of `z`,
-selects the top correction, which is `|z|` exactly when `z x` is negative. -/
+selects the top correction, which is `|z|` when the sign of `x` and the mask of `z` differ, and `0`
+otherwise. -/
 theorem row_side5 (z : ℤ) (hz : |z| < 2^64) (x : Signed5) (hx : x.Bounded)
     (hx4 : x.l4 = 0 ∨ x.l4 = 2^64 - 1) (m s : ℕ) (hrep : SignMagRep m s z) :
     ((eorw x.l0 s + 2^64 * eorw x.l1 s + 2^128 * eorw x.l2 s + 2^192 * eorw x.l3 s : ℕ) : ℤ)

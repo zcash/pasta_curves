@@ -88,8 +88,8 @@ fn entry_points_match_the_portable_arithmetic() {
             }
 
             // The multiplication's second contract, where its five-limb accumulator comes nearest
-            // to wrapping: an unreduced left operand, and a canonical right operand whose limbs
-            // are at most `2^64 - 3`. Each case asserts that it is within the contract.
+            // to wrapping: an unreduced left operand, and a canonical right operand whose limbs 1
+            // to 3 are at most `2^64 - 3`. Each case asserts that it is within the contract.
             let second_contract = |lhs: Limbs, rhs: Limbs| {
                 assert!(super::mul_contract(&lhs, &rhs, &f.modulus), "{lhs:x?} {rhs:x?}");
                 let product = portable_mul(&lhs, &rhs);
@@ -219,7 +219,7 @@ fn from_mont_known_answers() {
         assert_eq!(from_mont(&f.r2, &f.modulus, f.inv), f.r);
         assert_eq!(from_mont(&ZERO, &f.modulus, f.inv), ZERO);
         // `from_mont` accepts any four-limb value: the all-ones input is the
-        // extreme case of that contract, where the candidate is largest.
+        // largest one it accepts.
         assert_eq!(from_mont(&[u64::MAX; 4], &f.modulus, f.inv), f.from_mont_ones);
     }
 }

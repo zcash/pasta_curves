@@ -25,23 +25,67 @@ fn sign_mask(x: u64) -> u64 {
     ((x as i64) >> 63) as u64
 }
 
+/// The 64-bit mask of a bit: all ones for one, and zero for zero.
+#[inline(always)]
+fn mask_of_bit(bit: u64) -> u64 {
+    0u64.wrapping_sub(bit)
+}
+
+/// `a - b - borrow` and the borrow out, for a borrow in of zero or one: the difference modulo
+/// `2^64`, and one when the subtraction wraps, else zero.
+#[inline(always)]
+fn sbb(a: u64, b: u64, borrow: u64) -> (u64, u64) {
+    let (difference, underflow1) = a.overflowing_sub(b);
+    let (difference, underflow2) = difference.overflowing_sub(borrow);
+    (difference, u64::from(underflow1 | underflow2))
+}
+
+/// `a + b + carry` and the carry out, for a carry in of zero or one: the sum modulo `2^64`, and
+/// one when the addition wraps, else zero.
+#[inline(always)]
+fn adc(a: u64, b: u64, carry: u64) -> (u64, u64) {
+    let (sum, overflow1) = a.overflowing_add(b);
+    let (sum, overflow2) = sum.overflowing_add(carry);
+    (sum, u64::from(overflow1 | overflow2))
+}
+
+/// `a + b c + carry` as its low word and its high word: one column of a multiplication. The sum is
+/// below `2^128` for any words, so neither part overflows.
+#[inline(always)]
+fn mac(a: u64, b: u64, c: u64, carry: u64) -> (u64, u64) {
+    let sum = u128::from(a) + u128::from(b) * u128::from(c) + u128::from(carry);
+    (sum as u64, (sum >> 64) as u64)
+}
+
+/// `a` where the mask is all ones and `b` where it is zero, bit by bit.
+#[inline(always)]
+fn select(mask: u64, a: u64, b: u64) -> u64 {
+    (mask & a) | (!mask & b)
+}
+
+/// `x` read as two's complement, halved and rounded down: the arithmetic shift right by one.
+#[inline(always)]
+fn halve(x: u64) -> u64 {
+    ((x as i64) >> 1) as u64
+}
+
 /// One packed divstep: the recurrence of `Packed.lean` on the packed state `(two_delta, f, g)`, in
 /// two's-complement words. When `two_delta > 0` and `g` is odd, the step is `(2 - two_delta, g, (g - f) / 2)`;
 /// otherwise it is `(2 + two_delta, f, (g + (g mod 2) f) / 2)`, the divisions rounding down. `two_delta` stays
 /// far from `-2^63`, so the sign of `-two_delta` decides `two_delta > 0`.
 #[inline(always)]
 fn divstep(two_delta: u64, f: u64, g: u64) -> (u64, u64, u64) {
-    let odd = 0u64.wrapping_sub(g & 1);
+    let odd = mask_of_bit(g & 1);
     let swap = odd & sign_mask(0u64.wrapping_sub(two_delta));
-    let two_delta_new = (swap & 2u64.wrapping_sub(two_delta)) | (!swap & two_delta.wrapping_add(2));
-    let f_new = (swap & g) | (!swap & f);
-    let sum = (swap & g.wrapping_sub(f)) | (!swap & g.wrapping_add(odd & f));
-    (two_delta_new, f_new, ((sum as i64) >> 1) as u64)
+    let two_delta_new = select(swap, 2u64.wrapping_sub(two_delta), two_delta.wrapping_add(2));
+    let f_new = select(swap, g, f);
+    let sum = select(swap, g.wrapping_sub(f), g.wrapping_add(odd & f));
+    (two_delta_new, f_new, halve(sum))
 }
 
 /// The coefficient pair in the upper bits of a packed word after `k` steps, as `Packed.lean`'s
-/// `unpack` reads it: negate the word, take the upper part rounded to the nearest at bit
-/// `41 - k`, and split it at bit 21, with the first coefficient taken in `(-2^k, 2^k]`.
+/// `unpack` reads it: negate the word, round its upper part to the nearest at bit `41 - k`, and
+/// split that at bit 21, with the first coefficient in `(-2^20, 2^20]` for every `k`.
 #[inline(always)]
 fn unpack(k: u32, w: u64) -> (u64, u64) {
     let t = 0u64.wrapping_sub(w) as i64;
@@ -96,11 +140,20 @@ fn negate(x: &[u64; 5], s: u64) -> [u64; 5] {
     let mut out = [0u64; 5];
     let mut carry = s & 1;
     unroll!(i in [0, 1, 2, 3, 4] {
-        let (word, overflow) = (x[i] ^ s).overflowing_add(carry);
-        out[i] = word;
-        carry = u64::from(overflow);
+        (out[i], carry) = adc(x[i] ^ s, 0, carry);
     });
     out
+}
+
+/// One column of a row, `carry + x m0 + y m1`, as its low word and the carry into the next
+/// column. The additions wrap rather than panic, but with `carry ≤ m0 + m1 ≤ 2^63` the column
+/// stays below `2^128`, and the carry out is again at most `m0 + m1`.
+#[inline(always)]
+fn row_column(carry: u128, x: u64, m0: u64, y: u64, m1: u64) -> (u64, u128) {
+    let column = carry
+        .wrapping_add(u128::from(x) * u128::from(m0))
+        .wrapping_add(u128::from(y) * u128::from(m1));
+    (column as u64, column >> 64)
 }
 
 /// The row combination `a x + b y` modulo `2^320`, for `a` and `b` given as magnitudes `m0`,
@@ -114,9 +167,7 @@ fn row(x: &[u64; 5], y: &[u64; 5], m0: u64, m1: u64, s0: u64, s1: u64) -> [u64; 
     let mut out = [0u64; 5];
     let mut carry: u128 = 0;
     unroll!(i in [0, 1, 2, 3, 4] {
-        let column = carry + u128::from(x[i]) * u128::from(m0) + u128::from(y[i]) * u128::from(m1);
-        out[i] = column as u64;
-        carry = column >> 64;
+        (out[i], carry) = row_column(carry, x[i], m0, y[i], m1);
     });
     out
 }
@@ -128,10 +179,7 @@ fn add5(x: &[u64; 5], y: &[u64; 5]) -> [u64; 5] {
     let mut out = [0u64; 5];
     let mut carry = 0u64;
     unroll!(i in [0, 1, 2, 3, 4] {
-        let (sum, overflow1) = x[i].overflowing_add(y[i]);
-        let (sum, overflow2) = sum.overflowing_add(carry);
-        out[i] = sum;
-        carry = u64::from(overflow1 | overflow2);
+        (out[i], carry) = adc(x[i], y[i], carry);
     });
     out
 }
@@ -217,17 +265,11 @@ impl InvertBlocks for Backend {
         let s = add5(t, &p61);
         let w = s[0].wrapping_mul(inv);
         // The low word cancels: `s[0] + w p[0] ≡ 0 (mod 2^64)`.
-        let carry = (u128::from(s[0]) + u128::from(w) * u128::from(p[0])) >> 64;
-        let column1 = carry + u128::from(s[1]) + u128::from(w) * u128::from(p[1]);
-        let column2 = (column1 >> 64) + u128::from(s[2]) + u128::from(w) * u128::from(p[2]);
-        let column3 = (column2 >> 64) + u128::from(s[3]) + u128::from(w) * u128::from(p[3]);
-        let column4 = (column3 >> 64) + u128::from(s[4]);
-        [
-            column1 as u64,
-            column2 as u64,
-            column3 as u64,
-            column4 as u64,
-        ]
+        let (_, carry) = mac(s[0], w, p[0], 0);
+        let (r0, carry) = mac(s[1], w, p[1], carry);
+        let (r1, carry) = mac(s[2], w, p[2], carry);
+        let (r2, carry) = mac(s[3], w, p[3], carry);
+        [r0, r1, r2, s[4].wrapping_add(carry)]
     }
 
     /// The four-word subtraction of the modulus, kept unless it borrows out of the top word.
@@ -236,15 +278,12 @@ impl InvertBlocks for Backend {
         let mut difference = [0u64; 4];
         let mut borrow = 0u64;
         unroll!(i in [0, 1, 2, 3] {
-            let (word, underflow1) = value[i].overflowing_sub(modulus[i]);
-            let (word, underflow2) = word.overflowing_sub(borrow);
-            difference[i] = word;
-            borrow = u64::from(underflow1 | underflow2);
+            (difference[i], borrow) = sbb(value[i], modulus[i], borrow);
         });
-        let keep = 0u64.wrapping_sub(borrow);
+        let keep = mask_of_bit(borrow);
         let mut out = [0u64; 4];
         unroll!(i in [0, 1, 2, 3] {
-            out[i] = (keep & value[i]) | (!keep & difference[i]);
+            out[i] = select(keep, value[i], difference[i]);
         });
         out
     }

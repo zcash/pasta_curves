@@ -193,7 +193,7 @@ theorem packedDivsteps_spec (k : ℕ) (hk : k ≤ 20) (s : State) (hf : s.f % 2 
   · exact unpack_spec k hk _ _ _ (by omega) hq1 hq2
 
 /-- Lemma 6′: after every step of a batch the packed `g` is below `2^62` in magnitude, so the sum
-`g ± f` that the next step halves, which is twice this `g`, fits a signed 64-bit word. The row-sum
+`g ± f` that each step halves, twice the `g` it produces, fits a signed 64-bit word. The row-sum
 bound alone gives only `2^62`: `2^(j+1) g_{j+1} = q f₀ + r g₀` with `|f₀| ≤ 2^41`, `|g₀| ≤ 2^62`,
 and `|q| + |r| ≤ 2^(j+1)`, so the extreme needs `q = 0` and `r = 2^(j+1)`. That row arises only as
 the sum of the two rows of the previous matrix with both second entries equal to `2^j`, and then the
@@ -219,7 +219,7 @@ theorem divsteps_packedStart_g_abs_lt (j : ℕ) (s : State) (hf : s.f % 2 = 1)
   have hstep : q' = (T (divsteps j P)).q * N.u + (T (divsteps j P)).r * N.q ∧
       r' = (T (divsteps j P)).q * N.v + (T (divsteps j P)).r * N.r := by
     rw [hq', hr', M_succ_left]; exact ⟨rfl, rfl⟩
-  -- Either `|r'| < 2^(j+1)`, or `q'` is odd.
+  -- Either `|r'| < 2^(j+1)`, or `q'` is nonzero.
   have hdisj : |r'| ≤ 2 * Z - 1 ∨ 1 ≤ |q'| := by
     obtain ⟨hq'', hr''⟩ := hstep
     by_cases h : 0 < (divsteps j P).two_delta ∧ (divsteps j P).g % 2 = 1

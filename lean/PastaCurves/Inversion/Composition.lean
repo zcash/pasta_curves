@@ -22,6 +22,8 @@ the bounds of the true divstep state after `59 i` steps. The last round is the s
 word xored into the masks of its row, which negates the represented entries exactly when the
 model's `finalD` negates the row.
 
+The relation after each of the nine rounds is `invert_carries`.
+
 The proofs name the true state, the model's state, the matrix, and the blocks' results by
 `generalize` rather than `set`: those terms are iterates and long `let` chains, and a `let`-bound
 name lets `omega`, `rw`, and `show` unfold them to the recursion limit. -/
@@ -33,8 +35,9 @@ namespace PastaCurves
 open Inversion (State divsteps M RoundState rounds trueState round initState startE montInvModel
   signWordOf finalD updateFG updateDE amontredZ Mat2 SignMagRep signMask mul_word addw_word)
 
-/-- What the composition needs of a backend's blocks at a field `F`: each block, on bounded
-inputs, computes the word-level function of the shared layer that the round model composes. -/
+/-- What the composition needs of a backend's blocks at a field `F`: each block, under the
+hypotheses of its field, computes the word-level function of the shared layer that the round model
+composes. -/
 structure InvertBlocks.Spec (B : InvertBlocks) (F : PastaField) : Prop where
   /-- `divstep59` on the words of a true state with `f` and `two_delta` odd and `two_delta` small
   returns `two_delta` and the entries of the 59-step matrix, modulo `2^64`. -/
@@ -195,27 +198,28 @@ theorem invertRound_carries (B : InvertBlocks) (F : PastaField) (hB : B.Spec F) 
   dsimp only
   exact ⟨hD, hfeq, hgeq, hdeq, heeq⟩
 
+/-- The word state after `i` of the nine rounds of `invert` carries the model's state after `i`
+rounds. -/
+theorem invert_carries (B : InvertBlocks) (F : PastaField) (hB : B.Spec F) (x : Limbs)
+    (hx : x.Bounded) (i : ℕ) (hi : i ≤ 9) :
+    Carries ((invertRound B F.modulus F.inv)^[i]
+      ⟨1, ⟨F.modulus.l0, F.modulus.l1, F.modulus.l2, F.modulus.l3, 0⟩,
+        ⟨x.l0, x.l1, x.l2, x.l3, 0⟩, ⟨0, 0, 0, 0⟩, startE F⟩) (rounds F x i) := by
+  induction i with
+  | zero => exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+  | succ i ih =>
+    rw [Function.iterate_succ_apply']
+    exact invertRound_carries B F hB x hx i hi _ (ih (by omega))
+
 /-- The composition over blocks that meet their specification computes the model. -/
 theorem invert_eq_model (B : InvertBlocks) (F : PastaField) (hB : B.Spec F) (x : Limbs)
     (hx : x.Bounded) : invert B x F.modulus F.inv (startE F) = montInvModel F x := by
   -- The nine rounds.
   simp only [invert, montInvModel, finalD]
-  generalize hst0 : (⟨1, ⟨F.modulus.l0, F.modulus.l1, F.modulus.l2, F.modulus.l3, 0⟩,
-    ⟨x.l0, x.l1, x.l2, x.l3, 0⟩, ⟨0, 0, 0, 0⟩, startE F⟩ : InvertState) = st0
-  have hcarry : ∀ i, i ≤ 9 →
-      Carries ((invertRound B F.modulus F.inv)^[i] st0) (rounds F x i) := by
-    intro i
-    induction i with
-    | zero =>
-      intro _
-      rw [← hst0]
-      exact ⟨rfl, rfl, rfl, rfl, rfl⟩
-    | succ i ih =>
-      intro hi
-      rw [Function.iterate_succ_apply']
-      exact invertRound_carries B F hB x hx i hi _ (ih (by omega))
-  obtain ⟨htwo_delta, hf, hg, hd, he⟩ := hcarry 9 (le_refl _)
-  generalize hst : (invertRound B F.modulus F.inv)^[9] st0 = st at htwo_delta hf hg hd he ⊢
+  obtain ⟨htwo_delta, hf, hg, hd, he⟩ := invert_carries B F hB x hx 9 (le_refl _)
+  generalize hst : (invertRound B F.modulus F.inv)^[9]
+    ⟨1, ⟨F.modulus.l0, F.modulus.l1, F.modulus.l2, F.modulus.l3, 0⟩,
+      ⟨x.l0, x.l1, x.l2, x.l3, 0⟩, ⟨0, 0, 0, 0⟩, startE F⟩ = st at htwo_delta hf hg hd he ⊢
   rw [hf, hg, hd, he]
   obtain ⟨hdT, hfb, hgb, hfT, hgT, hdb, heb, -, -, -⟩ := Inversion.rounds_invariant F x hx 9
   obtain ⟨hodd, hdodd, hdD, hfv, hgv⟩ := trueState_facts F x hx 9 (le_refl _)
@@ -292,24 +296,24 @@ theorem invert_eq_model (B : InvertBlocks) (F : PastaField) (hB : B.Spec F) (x :
   have htv : |σ * (N.u * rs.d.toNat + N.v * rs.e.toNat)| < 2^315 := by
     rw [← hval, ← show (2 : ℤ)^59 * 2^256 = 2^315 by norm_num]
     exact Inversion.row_abs_lt (σ * N.u) (σ * N.v) _ _ _ _ hrow' hd' he' (by positivity)
-  set r : ℤ := amontredZ (σ * (N.u * rs.d.toNat + N.v * rs.e.toNat)) F.modulus.toNat F.inv
-    with hr
+  set t' : ℤ := amontredZ (σ * (N.u * rs.d.toNat + N.v * rs.e.toNat)) F.modulus.toNat F.inv
+    with ht'
   have hA : B.amontred (B.deRow rs.d rs.e sm.u sm.v
       (sm.su ^^^ (if sw < 2^63 then 0 else 2^64 - 1))
       (sm.sv ^^^ (if sw < 2^63 then 0 else 2^64 - 1))) F.modulus F.inv
-      = Limbs.ofNat r.toNat := by
+      = Limbs.ofNat t'.toNat := by
     rw [hB.amontred _ hTb (by rw [hT, hval]; exact htv)]
     unfold Inversion.amontred
     rw [hT, hval]
-  obtain ⟨hr0, -, hr2p, hr256, -⟩ := Inversion.amontredZ_spec F _ htv
-  rw [← hr] at hr0 hr2p hr256
+  obtain ⟨ht'0, -, ht'2p, ht'256, -⟩ := Inversion.amontredZ_spec F _ htv
+  rw [← ht'] at ht'0 ht'2p ht'256
   -- The conditional subtraction is the model's.
   have hp254 : 2^254 ≤ F.modulus.toNat := F.two_pow_le_modulus
   have hp255 : F.modulus.toNat < 2^255 := F.modulus_lt
-  have hAt : (Limbs.ofNat r.toNat).toNat = r.toNat := Limbs.toNat_ofNat _ (by omega)
-  obtain ⟨hRb, hR⟩ := hB.condSub (Limbs.ofNat r.toNat) (Limbs.ofNat_bounded _)
+  have hAt : (Limbs.ofNat t'.toNat).toNat = t'.toNat := Limbs.toNat_ofNat _ (by omega)
+  obtain ⟨hRb, hR⟩ := hB.condSub (Limbs.ofNat t'.toNat) (Limbs.ofNat_bounded _)
   rw [hAt] at hR
-  have hqlt : (if r < F.modulus.toNat then r else r - F.modulus.toNat).toNat < 2^256 := by
+  have hqlt : (if t' < F.modulus.toNat then t' else t' - F.modulus.toNat).toNat < 2^256 := by
     split_ifs <;> omega
   rw [hA]
   apply Limbs.ext_of_toNat _ _ hRb (Limbs.ofNat_bounded _)

@@ -519,8 +519,8 @@ pub(super) fn square(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
             "adc {a3}, {z3}, {z7}",             // Next-iteration a[3].
 
             // Conditional subtraction of p = [p0, p1, 0, 2^62]. The input is
-            // canonical, so the candidate is below 1.25p < 2^255: no bit 256
-            // exists and a four-limb comparison suffices.
+            // canonical, so the candidate is below p + p^2/R < 1.26p < 2^255:
+            // no bit 256 exists and a four-limb comparison suffices.
             "mov {q}, #0x4000000000000000",     // Materialize p3 = 2^62.
             "subs {z0}, {a0}, {p0}",            // Tentative limb 0 = candidate - p0.
             "sbcs {z1}, {a1}, {p1}",            // Tentative limb 1 minus p1.
@@ -618,7 +618,8 @@ pub(super) fn divstep59(mut two_delta: u64, f0: u64, g0: u64) -> [u64; 5] {
     // stack use, and outputs depend only on the declared inputs.
     unsafe {
         asm!(
-            // Batch 1: pack the low 20 bits with the identity row (-2^41, -2^62).
+            // Batch 1: pack the low 20 bits with the identity's rows, as -2^41
+            // in pf and -2^62 in pg.
             "and {pf}, {f}, #0xfffff",
             "orr {pf}, {pf}, #0xfffffe0000000000",
             "and {pg}, {g}, #0xfffff",
@@ -802,9 +803,8 @@ pub(super) fn divstep59(mut two_delta: u64, f0: u64, g0: u64) -> [u64; 5] {
 /// The row blocks multiply by a negative entry `m` as `|m| · ((x ^ mask) + 1)`,
 /// that is by the magnitude times the complement of `x`, with the `+ |m|` folded
 /// into the initial carry, so they take the entries in this form. The result is
-/// `[u, v, q, r, su, sv, sq, sr]`, magnitudes then masks. The entry
-/// `-2^63` has no magnitude as a word; the 59-step matrices' entries are below
-/// `2^59` in magnitude.
+/// `[u, v, q, r, su, sv, sq, sr]`, magnitudes then masks. The 59-step
+/// matrices' entries are at most `2^59` in magnitude.
 #[inline(always)]
 pub(super) fn sign_mag(mut u: u64, mut v: u64, mut q: u64, mut r: u64) -> [u64; 8] {
     let (su, sv, sq, sr): (u64, u64, u64, u64);

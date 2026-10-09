@@ -1095,7 +1095,8 @@ class SkeletonBackend(gen.SkeletonBackend):
             return True
         # The inversion's instructions: each result's defining equation is kept, since the
         # annotations reason from it, and its bound below `2^64` is an instance of a lemma of
-        # `AArch64/Spec/Words.lean`; a flag-setting instruction has only its equation.
+        # `AArch64/Spec/Words.lean` or `PastaCurves/Spec.lean` (or of `Nat.mod_lt` for a shift); a
+        # flag-setting instruction has only its equation.
         nm = context.name
 
         def bounded(expr, proof):

@@ -128,8 +128,8 @@ set_option exponentiation.threshold 512 in
 /-- Montgomery squaring by the inline block: for a canonical `value`, the result is below `p` and
 `2^256 * result ≡ value * value (mod p)`. The block forms the eight-limb square exactly, reduces its
 low half by four Montgomery cancellation steps, adds the high half, and reduces once conditionally.
-The candidate is below `2 * p`, so the carry the block drops there is `0`. The square's limbs have
-weights up to `2^512`, beyond the default threshold for evaluating powers, hence the option. -/
+The candidate is below `2 * p`, so the carry the block drops there is `0`. The square's top carry
+has weight `2^512`, beyond the default threshold for evaluating powers, hence the option. -/
 theorem sqrMont_spec (value modulus : Limbs) (inv : Nat) (hv : value.Bounded)
     (hm : modulus.Bounded) (hshape : modulus.l2 = 0 ∧ modulus.l3 = 2^62)
     (hinv_lt : inv < 2^64) (hinv : (inv * modulus.l0 + 1) % 2^64 = 0)

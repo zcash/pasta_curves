@@ -33,7 +33,7 @@ one of Aeneas' axioms through one of Aeneas' declarations, which the exceptions 
 
 The scan reads the export once and records which expressions and declarations refer to which, as
 a graph. A declaration depends on an axiom exactly when the axiom is reachable from it, so a
-breadth-first search over the reversed edges, starting at the axiom, finds its dependents; one
+depth-first search over the reversed edges, starting at the axiom, finds its dependents; one
 that stops at the first declarations finds its citers. Each search costs time linear in what it
 visits, and the graph is held in dense arrays, in memory linear in the export.
 
@@ -179,7 +179,7 @@ class Export:
 
     def reaching(self, axiom, across):
         """The names of the declarations that cite `axiom`, and if `across`, also those that
-        cite a declaration that reaches it: a breadth-first search over the reversed edges,
+        cite a declaration that reaches it: a depth-first search over the reversed edges,
         which visits each expression, declaration, and name at most once. Without `across`, it
         stops at the first declarations, which are the citers."""
         i = self.axioms.get(axiom)

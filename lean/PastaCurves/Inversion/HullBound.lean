@@ -16,8 +16,8 @@ checks that the certificate data discharges:
 * the eight inclusions `M S ⊆ λ^k T` between `H0`, `H1`, and their images under the step maps;
 * `H1` lies in the outer box `|x| ≤ 8193/8192`, `|y| ≤ 379/512`, and the triangle
   `0 ≤ y ≤ x ≤ 1` scaled by `2753/4096` lies in `H1`;
-* `0 ∈ H1`, and the few integer points that the outer box admits at the two smallest scales
-  are outside `H1`.
+* `0 ∈ H1`, and the few integer points with `y ≠ 0` that the outer box admits at the two smallest
+  scales are outside `H1`.
 
 With `λ = s = 30902639/41749730`, the state after `n` steps from `(f, g)` with `0 ≤ g ≤ f ≤ M`,
 scaled by `M s^n / stretch`, stays in a region `W i` indexed by `i = δ - 1/2`. While `g ≠ 0` the
@@ -155,11 +155,12 @@ theorem H1_smul (hc : Certified H0 H1) (x y t : ℚ) (h : H1.mem x y) (ht0 : 0 �
 
 /-! ## The maps at the far negative levels
 
-For `i ≤ -3`, one step from level `i` to level `i + 1` acts on the point of `H1` that
-represents the state as `(X, Y) ↦ ((X ± 2^i Y) / (2 s^2), Y / (2 s^2))`. At `i = -3` this is
-the certified inclusion `inc_4s` (or `inc_3s`) followed by the shrink `32/33`; going one level
-further down replaces `2^i` by `2^(i-1)`, which is the midpoint of the previous map and the
-shrink by `1 / (2 s^2) ≤ 1`. -/
+For `i ≤ -4`, one step from level `i` to level `i + 1` acts on the point of `H1` that represents the
+state as `(X, Y) ↦ ((X ± 2^i Y) / (2 s^2), Y / (2 s^2))`. The induction starts from the same map at
+`i = -3`, which is the certified inclusion `inc_4s` (or `inc_3s`) followed by the shrink `32/33`.
+Going one level further down replaces `2^i` by `2^(i-1)`, which is the midpoint of the previous map
+and the shrink by `1 / (2 s^2) ≤ 1`. The step from level `-3` itself is `inc_4s` (or `inc_3s`)
+alone, since the scale factor changes there. -/
 
 /-- The map with the plus sign keeps `H1`: `inc_4s` with the shrink `32/33` at `n = 0`, then the
 midpoint with the shrunk point at each further level. -/

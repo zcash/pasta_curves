@@ -18,7 +18,7 @@ namespace PastaCurves.AArch64
 -- BEGIN mulMontRound_spec statement
 /-- One round of the multiplication, on any accumulator `acc` whose quotient and reduction terms
 are those the previous round left (`hq`, `ht1`, `ht3`): it returns bounded registers with the
-same relations, and `2^64 * s'.toNat = s.toNat + q * p + 2^64 * (lhs * b)`, that is, the
+same relations, and `2^64 * s'.toNat = acc.toNat + acc.q * p + 2^64 * (lhs * b)`, that is, the
 previous accumulator reduced by its quotient, shifted down one limb, plus the round's product.
 `hH1` keeps the five-limb accumulator below `2^320` while the reduction's low terms are added;
 `hH2` keeps the shifted accumulator plus the product below `2^320`. -/

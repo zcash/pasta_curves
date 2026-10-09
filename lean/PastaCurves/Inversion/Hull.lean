@@ -107,8 +107,8 @@ theorem pullback_holds (t : HalfPlane) (M : Mat) (d : ℚ) (x y : ℚ) :
       = t.a * ((M.m11 * x + M.m12 * y) / d) + t.b * ((M.m21 * x + M.m22 * y) / d) := by ring
   rw [key]
 
-/-- The one inequality behind every check: a positive combination of two valid half-planes,
-with nonnegative slack, is valid. -/
+/-- The one inequality behind every check: a nonnegative combination of two valid half-planes, with
+a positive scale and nonnegative slack, is valid. -/
 theorem farkas_sound (e₁ e₂ t : HalfPlane) (m n p q : ℚ) (hm : 0 ≤ m) (hn : 0 ≤ n) (hp : 0 ≤ p)
     (hq : 0 < q) (ha : m * e₁.a + n * e₂.a = q * t.a) (hb : m * e₁.b + n * e₂.b = q * t.b)
     (hc : m * e₁.c + n * e₂.c + p = q * t.c) (x y : ℚ) (h₁ : e₁.holds x y) (h₂ : e₂.holds x y) :

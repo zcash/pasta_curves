@@ -11,7 +11,7 @@ import Mathlib.Tactic.LinearCombination
 
 The step function of the constant-time inversion and its transition matrices, with the facts
 that hold for every number of steps: the matrix identity, locality in the low bits, the row-sum
-bound, the invariance of `max (|f|, |g|)` and of the gcd, and the behaviour once `g = 0`.
+bound, that `max (|f|, |g|)` never grows, the invariance of the gcd, and the behaviour once `g = 0`.
 Nothing here is specific to a modulus or to a word size.
 
 The state is `(two_delta, f, g)` with `two_delta = 2δ` an odd integer (the start `two_delta = 1` is
@@ -375,10 +375,10 @@ theorem M_succ_left (n : ℕ) (s : State) : M (n + 1) s = (T (divsteps n s)).mul
   | succ n ih =>
     rw [M_succ, ih (divstep s), Mat2.mul_assoc, ← M_succ, divsteps_succ]
 
-/-- Lemma 3, the half-open range: every entry of `M n s` lies in `(-2^n, 2^n]`. With the newest
-step on the left, each new entry is either twice an old one or an old one plus or minus another,
-so the strict lower bound and the closed upper bound both propagate. This is the range that
-makes the packed-word decoding unambiguous. -/
+/-- Lemma 3, the half-open range: every entry of `M n s` lies in `(-2^n, 2^n]`. With the newest step
+on the left, each new entry is twice an old one, an old one, or an old one plus or minus another, so
+the strict lower bound and the closed upper bound both propagate. This is the range that makes the
+packed-word decoding unambiguous. -/
 theorem M_entry_range (n : ℕ) (s : State) :
     (-(2 : ℤ)^n < (M n s).u ∧ (M n s).u ≤ 2^n) ∧
       (-(2 : ℤ)^n < (M n s).v ∧ (M n s).v ≤ 2^n) ∧
