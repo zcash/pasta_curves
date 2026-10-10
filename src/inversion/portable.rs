@@ -7,7 +7,7 @@
 //! with the branch taken by masks; the decoder is the formula of `Packed.lean`'s `unpack`; the rows
 //! and the reduction are limb arithmetic modulo `2^320`, with `u128` accumulators over `u64 × u64`
 //! products, which 64-bit targets compile to their widening multiplication. Aeneas translates them
-//! to Lean (`lean/PastaCurves/Portable/`), where `cond_sub`'s translation is proved to meet its
+//! to Lean (`lean/PastaCurves/Portable/`), where each block's translation is proved to meet its
 //! contract; the crate's tests check every block against the same known answers as the assembly
 //! blocks. The code stays within the subset of Rust that Aeneas translates (no `unsafe`, explicit
 //! wrapping arithmetic, and the fixed-length loops unrolled by `unroll!`, so that the translation

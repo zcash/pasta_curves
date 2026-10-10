@@ -406,8 +406,9 @@ against a step-by-step trace of one batch. The proofs cover:
   backend whose blocks meet their contracts, including the repeated squaring of `sqr_n_mul`;
 * from those, the six Montgomery entry points on both backends at either field under the
   conditions they assert, and `invert` over the AArch64 blocks at either field;
-* the Aeneas translation of the portable `cond_sub` against its contract.
+* the Aeneas translations of the six portable inversion blocks against their contracts;
+* from those and the translation of the driver `invert_with`, `invert` over the portable blocks at
+  either field.
 
-This covers the crate's current code except the other five portable inversion blocks and the
-driver over them (`src/inversion/portable.rs`, `src/inversion.rs`), up to the aspects that the
-trust story lists as reviewed by hand.
+This covers the assembly routines and the constant-time inversion (the variable-time inversion is
+not proved), up to the aspects that the trust story lists as reviewed by hand.
