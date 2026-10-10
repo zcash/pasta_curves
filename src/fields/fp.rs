@@ -11,9 +11,10 @@ use lazy_static::lazy_static;
 #[cfg(feature = "bits")]
 use ff::{FieldBits, PrimeFieldBits};
 
-use crate::arithmetic::{VartimeField, adc, mac, sbb};
+use crate::arithmetic::{VartimeField, sbb};
 #[cfg(feature = "deferred")]
 use crate::deferred::{DeferredField, Product};
+use crate::montgomery::portable;
 
 #[cfg(feature = "sqrt-table")]
 use crate::arithmetic::{SqrtTableHelpers, SqrtTables};
@@ -334,14 +335,27 @@ impl Fp {
     fn square_runtime(&self) -> Self {
         if_asm!(
             Fp(crate::asm::square(&self.0, &MODULUS.0, INV)),
-            self.square_portable()
+            Fp(crate::montgomery::square_with::<portable::Backend>(
+                &self.0, &MODULUS.0, INV
+            ))
         )
     }
 
     #[cfg_attr(not(feature = "uninline-portable"), inline(always))]
-    const fn square_portable(&self) -> Fp {
-        let u = self.square_unreduced();
-        Fp::montgomery_reduce(u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7])
+    const fn square_portable(&self) -> Self {
+        Self(portable::square(&self.0, &MODULUS.0, INV))
+    }
+
+    if_asm_unsupported! {
+        /// [`Self::sqr_n_mul_runtime`] on the portable blocks. It stays out of line, with the
+        /// field's constants folded in, so that an addition chain calls it rather than expanding
+        /// its loop at every step.
+        #[inline(never)]
+        fn sqr_n_mul_portable(&self, n: u32, by: &Self) -> Self {
+            Self(crate::montgomery::sqr_n_mul_with::<portable::Backend>(
+                &self.0, n as usize, &by.0, &MODULUS.0, INV,
+            ))
+        }
     }
 
     /// Squares `self` `n` times, then multiplies the result by `by`.
@@ -353,56 +367,8 @@ impl Fp {
             Fp(crate::asm::sqr_n_mul(
                 &self.0, n as usize, &by.0, &MODULUS.0, INV,
             )),
-            (0..n).fold(*self, |acc, _| acc.square_portable()).mul(by),
+            self.sqr_n_mul_portable(n, by),
         )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    #[cfg_attr(not(feature = "uninline-portable"), inline(always))]
-    const fn montgomery_reduce(
-        r0: u64,
-        r1: u64,
-        r2: u64,
-        r3: u64,
-        r4: u64,
-        r5: u64,
-        r6: u64,
-        r7: u64,
-    ) -> Self {
-        // The Montgomery reduction here is based on Algorithm 14.32 in
-        // Handbook of Applied Cryptography
-        // <http://cacr.uwaterloo.ca/hac/about/chap14.pdf>.
-
-        let k = r0.wrapping_mul(INV);
-        let (_, carry) = mac(r0, k, MODULUS.0[0], 0);
-        let (r1, carry) = mac(r1, k, MODULUS.0[1], carry);
-        let (r2, carry) = mac(r2, k, MODULUS.0[2], carry);
-        let (r3, carry) = mac(r3, k, MODULUS.0[3], carry);
-        let (r4, carry2) = adc(r4, 0, carry);
-
-        let k = r1.wrapping_mul(INV);
-        let (_, carry) = mac(r1, k, MODULUS.0[0], 0);
-        let (r2, carry) = mac(r2, k, MODULUS.0[1], carry);
-        let (r3, carry) = mac(r3, k, MODULUS.0[2], carry);
-        let (r4, carry) = mac(r4, k, MODULUS.0[3], carry);
-        let (r5, carry2) = adc(r5, carry2, carry);
-
-        let k = r2.wrapping_mul(INV);
-        let (_, carry) = mac(r2, k, MODULUS.0[0], 0);
-        let (r3, carry) = mac(r3, k, MODULUS.0[1], carry);
-        let (r4, carry) = mac(r4, k, MODULUS.0[2], carry);
-        let (r5, carry) = mac(r5, k, MODULUS.0[3], carry);
-        let (r6, carry2) = adc(r6, carry2, carry);
-
-        let k = r3.wrapping_mul(INV);
-        let (_, carry) = mac(r3, k, MODULUS.0[0], 0);
-        let (r4, carry) = mac(r4, k, MODULUS.0[1], carry);
-        let (r5, carry) = mac(r5, k, MODULUS.0[2], carry);
-        let (r6, carry) = mac(r6, k, MODULUS.0[3], carry);
-        let (r7, _) = adc(r7, carry2, carry);
-
-        // Result may be within MODULUS of the correct value
-        Self::sub(&Fp([r4, r5, r6, r7]), &MODULUS)
     }
 
     /// Multiplies `rhs` by `self`, returning the result.
@@ -417,14 +383,15 @@ impl Fp {
     fn mul_runtime(&self, rhs: &Self) -> Self {
         if_asm!(
             Fp(crate::asm::mul(&self.0, &rhs.0, &MODULUS.0, INV)),
-            self.mul_portable(rhs)
+            Fp(crate::montgomery::mul_with::<portable::Backend>(
+                &self.0, &rhs.0, &MODULUS.0, INV
+            ))
         )
     }
 
     #[cfg_attr(not(feature = "uninline-portable"), inline(always))]
     const fn mul_portable(&self, rhs: &Self) -> Self {
-        let u = self.mul_unreduced(rhs);
-        Fp::montgomery_reduce(u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7])
+        Self(portable::mul(&self.0, &rhs.0, &MODULUS.0, INV))
     }
 
     /// Subtracts `rhs` from `self`, returning the result.
@@ -439,25 +406,15 @@ impl Fp {
     fn sub_runtime(&self, rhs: &Self) -> Self {
         if_asm!(
             Fp(crate::asm::sub(&self.0, &rhs.0, &MODULUS.0)),
-            self.sub_portable(rhs)
+            Fp(crate::montgomery::sub_with::<portable::Backend>(
+                &self.0, &rhs.0, &MODULUS.0
+            ))
         )
     }
 
     #[cfg_attr(not(feature = "uninline-portable"), inline(always))]
     const fn sub_portable(&self, rhs: &Self) -> Self {
-        let (d0, borrow) = sbb(self.0[0], rhs.0[0], 0);
-        let (d1, borrow) = sbb(self.0[1], rhs.0[1], borrow);
-        let (d2, borrow) = sbb(self.0[2], rhs.0[2], borrow);
-        let (d3, borrow) = sbb(self.0[3], rhs.0[3], borrow);
-
-        // If underflow occurred on the final limb, borrow = 0xfff...fff, otherwise
-        // borrow = 0x000...000. Thus, we use it as a mask to conditionally add the modulus.
-        let (d0, carry) = adc(d0, MODULUS.0[0] & borrow, 0);
-        let (d1, carry) = adc(d1, MODULUS.0[1] & borrow, carry);
-        let (d2, carry) = adc(d2, MODULUS.0[2] & borrow, carry);
-        let (d3, _) = adc(d3, MODULUS.0[3] & borrow, carry);
-
-        Fp([d0, d1, d2, d3])
+        Self(portable::sub(&self.0, &rhs.0, &MODULUS.0))
     }
 
     /// Adds `rhs` to `self`, returning the result.
@@ -472,20 +429,15 @@ impl Fp {
     fn add_runtime(&self, rhs: &Self) -> Self {
         if_asm!(
             Fp(crate::asm::add(&self.0, &rhs.0, &MODULUS.0)),
-            self.add_portable(rhs)
+            Fp(crate::montgomery::add_with::<portable::Backend>(
+                &self.0, &rhs.0, &MODULUS.0
+            ))
         )
     }
 
     #[cfg_attr(not(feature = "uninline-portable"), inline(always))]
     const fn add_portable(&self, rhs: &Self) -> Self {
-        let (d0, carry) = adc(self.0[0], rhs.0[0], 0);
-        let (d1, carry) = adc(self.0[1], rhs.0[1], carry);
-        let (d2, carry) = adc(self.0[2], rhs.0[2], carry);
-        let (d3, _) = adc(self.0[3], rhs.0[3], carry);
-
-        // Attempt to subtract the modulus, to ensure the value
-        // is smaller than the modulus.
-        Self::sub(&Fp([d0, d1, d2, d3]), &MODULUS)
+        Self(portable::add(&self.0, &rhs.0, &MODULUS.0))
     }
 
     /// Negates `self`.
@@ -505,66 +457,6 @@ impl Fp {
 
         Fp([d0 & mask, d1 & mask, d2 & mask, d3 & mask])
     }
-
-    /// Multiplies `rhs` by `self`, returning the unreduced 512-bit product.
-    #[cfg_attr(not(feature = "uninline-portable"), inline)]
-    pub(crate) const fn mul_unreduced(&self, rhs: &Self) -> [u64; 8] {
-        // Schoolbook multiplication
-
-        let (r0, carry) = mac(0, self.0[0], rhs.0[0], 0);
-        let (r1, carry) = mac(0, self.0[0], rhs.0[1], carry);
-        let (r2, carry) = mac(0, self.0[0], rhs.0[2], carry);
-        let (r3, r4) = mac(0, self.0[0], rhs.0[3], carry);
-
-        let (r1, carry) = mac(r1, self.0[1], rhs.0[0], 0);
-        let (r2, carry) = mac(r2, self.0[1], rhs.0[1], carry);
-        let (r3, carry) = mac(r3, self.0[1], rhs.0[2], carry);
-        let (r4, r5) = mac(r4, self.0[1], rhs.0[3], carry);
-
-        let (r2, carry) = mac(r2, self.0[2], rhs.0[0], 0);
-        let (r3, carry) = mac(r3, self.0[2], rhs.0[1], carry);
-        let (r4, carry) = mac(r4, self.0[2], rhs.0[2], carry);
-        let (r5, r6) = mac(r5, self.0[2], rhs.0[3], carry);
-
-        let (r3, carry) = mac(r3, self.0[3], rhs.0[0], 0);
-        let (r4, carry) = mac(r4, self.0[3], rhs.0[1], carry);
-        let (r5, carry) = mac(r5, self.0[3], rhs.0[2], carry);
-        let (r6, r7) = mac(r6, self.0[3], rhs.0[3], carry);
-
-        [r0, r1, r2, r3, r4, r5, r6, r7]
-    }
-
-    /// Squares this element, returning the unreduced 512-bit product.
-    #[cfg_attr(not(feature = "uninline-portable"), inline)]
-    pub(crate) const fn square_unreduced(&self) -> [u64; 8] {
-        let (r1, carry) = mac(0, self.0[0], self.0[1], 0);
-        let (r2, carry) = mac(0, self.0[0], self.0[2], carry);
-        let (r3, r4) = mac(0, self.0[0], self.0[3], carry);
-
-        let (r3, carry) = mac(r3, self.0[1], self.0[2], 0);
-        let (r4, r5) = mac(r4, self.0[1], self.0[3], carry);
-
-        let (r5, r6) = mac(r5, self.0[2], self.0[3], 0);
-
-        let r7 = r6 >> 63;
-        let r6 = (r6 << 1) | (r5 >> 63);
-        let r5 = (r5 << 1) | (r4 >> 63);
-        let r4 = (r4 << 1) | (r3 >> 63);
-        let r3 = (r3 << 1) | (r2 >> 63);
-        let r2 = (r2 << 1) | (r1 >> 63);
-        let r1 = r1 << 1;
-
-        let (r0, carry) = mac(0, self.0[0], self.0[0], 0);
-        let (r1, carry) = adc(0, r1, carry);
-        let (r2, carry) = mac(r2, self.0[1], self.0[1], carry);
-        let (r3, carry) = adc(0, r3, carry);
-        let (r4, carry) = mac(r4, self.0[2], self.0[2], carry);
-        let (r5, carry) = adc(0, r5, carry);
-        let (r6, carry) = mac(r6, self.0[3], self.0[3], carry);
-        let (r7, _) = adc(0, r7, carry);
-
-        [r0, r1, r2, r3, r4, r5, r6, r7]
-    }
 }
 
 #[cfg(feature = "deferred")]
@@ -573,12 +465,12 @@ impl DeferredField for Fp {
 
     #[cfg_attr(not(feature = "uninline-portable"), inline)]
     fn mul_accumulate(acc: &mut Self::Accumulator, a: &Fp, b: &Fp) {
-        acc.accumulate(a.mul_unreduced(b));
+        acc.accumulate(portable::mul_unreduced(&a.0, &b.0));
     }
 
     #[cfg_attr(not(feature = "uninline-portable"), inline)]
     fn square_accumulate(acc: &mut Self::Accumulator, a: &Fp) {
-        acc.accumulate(a.square_unreduced());
+        acc.accumulate(portable::square_unreduced(&a.0));
     }
 
     #[cfg_attr(not(feature = "uninline-portable"), inline)]
@@ -591,9 +483,10 @@ impl DeferredField for Fp {
             0x1b4b3c4bfffffffc,
         ];
         let limbs = acc.partial_reduce(&B448, &R2.0);
-        Fp::montgomery_reduce(
+        Fp(portable::montgomery_reduce(
             limbs[0], limbs[1], limbs[2], limbs[3], limbs[4], limbs[5], limbs[6], limbs[7],
-        )
+            &MODULUS.0, INV,
+        ))
     }
 }
 
@@ -780,7 +673,9 @@ impl ff::PrimeField for Fp {
         // (a.R) / R = a
         let tmp = if_asm!(
             Fp(crate::asm::from_mont(&self.0, &MODULUS.0, INV)),
-            Fp::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0),
+            Fp(crate::montgomery::from_mont_with::<portable::Backend>(
+                &self.0, &MODULUS.0, INV
+            )),
         );
 
         let mut res = [0; 32];
@@ -945,7 +840,9 @@ impl ec_gpu::GpuField for Fp {
 #[cfg(all(test, feature = "asm"))]
 if_asm_supported! {
 fn asm_portable_repr(value: Fp) -> [u8; 32] {
-    let value = Fp::montgomery_reduce(value.0[0], value.0[1], value.0[2], value.0[3], 0, 0, 0, 0);
+    let value = Fp(portable::montgomery_reduce(
+        value.0[0], value.0[1], value.0[2], value.0[3], 0, 0, 0, 0, &MODULUS.0, INV,
+    ));
     let mut repr = [0; 32];
     for (bytes, limb) in repr.chunks_exact_mut(8).zip(value.0) {
         bytes.copy_from_slice(&limb.to_le_bytes());

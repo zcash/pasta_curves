@@ -30,9 +30,7 @@ mod limbs;
 mod inversion;
 
 // The Montgomery arithmetic as generic compositions over a backend's blocks.
-if_asm_supported! {
-    mod montgomery;
-}
+mod montgomery;
 
 // The fields' constants and known answers for the tests of the backends and the inversion.
 #[cfg(test)]

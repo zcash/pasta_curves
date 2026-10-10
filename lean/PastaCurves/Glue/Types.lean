@@ -20,7 +20,7 @@ set_option maxRecDepth 2048
 namespace pasta_curves
 
 /-- Trait declaration: [pasta_curves::montgomery::MontgomeryBlocks]
-    Source: 'src/montgomery.rs', lines 28:0-43:1 -/
+    Source: 'src/montgomery.rs', lines 31:0-46:1 -/
 structure montgomery.MontgomeryBlocks (Self : Type) where
   add : Array Std.U64 4#usize → Array Std.U64 4#usize → Array Std.U64
     4#usize → Result (Array Std.U64 4#usize)

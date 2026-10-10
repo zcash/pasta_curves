@@ -70,7 +70,7 @@ def limbs.is_canonical
   ok (i = 1#u64)
 
 /-- [pasta_curves::montgomery::mul_contract]:
-    Source: 'src/montgomery.rs', lines 17:0-22:1 -/
+    Source: 'src/montgomery.rs', lines 20:0-25:1 -/
 def montgomery.mul_contract
   (lhs : Array Std.U64 4#usize) (rhs : Array Std.U64 4#usize)
   (modulus : Array Std.U64 4#usize) :
@@ -95,7 +95,7 @@ def montgomery.mul_contract
   ok (i14 = 1#u64)
 
 /-- [pasta_curves::montgomery::add_with]:
-    Source: 'src/montgomery.rs', lines 47:0-57:1 -/
+    Source: 'src/montgomery.rs', lines 50:0-60:1 -/
 def montgomery.add_with
   {B : Type} (MontgomeryBlocksInst : montgomery.MontgomeryBlocks B)
   (lhs : Array Std.U64 4#usize) (rhs : Array Std.U64 4#usize)
@@ -109,7 +109,7 @@ def montgomery.add_with
   MontgomeryBlocksInst.add lhs rhs modulus
 
 /-- [pasta_curves::montgomery::sub_with]:
-    Source: 'src/montgomery.rs', lines 61:0-71:1 -/
+    Source: 'src/montgomery.rs', lines 64:0-74:1 -/
 def montgomery.sub_with
   {B : Type} (MontgomeryBlocksInst : montgomery.MontgomeryBlocks B)
   (lhs : Array Std.U64 4#usize) (rhs : Array Std.U64 4#usize)
@@ -123,7 +123,7 @@ def montgomery.sub_with
   MontgomeryBlocksInst.sub lhs rhs modulus
 
 /-- [pasta_curves::montgomery::mul_with]:
-    Source: 'src/montgomery.rs', lines 75:0-87:1 -/
+    Source: 'src/montgomery.rs', lines 78:0-90:1 -/
 def montgomery.mul_with
   {B : Type} (MontgomeryBlocksInst : montgomery.MontgomeryBlocks B)
   (lhs : Array Std.U64 4#usize) (rhs : Array Std.U64 4#usize)
@@ -135,7 +135,7 @@ def montgomery.mul_with
   MontgomeryBlocksInst.mul lhs rhs modulus inv
 
 /-- [pasta_curves::montgomery::square_with]:
-    Source: 'src/montgomery.rs', lines 91:0-97:1 -/
+    Source: 'src/montgomery.rs', lines 94:0-100:1 -/
 def montgomery.square_with
   {B : Type} (MontgomeryBlocksInst : montgomery.MontgomeryBlocks B)
   (value : Array Std.U64 4#usize) (modulus : Array Std.U64 4#usize)
@@ -147,7 +147,7 @@ def montgomery.square_with
   MontgomeryBlocksInst.square value modulus inv
 
 /-- [pasta_curves::montgomery::sqr_n_mul_with]: loop body 0:
-    Source: 'src/montgomery.rs', lines 114:4-116:5 -/
+    Source: 'src/montgomery.rs', lines 117:4-119:5 -/
 @[rust_loop_body]
 def montgomery.sqr_n_mul_with_loop.body
   {B : Type} (MontgomeryBlocksInst : montgomery.MontgomeryBlocks B)
@@ -165,7 +165,7 @@ def montgomery.sqr_n_mul_with_loop.body
     ok (cont (iter1, acc1))
 
 /-- [pasta_curves::montgomery::sqr_n_mul_with]: loop 0:
-    Source: 'src/montgomery.rs', lines 114:4-116:5 -/
+    Source: 'src/montgomery.rs', lines 117:4-119:5 -/
 @[rust_loop]
 def montgomery.sqr_n_mul_with_loop
   {B : Type} (MontgomeryBlocksInst : montgomery.MontgomeryBlocks B)
@@ -179,7 +179,7 @@ def montgomery.sqr_n_mul_with_loop
     (iter, acc)
 
 /-- [pasta_curves::montgomery::sqr_n_mul_with]:
-    Source: 'src/montgomery.rs', lines 102:0-118:1 -/
+    Source: 'src/montgomery.rs', lines 105:0-121:1 -/
 def montgomery.sqr_n_mul_with
   {B : Type} (MontgomeryBlocksInst : montgomery.MontgomeryBlocks B)
   (value : Array Std.U64 4#usize) (count : Std.Usize)
@@ -195,7 +195,7 @@ def montgomery.sqr_n_mul_with
   montgomery.mul_with MontgomeryBlocksInst acc rhs modulus inv
 
 /-- [pasta_curves::montgomery::from_mont_with]:
-    Source: 'src/montgomery.rs', lines 122:0-128:1 -/
+    Source: 'src/montgomery.rs', lines 125:0-131:1 -/
 def montgomery.from_mont_with
   {B : Type} (MontgomeryBlocksInst : montgomery.MontgomeryBlocks B)
   (value : Array Std.U64 4#usize) (modulus : Array Std.U64 4#usize)
