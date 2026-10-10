@@ -127,6 +127,11 @@ if_asm_supported! {
     #[cfg(any(target_arch = "aarch64", doc))]
     pub(crate) mod aarch64;
 
+    // An example of running the inversion with Arm's data-independent timing set, for the
+    // maintainers to evaluate; `lib.rs` restricts `pasta_curves_dit` to AArch64 targets with DIT.
+    #[cfg(pasta_curves_dit)]
+    pub(crate) mod dit;
+
     #[cfg(any(target_arch = "x86_64", doc))]
     mod x86_64;
 

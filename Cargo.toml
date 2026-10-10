@@ -26,8 +26,9 @@ targets = []
 
 [lints.rust]
 # `--cfg pasta_curves_noasm` compiles the assembly backend out, even if `asm` is
-# enabled; see `src/asm/README.md`.
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(pasta_curves_noasm)'] }
+# enabled; see `src/asm/README.md`. `--cfg pasta_curves_dit` runs the inversion with
+# Arm's data-independent timing set, an example; see `src/asm/dit.rs`.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(pasta_curves_noasm)', 'cfg(pasta_curves_dit)'] }
 
 [dev-dependencies]
 bincode = "1.3"
