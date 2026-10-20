@@ -1369,6 +1369,8 @@ mod tests {
     use rand_xorshift::XorShiftRng;
     use std::vec::Vec;
 
+    mod decompression;
+
     // Built in a `const` context, so that `from_xy_unchecked` staying `const` is
     // pinned by the build rather than by its signature.
     const PALLAS_GENERATOR: EpAffine = EpAffine::from_xy_unchecked(

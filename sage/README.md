@@ -10,6 +10,8 @@ them in the exact shape of the Rust code so the two can be diffed:
 - `glv_boundary_scalars.sage` — the `*_BOUNDARY_SCALAR` witnesses used
   by the `babai_boundary_*` and `native_vs_glv_boundary_*` regression
   tests in `src/glv.rs`.
+- `lazy_squaring.sage` — the Pasta modulus top-limb shifts and the
+  accumulator bound used by `src/fields/portable.rs`.
 
 The scripts use exact integer/rational arithmetic and hand-rolled
 lattice reduction only, so their output is deterministic and does not
@@ -25,6 +27,7 @@ pip-installable distribution of SageMath (see `pyproject.toml` /
 ```console
 $ uv run sage glv_constants.sage
 $ uv run sage glv_boundary_scalars.sage
+$ uv run sage lazy_squaring.sage
 ```
 
 Any reasonably recent standalone SageMath installation works too:

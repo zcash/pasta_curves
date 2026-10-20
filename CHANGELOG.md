@@ -6,9 +6,15 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `arithmetic::{square_fp_n, square_fq_n}`, canonical repeated-squaring helpers
+  whose execution time depends on the public square count, not the field value.
+
 ### Changed
 - Portable `Fp` and `Fq` squaring is faster on x86-64. Other targets and
   assembly arithmetic are unchanged.
+- Square-root squaring chains defer canonicalization to chain boundaries while
+  preserving exact root selection and constant-time field arithmetic.
 
 ## [0.6.1] - 2026-10-09
 ### Added

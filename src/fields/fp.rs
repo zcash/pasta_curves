@@ -362,8 +362,19 @@ impl Fp {
             Fp(crate::asm::sqr_n_mul(
                 &self.0, n as usize, &by.0, &MODULUS.0, INV,
             )),
-            (0..n).fold(*self, |acc, _| acc.square_portable()).mul(by),
+            // The portable multiplier accepts a lazy lhs and canonicalizes
+            // once, at the chain boundary.
+            Fp(portable::sqr_n_lazy(&self.0, n, &MODULUS.0, INV)).mul_portable(by),
         )
+    }
+
+    /// Squares `self` `n` times, canonicalizing only at the end of the run.
+    #[inline]
+    pub(crate) fn sqr_n_runtime(&self, n: u32) -> Self {
+        Fp(portable::canonicalize(
+            &portable::sqr_n_lazy(&self.0, n, &MODULUS.0, INV),
+            &MODULUS.0,
+        ))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -867,6 +878,10 @@ impl SqrtTableHelpers for Fp {
         let rr = rq.sqr_n_mul_runtime(7, &r111);
         let rs = rr.sqr_n_mul_runtime(3, &r11);
         rs.square_runtime() // rt
+    }
+
+    fn sqr_n(&self, n: u32) -> Self {
+        self.sqr_n_runtime(n)
     }
 
     fn sqrt_hash_key(&self) -> u32 {

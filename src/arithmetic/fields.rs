@@ -101,6 +101,9 @@ pub(crate) trait SqrtTableHelpers: ff::PrimeField {
     /// Field implementations may override this to use an efficient addition chain.
     fn pow_by_t_minus1_over2(&self) -> Self;
 
+    /// Squares this field element `n` times and returns a canonical result.
+    fn sqr_n(&self, n: u32) -> Self;
+
     /// Returns the representation-derived key for the square-root hash table.
     ///
     /// The key need not have meaning outside the table lookup. It must be
@@ -319,13 +322,12 @@ impl<F: SqrtTableHelpers> SqrtTables<F> {
 
     /// Common part of sqrt_ratio and sqrt_alt: return their result given v = u^((T-1)/2) and uv = u * v.
     fn sqrt_common(&self, uv: &F, v: &F) -> F {
-        let sqr = |x: F, i: u32| (0..i).fold(x, |x, _| x.square());
         let inv = |x: F| self.inv[self.hasher.hash(&x)] as usize;
 
         let x3 = *uv * v;
-        let x2 = sqr(x3, 8);
-        let x1 = sqr(x2, 8);
-        let x0 = sqr(x1, 8);
+        let x2 = x3.sqr_n(8);
+        let x1 = x2.sqr_n(8);
+        let x0 = x1.sqr_n(8);
 
         // i = 0, 1
         let mut t_ = inv(x0); // = t >> 16
@@ -377,6 +379,9 @@ pub(crate) const fn mac(a: u64, b: u64, c: u64, carry: u64) -> (u64, u64) {
     let ret = (a as u128) + ((b as u128) * (c as u128)) + (carry as u128);
     (ret as u64, (ret >> 64) as u64)
 }
+
+#[cfg(all(test, feature = "sqrt-table"))]
+mod tests;
 
 #[cfg(all(test, feature = "alloc"))]
 mod batch_invert_tests {
