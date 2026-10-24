@@ -1,15 +1,24 @@
 # Assembly backends
 
-Assembly backends for the crate's Pasta (Pallas and Vesta) field arithmetic. The module provides
-AArch64 and x86-64 backends for modular addition and subtraction, Montgomery multiplication and
-squaring, a repeated-squaring chain, and conversion out of Montgomery form, and the AArch64 blocks
-of the constant-time inversion. The inversion's driver, `src/inversion.rs`, runs those blocks on
-AArch64, and the same blocks in portable Rust (`src/inversion/portable.rs`) on every other target.
+Assembly backends for the crate's Pasta (Pallas and Vesta) field arithmetic. There are three
+architecture-specific backends, with the following field operations:
+
+| Operation | AArch64 | x86-64 | ARMv7E-M |
+| --- | --- | --- | --- |
+| Addition / subtraction | Assembly | Assembly | Portable |
+| Montgomery multiplication / squaring | Assembly | Assembly | Assembly |
+| Repeated squaring | Assembly | Assembly | Assembly |
+| Conversion out of Montgomery form | Assembly | Assembly | Assembly |
+| Inversion | Assembly | Portable | Mixed |
+
+The mixed inversion uses assembly for `divstep59`, `amontred`, and `cond_sub`, and portable Rust for
+the other three blocks. The ARM backend implements addition and subtraction entry points, but the
+field types use portable arithmetic for those operations.
 
 ## Provenance
 
-The routines are transcriptions of the Pasta Montgomery routines of Supranational's
-[Semolina](https://github.com/supranational/semolina) v0.1.4
+The AArch64 and x86-64 Montgomery routines are transcriptions of the Pasta routines of
+Supranational's [Semolina](https://github.com/supranational/semolina) v0.1.4
 ([`src/mach-o/pasta_mul-armv8.S`](https://github.com/supranational/semolina/blob/v0.1.4/src/mach-o/pasta_mul-armv8.S)).
 `src/asm/aarch64.rs` carries multiplication and squaring as register-renamed inline `asm!`
 blocks of `mul_mont_pasta` and of the squaring loop body of `sqr_n_mul_mont_pasta`, with the
@@ -21,7 +30,7 @@ imports them from that pull request at commit `efc0c69533f491743162f3263acfb6c23
 reaches the chain and the conversion through assembled routines instead. The addition and
 subtraction blocks, which are not Semolina routines, and `src/asm/x86_64.rs`, an x86-64
 transcription of the same Montgomery routines rescheduled around MULX and ADCX/ADOX, were
-imported from zakura-pasta-curves.
+imported from zakura-pasta-curves. The ARMv7E-M routines are original 32-bit code.
 
 The inversion, `invert`, follows s2n-bignum's `bignum_montinv_p256` at commit
 [`ec62054cc1864839d44b1acc6e6a3f9eff5b6e68`](https://github.com/awslabs/s2n-bignum/blob/ec62054cc1864839d44b1acc6e6a3f9eff5b6e68/arm/p256/bignum_montinv_p256.S)
@@ -34,21 +43,27 @@ Pasta modulus shape, composed in Rust as the book's
 
 ## Usage
 
-When the `asm` feature flag is enabled, the module provides a backend for `target_arch = "aarch64"`,
-and for `target_arch = "x86_64"` with 64-bit pointers. On x86-64, `add`, `sub`, and `from_mont` are
-register-only (MULX needs BMI2 for `from_mont`). `mul`, `square`, and the routines built on them
-read limbs through pointers, which the x32 ABI's 32-bit pointers would break, so the module has no
-backend on that target; they also need MULX and ADCX/ADOX (BMI2 and ADX: Intel Broadwell / AMD Zen
-or newer). Apple x86-64 targets are excluded altogether: they reserve `rbp`, and so have fewer
-available registers than the squaring blocks need.
+With the `asm` feature enabled, backend availability and restrictions are:
 
-On every other target, that is any target other than AArch64 and non-Apple x86-64 with 64-bit
-pointers, the module has no backend. The same holds on any target when the compiler is passed
-`--cfg pasta_curves_noasm` (through `RUSTFLAGS`, or `rustflags` in `.cargo/config.toml`), which
-is how to build for old x86-64 CPUs without BMI2 and ADX. Code that uses the backend declares
-its uses under `if_asm_supported!` and its portable fallback under `if_asm_unsupported!`; the
-first expands to its items exactly where the module has a backend, and the second exactly where
-it does not. `pasta_curves::BACKEND` names the result, for diagnostics.
+- **AArch64:** selected on `target_arch = "aarch64"`.
+- **x86-64:** selected on non-Apple `target_arch = "x86_64"` with 64-bit pointers. `mul`,
+  `square`, and the routines built on them read limbs through pointers, which rules out the x32
+  ABI. Apple targets reserve `rbp`, leaving too few registers for the squaring blocks. The backend
+  requires BMI2 and ADX at run time (Intel Broadwell / AMD Zen or newer); these CPU features are
+  not checked. `from_mont` needs BMI2 alone.
+- **ARMv7E-M:** selected on 32-bit little-endian `target_arch = "arm"` with
+  `target_os = "none"` and `target_abi = "eabihf"`. It is intended for
+  `thumbv7em-none-eabihf` (Cortex-M4/M7) and requires Thumb state, Thumb-2, and UMAAL (DSP).
+  The gate does not check these requirements: `thumbv8m.main-none-eabihf` does not enable DSP by
+  default, while `armv7a-none-eabihf`, `armv7r-none-eabihf`, and `armv8r-none-eabihf` default
+  to ARM state, where `r11` is reserved as the frame pointer. These targets may fail to compile
+  with `asm`.
+
+Outside these gates, the module has no backend. To select portable arithmetic even when a gate
+matches, pass `--cfg pasta_curves_noasm` through `RUSTFLAGS` or `rustflags` in `.cargo/config.toml`.
+Code that uses the backend declares its uses under `if_asm_supported!` and its portable fallback
+under `if_asm_unsupported!`; the first expands to its items exactly where the module has a backend,
+and the second exactly where it does not. `pasta_curves::BACKEND` names the result for diagnostics.
 
 Nothing is assembled at build time: the blocks are compiled by the Rust toolchain, so no C
 toolchain is needed, and the module adds no dependency.
@@ -74,19 +89,19 @@ also published in IEEE Micro 16(3), 1996. Each of its four rounds adds `lhs` tim
 `rhs` to an accumulator, cancels the accumulator's low limb by adding a multiple of the
 modulus, and shifts it down by one limb. Textbook CIOS keeps a six-limb accumulator for
 four-limb operands. These routines keep five, one fewer, which the operand contracts make safe.
-The squaring blocks and the conversion out of Montgomery form make the same cancellations.
+The squaring blocks and the conversion out of Montgomery form make the same cancellations. The
+ARMv7E-M routines instead operate on eight 32-bit words with UMAAL.
 
 ## Testing
 
 Where the module has a backend, `cargo test --release --features asm` runs known-answer tests of the
 entry points for both fields and replays the reference vectors recorded from the AArch64 assembly;
 in a debug build it also checks that the operand assertions fire outside the contracts. The
-inversion's blocks are tested one by one against an integer model of the algorithm, and the
-inversion against known answers, the identity `x · x^-1 = 1`, and the field types' own inverse,
-over the assembly blocks on AArch64 and over the portable blocks everywhere. Without the `asm`
-feature, on unsupported platforms, or with `--cfg pasta_curves_noasm`, the backend has no tests to
-run, and the inversion's tests over the portable blocks are the ones that run. `scripts/ci.sh` runs
-every check CI runs.
+inversion's blocks have known-answer checks over assembly and portable Rust; the driver is tested
+against known answers, `x · x^-1 = 1`, and the field types' own inverse. Without the `asm` feature,
+outside the gated targets, or with `--cfg pasta_curves_noasm`, the backend has no tests to run, and
+the inversion's tests over the portable blocks are the ones that run. `scripts/ci.sh` runs every
+check CI runs.
 
 ## Formal verification
 

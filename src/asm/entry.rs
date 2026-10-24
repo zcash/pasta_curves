@@ -2,6 +2,8 @@
 //! matching `_with` function, over the blocks of the target's backend, which implements
 //! [`MontgomeryBlocks`].
 
+#![cfg_attr(target_arch = "arm", allow(dead_code))]
+
 use core::hint::black_box;
 
 pub use crate::limbs::Limbs;
@@ -46,6 +48,9 @@ type Selected = super::aarch64::Backend;
 /// The blocks that the entry points run: the backend of the target architecture.
 #[cfg(target_arch = "x86_64")]
 type Selected = super::x86_64::Backend;
+/// The blocks that the entry points run: the backend of the target architecture.
+#[cfg(target_arch = "arm")]
+type Selected = super::armv7em::Backend;
 
 /// [`add`] over the blocks `B`, with its debug assertions.
 #[inline(always)]

@@ -5,9 +5,11 @@
 //! multiplication, squaring, and conversion case is also among the reference
 //! vectors recorded from the assembly on Apple M-series hardware, and agrees with
 //! it. The vectors have no addition, subtraction, or repeated-squaring cases. The
-//! differential test compares every entry point with the portable arithmetic of the
+//! differential test compares each implemented entry point with the portable arithmetic of the
 //! field types, on edge and pseudo-random operands, so it covers those routines
-//! too. The inversion's blocks and driver are tested in `crate::inversion`.
+//! too. On ARM, addition and subtraction use the portable field implementation; their unused
+//! backend entry points are checked to panic instead. The inversion's blocks and driver are
+//! tested in `crate::inversion`.
 
 use super::{Limbs, add, from_mont, sub};
 
@@ -51,6 +53,7 @@ fn entry_points_match_the_portable_arithmetic() {
 
             for a in canonical() {
                 assert_eq!(square(a, &f.modulus, f.inv), portable_square(a), "{a:x?}");
+                #[cfg(not(target_arch = "arm"))]
                 for b in canonical() {
                     let sum = $field::add(&$field(*a), &$field(*b)).0;
                     let difference = $field::sub(&$field(*a), &$field(*b)).0;
@@ -149,6 +152,8 @@ fn entry_points_match_the_portable_arithmetic() {
     );
 }
 
+// ARM uses portable field addition; its unused backend entry point must panic.
+#[cfg_attr(target_arch = "arm", should_panic(expected = "Portable impl used for this backend"))]
 #[test]
 fn add_known_answers() {
     for f in FIELDS {
@@ -163,6 +168,8 @@ fn add_known_answers() {
     }
 }
 
+// ARM uses portable field subtraction; its unused backend entry point must panic.
+#[cfg_attr(target_arch = "arm", should_panic(expected = "Portable impl used for this backend"))]
 #[test]
 fn sub_known_answers() {
     for f in FIELDS {

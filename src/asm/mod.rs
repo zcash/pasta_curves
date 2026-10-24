@@ -2,32 +2,30 @@
 // it, and its safety argument is the operand contracts stated on each routine.
 #![allow(unsafe_code)]
 
-//! Assembly backends for the Pasta fields.
+//! Assembly backends for the Pasta fields: AArch64, x86-64, and ARMv7E-M.
 //!
 //! # Availability
 //!
-//! When the `asm` feature flag is enabled, the module provides a backend for
-//! `target_arch = "aarch64"`, and for `target_arch = "x86_64"` with 64-bit
-//! pointers. On x86-64, `add`, `sub`, and `from_mont` are register-only, while
-//! `mul`, `square`, and the routines built on them read limbs through pointers;
-//! the x32 ABI's 32-bit pointers would break them (see the x86-64 module's docs
-//! for why registers alone cannot serve there), so the module has no backend on
-//! that target. They also need, at run time, a CPU with BMI2 and ADX (MULX,
-//! ADCX/ADOX: Intel Broadwell / AMD Zen or newer); neither is checked.
-//! `from_mont` uses MULX (BMI2) alone. Apple x86-64 targets are excluded
-//! altogether: they reserve `rbp`, and so have fewer available registers than
-//! the squaring blocks need. The AArch64 backend also provides the six blocks
-//! of the constant-time inversion, which `crate::inversion` runs.
+//! With the `asm` feature enabled, the ARMv7E-M backend is intended for
+//! `thumbv7em-none-eabihf`, where it uses rolling UMAAL multiplication and
+//! squaring and dedicated Montgomery conversion; field addition and subtraction
+//! remain portable. The AArch64 backend provides all inversion blocks in
+//! assembly; the ARM backend uses its `divstep59`, `amontred`, and `cond_sub`
+//! blocks alongside portable Rust for the other three.
 //!
-//! On every other target, that is any target other than AArch64 and non-Apple
-//! x86-64 with 64-bit pointers, the module has no backend. The same holds on
-//! any target when the compiler is passed `--cfg pasta_curves_noasm` (through
-//! `RUSTFLAGS`, or `rustflags` in `.cargo/config.toml`), which is how to build
-//! for old x86-64 CPUs without BMI2 and ADX. Code that uses the backend does
-//! not repeat these conditions: it declares its uses of the backend under
-//! `if_asm_supported!` and its portable fallback under `if_asm_unsupported!`;
-//! the first expands to its items exactly where the module has a backend, and
-//! the second exactly where it does not. [`BACKEND`] names the result.
+//! Some ARM targets match the gate but lack the required Thumb-2 or DSP
+//! instructions. Pass `--cfg pasta_curves_noasm` through `RUSTFLAGS` or
+//! `rustflags` in `.cargo/config.toml` to select portable arithmetic on those
+//! targets, or on x86-64 CPUs without BMI2 and ADX. On x86-64, the x32 ABI is
+//! excluded because some routines read limbs through pointers, and Apple
+//! targets reserve `rbp`, leaving too few registers for the squaring blocks;
+//! BMI2 and ADX are required at run time and are not checked.
+//!
+//! Code that uses the backend does not repeat the gate: it declares its uses
+//! under `if_asm_supported!` and its portable fallback under
+//! `if_asm_unsupported!`; the first expands to its items exactly where the
+//! module has a backend, and the second exactly where it does not. [`BACKEND`]
+//! names the result.
 //!
 //! Nothing is assembled at build time: the blocks are compiled by the Rust
 //! toolchain, so no C toolchain is needed, and the module adds no dependency.
@@ -46,9 +44,9 @@
 //!
 //! # Provenance
 //!
-//! The routines are transcriptions of the Pasta Montgomery routines of
-//! Supranational's [Semolina] v0.1.4. See `src/asm/README.md` for the history
-//! of the transcription.
+//! The AArch64 and x86-64 Montgomery routines are transcriptions of
+//! Supranational's [Semolina] v0.1.4. The ARMv7E-M implementation is original.
+//! See `src/asm/README.md` for the history of the transcriptions.
 //!
 //! [Semolina]: https://github.com/supranational/semolina
 
@@ -73,6 +71,13 @@ macro_rules! if_asm_supported {
                     target_arch = "x86_64",
                     target_pointer_width = "64",
                     not(target_vendor = "apple"),
+                ),
+                all(
+                    target_arch = "arm",
+                    target_os = "none",
+                    target_abi = "eabihf",
+                    target_pointer_width = "32",
+                    target_endian = "little",
                 )
             )
         ))]
@@ -102,6 +107,13 @@ macro_rules! if_asm_unsupported {
                     target_arch = "x86_64",
                     target_pointer_width = "64",
                     not(target_vendor = "apple"),
+                ),
+                all(
+                    target_arch = "arm",
+                    target_os = "none",
+                    target_abi = "eabihf",
+                    target_pointer_width = "32",
+                    target_endian = "little",
                 )
             )
         )))]
@@ -119,16 +131,25 @@ macro_rules! if_asm_unsupported {
 }
 
 if_asm_supported! {
-    /// The assembly backend compiled into this build: `"aarch64"` or `"x86-64"` where the crate
-    /// has one, and `"portable"` where it does not. Intended for diagnostics only, such as logs
-    /// and benchmark labels; it is not a stable interface.
-    pub const BACKEND: &str = if cfg!(target_arch = "aarch64") { "aarch64" } else { "x86-64" };
+    /// The assembly backend compiled into this build: `"aarch64"`, `"x86-64"`, or `"armv7em"`
+    /// where the crate has one, and `"portable"` where it does not. Intended for diagnostics only,
+    /// such as logs and benchmark labels; it is not a stable interface.
+    pub const BACKEND: &str = if cfg!(target_arch = "aarch64") {
+        "aarch64"
+    } else if cfg!(target_arch = "arm") {
+        "armv7em"
+    } else {
+        "x86-64"
+    };
 
     #[cfg(any(target_arch = "aarch64", doc))]
     pub(crate) mod aarch64;
 
     #[cfg(any(target_arch = "x86_64", doc))]
     mod x86_64;
+
+    #[cfg(any(target_arch = "arm", doc))]
+    pub(crate) mod armv7em;
 
     // The tests use std only to catch the debug assertions they check, so a release test
     // build stays free of it.
@@ -143,8 +164,8 @@ if_asm_supported! {
 }
 
 if_asm_unsupported! {
-    /// The assembly backend compiled into this build: `"aarch64"` or `"x86-64"` where the crate
-    /// has one, and `"portable"` where it does not. Intended for diagnostics only, such as logs
-    /// and benchmark labels; it is not a stable interface.
+    /// The assembly backend compiled into this build: `"aarch64"`, `"x86-64"`, or `"armv7em"`
+    /// where the crate has one, and `"portable"` where it does not. Intended for diagnostics only,
+    /// such as logs and benchmark labels; it is not a stable interface.
     pub const BACKEND: &str = "portable";
 }

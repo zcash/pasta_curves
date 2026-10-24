@@ -8,6 +8,21 @@ macro_rules! if_asm {
     }};
 }
 
+/// Selects assembly for addition and subtraction only on backends where
+/// those operations are faster than the portable path.
+macro_rules! if_asm_addsub {
+    ($asm:expr, $portable:expr $(,)?) => {{
+        #[cfg(not(target_arch = "arm"))]
+        {
+            if_asm!($asm, $portable)
+        }
+        #[cfg(target_arch = "arm")]
+        {
+            $portable
+        }
+    }};
+}
+
 macro_rules! impl_add_binop_specify_output {
     ($lhs:ident, $rhs:ident, $output:ident) => {
         impl<'b> ::core::ops::Add<&'b $rhs> for $lhs {

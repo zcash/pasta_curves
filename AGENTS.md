@@ -94,27 +94,22 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ## The assembly backends (`src/asm`)
 
-The `asm` module provides assembly backends for the Pasta field arithmetic, one for AArch64 and one
-for x86-64. Each contains:
+The `asm` module provides architecture-specific backends for the Pasta fields. Their operations
+and availability are summarized in `src/asm/README.md`; `src/inversion.rs` drives the selected
+inversion blocks. The module is the one part of the crate that allows unsafe code. Its priorities
+are those of the crate: **correctness, constant-time behaviour, and performance**, in that order.
 
-- Montgomery multiplication and squaring, and modular addition and subtraction, as inline `asm!`
-  blocks;
-- a repeated-squaring chain, and the conversion out of Montgomery form, composed from those blocks.
+The AArch64 and x86-64 Montgomery routines are transcriptions of Supranational's Semolina v0.1.4;
+the ARMv7E-M routines are original 32-bit code. The inversion follows s2n-bignum's
+`bignum_montinv_p256` (see `src/asm/README.md`). The instruction streams are the object of
+machine-checked correctness proofs, so a change to an instruction is a change to a specification:
+keep the transcription, its documentation, and the proofs in step, and do not "improve" the assembly
+in passing.
 
-The AArch64 backend also contains the six blocks of a constant-time inversion. Their driver,
-`src/inversion.rs`, runs the same six blocks in portable Rust wherever the AArch64 backend is not
-compiled. The module is the one part of the crate that allows unsafe code. Its priorities are those
-of the crate: **correctness, constant-time behaviour, and performance**, in that order.
-
-The Montgomery routines are transcriptions of Supranational's Semolina v0.1.4, and the
-inversion's blocks are adapted from s2n-bignum's `bignum_montinv_p256` (see
-`src/asm/README.md`). The instruction streams are the object of machine-checked correctness
-proofs, so a change to an instruction is a change to a specification: keep the transcription,
-its documentation, and the proofs in step, and do not "improve" the assembly in passing.
-
-With the `asm` feature, the module provides a backend on `target_arch = "aarch64"`, and on
-`target_arch = "x86_64"` with 64-bit pointers except on Apple targets (see `src/asm/README.md`).
-Elsewhere, without the feature, or with `--cfg pasta_curves_noasm`, the module has no backend.
+With the `asm` feature, the module provides backends on the targets described in
+`src/asm/README.md`. On ARM, the gate also matches some targets that lack required instructions;
+use `--cfg pasta_curves_noasm` to select the portable fallback there. Without the feature, the
+module has no backend.
 Nothing is assembled at build time, so no C toolchain is needed. Where there is a backend, beside
 the crate's usual checks:
 
@@ -146,7 +141,8 @@ backend, update these conditions and keep doc-only fallback bodies non-executabl
 
 - **Preserve constant-time behaviour in the backend.** No secret-dependent branches or memory
   accesses in the blocks; the repeated-squaring loop branches only on its public count.
-  Conditional reductions use `csel` after a full-width subtraction.
+  Conditional reductions select after a full-width subtraction, using `csel` on AArch64 and
+  masks on ARMv7E-M.
 - **Operand contracts are stated on the entry points and checked by `debug_assert!`.** A
   change to a contract needs a change to the proofs that establish it.
 
