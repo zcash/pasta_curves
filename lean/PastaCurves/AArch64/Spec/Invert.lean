@@ -18,7 +18,9 @@ namespace PastaCurves.AArch64
 /-- The AArch64 blocks compute what the composition needs, at either field. -/
 theorem invertBlocks_spec (F : PastaField) : invertBlocks.Spec F where
   divstep59 := fun two_delta f0 g0 s hsf hsd hsD ed ef0 eg0 =>
-    divstep59Block_spec two_delta f0 g0 s hsf hsd hsD ed ef0 eg0 _ rfl
+    divstep59Block_spec two_delta f0 g0 s hsf hsd (by
+      unfold InvertBlocks.divstep59StateBound at hsD
+      omega) ed ef0 eg0 _ rfl
   signMag := fun zu zv zq zr u v q r hzu hzv hzq hzr eu ev eq er =>
     signMagBlock_spec zu zv zq zr u v q r hzu hzv hzq hzr eu ev eq er _ rfl
   fgRow := fun a b f g m0 m1 s0 s1 hf hg hfv hgv hab hrep0 hrep1 =>
