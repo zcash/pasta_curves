@@ -68,30 +68,44 @@ trap 'rm -rf "$work"' EXIT
 start=$SECONDS
 translations=0
 
-# translate DIR CFG FEATURES START...: translate into `lean/PastaCurves/DIR/` the items reachable
-# from the START patterns. The crate is compiled with the `--cfg` flags CFG and the cargo FEATURES,
-# either of which may be empty. With `--check`, compare with the committed files instead.
+# translate DIR CFG FEATURES CHARON_ARGS CARGO_ARGS START...: translate into
+# `lean/PastaCurves/DIR/` the items reachable from the START patterns. The crate is compiled with
+# the `--cfg` flags CFG and the cargo FEATURES; CHARON_ARGS and CARGO_ARGS are whitespace-separated
+# lists of additional arguments. Any of them may be empty. With `--check`, compare with the
+# committed files instead.
 translate() {
-  local dir=$1 cfg=$2 features=$3
-  shift 3
-  local starts=() cargo_args=()
+  local dir=$1 cfg=$2 features=$3 charon_options=$4 cargo_options=$5
+  shift 5
+  local starts=() charon_args=() cargo_args=()
   local pattern
   for pattern in "$@"; do
     starts+=(--start-from "$pattern")
   done
+  if [ -n "$charon_options" ]; then
+    read -r -a charon_args <<< "$charon_options"
+  fi
   if [ -n "$features" ]; then
-    cargo_args=(-- --features "$features")
+    cargo_args+=(--features "$features")
+  fi
+  if [ -n "$cargo_options" ]; then
+    local extra_cargo_args=()
+    read -r -a extra_cargo_args <<< "$cargo_options"
+    cargo_args+=("${extra_cargo_args[@]}")
   fi
   local out="$work/$dir"
   mkdir -p "$out"
-  local charon=("$CHARON" cargo --preset=aeneas "${starts[@]}"
-    --dest-file "$out/pasta_curves.llbc" ${cargo_args[@]+"${cargo_args[@]}"})
+  local charon=("$CHARON" cargo --preset=aeneas "${starts[@]}" "${charon_args[@]}"
+    --dest-file "$out/pasta_curves.llbc")
+  if [ "${#cargo_args[@]}" -ne 0 ]; then
+    charon+=(-- "${cargo_args[@]}")
+  fi
   local aeneas=("$AENEAS" -backend lean -all-computable -dest "$out/lean"
     -subdir "PastaCurves/$dir" -split-files "$out/pasta_curves.llbc")
   local step=$SECONDS
 
   log "$dir: from $*"
-  log "$dir: compiled with --cfg flags '${cfg:-none}' and features '${features:-none}'"
+  log "$dir: compiled with --cfg flags '${cfg:-none}', features '${features:-none}'," \
+    "Charon options '${charon_options:-none}', and Cargo options '${cargo_options:-none}'"
   log "$dir: charon extracts the crate's MIR to LLBC"
   run "$out/charon.log" env RUSTFLAGS="$cfg" CARGO_TARGET_DIR="$out/target" "${charon[@]}"
   log "$dir: charon done in $((SECONDS - step))s"
@@ -124,15 +138,33 @@ translate() {
 
 # The portable inversion blocks and the driver that they run under, as the crate compiles them
 # without the assembly backend; the entry point's debug assertion is not part of it.
-translate Portable "--cfg pasta_curves_noasm" "" \
+translate Portable "--cfg pasta_curves_noasm" "" "" "" \
   crate::inversion::invert_with crate::inversion::portable
 
 # The generic compositions that run the entry points over a backend's Montgomery blocks, as the
 # crate compiles them with the assembly backend. They do not reach any backend's blocks, only the
 # trait that declares them, so the translation is the same for every backend.
-translate Glue "" asm \
+translate Glue "" asm "" "" \
   crate::asm::entry::add_with crate::asm::entry::sub_with crate::asm::entry::mul_with \
   crate::asm::entry::square_with crate::asm::entry::sqr_n_mul_with \
   crate::asm::entry::from_mont_with
+
+# Translate every ARMv7E-M backend block and the Rust helpers that they reach. Model the inline
+# assembly primitives in `ARMv7EM/Compositions/FunsExternal.lean`.
+translate ARMv7EM/Compositions "" asm \
+  "--targets thumbv7em-none-eabihf --opaque crate::inversion::portable --opaque crate::asm::armv7em::adc --opaque crate::asm::armv7em::add_word --opaque crate::asm::armv7em::sbb --opaque crate::asm::armv7em::mac_word --opaque crate::asm::armv7em::inversion_mac_words --opaque crate::asm::armv7em::from_mont --opaque crate::asm::armv7em::batch --opaque crate::asm::armv7em::cond_sub" \
+  "--no-default-features" \
+  crate::asm::armv7em::mul \
+  '{impl crate::asm::entry::MontgomeryBlocks for crate::asm::armv7em::Backend}::add' \
+  '{impl crate::asm::entry::MontgomeryBlocks for crate::asm::armv7em::Backend}::sub' \
+  '{impl crate::asm::entry::MontgomeryBlocks for crate::asm::armv7em::Backend}::mul' \
+  '{impl crate::asm::entry::MontgomeryBlocks for crate::asm::armv7em::Backend}::square' \
+  '{impl crate::asm::entry::MontgomeryBlocks for crate::asm::armv7em::Backend}::from_mont' \
+  '{impl crate::inversion::InvertBlocks for crate::asm::armv7em::Backend}::divstep59' \
+  '{impl crate::inversion::InvertBlocks for crate::asm::armv7em::Backend}::sign_mag' \
+  '{impl crate::inversion::InvertBlocks for crate::asm::armv7em::Backend}::fg_row' \
+  '{impl crate::inversion::InvertBlocks for crate::asm::armv7em::Backend}::de_row' \
+  '{impl crate::inversion::InvertBlocks for crate::asm::armv7em::Backend}::amontred' \
+  '{impl crate::inversion::InvertBlocks for crate::asm::armv7em::Backend}::cond_sub'
 
 log "done: $translations translations in $((SECONDS - start))s"

@@ -14,3 +14,5 @@ lean/PastaCurves/Portable/Types.lean linguist-generated=true
 lean/PastaCurves/Portable/Funs.lean linguist-generated=true
 lean/PastaCurves/Glue/Types.lean linguist-generated=true
 lean/PastaCurves/Glue/Funs.lean linguist-generated=true
+lean/PastaCurves/ARMv7EM/Compositions/Types.lean linguist-generated=true
+lean/PastaCurves/ARMv7EM/Compositions/Funs.lean linguist-generated=true

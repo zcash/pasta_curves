@@ -83,4 +83,6 @@ echo "$tag" > "$dir/release"
 
 channel=$(awk -F'"' '/^channel = / { print $2 }' "$dir/rust-toolchain")
 rustup toolchain install "$channel" --profile minimal >&2
+# The ARMv7E-M Aeneas translation extracts the production module on its actual target.
+rustup target add --toolchain "$channel" thumbv7em-none-eabihf >&2
 echo "CHARON=$dir/charon AENEAS=$dir/aeneas"
