@@ -75,6 +75,270 @@ class SurroundingCodeTests(unittest.TestCase):
                 ):
                     generate(mutated)
 
+    def test_u32_tuple_outputs_are_parsed(self):
+        source = """fn f(a: u32) -> (u32, u32) {
+    let low: u32;
+    let high: u32;
+    unsafe {
+        asm!(
+            "umull {low}, {high}, {a}, {a}",
+            a = in(reg) a,
+            low = out(reg) low,
+            high = out(reg) high,
+            options(pure, nomem, nostack),
+        );
+    }
+    (low, high)
+}
+"""
+        parsed = asm_source.parse_function(
+            source,
+            "f",
+            ["a"],
+            2,
+            required_options={"pure", "nomem", "nostack"},
+        )
+        self.assertEqual(parsed.returns, ("low", "high"))
+        self.assertEqual(asm_source.returned_registers(parsed, "f"), ("low", "high"))
+
+    def test_direct_scalar_local_initializers_are_parsed(self):
+        source = """fn f(a: u32, b: u32) -> (u32, u32) {
+    let mut low = a;
+    let mut high = b;
+    unsafe {
+        asm!(
+            "umaal {low}, {high}, {a}, {b}",
+            low = inout(reg) low,
+            high = inout(reg) high,
+            a = in(reg) a,
+            b = in(reg) b,
+            options(pure, nomem, nostack),
+        );
+    }
+    (low, high)
+}
+"""
+        parsed = asm_source.parse_function(
+            source,
+            "f",
+            ["a", "b"],
+            2,
+            required_options={"pure", "nomem", "nostack"},
+        )
+        self.assertEqual(parsed.locals, {"low": ("a", None), "high": ("b", None)})
+        self.assertEqual(asm_source.returned_registers(parsed, "f"), ("low", "high"))
+
+    def test_zero_initialized_array_and_direct_return_are_parsed(self):
+        source = """fn f(a: u32) -> [u64; 4] {
+    let mut output = [0u64; 4];
+    unsafe {
+        asm!("str {a}, [{output}, #0]",
+            a = in(reg) a, output = in(reg) output.as_mut_ptr(), options(nostack));
+    }
+    output
+}
+"""
+        parsed = asm_source.parse_function(
+            source,
+            "f",
+            ["a"],
+            1,
+            allowed_options={"nostack"},
+            required_options={"nostack"},
+        )
+        self.assertEqual(parsed.zero_arrays, {"output": 4})
+        self.assertEqual(parsed.returns, ("output",))
+
+        with self.assertRaisesRegex(asm_source.GenerationError, "unsupported code before asm"):
+            asm_source.parse_function(
+                source.replace("[0u64; 4]", "[1u64; 4]"),
+                "f",
+                ["a"],
+                1,
+                allowed_options={"nostack"},
+                required_options={"nostack"},
+            )
+
+    def test_identity_scalar_shadow_is_parsed_but_other_shadowing_is_rejected(self):
+        source = """fn f(a: u32) -> (u32, u32) {
+    let mut a = a;
+    let high: u32;
+    #[expect(unused_assignments, reason = "temporary assembly value")]
+    unsafe {
+        asm!(
+            "umaal {a}, {high}, {a_in}, {a_in}",
+            a = inout(reg) a,
+            high = out(reg) high,
+            a_in = in(reg) a,
+            options(pure, nomem, nostack),
+        );
+    }
+    (a, high)
+}
+"""
+        parsed = asm_source.parse_function(
+            source,
+            "f",
+            ["a"],
+            2,
+            required_options={"pure", "nomem", "nostack"},
+        )
+        self.assertEqual(parsed.locals, {"a": ("a", None)})
+        with self.assertRaisesRegex(asm_source.GenerationError, "local reads non-argument missing"):
+            asm_source.parse_function(
+                source.replace("let mut a = a;", "let mut a = missing;"),
+                "f",
+                ["a"],
+                2,
+                required_options={"pure", "nomem", "nostack"},
+            )
+        with self.assertRaisesRegex(asm_source.GenerationError, "unsupported attribute before asm"):
+            asm_source.parse_function(
+                source.replace(
+                    '#[expect(unused_assignments, reason = "temporary assembly value")]',
+                    "#[allow(unused_assignments)]",
+                ),
+                "f",
+                ["a"],
+                2,
+                required_options={"pure", "nomem", "nostack"},
+            )
+
+    def test_explicit_discarded_outputs_are_validated(self):
+        source = """fn f(a: u32) -> (u32, u32) {
+    let mut low = a;
+    let mut high = a;
+    let mut temporary = a;
+    unsafe {
+        asm!(
+            "umaal {low}, {high}, {a}, {temporary}",
+            low = inout(reg) low,
+            high = inout(reg) high,
+            temporary = inout(reg) temporary,
+            a = in(reg) a,
+            options(pure, nomem, nostack),
+        );
+    }
+    (low, high)
+}
+"""
+        parsed = asm_source.parse_function(
+            source,
+            "f",
+            ["a"],
+            2,
+            required_options={"pure", "nomem", "nostack"},
+        )
+        with self.assertRaisesRegex(
+            asm_source.GenerationError, "named asm outputs not returned.*temporary"
+        ):
+            asm_source.returned_registers(parsed, "f")
+        self.assertEqual(
+            asm_source.returned_registers(
+                parsed,
+                "f",
+                discarded_outputs={"temporary"},
+            ),
+            ("low", "high"),
+        )
+        with self.assertRaisesRegex(
+            asm_source.GenerationError, "configured discarded values are not asm outputs"
+        ):
+            asm_source.returned_registers(parsed, "f", discarded_outputs={"missing"})
+
+    def test_direct_scalar_local_must_read_an_argument_and_only_initialize(self):
+        source = """fn f(a: u32) -> (u32, u32) {
+    let mut low = missing;
+    let mut high = a;
+    unsafe {
+        asm!(
+            "umaal {low}, {high}, {a}, {a}",
+            low = inout(reg) low,
+            high = inout(reg) high,
+            a = in(reg) a,
+            options(pure, nomem, nostack),
+        );
+    }
+    (low, high)
+}
+"""
+        for mutated, message in (
+            (source, "local reads non-argument missing"),
+            (
+                source.replace("let mut low = missing;", "let mut low = a + 1;"),
+                "unsupported code before asm!",
+            ),
+        ):
+            with (
+                self.subTest(message=message),
+                self.assertRaisesRegex(asm_source.GenerationError, message),
+            ):
+                asm_source.parse_function(
+                    mutated,
+                    "f",
+                    ["a"],
+                    2,
+                    required_options={"pure", "nomem", "nostack"},
+                )
+
+    def test_qualified_asm_path_is_parsed(self):
+        source = """fn f(a: u32) -> (u32, u32) {
+    let low: u32;
+    let high: u32;
+    unsafe {
+        core::arch::asm!(
+            "umull {low}, {high}, {a}, {a}",
+            a = in(reg) a,
+            low = out(reg) low,
+            high = out(reg) high,
+            options(pure, nomem, nostack),
+        );
+    }
+    (low, high)
+}
+"""
+        parsed = asm_source.parse_function(
+            source,
+            "f",
+            ["a"],
+            2,
+            required_options={"pure", "nomem", "nostack"},
+        )
+        self.assertEqual(parsed.instructions, ("umull {low}, {high}, {a}, {a}",))
+
+    def test_unsupported_output_declarations_and_tuple_returns_are_rejected(self):
+        source = """fn f(a: u32) -> (u32, u32) {
+    let (low, high): (u32, u32);
+    unsafe {
+        asm!(
+            "umull {low}, {high}, {a}, {a}",
+            a = in(reg) a,
+            low = out(reg) low,
+            high = out(reg) high,
+            options(pure, nomem, nostack),
+        );
+    }
+    (low, high)
+}
+"""
+        cases = {
+            "unsupported output declaration": source.replace("(u32, u32);", "(u32, u64);"),
+            "unsupported code after asm!": source.replace("(low, high)\n}", "(low,)\n}"),
+            "source output tuple has 2 values, expected 1": source,
+        }
+        for message, mutated in cases.items():
+            with (
+                self.subTest(message=message),
+                self.assertRaisesRegex(asm_source.GenerationError, message),
+            ):
+                asm_source.parse_function(
+                    mutated,
+                    "f",
+                    ["a"],
+                    1 if "expected 1" in message else 2,
+                    required_options={"pure", "nomem", "nostack"},
+                )
+
     def test_postasm_output_mutation_is_rejected_by_both_backends(self):
         for architecture, source, generate in (
             ("aarch64", self.aarch64_source, self.generate_aarch64),
@@ -118,6 +382,15 @@ class SurroundingCodeTests(unittest.TestCase):
                 self.assertEqual(generate(commented), expected)
 
 
+class TriviaNormalizationTests(unittest.TestCase):
+    def test_code_without_trivia_preserves_literals_and_removes_spacing(self):
+        source = "fn f(a: u32) { let text = \"a b\"; /* ignored */ let c = ' '; }"
+        self.assertEqual(
+            asm_source.code_without_trivia(source),
+            "fnf(a:u32){lettext=\"a b\";letc=' ';}",
+        )
+
+
 class MacroTests(unittest.TestCase):
     def parse(self, definitions):
         return asm_source.parse_macros(definitions)
@@ -141,14 +414,81 @@ class MacroTests(unittest.TestCase):
             },
         )
 
+    def test_literal_macro_arguments_expand_stringify(self):
+        source = """macro_rules! load {
+    ($offset:literal) => { concat!("ldr {word}, [{base}, #", stringify!($offset), "]") };
+}
+fn f(a: u32) -> (u32, u32) {
+    let low: u32;
+    let high: u32;
+    unsafe {
+        asm!(load!(12), "mov {high}, #0",
+            base = in(reg) a, word = out(reg) low, high = out(reg) high,
+            options(nostack));
+    }
+    (low, high)
+}
+"""
+        parsed = asm_source.parse_function(
+            source,
+            "f",
+            ["a"],
+            2,
+            allowed_options={"nostack"},
+            required_options={"nostack"},
+        )
+        self.assertEqual(parsed.instructions[0], "ldr {word}, [{base}, #12]")
+        self.assertEqual(parsed.origins[0], asm_source.MacroOrigin("load", "12", 0))
+
+        with self.assertRaisesRegex(asm_source.GenerationError, "has no arm for `OFFSET`"):
+            asm_source.parse_function(
+                source.replace("load!(12)", "load!(OFFSET)"),
+                "f",
+                ["a"],
+                2,
+                allowed_options={"nostack"},
+                required_options={"nostack"},
+            )
+
+    def test_identifier_macro_arguments_expand_nested_concat_and_stringify(self):
+        source = """macro_rules! rotate {
+    ($a:ident, $b:ident) => { concat!(
+        concat!("add ", stringify!($a), ", ", stringify!($a), ", #1\\n"),
+        concat!("add ", stringify!($b), ", ", stringify!($b), ", #1\\n"),
+    ) };
+}
+fn f(mut a: u32, mut b: u32) -> (u32, u32) {
+    unsafe {
+        asm!(rotate!(a, b), a = inout(reg) a, b = inout(reg) b,
+            options(pure, nomem, nostack));
+    }
+    (a, b)
+}
+"""
+        parsed = asm_source.parse_function(
+            source,
+            "f",
+            ["a", "b"],
+            2,
+            required_options={"pure", "nomem", "nostack"},
+        )
+        self.assertEqual(parsed.instructions, ("add a, a, #1", "add b, b, #1"))
+        self.assertEqual(
+            parsed.origins,
+            (
+                asm_source.MacroOrigin("rotate", "a, b", 0),
+                asm_source.MacroOrigin("rotate", "a, b", 0),
+            ),
+        )
+
     def test_malformed_macros_are_rejected(self):
         cases = {
-            "must end with a newline": 'macro_rules! m { () => { "add {a}, {a}, #1" }; }',
             "escape only": 'macro_rules! m { () => { "add {a}, {a}, #1\\t\\n" }; }',
             "no arm for `x`": 'macro_rules! m { () => { concat!(m!(x), "a\\n") }; }',
             "unknown macro n!": 'macro_rules! m { () => { concat!(n!(), "a\\n") }; }',
             "duplicate arm": 'macro_rules! m { () => { "a\\n" }; () => { "b\\n" }; }',
             "unsupported macro pattern": 'macro_rules! m { ($x:tt) => { "a\\n" }; }',
+            "declared metavariable": 'macro_rules! m { ($x:ident) => { concat!(stringify!($y), "\\n") }; }',
             "string literal or `concat!`": 'macro_rules! m { () => { format!("a\\n") }; }',
             "empty line": 'macro_rules! m { () => { "a\\n\\n" }; }',
         }
@@ -158,6 +498,36 @@ class MacroTests(unittest.TestCase):
                 self.assertRaisesRegex(asm_source.GenerationError, message),
             ):
                 self.parse(source)
+
+    def test_parameterized_macro_argument_kinds_are_rejected(self):
+        source = """macro_rules! m {
+    ($word:ident, $offset:literal) => {
+        concat!("ldr ", stringify!($word), ", [r0, #", stringify!($offset), "]\\n")
+    };
+}
+fn f(a: u32) -> (u32, u32) {
+    let low: u32;
+    let high: u32;
+    unsafe {
+        asm!(m!(r2, 4), "mov {high}, #0", low = out(reg) low, high = out(reg) high,
+            options(nostack));
+    }
+    (low, high)
+}
+"""
+        parsed = asm_source.parse_function(
+            source, "f", ["a"], 2, allowed_options={"nostack"}, required_options={"nostack"}
+        )
+        self.assertEqual(parsed.instructions[0], "ldr r2, [r0, #4]")
+        with self.assertRaisesRegex(asm_source.GenerationError, "has no arm for `4, r2`"):
+            asm_source.parse_function(
+                source.replace("m!(r2, 4)", "m!(4, r2)"),
+                "f",
+                ["a"],
+                2,
+                allowed_options={"nostack"},
+                required_options={"nostack"},
+            )
 
     def test_invocations_in_template_position_expand_with_origins(self):
         source = (

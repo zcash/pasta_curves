@@ -6,9 +6,10 @@ Unsupported syntax is rejected rather than guessed.
 
 A template line of an ``asm!`` block may be an invocation of a ``macro_rules!`` macro of the
 same source file (a repeated instruction sequence, written once). `parse_macros` reads the
-definitions, restricted to arms whose pattern is a sequence of plain identifiers and whose body
-is a string literal or a ``concat!`` of literals and earlier arms, and `parse_function` expands
-each invocation into its instructions, recording where they came from in `origins`.
+definitions, restricted to arms whose pattern is a sequence of plain identifiers or decimal
+``literal`` metavariables and whose body is a string literal or a ``concat!`` of literals,
+``stringify!`` uses of those metavariables, and earlier arms. `parse_function` expands each
+invocation into its instructions, recording where they came from in `origins`.
 """
 
 import dataclasses
@@ -38,8 +39,8 @@ class Declaration:
 @dataclasses.dataclass(frozen=True)
 class MacroOrigin:
     """Where an instruction of an `asm!` block came from, when a macro invocation in template
-    position expanded to it: the macro's name, the arm's pattern (its tokens, space-separated),
-    and the invocation's index among the block's macro invocations."""
+    position expanded to it: the macro's name, the invocation arguments in canonical form, and
+    the invocation's index among the block's macro invocations."""
 
     macro: str
     arm: str
@@ -47,14 +48,24 @@ class MacroOrigin:
 
 
 @dataclasses.dataclass(frozen=True)
+class ParameterizedMacro:
+    """An instruction template with typed identifier or decimal-literal metavariables."""
+
+    variables: tuple[tuple[str, str], ...]
+    instructions: tuple[str, ...]
+
+
+@dataclasses.dataclass(frozen=True)
 class ParsedFunction:
     instructions: tuple[str, ...]
     declarations: tuple[Declaration, ...]
-    locals: dict[str, tuple[str, int]]
+    locals: dict[str, tuple[str, int | None]]
     returns: tuple[str, ...]
     options: set[str]
     # One entry per instruction: `None` for a literal template string, else its macro origin.
     origins: tuple[MacroOrigin | None, ...] = ()
+    # Locals initialized as `[0u64; N]`, by local name and 64-bit element count.
+    zero_arrays: dict[str, int] = dataclasses.field(default_factory=dict)
 
 
 def _line_comment_end(text: str, start: int) -> int:
@@ -225,6 +236,33 @@ def _strip_comments(text: str) -> str:
     return "".join(pieces)
 
 
+def code_without_trivia(text: str) -> str:
+    """Return Rust code with comments and insignificant whitespace removed.
+
+    Backends use this for small, explicitly supported surrounding Rust fragments whose
+    expression syntax is outside the common inline-assembly grammar. String and character
+    literals retain their contents; callers therefore compare only fragments with no
+    whitespace-sensitive literal contents.
+    """
+    stripped = _strip_comments(text)
+    out: list[str] = []
+    pos = 0
+    while pos < len(stripped):
+        raw = _raw_string_end(stripped, pos)
+        quoted = _quoted_end(stripped, pos) if stripped[pos] == '"' else None
+        char = _char_literal_end(stripped, pos) if stripped[pos] == "'" else None
+        end = raw if raw is not None else quoted[0] if quoted is not None else char
+        if end is not None:
+            out.append(stripped[pos:end])
+            pos = end
+        elif stripped[pos].isspace():
+            pos += 1
+        else:
+            out.append(stripped[pos])
+            pos += 1
+    return "".join(out)
+
+
 def _argument_end(text: str, start: int) -> int:
     """Find an asm argument's top-level comma, validating its delimiters."""
     pairs = {"(": ")", "[": "]", "{": "}"}
@@ -261,6 +299,7 @@ def parse_declaration(
     *,
     reserved_names: set[str] = frozenset(),
     fixed_registers: set[str] = frozenset(),
+    fixed_register_kinds: set[str] = frozenset(("out",)),
     const_operands: set[str] = frozenset(),
 ) -> Declaration:
     """Parse one inline-assembly declaration under backend-specific restrictions."""
@@ -274,12 +313,32 @@ def parse_declaration(
             raise GenerationError(f"unsupported const operand binding: {text.strip()}")
         return Declaration(name, "const", value, None)
 
-    fixed = re.fullmatch(r'(in|out|inout)\("([^"]+)"\)\s+(.+)', declaration)
+    fixed = re.fullmatch(r'(in|out|lateout|inout)\("([^"]+)"\)\s+(.+)', declaration)
     if fixed:
-        kind, register, value = fixed.groups()
-        if register not in fixed_registers or kind != "out" or value.strip() != "_":
+        kind, register, body = fixed.groups()
+        normalized_kind = "out" if kind == "lateout" else kind
+        pieces = [piece.strip() for piece in body.split("=>")]
+        valid = (
+            register in fixed_registers
+            and normalized_kind in fixed_register_kinds
+            and len(pieces) <= 2
+            and (len(pieces) != 2 or normalized_kind == "inout")
+        )
+        if valid:
+            value = pieces[0]
+            output = pieces[1] if len(pieces) == 2 else None
+            if normalized_kind == "out":
+                valid = output is None and (
+                    value == "_" or re.fullmatch(_IDENTIFIER_PATTERN, value)
+                )
+                output = None if value == "_" else value
+            elif normalized_kind == "in":
+                valid = output is None
+            elif normalized_kind == "inout":
+                valid = output is not None and re.fullmatch(_IDENTIFIER_PATTERN, output)
+        if not valid:
             raise GenerationError(f"unsupported fixed-register binding: {text.strip()}")
-        return Declaration(register, kind, value.strip(), None, fixed=True)
+        return Declaration(register, normalized_kind, value, output, fixed=True)
 
     named = re.fullmatch(r"([A-Za-z_]\w*)\s*=\s*(in|out|inout)\(([^)]+)\)\s+(.+)", declaration)
     if not named:
@@ -310,13 +369,83 @@ def parse_declaration(
 _MACRO_INVOCATION = re.compile(rf"({_IDENTIFIER_PATTERN})\s*!\s*\(")
 
 
-def _arm_key(pattern: str) -> str:
-    """A macro arm's pattern as a key: its tokens, which must be plain identifiers, joined by
-    single spaces. The empty pattern is the empty key."""
-    tokens = pattern.split()
-    if any(not re.fullmatch(_IDENTIFIER_PATTERN, token) for token in tokens):
-        raise GenerationError(f"unsupported macro pattern `{pattern.strip()}`")
-    return " ".join(tokens)
+def _split_macro_tokens(text: str) -> list[str]:
+    """Split the deliberately tiny macro pattern/invocation grammar at commas."""
+    stripped = text.strip()
+    if not stripped:
+        return []
+    pieces = stripped.split(",") if "," in stripped else stripped.split()
+    tokens = [token.strip() for token in pieces]
+    if any(not token for token in tokens):
+        raise GenerationError(f"unsupported macro pattern `{stripped}`")
+    return tokens
+
+
+def _macro_pattern(pattern: str) -> tuple[str, tuple[tuple[str, str], ...]]:
+    """Normalize one supported arm pattern and return its typed metavariables."""
+    key: list[str] = []
+    variables: list[tuple[str, str]] = []
+    for token in _split_macro_tokens(pattern):
+        identifier = re.fullmatch(_IDENTIFIER_PATTERN, token)
+        variable = re.fullmatch(rf"\$({_IDENTIFIER_PATTERN})\s*:\s*(ident|literal)", token)
+        if identifier:
+            key.append(identifier.group(0))
+        elif variable:
+            name, kind = variable.groups()
+            key.append(f"${kind}")
+            variables.append((name, kind))
+        else:
+            raise GenerationError(f"unsupported macro pattern `{pattern.strip()}`")
+    names = [name for name, _ in variables]
+    if len(names) != len(set(names)):
+        raise GenerationError(f"duplicate macro metavariable in `{pattern.strip()}`")
+    return ", ".join(key), tuple(variables)
+
+
+def _invocation_tokens(pattern: str) -> tuple[tuple[str, str], ...]:
+    """Classify the deliberately tiny identifier-or-decimal invocation grammar."""
+    arguments: list[tuple[str, str]] = []
+    for token in _split_macro_tokens(pattern):
+        if re.fullmatch(_IDENTIFIER_PATTERN, token):
+            arguments.append(("ident", token))
+        elif re.fullmatch(r"0|[1-9][0-9]*", token):
+            arguments.append(("literal", token))
+        else:
+            raise GenerationError(f"unsupported macro invocation `{pattern.strip()}`")
+    return tuple(arguments)
+
+
+def _resolve_macro_invocation(arms: dict[str, object], pattern: str) -> tuple[str, tuple[str, ...]]:
+    """Select one restricted macro arm and return its metavariable arguments."""
+    arguments = _invocation_tokens(pattern)
+    matches: list[tuple[str, tuple[str, ...], int]] = []
+    for key in arms:
+        parts = _split_macro_tokens(key)
+        if len(parts) != len(arguments):
+            continue
+        values: list[str] = []
+        literal_count = 0
+        for part, (kind, value) in zip(parts, arguments):
+            if part in ("$ident", "$literal"):
+                if part != f"${kind}":
+                    break
+                values.append(value)
+            elif kind != "ident" or part != value:
+                break
+            else:
+                literal_count += 1
+        else:
+            matches.append((key, tuple(values), literal_count))
+    if not matches:
+        display = ", ".join(_split_macro_tokens(pattern))
+        raise GenerationError(f"macro has no arm for `{display}`")
+    most_literals = max(match[2] for match in matches)
+    matches = [match for match in matches if match[2] == most_literals]
+    if len(matches) != 1:
+        display = ", ".join(_split_macro_tokens(pattern))
+        raise GenerationError(f"macro invocation `{display}` matches multiple arms")
+    key, values, _ = matches[0]
+    return key, values
 
 
 def _macro_literal(text: str, start: int) -> tuple[str, int]:
@@ -330,9 +459,16 @@ def _macro_literal(text: str, start: int) -> tuple[str, int]:
     return body, end
 
 
-def _expand_macro_body(body: str, macros: dict[str, dict[str, str]], depth: int) -> str:
-    """The text of a macro arm's body: a string literal, or `concat!` of string literals and
-    invocations of already-parsed arms."""
+def _expand_macro_body(
+    body: str,
+    macros: dict[str, dict[str, str]],
+    depth: int,
+    variables: dict[str, str] | None = None,
+) -> str:
+    """Expand a supported macro body, preserving typed substitutions as ``${name}``."""
+    if depth > 8:
+        raise GenerationError("macro body expands too deeply")
+    variables = variables or {}
     pos = _skip_trivia(body, 0)
     if pos < len(body) and body[pos] == '"':
         text, end = _macro_literal(body, pos)
@@ -360,11 +496,18 @@ def _expand_macro_body(body: str, macros: dict[str, dict[str, str]], depth: int)
             if not invocation:
                 raise GenerationError("unsupported item in a macro's `concat!`")
             end = matching_delimiter(inner, invocation.end() - 1, "(", ")")
-            pieces.append(
-                _expand_invocation(
-                    invocation.group(1), inner[invocation.end() : end], macros, depth + 1
+            argument = inner[invocation.end() : end].strip()
+            if invocation.group(1) == "stringify":
+                variable = re.fullmatch(rf"\$({_IDENTIFIER_PATTERN})", argument)
+                if not variable or variable.group(1) not in variables:
+                    raise GenerationError("stringify! must name a declared metavariable")
+                pieces.append(f"${{{variable.group(1)}}}")
+            elif invocation.group(1) == "concat":
+                pieces.append(
+                    _expand_macro_body(inner[pos : end + 1], macros, depth + 1, variables)
                 )
-            )
+            else:
+                pieces.append(_expand_invocation(invocation.group(1), argument, macros, depth + 1))
             end += 1
         pos = _skip_trivia(inner, end)
         if pos < len(inner):
@@ -382,34 +525,43 @@ def _expand_invocation(
     arms = macros.get(name)
     if arms is None:
         raise GenerationError(f"unknown macro {name}!")
-    key = _arm_key(pattern)
-    if key not in arms:
-        raise GenerationError(f"macro {name}! has no arm for `{key}`")
-    return arms[key]
+    try:
+        key, arguments = _resolve_macro_invocation(arms, pattern)
+    except GenerationError as error:
+        raise GenerationError(f"macro {name}! {error}") from error
+    template = arms[key]
+    if arguments:
+        raise GenerationError(f"nested parameterized macro invocation is unsupported in {name}!")
+    return template
 
 
-def parse_macros(source: str) -> dict[str, dict[str, tuple[str, ...]]]:
-    """The `macro_rules!` definitions of a source file, restricted to the shape the blocks use:
-    every arm's pattern is a sequence of plain identifiers, and its body is a string literal or
-    a `concat!` of string literals and invocations of arms defined earlier. The result maps a
-    macro's name to its arms, each expanded to its instruction lines; the body's text must end
-    with a newline, and its lines are the instructions."""
+def parse_macros(
+    source: str, required: set[str] | None = None
+) -> dict[str, dict[str, tuple[str, ...] | ParameterizedMacro]]:
+    """Parse the supported `macro_rules!` definitions.
+
+    When ``required`` is provided, unrelated definitions are skipped. This lets a backend consume
+    one deliberately restricted assembly macro without pretending to understand other Rust macros
+    in the same source file.
+    """
     masked = masked_noncode(source)
-    macros: dict[str, dict[str, str]] = {}
+    macros: dict[str, dict[str, str | ParameterizedMacro]] = {}
     for match in re.finditer(rf"\bmacro_rules\s*!\s*({_IDENTIFIER_PATTERN})\s*\{{", masked):
         name = match.group(1)
+        close = matching_delimiter(source, match.end() - 1, "{", "}")
+        if required is not None and name not in required:
+            continue
         if name in macros:
             raise GenerationError(f"macro {name}! is defined twice")
-        close = matching_delimiter(source, match.end() - 1, "{", "}")
         body = source[match.end() : close]
-        arms: dict[str, str] = {}
+        arms: dict[str, str | ParameterizedMacro] = {}
         macros[name] = arms
         pos = _skip_trivia(body, 0)
         while pos < len(body):
             if body[pos] != "(":
                 raise GenerationError(f"macro {name}!: unsupported arm syntax")
             pattern_close = matching_delimiter(body, pos, "(", ")")
-            key = _arm_key(body[pos + 1 : pattern_close])
+            key, variables = _macro_pattern(body[pos + 1 : pattern_close])
             if key in arms:
                 raise GenerationError(f"macro {name}!: duplicate arm `{key}`")
             pos = _skip_trivia(body, pattern_close + 1)
@@ -420,32 +572,76 @@ def parse_macros(source: str) -> dict[str, dict[str, tuple[str, ...]]]:
                 raise GenerationError(f"macro {name}!: unsupported arm syntax")
             body_close = matching_delimiter(body, pos, "{", "}")
             try:
-                arms[key] = _expand_macro_body(body[pos + 1 : body_close], macros, 0)
+                expanded = _expand_macro_body(
+                    body[pos + 1 : body_close], macros, 0, dict(variables)
+                )
+                arms[key] = ParameterizedMacro(variables, (expanded,)) if variables else expanded
             except GenerationError as error:
                 raise GenerationError(f"macro {name}!: {error}") from error
             pos = _skip_trivia(body, body_close + 1)
             if pos < len(body) and body[pos] == ";":
                 pos = _skip_trivia(body, pos + 1)
-    lines: dict[str, dict[str, tuple[str, ...]]] = {}
+    lines: dict[str, dict[str, tuple[str, ...] | ParameterizedMacro]] = {}
     for name, arms in macros.items():
         lines[name] = {}
-        for key, text in arms.items():
-            if not text.endswith("\n"):
-                raise GenerationError(f"macro {name}!: the arm `{key}` must end with a newline")
-            instructions = tuple(line.strip() for line in text[:-1].split("\n"))
+        for key, expanded in arms.items():
+            variables = expanded.variables if isinstance(expanded, ParameterizedMacro) else ()
+            text = (
+                expanded.instructions[0] if isinstance(expanded, ParameterizedMacro) else expanded
+            )
+            instruction_text = text.removesuffix("\n")
+            instructions = tuple(line.strip() for line in instruction_text.split("\n"))
             if any(not instruction for instruction in instructions):
                 raise GenerationError(f"macro {name}!: the arm `{key}` has an empty line")
-            lines[name][key] = instructions
+            lines[name][key] = (
+                ParameterizedMacro(variables, instructions) if variables else instructions
+            )
     return lines
+
+
+def parse_asm_invocation(
+    source: str,
+    inner: str,
+    function: str,
+    *,
+    reserved_names: set[str] = frozenset(),
+    fixed_registers: set[str] = frozenset(),
+    fixed_register_kinds: set[str] = frozenset(("out",)),
+    const_operands: set[str] = frozenset(),
+    allowed_options: set[str] = frozenset(("pure", "readonly", "nomem", "nostack")),
+    required_options: set[str] = frozenset(("pure", "nostack")),
+) -> tuple[tuple[str, ...], tuple[MacroOrigin | None, ...], tuple[Declaration, ...], set[str]]:
+    """Parse one complete restricted ``asm!`` invocation body.
+
+    This is the instruction-and-operand half of :func:`parse_function`, for a backend
+    that separately validates a function's architecture-specific surrounding Rust.
+    """
+    referenced_macros = {
+        match.group(1)
+        for match in _MACRO_INVOCATION.finditer(masked_noncode(inner))
+        if match.group(1) != "options"
+    }
+    return _parse_asm(
+        inner,
+        function,
+        macros=parse_macros(source, referenced_macros),
+        reserved_names=reserved_names,
+        fixed_registers=fixed_registers,
+        fixed_register_kinds=fixed_register_kinds,
+        const_operands=const_operands,
+        allowed_options=allowed_options,
+        required_options=required_options,
+    )
 
 
 def _parse_asm(
     inner: str,
     function: str,
     *,
-    macros: dict[str, dict[str, tuple[str, ...]]],
+    macros: dict[str, dict[str, tuple[str, ...] | ParameterizedMacro]],
     reserved_names: set[str],
     fixed_registers: set[str],
+    fixed_register_kinds: set[str],
     const_operands: set[str],
     allowed_options: set[str],
     required_options: set[str],
@@ -487,16 +683,36 @@ def _parse_asm(
             arms = macros.get(name)
             if arms is None:
                 raise GenerationError(f"{function}: unknown macro {name}! in template position")
-            key = _arm_key(inner[invocation.end() : end])
-            if key not in arms:
-                raise GenerationError(f"{function}: macro {name}! has no arm for `{key}`")
+            arguments = inner[invocation.end() : end]
+            try:
+                key, values = _resolve_macro_invocation(arms, arguments)
+            except GenerationError as error:
+                raise GenerationError(f"{function}: macro {name}! {error}") from error
             pos = _skip_trivia(inner, end + 1)
             if pos >= len(inner) or inner[pos] != ",":
                 raise GenerationError(f"{function}: asm template must be followed by a comma")
-            origin = MacroOrigin(name, key, sites)
+            arm = arms[key]
+            if isinstance(arm, ParameterizedMacro):
+                if len(values) != len(arm.variables):
+                    raise GenerationError(f"{function}: argument mismatch for macro {name}!")
+                substitutions = dict(zip((variable for variable, _ in arm.variables), values))
+                expanded = tuple(
+                    re.sub(
+                        r"\$\{([A-Za-z_]\w*)\}",
+                        lambda found, substitutions=substitutions: substitutions[found.group(1)],
+                        instruction,
+                    )
+                    for instruction in arm.instructions
+                )
+            else:
+                if values:
+                    raise GenerationError(f"{function}: unexpected arguments for macro {name}!")
+                expanded = arm
+            origin_text = ", ".join(_split_macro_tokens(arguments))
+            origin = MacroOrigin(name, origin_text, sites)
             sites += 1
-            instructions.extend(arms[key])
-            origins.extend([origin] * len(arms[key]))
+            instructions.extend(expanded)
+            origins.extend([origin] * len(expanded))
             pos += 1
             continue
 
@@ -518,6 +734,7 @@ def _parse_asm(
                     argument,
                     reserved_names=reserved_names,
                     fixed_registers=fixed_registers,
+                    fixed_register_kinds=fixed_register_kinds,
                     const_operands=const_operands,
                 )
             )
@@ -539,14 +756,25 @@ _IDENTIFIER = r"[A-Za-z_]\w*"
 _INDEX_BINDING = re.compile(
     rf"let\s+mut\s+({_IDENTIFIER})\s*=\s*({_IDENTIFIER})\s*\[\s*([0-9]+)\s*\]\s*;"
 )
+_SCALAR_BINDING = re.compile(rf"let\s+mut\s+({_IDENTIFIER})\s*=\s*({_IDENTIFIER})\s*;")
 _DESTRUCTURING_BINDING = re.compile(
     rf"let\s*\[\s*([^\]]+)\s*\]\s*=\s*(?:\*\s*)?({_IDENTIFIER})\s*;"
 )
 _OUTPUT_DECLARATION = re.compile(r"let\s*\(\s*([^()]*)\s*\)\s*:\s*\(\s*([^()]*)\s*\)\s*;")
-_DEBUG_ASSERT = re.compile(r"debug_assert\s*!\s*\(")
+_SINGLE_OUTPUT_DECLARATION = re.compile(rf"let\s+({_IDENTIFIER})\s*:\s*(u32|u64)\s*;")
+_ZERO_ARRAY_BINDING = re.compile(
+    rf"let\s+mut\s+({_IDENTIFIER})\s*=\s*\[\s*0u64\s*;\s*([1-9][0-9]*)\s*\]\s*;"
+)
+_DEBUG_ASSERT = re.compile(r"debug_assert(?:_eq)?\s*!\s*\(")
+_EXPECT_ATTRIBUTE = re.compile(r"#\s*\[")
 _UNSAFE_BLOCK = re.compile(r"unsafe\s*\{")
 _DIRECT_BINDING = re.compile(rf"let\s+(?:mut\s+)?({_IDENTIFIER})\b")
 _RETURN_ARRAY = re.compile(rf"\[\s*({_IDENTIFIER}(?:\s*,\s*{_IDENTIFIER})*)\s*\]")
+_RETURN_TUPLE = re.compile(rf"\(\s*({_IDENTIFIER}(?:\s*,\s*{_IDENTIFIER})+)\s*\)")
+_JOINED_U32_RETURN_ITEM = re.compile(
+    rf"u64\s*::\s*from\s*\(\s*({_IDENTIFIER})\s*\)\s*\|\s*"
+    rf"\(\s*u64\s*::\s*from\s*\(\s*({_IDENTIFIER})\s*\)\s*<<\s*32\s*\)"
+)
 
 
 def _parse_function_prefix(
@@ -555,13 +783,19 @@ def _parse_function_prefix(
     asm_start: int,
     function: str,
     expected: set[str],
-) -> dict[str, tuple[str, int]]:
+) -> tuple[dict[str, tuple[str, int | None]], dict[str, int]]:
     """Consume the supported statements before an inline-assembly block."""
-    locals_map: dict[str, tuple[str, int]] = {}
+    locals_map: dict[str, tuple[str, int | None]] = {}
+    zero_arrays: dict[str, int] = {}
     bound_names: set[str] = set()
 
-    def bind(name: str, binding: tuple[str, int] | None = None) -> None:
-        if name in expected:
+    def bind(
+        name: str,
+        binding: tuple[str, int | None] | None = None,
+        *,
+        allow_identity_shadow: bool = False,
+    ) -> None:
+        if name in expected and not (allow_identity_shadow and binding == (name, None)):
             raise GenerationError(f"{function}: local {name} shadows a function argument")
         if name in bound_names:
             raise GenerationError(f"{function}: duplicate local {name}")
@@ -583,6 +817,21 @@ def _parse_function_prefix(
             pos = _skip_trivia(body, pos + 1)
             continue
 
+        attribute = _EXPECT_ATTRIBUTE.match(masked_body, pos, asm_start)
+        if attribute:
+            opening = masked_body.find("[", attribute.start(), attribute.end())
+            closing = matching_delimiter(body, opening, "[", "]")
+            if closing >= asm_start:
+                raise GenerationError(f"{function}: attribute overlaps asm!")
+            text = _strip_comments(body[opening + 1 : closing]).strip()
+            if not re.fullmatch(
+                r'expect\s*\(\s*unused_assignments\s*,\s*reason\s*=\s*"[^"\\]*"\s*\)',
+                text,
+            ):
+                raise GenerationError(f"{function}: unsupported attribute before asm!")
+            pos = _skip_trivia(body, closing + 1)
+            continue
+
         local_match = _INDEX_BINDING.match(masked_body, pos, asm_start)
         if local_match:
             local, argument, index = local_match.groups()
@@ -590,6 +839,27 @@ def _parse_function_prefix(
                 raise GenerationError(f"{function}: local reads non-argument {argument}")
             bind(local, (argument, int(index)))
             pos = _skip_trivia(body, local_match.end())
+            continue
+
+        scalar_binding = _SCALAR_BINDING.match(masked_body, pos, asm_start)
+        if scalar_binding:
+            local, argument = scalar_binding.groups()
+            if argument not in expected:
+                raise GenerationError(f"{function}: local reads non-argument {argument}")
+            bind(
+                local,
+                (argument, None),
+                allow_identity_shadow=local == argument,
+            )
+            pos = _skip_trivia(body, scalar_binding.end())
+            continue
+
+        zero_array = _ZERO_ARRAY_BINDING.match(masked_body, pos, asm_start)
+        if zero_array:
+            name, count = zero_array.groups()
+            bind(name)
+            zero_arrays[name] = int(count)
+            pos = _skip_trivia(body, zero_array.end())
             continue
 
         destructuring = _DESTRUCTURING_BINDING.match(masked_body, pos, asm_start)
@@ -607,13 +877,18 @@ def _parse_function_prefix(
 
         output_declaration = _OUTPUT_DECLARATION.match(masked_body, pos, asm_start)
         if output_declaration:
-            names = tuple(part.strip() for part in output_declaration.group(1).split(","))
-            types = tuple(part.strip() for part in output_declaration.group(2).split(","))
+            names = tuple(
+                part.strip() for part in output_declaration.group(1).split(",") if part.strip()
+            )
+            types = tuple(
+                part.strip() for part in output_declaration.group(2).split(",") if part.strip()
+            )
             if (
                 not names
                 or len(names) != len(types)
                 or any(not re.fullmatch(_IDENTIFIER, name) for name in names)
-                or any(type_name != "u64" for type_name in types)
+                or len(set(types)) != 1
+                or types[0] not in ("u32", "u64")
             ):
                 raise GenerationError(f"{function}: unsupported output declaration")
             for name in names:
@@ -621,12 +896,18 @@ def _parse_function_prefix(
             pos = _skip_trivia(body, output_declaration.end())
             continue
 
+        single_output = _SINGLE_OUTPUT_DECLARATION.match(masked_body, pos, asm_start)
+        if single_output:
+            bind(single_output.group(1))
+            pos = _skip_trivia(body, single_output.end())
+            continue
+
         unsafe_block = _UNSAFE_BLOCK.match(masked_body, pos, asm_start)
         if unsafe_block:
             pos = _skip_trivia(body, unsafe_block.end())
             if pos != asm_start:
                 raise GenerationError(f"{function}: unsupported code before asm!")
-            return locals_map
+            return locals_map, zero_arrays
 
         direct_binding = _DIRECT_BINDING.match(masked_body, pos, asm_start)
         if direct_binding and direct_binding.group(1) in expected:
@@ -655,6 +936,7 @@ def _parse_function_suffix(
     asm_close: int,
     function: str,
     result_count: int,
+    direct_returns: set[str] = frozenset(),
 ) -> tuple[str, ...]:
     """Consume the unsafe-block close and the function's exact result expression."""
     pos = _skip_trivia(body, asm_close + 1)
@@ -667,9 +949,37 @@ def _parse_function_suffix(
 
     returned = _RETURN_ARRAY.match(masked_body, pos)
     if not returned:
-        raise GenerationError(f"{function}: unsupported code after asm!")
-    returns = tuple(part.strip() for part in returned.group(1).split(","))
-    pos = _skip_trivia(body, returned.end())
+        returned = _RETURN_TUPLE.match(masked_body, pos)
+    if returned:
+        returns = tuple(part.strip() for part in returned.group(1).split(","))
+        pos = _skip_trivia(body, returned.end())
+    elif result_count == 8 and pos < len(body) and body[pos] == "[":
+        close = matching_delimiter(body, pos, "[", "]")
+        items = []
+        item_pos = pos + 1
+        while item_pos < close:
+            item_pos = _skip_trivia(body, item_pos)
+            if item_pos == close:
+                break
+            item = _JOINED_U32_RETURN_ITEM.match(masked_body, item_pos, close)
+            if not item:
+                raise GenerationError(f"{function}: unsupported joined-word return")
+            items.extend(item.groups())
+            item_pos = _skip_trivia(body, item.end())
+            if item_pos < close:
+                if body[item_pos] != ",":
+                    raise GenerationError(f"{function}: unsupported joined-word return")
+                item_pos += 1
+        if len(items) != result_count:
+            raise GenerationError(f"{function}: unsupported joined-word return")
+        returns = tuple(items)
+        pos = _skip_trivia(body, close + 1)
+    else:
+        direct = re.match(rf"({_IDENTIFIER})\b", masked_body[pos:])
+        if not direct or result_count != 1 or direct.group(1) not in direct_returns:
+            raise GenerationError(f"{function}: unsupported code after asm!")
+        returns = (direct.group(1),)
+        pos = _skip_trivia(body, pos + direct.end())
     if pos != len(body):
         raise GenerationError(f"{function}: unsupported code after asm!")
     if len(returns) != result_count:
@@ -687,6 +997,7 @@ def parse_function(
     *,
     reserved_names: set[str] = frozenset(),
     fixed_registers: set[str] = frozenset(),
+    fixed_register_kinds: set[str] = frozenset(("out",)),
     const_operands: set[str] = frozenset(),
     allowed_options: set[str] = frozenset(("pure", "readonly", "nomem", "nostack")),
     required_options: set[str] = frozenset(("pure", "nostack")),
@@ -722,26 +1033,34 @@ def parse_function(
     body_close = matching_delimiter(source, body_open, "{", "}")
     body = source[body_open + 1 : body_close]
     masked_body = masked_noncode(body)
-    macros = list(re.finditer(r"\basm\s*!\s*\(", masked_body))
+    macros = list(re.finditer(r"(?:(?:core\s*::\s*arch\s*::\s*)?asm)\s*!\s*\(", masked_body))
     if len(macros) != 1:
         raise GenerationError(f"{function}: expected exactly one asm! block, found {len(macros)}")
     asm = macros[0]
     asm_open = masked_body.find("(", asm.start())
     asm_close = matching_delimiter(body, asm_open, "(", ")")
-    instructions, origins, declarations, options = _parse_asm(
-        body[asm_open + 1 : asm_close],
+    asm_inner = body[asm_open + 1 : asm_close]
+    instructions, origins, declarations, options = parse_asm_invocation(
+        source,
+        asm_inner,
         function,
-        macros=parse_macros(source),
         reserved_names=reserved_names,
         fixed_registers=fixed_registers,
+        fixed_register_kinds=fixed_register_kinds,
         const_operands=const_operands,
         allowed_options=allowed_options,
         required_options=required_options,
     )
 
-    locals_map = _parse_function_prefix(body, masked_body, asm.start(), function, expected)
-    returns = _parse_function_suffix(body, masked_body, asm_close, function, result_count)
-    return ParsedFunction(instructions, declarations, locals_map, returns, options, origins)
+    locals_map, zero_arrays = _parse_function_prefix(
+        body, masked_body, asm.start(), function, expected
+    )
+    returns = _parse_function_suffix(
+        body, masked_body, asm_close, function, result_count, set(zero_arrays)
+    )
+    return ParsedFunction(
+        instructions, declarations, locals_map, returns, options, origins, zero_arrays
+    )
 
 
 def declaration_directions(parsed: ParsedFunction, function: str) -> dict[str, str]:
@@ -767,15 +1086,38 @@ def output_bindings(parsed: ParsedFunction, function: str) -> dict[str, str]:
     return outputs
 
 
-def returned_registers(parsed: ParsedFunction, function: str) -> tuple[str, ...]:
-    """Resolve the Rust result tuple to asm operands and require a complete binding."""
+def returned_registers(
+    parsed: ParsedFunction,
+    function: str,
+    *,
+    discarded_outputs: set[str] = frozenset(),
+) -> tuple[str, ...]:
+    """Resolve the Rust result tuple to asm operands and validate named outputs.
+
+    A backend may explicitly allow named local outputs that the function intentionally
+    discards after the block. This remains fail-closed: every allowed name must be an asm
+    output, and every other named output must occur in the function's result.
+    """
     outputs = output_bindings(parsed, function)
+    unknown_discards = discarded_outputs - set(outputs)
+    if unknown_discards:
+        raise GenerationError(
+            f"{function}: configured discarded values are not asm outputs: "
+            f"{sorted(unknown_discards)}"
+        )
+    returned = set(parsed.returns)
+    discarded_returns = discarded_outputs & returned
+    if discarded_returns:
+        raise GenerationError(
+            f"{function}: returned values are also configured as discarded: "
+            f"{sorted(discarded_returns)}"
+        )
     registers: list[str] = []
     for output in parsed.returns:
         if output not in outputs:
             raise GenerationError(f"{function}: returned value {output} is not an asm output")
         registers.append(outputs[output])
-    unused = set(outputs) - set(parsed.returns)
+    unused = set(outputs) - returned - discarded_outputs
     if unused:
         raise GenerationError(f"{function}: named asm outputs not returned: {sorted(unused)}")
     return tuple(registers)
