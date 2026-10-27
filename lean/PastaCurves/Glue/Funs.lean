@@ -61,7 +61,7 @@ def limbs.is_canonical_word
   core.hint.black_box i11
 
 /-- [pasta_curves::asm::entry::mul_contract]:
-    Source: 'src/asm/entry.rs', lines 15:0-20:1 -/
+    Source: 'src/asm/entry.rs', lines 17:0-22:1 -/
 def asm.entry.mul_contract
   (lhs : Array Std.U64 4#usize) (rhs : Array Std.U64 4#usize)
   (modulus : Array Std.U64 4#usize) :
@@ -95,7 +95,7 @@ def limbs.is_canonical
   ok (i = 1#u64)
 
 /-- [pasta_curves::asm::entry::add_with]:
-    Source: 'src/asm/entry.rs', lines 52:0-62:1 -/
+    Source: 'src/asm/entry.rs', lines 57:0-67:1 -/
 def asm.entry.add_with
   {B : Type} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
   (lhs : Array Std.U64 4#usize) (rhs : Array Std.U64 4#usize)
@@ -109,7 +109,7 @@ def asm.entry.add_with
   MontgomeryBlocksInst.add lhs rhs modulus
 
 /-- [pasta_curves::asm::entry::sub_with]:
-    Source: 'src/asm/entry.rs', lines 66:0-76:1 -/
+    Source: 'src/asm/entry.rs', lines 71:0-81:1 -/
 def asm.entry.sub_with
   {B : Type} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
   (lhs : Array Std.U64 4#usize) (rhs : Array Std.U64 4#usize)
@@ -123,7 +123,7 @@ def asm.entry.sub_with
   MontgomeryBlocksInst.sub lhs rhs modulus
 
 /-- [pasta_curves::asm::entry::mul_with]:
-    Source: 'src/asm/entry.rs', lines 80:0-92:1 -/
+    Source: 'src/asm/entry.rs', lines 85:0-97:1 -/
 def asm.entry.mul_with
   {B : Type} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
   (lhs : Array Std.U64 4#usize) (rhs : Array Std.U64 4#usize)
@@ -135,7 +135,7 @@ def asm.entry.mul_with
   MontgomeryBlocksInst.mul lhs rhs modulus inv
 
 /-- [pasta_curves::asm::entry::square_with]:
-    Source: 'src/asm/entry.rs', lines 96:0-102:1 -/
+    Source: 'src/asm/entry.rs', lines 101:0-107:1 -/
 def asm.entry.square_with
   {B : Type} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
   (value : Array Std.U64 4#usize) (modulus : Array Std.U64 4#usize)
@@ -147,7 +147,7 @@ def asm.entry.square_with
   MontgomeryBlocksInst.square value modulus inv
 
 /-- [pasta_curves::asm::entry::sqr_n_mul_with]: loop body 0:
-    Source: 'src/asm/entry.rs', lines 119:4-121:5 -/
+    Source: 'src/asm/entry.rs', lines 124:4-126:5 -/
 @[rust_loop_body]
 def asm.entry.sqr_n_mul_with_loop.body
   {B : Type} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
@@ -165,7 +165,7 @@ def asm.entry.sqr_n_mul_with_loop.body
     ok (cont (iter1, acc1))
 
 /-- [pasta_curves::asm::entry::sqr_n_mul_with]: loop 0:
-    Source: 'src/asm/entry.rs', lines 119:4-121:5 -/
+    Source: 'src/asm/entry.rs', lines 124:4-126:5 -/
 @[rust_loop]
 def asm.entry.sqr_n_mul_with_loop
   {B : Type} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
@@ -179,7 +179,7 @@ def asm.entry.sqr_n_mul_with_loop
     (iter, acc)
 
 /-- [pasta_curves::asm::entry::sqr_n_mul_with]:
-    Source: 'src/asm/entry.rs', lines 107:0-123:1 -/
+    Source: 'src/asm/entry.rs', lines 112:0-128:1 -/
 def asm.entry.sqr_n_mul_with
   {B : Type} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
   (value : Array Std.U64 4#usize) (count : Std.Usize)
@@ -195,7 +195,7 @@ def asm.entry.sqr_n_mul_with
   asm.entry.mul_with MontgomeryBlocksInst acc rhs modulus inv
 
 /-- [pasta_curves::asm::entry::from_mont_with]:
-    Source: 'src/asm/entry.rs', lines 127:0-133:1 -/
+    Source: 'src/asm/entry.rs', lines 132:0-138:1 -/
 def asm.entry.from_mont_with
   {B : Type} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
   (value : Array Std.U64 4#usize) (modulus : Array Std.U64 4#usize)
