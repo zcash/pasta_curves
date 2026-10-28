@@ -31,9 +31,9 @@ def limbsArray (x : _root_.PastaCurves.Limbs) : Array Std.U64 4#usize :=
 
 end pasta_curves.asm.armv7em.external
 
-/-- The modulus shifted by 61 bits. This external model mirrors the translated portable
-helper; its equality to that translation must be established before relying on the ARM
-amontred composition proof. -/
+/-- The modulus shifted by 61 bits. `Compositions.Invert.Amontred.shifted_modulus_eq`
+connects this external model to the translated portable helper; its arithmetic contract is
+proved there as well. -/
 def inversion.portable.shifted_modulus
     (modulus : Array Std.U64 4#usize) : Result (Array Std.U64 5#usize) := do
   let i ← Array.index_usize modulus 0#usize
@@ -114,8 +114,9 @@ def asm.armv7em.mac_word
   ok (i6, i8)
 
 /-- The eight-word ARM multiply-accumulate block, modeled through the translated 64-bit portable
-multiply-accumulate with the same arithmetic result. Instruction-level equivalence remains to be proved from a
-mechanical transcription of the assembly block; Aeneas treats the block as opaque. -/
+multiply-accumulate. Aeneas treats the assembly as opaque; `inversion_mac_words_spec` in
+`Spec.Invert.Amontred.Correctness` connects this model to the mechanically generated instruction
+block under its arithmetic precondition. -/
 def asm.armv7em.inversion_mac_words
     (r0 r1 b0 b1 c0 c1 r2 r3 : Std.U32) :
     Result (Std.U32 × Std.U32 × Std.U32 × Std.U32) := do

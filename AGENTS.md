@@ -183,8 +183,9 @@ describes the tools in more detail.
 
 - **Every architecture's `Transcription.lean` and the shared `Vectors.lean` are generated** by
   `lean/scripts/gen.py` from the Rust `asm!` blocks and the reference vectors. Never edit them
-  by hand; change the generator or its inputs and regenerate. Architecture-specific
-  `Compositions.lean` mirrors the actual Rust compositions, not another backend's implementation.
+  by hand; change the generator or its inputs and regenerate. Architecture-specific composition
+  proof models mirror the actual Rust compositions, not another backend's implementation. For
+  ARMv7E-M this is `Compositions/Model.lean`; `Compositions.lean` is the translation/model umbrella.
   Shared `Compositions.lean` models common operand checks and the inversion's driver over a
   record of a backend's blocks; `Fields.lean` states the two fields' constants. A change on
   either side changes the other.
@@ -196,8 +197,8 @@ describes the tools in more detail.
   annotations are then moved to their new places. Independently handwritten instruction traces
   or proof scripts are not a substitute for this synchronization check.
 - **Architecture modules have consistent roles.** `Semantics` defines instruction behavior;
-  `Transcription` contains generated block models; `Compositions` models Rust around those
-  blocks; `Vectors` checks the backend's routines against the shared generated vectors by kernel
+  `Transcription` contains generated block models; the composition proof model models Rust around
+  those blocks; `Vectors` checks the backend's routines against the shared generated vectors by kernel
   evaluation; `Spec` proves block and composition correctness; `Backend` builds the backend's
   record of Montgomery blocks, with `Glue.blocksOf`, that the Aeneas-translated glue runs over;
   `Entry` contains correctness **theorems** specializing those results to `PastaField` and the
@@ -213,9 +214,11 @@ describes the tools in more detail.
   self-contained responsibility. Extend shared components rather than duplicating them.
   Reject unsupported syntax, uninitialized register/flag reads, and unmodeled memory accesses;
   test those rejection paths. For x86, CF and OF are independent and must not be conflated.
-- **The Aeneas translations are generated** (`Types.lean` and `Funs.lean` under `Portable/`
-  and `Glue/`, by `lean/scripts/gen_aeneas.sh`); never edit them by hand. `Glue/FunsExternal.lean`
-  is written by hand: it defines the one external function that the glue calls. Proofs about the
+- **The Aeneas translations are generated** (`Types.lean` and `Funs.lean` under `Portable/`,
+  `Glue/`, and `ARMv7EM/Compositions/`, by `lean/scripts/gen_aeneas.sh`); never edit them by hand.
+  `Glue/FunsExternal.lean` is written by hand: it defines the one external function that the glue
+  calls. `ARMv7EM/Compositions/FunsExternal.lean` is also written by hand: it models the
+  inline-assembly primitives that the ARMv7E-M translation treats as opaque. Proofs about the
   translations follow Aeneas' own guidance at the revision that `lean/lakefile.toml` pins: the
   skill files in [`documentation/skills/`](https://github.com/AeneasVerif/aeneas/tree/b86120db3183b0107eb5f2637b11c424cd06ef1c/documentation/skills)
   (`aeneas-lean-core`, `aeneas-tactics-quickref`, `proof-patterns`, and

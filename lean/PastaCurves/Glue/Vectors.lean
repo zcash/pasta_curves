@@ -5,8 +5,12 @@ import PastaCurves.Vectors
 /-!
 # The translated glue on the vectors and known answers
 
-Aeneas' translation of the entry points' generic compositions (`Funs.lean`) is run over both
-backends' records (`AArch64/Backend.lean` and `X86_64/Backend.lean`):
+Aeneas' translation of the entry points' generic compositions (`Funs.lean`) is run over the
+AArch64 and x86-64 model records here. ARMv7E-M's generated instruction routines are checked
+against the reference vectors separately in `ARMv7EM/Vectors.lean`; its translated method
+contracts are established by the ARMv7E-M composition and entry proofs.
+
+Here the translated glue is checked:
 
 - on every reference vector of `Vectors.lean`, through `mul_with`, `square_with`, and
   `from_mont_with`;
@@ -25,7 +29,7 @@ namespace PastaCurves.Glue
 
 open Aeneas Aeneas.Std
 
-/-- The two backends' records of the Montgomery blocks. -/
+/-- The backend records used to check the translated Montgomery glue. -/
 def backends : List (pasta_curves.asm.entry.MontgomeryBlocks Unit) :=
   [AArch64.montgomeryBlocks, X86_64.montgomeryBlocks]
 
