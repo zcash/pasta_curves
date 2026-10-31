@@ -127,12 +127,18 @@ allocation.
 A cfg-gated test that compiles out still reports success, so CI counts the `#[test]`
 functions under `src/asm` and requires the run of the module's tests to report exactly that
 many passed, in both profiles. A test that needs one architecture lives in that backend's
-file (`aarch64.rs` or `x86_64.rs`), which is only counted on that architecture. CI also
-builds `core` from source on a nightly toolchain instead of using the sysroot, which proves
-that nothing in the backend reaches for std:
+file (`aarch64.rs`, `x86_64.rs`, or `armv7em.rs`), which is only counted on that
+architecture. The ARMv7E-M backend's target, `thumbv7em-none-eabihf`, has no std to run the
+tests, so CI selects the backend in the unit-test binary for
+`thumbv7neon-unknown-linux-gnueabihf`, an ARM target with std that compiles in Thumb state.
+It runs the backend's counted tests and the crate's unit tests under qemu's user-mode emulation;
+regular library builds for that target remain portable. CI also
+builds `core` from source on a nightly toolchain instead of using the sysroot, which proves that
+nothing in the backend reaches for std:
 `cargo +nightly build --release --no-default-features -Z build-std=core,compiler_builtins`
-with `--target` set to `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, and
-`x86_64-apple-darwin` in turn, for each backend and for a target without one.
+with `--target` set in turn to `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`,
+`x86_64-apple-darwin`, and `thumbv7em-none-eabihf`, for each backend and for a target without
+one.
 
 Documentation is a synthetic cross-platform build: `cfg(doc)` retains APIs that are unavailable
 on the rustdoc host, while `doc(cfg(...))` renders their real architecture requirements. Because

@@ -75,15 +75,16 @@ done
 # ---- The assembly backend (asm.yml) ----
 # On a host with a backend, the backend's tests run, and the run must report exactly as many
 # passed as `src/asm` declares, so that a test that compiles out cannot pass silently. A test
-# that needs one architecture lives in that backend's file, which is only counted on that
-# architecture. An x86-64 host has a backend unless it is Apple's; its CPU needs BMI2 and
-# ADX to run it.
+# that needs one architecture lives in that backend's file (`aarch64.rs`, `x86_64.rs`, or
+# `armv7em.rs`), which is only counted on that architecture. An x86-64 host has a backend unless
+# it is Apple's; its CPU needs BMI2 and ADX to run it.
 arch=$(uname -m)
 if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ] ||
    { [ "$arch" = "x86_64" ] && [ "$(uname -s)" != "Darwin" ]; }; then
   own=src/asm/x86_64.rs
   if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then own=src/asm/aarch64.rs; fi
-  expected=$({ grep -rh --exclude=aarch64.rs --exclude=x86_64.rs '^\s*#\[test\]' src/asm
+  expected=$({ grep -rh --exclude=aarch64.rs --exclude=x86_64.rs --exclude=armv7em.rs \
+    '^\s*#\[test\]' src/asm
     grep -h '^\s*#\[test\]' "$own" || true; } | wc -l | tr -d ' ')
   echo "tests in the backend: $expected"
   test "$expected" -gt 0
@@ -99,11 +100,49 @@ if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ] ||
   count --release
 fi
 
+# The ARMv7E-M backend's tests, under qemu's user-mode emulation. `thumbv7em-none-eabihf` has no
+# std, so the same backend is compiled for an ARM Linux target that has one and compiles in Thumb
+# state (see the `armv7em` job of asm.yml).
+arm_target=thumbv7neon-unknown-linux-gnueabihf
+if command -v qemu-arm >/dev/null && command -v arm-linux-gnueabihf-gcc >/dev/null &&
+   rustup target list --installed | grep -qx "$arm_target"; then
+  arm_env=(env QEMU_CPU=cortex-a15 RUSTFLAGS='--cfg pasta_curves_armv7em_test'
+    CARGO_TARGET_THUMBV7NEON_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc
+    CARGO_TARGET_THUMBV7NEON_UNKNOWN_LINUX_GNUEABIHF_RUNNER="qemu-arm -L /usr/arm-linux-gnueabihf")
+  step "ARMv7E-M, emulated: verify the backend is selected"
+  arm_list=$("${arm_env[@]}" cargo test --target "$arm_target" --features asm 'asm::' -- --list 2>&1) ||
+    { echo "$arm_list"; exit 1; }
+  echo "$arm_list"
+  echo "$arm_list" | grep -q '^asm::' || { echo 'ARM backend tests compiled out'; exit 1; }
+  expected=$({ grep -rh --exclude=aarch64.rs --exclude=x86_64.rs --exclude=armv7em.rs \
+    '^\s*#\[test\]' src/asm
+    grep -h '^\s*#\[test\]' src/asm/armv7em.rs || true; } | wc -l | tr -d ' ')
+  arm_count() {
+    step "ARMv7E-M, emulated: cargo test $* --features asm 'asm::'"
+    out=$("${arm_env[@]}" cargo test "$@" --target "$arm_target" --features asm 'asm::' 2>&1) ||
+      { echo "$out"; exit 1; }
+    echo "$out"
+    echo "$out" | grep -q "^test result: ok. $expected passed" ||
+      { echo "expected exactly $expected tests of the backend to pass"; exit 1; }
+  }
+  arm_count
+  with_assertions arm_count --release
+  arm_count --release
+  step "ARMv7E-M, emulated: cargo test --release --all-features, with the debug assertions"
+  with_assertions "${arm_env[@]}" cargo test --release --target "$arm_target" --all-features
+else
+  skip "the emulated ARMv7E-M tests" \
+    "  they need qemu-arm (user mode, Linux only), arm-linux-gnueabihf-gcc, and the target:
+    apt-get install qemu-user gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
+    rustup target add $arm_target"
+fi
+
 # Each backend, and the portable fallback (Intel macOS), built against core alone, with no std
 # to fall back on. A library build links nothing, so any host can build for every target.
 if rustup run nightly rustc --version >/dev/null 2>&1 &&
    rustup component list --toolchain nightly --installed | grep -q '^rust-src'; then
-  for target in aarch64-apple-darwin x86_64-unknown-linux-gnu x86_64-apple-darwin; do
+  for target in aarch64-apple-darwin x86_64-unknown-linux-gnu x86_64-apple-darwin \
+    thumbv7em-none-eabihf; do
     step "no_std: build against core alone for $target"
     cargo +nightly build --release --no-default-features --features asm \
       -Z build-std=core,compiler_builtins --target "$target"

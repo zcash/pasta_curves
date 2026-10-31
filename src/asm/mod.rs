@@ -74,7 +74,10 @@ macro_rules! if_asm_supported {
                 ),
                 all(
                     target_arch = "arm",
-                    target_os = "none",
+                    any(
+                        target_os = "none",
+                        all(test, pasta_curves_armv7em_test, target_os = "linux"),
+                    ),
                     target_abi = "eabihf",
                     target_pointer_width = "32",
                     target_endian = "little",
@@ -110,7 +113,10 @@ macro_rules! if_asm_unsupported {
                 ),
                 all(
                     target_arch = "arm",
-                    target_os = "none",
+                    any(
+                        target_os = "none",
+                        all(test, pasta_curves_armv7em_test, target_os = "linux"),
+                    ),
                     target_abi = "eabihf",
                     target_pointer_width = "32",
                     target_endian = "little",
