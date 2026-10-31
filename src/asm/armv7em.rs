@@ -706,3 +706,57 @@ impl InvertBlocks for Backend {
         cond_sub(value, modulus)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Backend;
+
+    // The inversion's checks, over this backend's blocks. `sign_mag`, `fg_row`, and `de_row` are
+    // the portable blocks, but are checked here too, so that every block `invert` runs on this
+    // backend is.
+
+    #[test]
+    fn sign_mag_known_answers() {
+        crate::inversion::tests::sign_mag_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn divstep59_known_answers() {
+        crate::inversion::tests::divstep59_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn fg_row_known_answers() {
+        crate::inversion::tests::fg_row_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn de_row_known_answers() {
+        crate::inversion::tests::de_row_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn amontred_known_answers() {
+        crate::inversion::tests::amontred_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn cond_sub_known_answers() {
+        crate::inversion::tests::cond_sub_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn invert_known_answers() {
+        crate::inversion::tests::invert_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn invert_small_and_near_modulus() {
+        crate::inversion::tests::invert_small_and_near_modulus::<Backend>();
+    }
+
+    #[test]
+    fn invert_random() {
+        crate::inversion::tests::invert_random::<Backend>();
+    }
+}
