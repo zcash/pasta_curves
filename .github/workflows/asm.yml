@@ -61,8 +61,8 @@ jobs:
       - name: Confirm the x86-64 CPU has BMI2 and ADX
         if: ${{ runner.arch == 'X64' }}
         shell: bash
-        # The x86-64 blocks need both at run time and do not check for them, so
-        # without them the tests would fail on an illegal instruction.
+        # Require CPU support so the assembly tests cannot silently skip the
+        # backend and report success without exercising its instructions.
         run: |
           features=$(rustc --print cfg -C target-cpu=native | tr -d '\r')
           printf '%s\n' "$features" | grep -qx 'target_feature="bmi2"'

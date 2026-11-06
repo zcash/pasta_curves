@@ -21,6 +21,7 @@ extern crate std;
 #[macro_use]
 mod asm;
 pub use asm::BACKEND;
+pub use asm::selected_backend;
 
 // The limb type of the backends and the inversion, the checks of their debug assertions, and the
 // `unroll!` macro, which its users import by path.
@@ -96,6 +97,9 @@ fn backend_name() {
         "x86-64"
     };
     assert_eq!(BACKEND, expected);
+    if !supported {
+        assert_eq!(selected_backend(), "portable");
+    }
 }
 
 // The point of these tests is that they compile: each macro is used in every position the backend's

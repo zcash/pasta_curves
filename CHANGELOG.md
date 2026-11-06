@@ -11,6 +11,13 @@ and this project adheres to Rust's notion of
 - `CurveAffine::batch_decode_vartime`, an `alloc`-gated default method that
   decodes public compressed points with one ordered `Option` result per input.
   It is further accelerated when `sqrt-table` is enabled.
+- Added `pasta_curves::selected_backend()` to report the runtime-selected backend for diagnostics.
+
+### Changed
+- The `asm` feature detects BMI2 and ADX at run time on x86-64 and falls back to portable field
+  arithmetic when either is missing, including in `no_std` builds. Enabling both target features
+  at compile time removes the check; SGX requires them to select assembly without CPUID.
+  AArch64 assembly remains unconditional.
 
 ## [0.6.1] - 2026-10-09
 ### Added
