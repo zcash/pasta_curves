@@ -43,6 +43,8 @@ use group::CurveAffine as _;
 use crate::arithmetic::{CurveExt, mac, sbb};
 use crate::{pallas, vesta};
 
+pub(crate) mod fixed_base;
+
 pub(crate) mod msm;
 
 mod private {

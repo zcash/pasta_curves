@@ -243,6 +243,36 @@ fn batch_affine_buckets_match_native<C: MsmCurve>() {
         &[alloc::vec![generator, -generator], Vec::new()],
         &mut scratch,
     );
+
+    // Powers of two keep every intermediate pair distinct, so this
+    // exercises successful in-place reduction without its fallback.
+    let clean_source = [
+        Vec::new(),
+        alloc::vec![generator],
+        alloc::vec![generator, two],
+        alloc::vec![generator, two, four],
+        (0..9)
+            .map(|bit| generator * C::ScalarExt::from(1u64 << bit))
+            .collect(),
+    ];
+    let mut clean_points = Vec::new();
+    let mut clean_offsets = Vec::with_capacity(clean_source.len() + 1);
+    clean_offsets.push(0);
+    for bucket in &clean_source {
+        for point in bucket {
+            let affine = C::AffineExt::from(*point);
+            let (x, y) = C::affine_xy(&affine);
+            clean_points.push(AffinePoint { x, y });
+        }
+        clean_offsets.push(clean_points.len());
+    }
+    let clean_reduced = reduce_affine_buckets(clean_points, clean_offsets)
+        .expect("distinct points should use the in-place reducer");
+    assert_affine_bucket_results_match_native::<C>(
+        "direct successful in-place reduction",
+        clean_reduced,
+        &clean_source,
+    );
 }
 
 #[test]

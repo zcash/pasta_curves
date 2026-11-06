@@ -13,6 +13,10 @@ and this project adheres to Rust's notion of
   hook returns `None`.
 - `multicore` feature flag, which enables `glv` and parallel MSM evaluation
   using Rayon.
+- `CurveExt::try_prepare_fixed_base_sum` and `PreparedFixedBaseSum`, optional
+  reusable fixed-base sums for public scalars. The `glv` feature enables
+  doubling-free Pallas and Vesta evaluation and batched affine reduction;
+  callers must retain a generic fallback when preparation returns `None`.
 
 ### Changed
 - GLV MSMs reuse window and affine-reduction scratch. With `multicore`, each
