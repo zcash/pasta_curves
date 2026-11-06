@@ -9,7 +9,15 @@
 //! the serial implementation. Neither feature changes ordinary constant-time
 //! scalar multiplication.
 //!
+//! Window assignment and affine-reduction buffers are reused across windows.
+//! With `multicore`, each thread also caches at most 8 MiB per field between
+//! calls; checked-out buffers are unavailable to nested Rayon work.
+//!
 //! The small-MSM ladder reuses the existing split-wNAF tables unchanged.
+
+// The crate otherwise stays no_std; only the threaded backend needs TLS.
+#[cfg(feature = "multicore")]
+extern crate std;
 
 use alloc::vec::Vec;
 use ff::{Field, PrimeField, WithSmallOrderMulGroup};
@@ -67,7 +75,7 @@ const MIN_PARALLEL_STRAUSS_TERMS: usize = 3;
 const MAX_PARALLEL_STRAUSS_TERMS: usize = 66;
 
 /// Each GLV decomposition component has magnitude strictly below `2^127`.
-const GLV_COMPONENT_BITS: usize = 127;
+pub(super) const GLV_COMPONENT_BITS: usize = 127;
 
 /// The serial work model counts total point/window visits, bucket additions,
 /// and accumulator doublings. The parallel model estimates the corresponding
@@ -422,9 +430,9 @@ fn booth_digit(component: SignedMagnitude, window_bits: usize, window: usize) ->
 }
 
 #[derive(Clone, Copy)]
-struct AffinePoint<F> {
-    x: F,
-    y: F,
+pub(super) struct AffinePoint<F> {
+    pub(super) x: F,
+    pub(super) y: F,
 }
 
 // The left operand lives in its `points[output]` result slot. The prefix pass
@@ -565,13 +573,16 @@ fn window_assignments<C>(
     bases: &[MultiexpBase<C::Base>],
     window_bits: usize,
     window: usize,
-) -> (Vec<WindowAssignment>, Vec<usize>)
-where
+    assignments: &mut Vec<WindowAssignment>,
+    counts: &mut Vec<usize>,
+) where
     C: MsmCurve,
 {
     let bucket_count = 1 << (window_bits - 1);
-    let mut assignments = Vec::with_capacity(bases.len().saturating_mul(2));
-    let mut counts = alloc::vec![0usize; bucket_count];
+    assignments.clear();
+    assignments.reserve(bases.len().saturating_mul(2));
+    counts.clear();
+    counts.resize(bucket_count, 0);
 
     for (base_index, ((first, second), base)) in components.iter().zip(bases).enumerate() {
         if base.identity {
@@ -595,30 +606,40 @@ where
             }
         }
     }
-
-    (assignments, counts)
 }
 
-/// Reduce buckets with one Montgomery inversion per tree level. Inputs are
-/// valid nonidentity points on a Pasta curve (a = 0); offsets partition them.
-/// The incomplete pass writes nothing until inversion succeeds. On a zero
-/// denominator, retry the unchanged level with complete formulas. Successful
-/// results are then compacted in place, retaining the input allocation.
-fn reduce_affine_buckets<F: VartimeField>(
-    points: Vec<AffinePoint<F>>,
-    offsets: Vec<usize>,
-) -> Option<Vec<Option<AffinePoint<F>>>> {
-    reduce_affine_buckets_inner::<F, false>(points, offsets)
+/// The existing failure-atomic reducer compacts points in place, so unlike
+/// the source implementation's staged reducer it needs no second point buffer.
+struct ReduceScratch<F> {
+    next_offsets: Vec<usize>,
+    pending: Vec<PendingAffineAddition<F>>,
 }
 
-fn reduce_affine_buckets_inner<F: VartimeField, const COMPLETE: bool>(
-    mut points: Vec<AffinePoint<F>>,
-    mut offsets: Vec<usize>,
+impl<F> Default for ReduceScratch<F> {
+    fn default() -> Self {
+        Self {
+            next_offsets: Vec::new(),
+            pending: Vec::new(),
+        }
+    }
+}
+
+/// Consumes the logical contents of caller-owned buffers but retains their
+/// allocations. A failed incomplete level leaves its points and offsets intact.
+fn reduce_affine_buckets_reusing<F: VartimeField, const COMPLETE: bool>(
+    points: &mut Vec<AffinePoint<F>>,
+    offsets: &mut Vec<usize>,
+    scratch: &mut ReduceScratch<F>,
 ) -> Option<Vec<Option<AffinePoint<F>>>> {
     debug_assert!(!offsets.is_empty());
-    let mut next_offsets = Vec::with_capacity(offsets.len());
-    let mut pending = Vec::with_capacity(points.len() / 2);
-
+    let ReduceScratch {
+        next_offsets,
+        pending,
+    } = scratch;
+    next_offsets.clear();
+    next_offsets.reserve(offsets.len());
+    pending.clear();
+    pending.reserve(points.len() / 2);
     while offsets.windows(2).any(|range| range[1] - range[0] > 1) {
         pending.clear();
         for range in offsets.windows(2) {
@@ -646,9 +667,9 @@ fn reduce_affine_buckets_inner<F: VartimeField, const COMPLETE: bool>(
             }
         }
 
-        if batch_invert_and_add(&mut pending, &mut points).is_none() {
+        if batch_invert_and_add(pending, points).is_none() {
             if !COMPLETE {
-                return reduce_affine_buckets_inner::<F, true>(points, offsets);
+                return reduce_affine_buckets_reusing::<F, true>(points, offsets, scratch);
             }
             // Complete formulas have nonzero denominators for valid inputs.
             // Decline rather than returning a partial MSM if that guard fails.
@@ -681,7 +702,7 @@ fn reduce_affine_buckets_inner<F: VartimeField, const COMPLETE: bool>(
             next_offsets.push(output);
         }
         points.truncate(output);
-        core::mem::swap(&mut offsets, &mut next_offsets);
+        core::mem::swap(offsets, next_offsets);
     }
 
     Some(
@@ -704,30 +725,127 @@ fn sum_buckets<C: MsmCurve>(buckets: &[Option<AffinePoint<C::Base>>]) -> C {
     sum
 }
 
+/// Buffers for one window, reused by each serial or parallel task.
+struct WindowScratch<F> {
+    assignments: Vec<WindowAssignment>,
+    counts: Vec<usize>,
+    offsets: Vec<usize>,
+    positions: Vec<usize>,
+    points: Vec<AffinePoint<F>>,
+    reduce: ReduceScratch<F>,
+}
+
+impl<F> Default for WindowScratch<F> {
+    fn default() -> Self {
+        Self {
+            assignments: Vec::new(),
+            counts: Vec::new(),
+            offsets: Vec::new(),
+            positions: Vec::new(),
+            points: Vec::new(),
+            reduce: ReduceScratch::default(),
+        }
+    }
+}
+
+#[cfg(feature = "multicore")]
+impl<F> WindowScratch<F> {
+    fn capacity_bytes(&self) -> usize {
+        use core::mem::size_of;
+        self.assignments.capacity() * size_of::<WindowAssignment>()
+            + (self.counts.capacity()
+                + self.offsets.capacity()
+                + self.positions.capacity()
+                + self.reduce.next_offsets.capacity())
+                * size_of::<usize>()
+            + self.points.capacity() * size_of::<AffinePoint<F>>()
+            + self.reduce.pending.capacity() * size_of::<PendingAffineAddition<F>>()
+    }
+}
+
+/// Oversized prover scratch is dropped rather than retained on a worker.
+#[cfg(feature = "multicore")]
+const MAX_CACHED_WINDOW_SCRATCH_BYTES: usize = 8 << 20;
+
+/// Remove scratch from TLS before calling `f`: nested Rayon work on this
+/// thread must get independent buffers, not borrow the checked-out scratch.
+fn with_window_scratch<F: VartimeField, R>(f: impl FnOnce(&mut WindowScratch<F>) -> R) -> R {
+    #[cfg(feature = "multicore")]
+    {
+        use alloc::boxed::Box;
+        use core::any::Any;
+        use core::cell::RefCell;
+        std::thread_local! {
+            static CACHE: RefCell<Vec<Box<dyn Any>>> = const { RefCell::new(Vec::new()) };
+        }
+        let cached = CACHE.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            let index = cache
+                .iter()
+                .position(|entry| entry.is::<WindowScratch<F>>())?;
+            cache.swap_remove(index).downcast::<WindowScratch<F>>().ok()
+        });
+        let mut scratch = cached.unwrap_or_default();
+        let result = f(&mut scratch);
+        if scratch.capacity_bytes() <= MAX_CACHED_WINDOW_SCRATCH_BYTES {
+            CACHE.with(|cache| {
+                let mut cache = cache.borrow_mut();
+                // Nested work may have returned another scratch for this
+                // field. Retain only one object per field, not one per nesting.
+                if let Some(index) = cache
+                    .iter()
+                    .position(|entry| entry.is::<WindowScratch<F>>())
+                {
+                    cache[index] = scratch;
+                } else {
+                    cache.push(scratch);
+                }
+            });
+        }
+        result
+    }
+    #[cfg(not(feature = "multicore"))]
+    {
+        f(&mut WindowScratch::default())
+    }
+}
+
 fn fill_window<C: MsmCurve>(
     components: &[(SignedMagnitude, SignedMagnitude)],
     bases: &[MultiexpBase<C::Base>],
     window_bits: usize,
     window: usize,
+    scratch: &mut WindowScratch<C::Base>,
 ) -> Option<Vec<Option<AffinePoint<C::Base>>>> {
     let bucket_count = 1 << (window_bits - 1);
-    let (assignments, counts) = window_assignments::<C>(components, bases, window_bits, window);
+    let WindowScratch {
+        assignments,
+        counts,
+        offsets,
+        positions,
+        points,
+        reduce,
+    } = scratch;
+    window_assignments::<C>(components, bases, window_bits, window, assignments, counts);
 
-    let mut offsets = Vec::with_capacity(bucket_count + 1);
+    offsets.clear();
+    offsets.reserve(bucket_count + 1);
     offsets.push(0);
-    for count in counts {
+    for &count in counts.iter() {
         offsets.push(offsets.last().copied().unwrap() + count);
     }
 
-    let mut positions = offsets[..bucket_count].to_vec();
-    let mut points = alloc::vec![
+    positions.clear();
+    positions.extend_from_slice(&offsets[..bucket_count]);
+    points.clear();
+    points.resize(
+        *offsets.last().unwrap(),
         AffinePoint {
             x: C::Base::ZERO,
             y: C::Base::ZERO,
-        };
-        *offsets.last().unwrap()
-    ];
-    for assignment in assignments {
+        },
+    );
+    for &assignment in assignments.iter() {
         let base_index = assignment.component / 2;
         let base = bases[base_index];
         let x = if assignment.component & 1 == 0 {
@@ -748,7 +866,7 @@ fn fill_window<C: MsmCurve>(
         positions[bucket] += 1;
     }
 
-    reduce_affine_buckets(points, offsets)
+    reduce_affine_buckets_reusing::<C::Base, false>(points, offsets, reduce)
 }
 
 fn multiexp_serial<C: MsmCurve>(
@@ -757,42 +875,20 @@ fn multiexp_serial<C: MsmCurve>(
     window_bits: usize,
 ) -> Option<C> {
     let window_count = GLV_COMPONENT_BITS / window_bits + 1;
-    let mut acc = C::identity();
-
-    for window in (0..window_count).rev() {
-        if window + 1 != window_count {
-            for _ in 0..window_bits {
-                acc = acc.double();
+    with_window_scratch(|scratch| {
+        let mut acc = C::identity();
+        for window in (0..window_count).rev() {
+            if window + 1 != window_count {
+                for _ in 0..window_bits {
+                    acc = acc.double();
+                }
             }
-        }
 
-        let buckets = fill_window::<C>(components, bases, window_bits, window)?;
-        acc += sum_buckets::<C>(&buckets);
-    }
-    Some(acc)
-}
-
-/// Evaluates each Signed-Booth window independently through Rayon, then
-/// combines the ordered sums with one Horner fold. This keeps the expensive
-/// window reductions parallel without duplicating the shift chain.
-#[cfg(feature = "multicore")]
-fn parallel_windows_sum<C: MsmCurve>(
-    windows: usize,
-    window_bits: usize,
-    window_sum: impl Fn(usize) -> Option<C> + Sync,
-) -> Option<C> {
-    let window_sums: Option<Vec<C>> = (0..windows).into_par_iter().map(&window_sum).collect();
-    let window_sums = window_sums?;
-    let mut acc = C::identity();
-    for (window, sum) in window_sums.into_iter().enumerate().rev() {
-        if window + 1 != windows {
-            for _ in 0..window_bits {
-                acc = acc.double();
-            }
+            let buckets = fill_window::<C>(components, bases, window_bits, window, scratch)?;
+            acc += sum_buckets::<C>(&buckets);
         }
-        acc += sum;
-    }
-    Some(acc)
+        Some(acc)
+    })
 }
 
 #[cfg(feature = "multicore")]
@@ -802,10 +898,38 @@ fn multiexp_parallel<C: MsmCurve>(
     window_bits: usize,
 ) -> Option<C> {
     let window_count = GLV_COMPONENT_BITS / window_bits + 1;
-    parallel_windows_sum::<C>(window_count, window_bits, |window| {
-        let buckets = fill_window::<C>(components, bases, window_bits, window)?;
-        Some(sum_buckets::<C>(&buckets))
-    })
+    // Stride one task per worker over the windows, reusing its buffers while
+    // preserving the existing ordered Horner fold and its single shift chain.
+    let tasks = current_num_threads().clamp(1, window_count);
+    let sums: Option<Vec<Vec<(usize, C)>>> = (0..tasks)
+        .into_par_iter()
+        .map(|task| {
+            with_window_scratch(|scratch| {
+                (task..window_count)
+                    .step_by(tasks)
+                    .map(|window| {
+                        let buckets =
+                            fill_window::<C>(components, bases, window_bits, window, scratch)?;
+                        Some((window, sum_buckets::<C>(&buckets)))
+                    })
+                    .collect()
+            })
+        })
+        .collect();
+    let mut window_sums = alloc::vec![C::identity(); window_count];
+    for (window, sum) in sums?.into_iter().flatten() {
+        window_sums[window] = sum;
+    }
+    let mut acc = C::identity();
+    for (window, sum) in window_sums.into_iter().enumerate().rev() {
+        if window + 1 != window_count {
+            for _ in 0..window_bits {
+                acc = acc.double();
+            }
+        }
+        acc += sum;
+    }
+    Some(acc)
 }
 
 fn multiexp<C: MsmCurve>(
