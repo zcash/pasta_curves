@@ -11,6 +11,7 @@ use lazy_static::lazy_static;
 #[cfg(feature = "bits")]
 use ff::{FieldBits, PrimeFieldBits};
 
+use super::portable;
 use crate::arithmetic::{VartimeField, adc, mac, sbb};
 #[cfg(feature = "deferred")]
 use crate::deferred::{DeferredField, Product};
@@ -338,8 +339,16 @@ impl Fq {
 
     #[cfg_attr(not(feature = "uninline-portable"), inline(always))]
     const fn square_portable(&self) -> Self {
-        let u = self.square_unreduced();
-        Fq::montgomery_reduce(u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7])
+        #[cfg(target_arch = "x86_64")]
+        {
+            Fq(portable::square(&self.0, &MODULUS.0, INV))
+        }
+
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            let u = self.square_unreduced();
+            Fq::montgomery_reduce(u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7])
+        }
     }
 
     /// Squares `self` `n` times, then multiplies the result by `by`.
@@ -531,35 +540,10 @@ impl Fq {
     }
 
     /// Squares this element, returning the unreduced 512-bit product.
+    #[cfg(any(not(target_arch = "x86_64"), feature = "deferred", test))]
     #[cfg_attr(not(feature = "uninline-portable"), inline)]
     pub(crate) const fn square_unreduced(&self) -> [u64; 8] {
-        let (r1, carry) = mac(0, self.0[0], self.0[1], 0);
-        let (r2, carry) = mac(0, self.0[0], self.0[2], carry);
-        let (r3, r4) = mac(0, self.0[0], self.0[3], carry);
-
-        let (r3, carry) = mac(r3, self.0[1], self.0[2], 0);
-        let (r4, r5) = mac(r4, self.0[1], self.0[3], carry);
-
-        let (r5, r6) = mac(r5, self.0[2], self.0[3], 0);
-
-        let r7 = r6 >> 63;
-        let r6 = (r6 << 1) | (r5 >> 63);
-        let r5 = (r5 << 1) | (r4 >> 63);
-        let r4 = (r4 << 1) | (r3 >> 63);
-        let r3 = (r3 << 1) | (r2 >> 63);
-        let r2 = (r2 << 1) | (r1 >> 63);
-        let r1 = r1 << 1;
-
-        let (r0, carry) = mac(0, self.0[0], self.0[0], 0);
-        let (r1, carry) = adc(0, r1, carry);
-        let (r2, carry) = mac(r2, self.0[1], self.0[1], carry);
-        let (r3, carry) = adc(0, r3, carry);
-        let (r4, carry) = mac(r4, self.0[2], self.0[2], carry);
-        let (r5, carry) = adc(0, r5, carry);
-        let (r6, carry) = mac(r6, self.0[3], self.0[3], carry);
-        let (r7, _) = adc(0, r7, carry);
-
-        [r0, r1, r2, r3, r4, r5, r6, r7]
+        portable::square_wide(&self.0)
     }
 }
 
@@ -1028,6 +1012,9 @@ fn asm_matches_portable_arithmetic() {
     }
 }
 }
+
+#[cfg(test)]
+mod tests;
 
 #[test]
 fn test_inv() {

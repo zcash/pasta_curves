@@ -6,6 +6,9 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Portable `Fp` and `Fq` squaring is faster on x86-64. Other targets and
+  assembly arithmetic are unchanged.
 
 ## [0.6.1] - 2026-10-09
 ### Added

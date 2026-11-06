@@ -4,6 +4,7 @@
 pub(crate) mod fp;
 pub(crate) mod fq;
 mod modinv62;
+mod portable;
 
 pub use fp::*;
 pub use fq::*;
