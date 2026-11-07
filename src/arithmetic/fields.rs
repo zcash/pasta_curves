@@ -108,6 +108,38 @@ pub(crate) trait SqrtTableHelpers: ff::PrimeField {
     /// verifies that the resulting hash is injective on the complete
     /// 256-element lookup domain before constructing the inverse table.
     fn sqrt_hash_key(&self) -> u32;
+
+    /// Interleaves independent squaring chains.
+    fn sqr_n_lanes<const K: usize>(values: &mut [Self; K], n: u32) {
+        for _ in 0..n {
+            for value in values.iter_mut() {
+                *value = value.square();
+            }
+        }
+    }
+
+    /// Evaluates the square-root exponentiation in independent lanes.
+    fn pow_by_t_minus1_over2_lanes<const K: usize>(values: &[Self; K]) -> [Self; K] {
+        values.map(|value| value.pow_by_t_minus1_over2())
+    }
+}
+
+#[cfg(feature = "sqrt-table")]
+#[inline(always)]
+pub(crate) fn mul_lanes<F: ff::Field, const K: usize>(a: &[F; K], b: &[F; K]) -> [F; K] {
+    core::array::from_fn(|k| a[k] * b[k])
+}
+
+#[cfg(feature = "sqrt-table")]
+#[inline(always)]
+pub(crate) fn sqr_n_mul_lanes<F: SqrtTableHelpers, const K: usize>(
+    a: &[F; K],
+    n: u32,
+    b: &[F; K],
+) -> [F; K] {
+    let mut result = *a;
+    F::sqr_n_lanes(&mut result, n);
+    mul_lanes(&result, b)
 }
 
 /// Parameters for a perfect hash function used in square root computation.
@@ -317,33 +349,57 @@ impl<F: SqrtTableHelpers> SqrtTables<F> {
         (is_square, res)
     }
 
+    /// Computes independent square roots with interleaved dependency chains.
+    pub fn sqrt_alt_lanes<const K: usize>(&self, u: &[F; K]) -> [(Choice, F); K] {
+        let v = F::pow_by_t_minus1_over2_lanes(u);
+        let uv = mul_lanes(u, &v);
+        let x3 = mul_lanes(&uv, &v);
+        let mut x2 = x3;
+        F::sqr_n_lanes(&mut x2, 8);
+        let mut x1 = x2;
+        F::sqr_n_lanes(&mut x1, 8);
+        let mut x0 = x1;
+        F::sqr_n_lanes(&mut x0, 8);
+        core::array::from_fn(|k| {
+            let res = self.sqrt_finish(&uv[k], &x0[k], &x1[k], &x2[k], &x3[k]);
+            let square = res.square();
+            let is_square = (square - u[k]).is_zero();
+            let is_nonsquare = (square - F::ROOT_OF_UNITY * u[k]).is_zero();
+            assert!(bool::from(u[k].is_zero() | (is_square ^ is_nonsquare)));
+            (is_square, res)
+        })
+    }
+
     /// Common part of sqrt_ratio and sqrt_alt: return their result given v = u^((T-1)/2) and uv = u * v.
     fn sqrt_common(&self, uv: &F, v: &F) -> F {
         let sqr = |x: F, i: u32| (0..i).fold(x, |x, _| x.square());
-        let inv = |x: F| self.inv[self.hasher.hash(&x)] as usize;
-
         let x3 = *uv * v;
         let x2 = sqr(x3, 8);
         let x1 = sqr(x2, 8);
         let x0 = sqr(x1, 8);
+        self.sqrt_finish(uv, &x0, &x1, &x2, &x3)
+    }
+
+    fn sqrt_finish(&self, uv: &F, x0: &F, x1: &F, x2: &F, x3: &F) -> F {
+        let inv = |x: F| self.inv[self.hasher.hash(&x)] as usize;
 
         // i = 0, 1
-        let mut t_ = inv(x0); // = t >> 16
+        let mut t_ = inv(*x0); // = t >> 16
         // 1 == x0 * ROOT_OF_UNITY^(t_ << 24)
         assert!(t_ < 0x100);
-        let alpha = x1 * self.g2[t_];
+        let alpha = *x1 * self.g2[t_];
 
         // i = 2
         t_ += inv(alpha) << 8; // = t >> 8
         // 1 == x1 * ROOT_OF_UNITY^(t_ << 16)
         assert!(t_ < 0x10000);
-        let alpha = x2 * self.g1[t_ & 0xFF] * self.g2[t_ >> 8];
+        let alpha = *x2 * self.g1[t_ & 0xFF] * self.g2[t_ >> 8];
 
         // i = 3
         t_ += inv(alpha) << 16; // = t
         // 1 == x2 * ROOT_OF_UNITY^(t_ << 8)
         assert!(t_ < 0x1000000);
-        let alpha = x3 * self.g0[t_ & 0xFF] * self.g1[(t_ >> 8) & 0xFF] * self.g2[t_ >> 16];
+        let alpha = *x3 * self.g0[t_ & 0xFF] * self.g1[(t_ >> 8) & 0xFF] * self.g2[t_ >> 16];
 
         t_ += inv(alpha) << 24; // = t << 1
         // 1 == x3 * ROOT_OF_UNITY^t_

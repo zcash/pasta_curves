@@ -880,6 +880,41 @@ impl SqrtTableHelpers for Fq {
         (0..4).fold(ss, |x, _| x.square_runtime()) // st
     }
 
+    #[cfg(feature = "sqrt-table")]
+    fn pow_by_t_minus1_over2_lanes<const K: usize>(x: &[Self; K]) -> [Self; K] {
+        use crate::arithmetic::{mul_lanes, sqr_n_mul_lanes};
+        let sqr_n_lanes_of = |a: &[Self; K], n: u32| {
+            let mut t = *a;
+            Self::sqr_n_lanes(&mut t, n);
+            t
+        };
+        let s10 = sqr_n_lanes_of(x, 1);
+        let s11 = mul_lanes(&s10, x);
+        let s111 = sqr_n_mul_lanes(&s11, 1, x);
+        let s1001 = mul_lanes(&s111, &s10);
+        let s1011 = mul_lanes(&s1001, &s10);
+        let s1101 = mul_lanes(&s1011, &s10);
+        let sa = sqr_n_mul_lanes(x, 129, x);
+        let sb = sqr_n_mul_lanes(&sa, 7, &s1001);
+        let sc = sqr_n_mul_lanes(&sb, 7, &s1101);
+        let sd = sqr_n_mul_lanes(&sc, 4, &s11);
+        let se = sqr_n_mul_lanes(&sd, 6, &s111);
+        let sf = sqr_n_mul_lanes(&se, 3, &s111);
+        let sg = sqr_n_mul_lanes(&sf, 10, &s1001);
+        let sh = sqr_n_mul_lanes(&sg, 4, &s1001);
+        let si = sqr_n_mul_lanes(&sh, 5, &s1001);
+        let sj = sqr_n_mul_lanes(&si, 5, &s1001);
+        let sk = sqr_n_mul_lanes(&sj, 3, &s1001);
+        let sl = sqr_n_mul_lanes(&sk, 4, &s1011);
+        let sm = sqr_n_mul_lanes(&sl, 4, &s1011);
+        let sn = sqr_n_mul_lanes(&sm, 5, &s11);
+        let so = sqr_n_mul_lanes(&sn, 4, x);
+        let sp = sqr_n_mul_lanes(&so, 5, &s11);
+        let sq = sqr_n_mul_lanes(&sp, 4, &s111);
+        let sr = sqr_n_mul_lanes(&sq, 5, &s1011);
+        let ss = sqr_n_mul_lanes(&sr, 3, x);
+        sqr_n_lanes_of(&ss, 4)
+    }
     fn sqrt_hash_key(&self) -> u32 {
         self.0[0] as u32
     }
@@ -1474,4 +1509,11 @@ fn asm_mul_rejects_non_canonical_lhs_in_debug() {
     // `2^64 - 1`, violating the constraint.
     let _ = MODULUS.mul_runtime(&Fq::one());
 }
+}
+
+#[cfg(feature = "sqrt-table")]
+impl Fq {
+    pub(crate) fn sqrt_alt_lanes<const K: usize>(values: &[Self; K]) -> [(Choice, Self); K] {
+        FQ_TABLES.sqrt_alt_lanes(values)
+    }
 }

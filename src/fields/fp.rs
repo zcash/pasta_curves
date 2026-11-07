@@ -885,6 +885,40 @@ impl SqrtTableHelpers for Fp {
         rs.square_runtime() // rt
     }
 
+    fn pow_by_t_minus1_over2_lanes<const K: usize>(x: &[Self; K]) -> [Self; K] {
+        use crate::arithmetic::{mul_lanes, sqr_n_mul_lanes};
+        let sqr_n_lanes_of = |a: &[Self; K], n: u32| {
+            let mut t = *a;
+            Self::sqr_n_lanes(&mut t, n);
+            t
+        };
+        let r10 = sqr_n_lanes_of(x, 1);
+        let r11 = mul_lanes(&r10, x);
+        let r110 = sqr_n_lanes_of(&r11, 1);
+        let r111 = mul_lanes(&r110, x);
+        let r1001 = mul_lanes(&r111, &r10);
+        let r1101 = mul_lanes(&r111, &r110);
+        let ra = sqr_n_mul_lanes(x, 129, x);
+        let rb = sqr_n_mul_lanes(&ra, 7, &r1001);
+        let rc = sqr_n_mul_lanes(&rb, 7, &r1101);
+        let rd = sqr_n_mul_lanes(&rc, 4, &r11);
+        let re = sqr_n_mul_lanes(&rd, 6, &r111);
+        let rf = sqr_n_mul_lanes(&re, 3, &r111);
+        let rg = sqr_n_mul_lanes(&rf, 10, &r1001);
+        let rh = sqr_n_mul_lanes(&rg, 5, &r1001);
+        let ri = sqr_n_mul_lanes(&rh, 4, &r1001);
+        let rj = sqr_n_mul_lanes(&ri, 3, &r111);
+        let rk = sqr_n_mul_lanes(&rj, 4, &r1001);
+        let rl = sqr_n_mul_lanes(&rk, 5, &r11);
+        let rm = sqr_n_mul_lanes(&rl, 4, &r111);
+        let rn = sqr_n_mul_lanes(&rm, 4, &r11);
+        let ro = sqr_n_mul_lanes(&rn, 6, &r1001);
+        let rp = sqr_n_mul_lanes(&ro, 5, &r1101);
+        let rq = sqr_n_mul_lanes(&rp, 4, &r11);
+        let rr = sqr_n_mul_lanes(&rq, 7, &r111);
+        let rs = sqr_n_mul_lanes(&rr, 3, &r11);
+        sqr_n_lanes_of(&rs, 1)
+    }
     fn sqrt_hash_key(&self) -> u32 {
         self.0[0] as u32
     }
@@ -1480,4 +1514,11 @@ fn asm_mul_rejects_non_canonical_lhs_in_debug() {
     // `2^64 - 1`, violating the constraint.
     let _ = MODULUS.mul_runtime(&Fp::one());
 }
+}
+
+#[cfg(feature = "sqrt-table")]
+impl Fp {
+    pub(crate) fn sqrt_alt_lanes<const K: usize>(values: &[Self; K]) -> [(Choice, Self); K] {
+        FP_TABLES.sqrt_alt_lanes(values)
+    }
 }

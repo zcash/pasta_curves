@@ -740,6 +740,71 @@ macro_rules! new_curve_impl {
             }
         }
 
+        #[cfg(all(feature = "sqrt-table", feature = "alloc"))]
+        #[allow(dead_code)]
+        impl $name_affine {
+            /// Decodes compressed public points with interleaved square-root chains.
+            ///
+            /// Every result matches [`GroupEncoding::from_bytes`] converted to an
+            /// `Option`, including noncanonical encodings and the identity. Inputs
+            /// must be public: decoding and square-root table lookups are variable-time.
+            pub fn batch_from_bytes(items: &[[u8; 32]]) -> alloc::vec::Vec<Option<Self>> {
+                let mut out = alloc::vec::Vec::with_capacity(items.len());
+                let mut chunks = items.chunks_exact(8);
+                for chunk in &mut chunks {
+                    Self::decode_chunk::<8>(chunk, &mut out);
+                }
+                let rest = chunks.remainder();
+                match rest.len() {
+                    0 => {}
+                    1 => out.push(Self::from_bytes(&rest[0]).into()),
+                    2 => Self::decode_chunk::<2>(rest, &mut out),
+                    3 => Self::decode_chunk::<3>(rest, &mut out),
+                    4 => Self::decode_chunk::<4>(rest, &mut out),
+                    5 => Self::decode_chunk::<5>(rest, &mut out),
+                    6 => Self::decode_chunk::<6>(rest, &mut out),
+                    _ => Self::decode_chunk::<7>(rest, &mut out),
+                }
+                out
+            }
+
+            fn decode_chunk<const K: usize>(
+                chunk: &[[u8; 32]],
+                out: &mut alloc::vec::Vec<Option<Self>>,
+            ) {
+                debug_assert!(chunk.len() <= K);
+                let mut xs = [$base::ZERO; K];
+                let mut x_ok = [Choice::from(0u8); K];
+                let mut ysigns = [Choice::from(0u8); K];
+                for (k, bytes) in chunk.iter().enumerate() {
+                    let mut tmp = *bytes;
+                    ysigns[k] = Choice::from(tmp[31] >> 7);
+                    tmp[31] &= 0b0111_1111;
+                    let x = $base::from_repr(tmp);
+                    x_ok[k] = x.is_some();
+                    xs[k] = x.unwrap_or($base::ZERO);
+                }
+                let rhs: [$base; K] = core::array::from_fn(|k| {
+                    xs[k].sqr_n_mul_runtime(1, &xs[k]) + $name::curve_constant_b()
+                });
+                let roots = $base::sqrt_alt_lanes(&rhs);
+                for k in 0..chunk.len() {
+                    let (is_square, y) = roots[k];
+                    let (x, ysign) = (xs[k], ysigns[k]);
+                    let y = $base::conditional_select(&y, &-y, ysign ^ y.is_odd());
+                    let is_identity = x.is_zero() & !ysign;
+                    let point = Self::conditional_select(
+                        &$name_affine { x, y },
+                        &Self::identity(),
+                        is_identity,
+                    );
+                    out.push(CtOption::new(point, x_ok[k] & (is_identity | is_square)).into());
+                }
+            }
+
+
+        }
+
         impl GroupEncoding for $name_affine {
             type Repr = [u8; 32];
 
@@ -793,6 +858,11 @@ macro_rules! new_curve_impl {
             type ScalarExt = $scalar;
             type Base = $base;
             type CurveExt = $name;
+
+            #[cfg(feature = "sqrt-table")]
+            fn batch_decode(bytes: &[Self::Repr]) -> alloc::vec::Vec<Option<Self>> {
+                Self::batch_from_bytes(bytes)
+            }
 
             fn is_on_curve(&self) -> Choice {
                 // y^2 - x^3 - ax ?= b

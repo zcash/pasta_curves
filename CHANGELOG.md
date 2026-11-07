@@ -7,6 +7,12 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `CurveAffine::batch_decode`, an `alloc`-gated default method that decodes
+  public compressed points with one ordered `Option` result per input.
+- `{EpAffine, EqAffine}::batch_from_bytes` with `sqrt-table`, interleaving
+  independent square-root chains while preserving scalar decoding semantics.
+
 ## [0.6.1] - 2026-10-09
 ### Added
 - `asm` feature flag, which enables assembly field arithmetic on supported
