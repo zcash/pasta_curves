@@ -487,3 +487,21 @@ fn planner_boundaries() {
     assert_eq!(estimated_signed_booth_costs(usize::MAX, 256, 8, 1), None);
     assert_eq!(estimated_signed_booth_costs(2048, 256, 0, 1), None);
 }
+
+#[test]
+fn full_width_identity_declines_noncanonical_montgomery_residues() {
+    let bases = alloc::vec![pallas::Affine::identity(); 4096];
+    let mut scalars = alloc::vec![crate::Fq::ZERO; bases.len()];
+    scalars[0] = crate::Fq([u64::MAX; 4]);
+    assert_eq!(
+        try_multiexp_full_width_is_identity::<pallas::Point>(&scalars, &bases),
+        None
+    );
+    let bases = alloc::vec![vesta::Affine::identity(); 4096];
+    let mut scalars = alloc::vec![crate::Fp::ZERO; bases.len()];
+    scalars[0] = crate::Fp([u64::MAX; 4]);
+    assert_eq!(
+        try_multiexp_full_width_is_identity::<vesta::Point>(&scalars, &bases),
+        None
+    );
+}

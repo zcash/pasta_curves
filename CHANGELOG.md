@@ -12,6 +12,9 @@ and this project adheres to Rust's notion of
   for public inputs. Public-input MSM and prepared fixed-base sums use these
   fast paths; ordinary equality, group operations, and secret-bearing paths
   are unchanged.
+- `CurveExt::try_multiexp_full_width_is_identity_vartime`, an optional
+  public-input identity-only MSM hook. The `glv` backend avoids canonical
+  scalar conversion by using a common invertible Montgomery scale.
 - `CurveExt::try_multiexp_vartime`, an optional variable-time multiscalar
   multiplication hook for public inputs. The `glv` feature enables optimized
   Pallas and Vesta backends; callers must retain a generic fallback when the
