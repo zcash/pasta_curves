@@ -93,10 +93,6 @@ macro_rules! new_curve_impl {
                 $base::from_raw($b_raw)
             }
 
-            #[cfg(feature = "alloc")]
-            fn is_identity_vartime(&self) -> bool {
-                self.z.is_zero_vartime()
-            }
         }
 
         /// Represents a point in the affine coordinate space (or the point at
@@ -201,6 +197,10 @@ macro_rules! new_curve_impl {
             fn new_jacobian(x: Self::Base, y: Self::Base, z: Self::Base) -> CtOption<Self> {
                 let p = $name { x, y, z };
                 CtOption::new(p, p.is_on_curve())
+            }
+
+            fn is_identity_vartime(&self) -> bool {
+                self.z.is_zero_vartime()
             }
 
             fn jacobian_coordinates(&self) -> ($base, $base, $base) {
@@ -811,6 +811,10 @@ macro_rules! new_curve_impl {
             type Base = $base;
             type CurveExt = $name;
 
+            fn is_identity_vartime(&self) -> bool {
+                self.x.is_zero_vartime() && self.y.is_zero_vartime()
+            }
+
             fn is_on_curve(&self) -> Choice {
                 // y^2 - x^3 - ax ?= b
                 (Field::square(&self.y) - (Field::square(&self.x) + &$name::curve_constant_a()) * self.x).ct_eq(&$name::curve_constant_b())
@@ -983,6 +987,119 @@ macro_rules! impl_projective_curve_specific {
 #[cfg(feature = "alloc")]
 macro_rules! impl_projective_curve_ext {
     ($name:ident, $iso:ident, $base:ident, special_a0_b5) => {
+        fn add_mixed_vartime(&self, rhs: &Self::AffineExt) -> Self {
+            if self.is_identity_vartime() {
+                return if rhs.is_identity_vartime() {
+                    Self::identity()
+                } else {
+                    Self {
+                        x: rhs.x,
+                        y: rhs.y,
+                        z: $base::one(),
+                    }
+                };
+            }
+            if rhs.is_identity_vartime() {
+                return *self;
+            }
+            let z1z1 = Field::square(&self.z);
+            let u2 = rhs.x * z1z1;
+            let s2 = rhs.y * z1z1 * self.z;
+            if self.x.eq_vartime(&u2) {
+                return if self.y.eq_vartime(&s2) {
+                    self.double_vartime()
+                } else {
+                    Self::identity()
+                };
+            }
+            let h = u2 - self.x;
+            let hh = Field::square(&h);
+            let i = hh + hh;
+            let i = i + i;
+            let j = h * i;
+            let r = s2 - self.y;
+            let r = r + r;
+            let v = self.x * i;
+            let x3 = Field::square(&r) - j - v - v;
+            let j = self.y * j;
+            let j = j + j;
+            let y3 = r * (v - x3) - j;
+            let z3 = Field::square(&(self.z + h)) - z1z1 - hh;
+
+            Self {
+                x: x3,
+                y: y3,
+                z: z3,
+            }
+        }
+
+        fn add_vartime(&self, rhs: &Self) -> Self {
+            if self.is_identity_vartime() {
+                return *rhs;
+            }
+            if rhs.is_identity_vartime() {
+                return *self;
+            }
+            let z1z1 = Field::square(&self.z);
+            let z2z2 = Field::square(&rhs.z);
+            let u1 = self.x * z2z2;
+            let u2 = rhs.x * z1z1;
+            let s1 = self.y * z2z2 * rhs.z;
+            let s2 = rhs.y * z1z1 * self.z;
+            if u1.eq_vartime(&u2) {
+                return if s1.eq_vartime(&s2) {
+                    self.double_vartime()
+                } else {
+                    Self::identity()
+                };
+            }
+            let h = u2 - u1;
+            let i = Field::square(&(h + h));
+            let j = h * i;
+            let r = s2 - s1;
+            let r = r + r;
+            let v = u1 * i;
+            let x3 = Field::square(&r) - j - v - v;
+            let s1 = s1 * j;
+            let s1 = s1 + s1;
+            let y3 = r * (v - x3) - s1;
+            let z3 = Field::square(&(self.z + rhs.z)) - z1z1 - z2z2;
+            let z3 = z3 * h;
+
+            Self {
+                x: x3,
+                y: y3,
+                z: z3,
+            }
+        }
+
+        fn double_vartime(&self) -> Self {
+            // dbl-2009-l for a = 0, as in Group::double, but without
+            // re-canonicalizing the identity. Every z = 0 represents infinity.
+            let a = Field::square(&self.x);
+            let b = Field::square(&self.y);
+            let c = Field::square(&b);
+            let d = self.x + b;
+            let d = Field::square(&d);
+            let d = d - a - c;
+            let d = d + d;
+            let e = a + a + a;
+            let f = Field::square(&e);
+            let z3 = self.z * self.y;
+            let z3 = z3 + z3;
+            let x3 = f - (d + d);
+            let c = c + c;
+            let c = c + c;
+            let c = c + c;
+            let y3 = e * (d - x3) - c;
+
+            Self {
+                x: x3,
+                y: y3,
+                z: z3,
+            }
+        }
+
         fn hash_to_curve<'a>(domain_prefix: &'a str) -> Box<dyn Fn(&[u8]) -> Self + 'a> {
             use super::hashtocurve;
 
@@ -1385,6 +1502,8 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::vec::Vec;
+
+    mod vartime;
 
     // Built in a `const` context, so that `from_xy_unchecked` staying `const` is
     // pinned by the build rather than by its signature.

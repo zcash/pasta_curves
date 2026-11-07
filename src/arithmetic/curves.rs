@@ -84,6 +84,32 @@ pub trait CurveExt:
     /// if the coordinates are not on the curve.
     fn new_jacobian(x: Self::Base, y: Self::Base, z: Self::Base) -> CtOption<Self>;
 
+    /// Tests a public point for the identity in variable time.
+    fn is_identity_vartime(&self) -> bool {
+        self.is_identity().into()
+    }
+
+    /// Adds public points in variable time, including exceptional cases.
+    ///
+    /// Both inputs must be public. The default retains ordinary addition.
+    fn add_vartime(&self, rhs: &Self) -> Self {
+        *self + *rhs
+    }
+
+    /// Adds a public affine point to a public projective point in variable time.
+    ///
+    /// Both inputs must be public. The default retains ordinary addition.
+    fn add_mixed_vartime(&self, rhs: &Self::AffineExt) -> Self {
+        *self + *rhs
+    }
+
+    /// Doubles a public point without constant-time identity selection.
+    ///
+    /// The input must be public. The default retains ordinary doubling.
+    fn double_vartime(&self) -> Self {
+        self.double()
+    }
+
     /// Converts this element into its affine representation.
     ///
     /// Unlike [`group::Curve::to_affine`], this will use variable-time operations.
@@ -216,6 +242,11 @@ pub trait CurveAffine:
     type Base: ff::WithSmallOrderMulGroup<3> + VartimeField + Ord;
     /// The projective form of the curve
     type CurveExt: CurveExt<AffineExt = Self, ScalarExt = <Self as CurveAffine>::ScalarExt>;
+
+    /// Tests a public affine point for the identity in variable time.
+    fn is_identity_vartime(&self) -> bool {
+        self.is_identity().into()
+    }
 
     /// Gets the coordinates of this point.
     ///

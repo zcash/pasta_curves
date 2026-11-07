@@ -265,7 +265,7 @@ fn strauss_multiexp<C: MsmCurve>(scalars: &[C::ScalarExt], bases: &[C::AffineExt
     let mut points = Vec::with_capacity(bases.len());
     for (scalar, base) in scalars.iter().zip(bases) {
         let scalar = Decomposed::<C>::new(scalar);
-        if scalar.len == 0 || bool::from(base.is_identity()) {
+        if scalar.len == 0 || base.is_identity_vartime() {
             continue;
         }
         decomposed.push(scalar);
@@ -284,11 +284,19 @@ fn strauss_multiexp<C: MsmCurve>(scalars: &[C::ScalarExt], bases: &[C::AffineExt
     let mut acc = C::identity();
     for column in (0..columns).rev() {
         if column + 1 < columns {
-            acc = acc.double();
+            acc = acc.double_vartime();
         }
         for (scalar, table) in decomposed.iter().zip(&tables) {
-            Table::add_digit(&mut acc, &table.t1, scalar.digits1[column]);
-            Table::add_digit(&mut acc, &table.t2, scalar.digits2[column]);
+            for (digit, points) in [
+                (scalar.digits1[column], &table.t1),
+                (scalar.digits2[column], &table.t2),
+            ] {
+                if digit != 0 {
+                    let point = points[usize::from(digit.unsigned_abs() / 2)];
+                    let point = if digit < 0 { -point } else { point };
+                    acc = acc.add_mixed_vartime(&point);
+                }
+            }
         }
     }
     acc
@@ -300,7 +308,7 @@ fn strauss_multiexp_leaves<C: MsmCurve>(scalars: &[C::ScalarExt], bases: &[C::Af
         .chunks(STRAUSS_LEAF_TERMS)
         .zip(bases.chunks(STRAUSS_LEAF_TERMS))
         .map(|(scalars, bases)| strauss_multiexp::<C>(scalars, bases))
-        .fold(C::identity(), |left, right| left + right)
+        .fold(C::identity(), |left, right| left.add_vartime(&right))
 }
 
 fn planned_strauss_multiexp<C: MsmCurve>(
@@ -327,7 +335,7 @@ fn planned_strauss_multiexp<C: MsmCurve>(
                     let end = scalars.len() * (job + 1) / worker_jobs;
                     strauss_multiexp_leaves::<C>(&scalars[start..end], &bases[start..end])
                 })
-                .sum(),
+                .reduce(C::identity, |left, right| left.add_vartime(&right)),
         );
     }
 
@@ -734,9 +742,9 @@ fn sum_buckets<C: MsmCurve>(buckets: &[Option<AffinePoint<C::Base>>]) -> C {
     let mut sum = C::identity();
     for bucket in buckets.iter().rev() {
         if let Some(point) = bucket {
-            running += C::affine_unchecked(point.x, point.y);
+            running = running.add_mixed_vartime(&C::affine_unchecked(point.x, point.y));
         }
-        sum += running;
+        sum = sum.add_vartime(&running);
     }
     sum
 }
@@ -896,12 +904,12 @@ fn multiexp_serial<C: MsmCurve>(
         for window in (0..window_count).rev() {
             if window + 1 != window_count {
                 for _ in 0..window_bits {
-                    acc = acc.double();
+                    acc = acc.double_vartime();
                 }
             }
 
             let buckets = fill_window::<C>(components, bases, window_bits, window, scratch)?;
-            acc += sum_buckets::<C>(&buckets);
+            acc = acc.add_vartime(&sum_buckets::<C>(&buckets));
         }
         Some(acc)
     })
@@ -940,10 +948,10 @@ fn multiexp_parallel<C: MsmCurve>(
     for (window, sum) in window_sums.into_iter().enumerate().rev() {
         if window + 1 != window_count {
             for _ in 0..window_bits {
-                acc = acc.double();
+                acc = acc.double_vartime();
             }
         }
-        acc += sum;
+        acc = acc.add_vartime(&sum);
     }
     Some(acc)
 }
@@ -978,7 +986,7 @@ fn multiexp_bases<C: MsmCurve>(bases: &[C::AffineExt]) -> Vec<MultiexpBase<C::Ba
                 x,
                 endo_x: x * C::Base::ZETA,
                 y,
-                identity: bool::from(base.is_identity()),
+                identity: base.is_identity_vartime(),
             }
         })
         .collect()
@@ -1006,3 +1014,4 @@ pub(crate) fn try_multiexp<C: MsmCurve>(
     let bases = multiexp_bases::<C>(bases);
     multiexp(&components, &bases, window_bits, num_threads)
 }
+

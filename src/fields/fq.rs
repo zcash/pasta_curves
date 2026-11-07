@@ -712,6 +712,12 @@ impl ff::Field for Fq {
 }
 
 impl VartimeField for Fq {
+    #[inline]
+    fn eq_vartime(&self, other: &Self) -> bool {
+        // Canonical Montgomery limbs uniquely represent each field element.
+        self.0 == other.0
+    }
+
     fn invert_vartime(&self) -> Option<Self> {
         super::modinv62::invert::<super::modinv62::FqParams>(&self.0).map(Self)
     }

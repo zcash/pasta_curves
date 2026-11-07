@@ -7,6 +7,11 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 ### Added
+- `VartimeField::eq_vartime`, `CurveExt::{is_identity_vartime, add_vartime,
+  add_mixed_vartime, double_vartime}`, and `CurveAffine::is_identity_vartime`
+  for public inputs. Public-input MSM and prepared fixed-base sums use these
+  fast paths; ordinary equality, group operations, and secret-bearing paths
+  are unchanged.
 - `CurveExt::try_multiexp_vartime`, an optional variable-time multiscalar
   multiplication hook for public inputs. The `glv` feature enables optimized
   Pallas and Vesta backends; callers must retain a generic fallback when the

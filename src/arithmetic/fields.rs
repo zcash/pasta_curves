@@ -17,6 +17,13 @@ const_assert!(size_of::<usize>() >= 4);
 
 /// Extension trait for [`ff::Field`] that exposes variable-time operations.
 pub trait VartimeField: ff::Field {
+    /// Compares public field elements in variable time.
+    ///
+    /// Both inputs must be public. Ordinary equality remains unchanged.
+    fn eq_vartime(&self, other: &Self) -> bool {
+        self == other
+    }
+
     /// Computes the multiplicative inverse of this element, failing if the element is
     /// zero.
     ///

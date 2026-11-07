@@ -92,10 +92,10 @@ impl<C: MsmCurve> FixedBaseSum<C> {
                 let mut multiple = shifted;
                 for _ in 0..MAGNITUDES {
                     projective.push(multiple);
-                    multiple += shifted;
+                    multiple = multiple.add_vartime(&shifted);
                 }
                 for _ in 0..WINDOW_BITS {
-                    shifted = shifted.double();
+                    shifted = shifted.double_vartime();
                 }
             }
         }
@@ -175,11 +175,8 @@ impl<C: MsmCurve> PreparedFixedBaseSum<C> for FixedBaseSum<C> {
     fn sum_vartime(&self, scalars: &[C::ScalarExt]) -> C {
         let mut acc = C::identity();
         self.for_each_sum_term(scalars, |point, negate| {
-            if negate {
-                acc -= point;
-            } else {
-                acc += point;
-            }
+            let point = if negate { -point } else { point };
+            acc = acc.add_mixed_vartime(&point);
         });
         acc
     }
