@@ -116,6 +116,22 @@ pub trait CurveExt:
         None
     }
 
+    /// Attempts an identity-only MSM check, possibly using a common invertible scale.
+    ///
+    /// Returns `None` for unsupported shapes or curves and mismatched lengths.
+    /// The result must equal the identity test of the ordinary MSM; callers must
+    /// retain a generic fallback. This is not a point-returning MSM.
+    ///
+    /// # Security
+    ///
+    /// Variable-time in public scalars and bases; never use secret inputs.
+    fn try_multiexp_full_width_is_identity_vartime(
+        _scalars: &[Self::ScalarExt],
+        _bases: &[Self::AffineExt],
+    ) -> Option<bool> {
+        None
+    }
+
     /// Multiplies every point in `points` by the same `scalar`, writing the
     /// corresponding products to `output`.
     ///

@@ -29,6 +29,7 @@ mod tests;
 pub(crate) trait MsmCurve: GlvParams {
     fn affine_unchecked(x: Self::Base, y: Self::Base) -> Self::AffineExt;
     fn affine_xy(point: &Self::AffineExt) -> (Self::Base, Self::Base);
+    fn scalar_montgomery_limbs(scalar: &Self::ScalarExt) -> [u64; 4];
 }
 
 macro_rules! impl_msm_curve {
@@ -42,6 +43,10 @@ macro_rules! impl_msm_curve {
                 Option::<crate::arithmetic::Coordinates<$curve::Affine>>::from(point.coordinates())
                     .map(|p| (*p.x(), *p.y()))
                     .unwrap_or((Self::Base::ZERO, Self::Base::ZERO))
+            }
+
+            fn scalar_montgomery_limbs(scalar: &Self::ScalarExt) -> [u64; 4] {
+                scalar.0
             }
         }
     };
@@ -865,4 +870,35 @@ pub(crate) fn try_multiexp<C: MsmCurve>(
         .collect::<Option<Vec<_>>>()?;
     let bases = multiexp_bases::<C>(bases);
     multiexp(&components, &bases, window_bits, num_threads)
+}
+
+/// Only tests identity: raw Montgomery residues multiply the ordinary sum by R.
+/// Since the group has prime order and R is invertible, zero is unchanged.
+pub(crate) fn try_multiexp_full_width_is_identity<C: MsmCurve>(
+    scalars: &[C::ScalarExt],
+    bases: &[C::AffineExt],
+) -> Option<bool> {
+    if scalars.len() != bases.len() {
+        return None;
+    }
+    let num_threads = current_num_threads();
+    let window_bits = glv_multiexp_window_bits::<C>(scalars.len(), num_threads)?;
+    let mut modulus = super::scalar_limbs(&-C::ScalarExt::ONE);
+    // The prime modulus is odd, so adding one to n - 1 cannot carry.
+    modulus[0] += 1;
+    let components = scalars
+        .iter()
+        .map(|scalar| {
+            let limbs = C::scalar_montgomery_limbs(scalar);
+            // Do not trust an unchecked internal field representation. The GLV
+            // bounds apply to canonical residues strictly below the modulus.
+            if limbs.iter().rev().cmp(modulus.iter().rev()) != core::cmp::Ordering::Less {
+                return None;
+            }
+            checked_signed_magnitudes(super::decompose_limbs::<C>(limbs))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let bases = multiexp_bases::<C>(bases);
+    multiexp::<C>(&components, &bases, window_bits, num_threads)
+        .map(|sum| bool::from(sum.is_identity()))
 }

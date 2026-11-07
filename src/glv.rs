@@ -235,7 +235,10 @@ fn scalar_limbs<F: PrimeField>(k: &F) -> [u64; 4] {
 /// GLV split: `k = k1 + k2 * lambda (mod n)` with `|k1|`, `|k2|` strictly
 /// below `2^127`, each half returned as `(is_negative, magnitude)`.
 fn decompose<C: GlvParams>(k: &C::ScalarExt) -> ((bool, u128), (bool, u128)) {
-    let kl = scalar_limbs(k);
+    decompose_limbs::<C>(scalar_limbs(k))
+}
+
+fn decompose_limbs<C: GlvParams>(kl: [u64; 4]) -> ((bool, u128), (bool, u128)) {
     let c1 = round_mul_shift(&C::G1, &kl);
     let c2 = round_mul_shift(&C::G2, &kl);
     // k1 = k - c1*V1A - c2*V2A   (two's complement over 256 bits)

@@ -7,6 +7,9 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 ### Added
+- `CurveExt::try_multiexp_full_width_is_identity_vartime`, an optional
+  public-input identity-only MSM hook. The `glv` backend avoids canonical
+  scalar conversion by using a common invertible Montgomery scale.
 - `CurveExt::try_multiexp_vartime`, an optional variable-time multiscalar
   multiplication hook for public inputs. The `glv` feature enables optimized
   Pallas and Vesta backends; callers must retain a generic fallback when the

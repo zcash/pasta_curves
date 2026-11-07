@@ -6,6 +6,17 @@ use pasta_curves::{arithmetic::CurveExt, pallas, vesta};
 fn check_default<C: CurveExt>() {
     assert_eq!(C::try_multiexp_vartime(&[], &[]), None);
     assert_eq!(
+        C::try_multiexp_full_width_is_identity_vartime(&[], &[]),
+        None
+    );
+    assert_eq!(
+        C::try_multiexp_full_width_is_identity_vartime(
+            &[C::ScalarExt::from(1)],
+            &[C::generator().into()],
+        ),
+        None,
+    );
+    assert_eq!(
         C::try_multiexp_vartime(&[C::ScalarExt::from(1)], &[C::generator().into()]),
         None,
     );
