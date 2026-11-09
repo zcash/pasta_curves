@@ -854,3 +854,84 @@ impl super::entry::MontgomeryBlocks for Backend {
         from_mont(value, modulus, inv)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! The two squaring blocks on their own. `square` composes them and the shared tests in
+    //! `super::super::tests` test that composition; these pin each half's contract, so that a
+    //! failure says which half is wrong.
+
+    use super::{Limbs, square_hi, square_lo};
+    use crate::test_fields::{FP, FQ, ONE, ZERO, p_minus_1};
+    use rand::{Rng, SeedableRng};
+    use rand_xorshift::XorShiftRng;
+
+    /// The 512-bit square of `x` by schoolbook multiplication over `u128` columns, independently
+    /// of the assembly. Each column sum is at most `(2^64 - 1)^2 + 2 (2^64 - 1) = 2^128 - 1`.
+    fn exact_square(x: &Limbs) -> [u64; 8] {
+        let mut out = [0u64; 8];
+        for (i, &xi) in x.iter().enumerate() {
+            let mut carry = 0u128;
+            for (j, &xj) in x.iter().enumerate() {
+                let t = u128::from(xi) * u128::from(xj) + u128::from(out[i + j]) + carry;
+                out[i + j] = t as u64;
+                carry = t >> 64;
+            }
+            out[i + 4] = carry as u64;
+        }
+        out
+    }
+
+    /// `square_lo` is the exact square of any four limbs. The edge values bring the carries of
+    /// the doubling pass and of the diagonals to their extremes: all-ones limbs in every
+    /// position, alone and together.
+    #[test]
+    fn square_lo_is_the_exact_square() {
+        let max = u64::MAX;
+        let edges: [Limbs; 10] = [
+            ZERO,
+            ONE,
+            [max; 4],
+            [max, 0, 0, 0],
+            [0, max, 0, 0],
+            [0, 0, max, 0],
+            [0, 0, 0, max],
+            [max, max, 0, 0],
+            p_minus_1(&FP),
+            p_minus_1(&FQ),
+        ];
+        for value in edges {
+            assert_eq!(square_lo(value), exact_square(&value), "{value:x?}");
+        }
+        let mut rng = XorShiftRng::from_seed([0x51; 16]);
+        for _ in 0..20_000u32 {
+            let value: Limbs = core::array::from_fn(|_| rng.next_u64());
+            assert_eq!(square_lo(value), exact_square(&value), "{value:x?}");
+        }
+    }
+
+    /// `square_hi` reduces the square of a canonical value, its contract, to the Montgomery
+    /// square. Its input is the independently computed square, not `square_lo`'s output.
+    #[test]
+    fn square_hi_reduces_a_canonical_square() {
+        macro_rules! check {
+            ($field:ident, $f:expr) => {{
+                use crate::fields::$field;
+                let f = $f;
+                let high = [u64::MAX, u64::MAX, u64::MAX, (1 << 62) - 1];
+                let edges = [ZERO, ONE, f.r, p_minus_1(f), f.pm2, high];
+                let mut rng = XorShiftRng::from_seed([0x52; 16]);
+                let random: [Limbs; 2000] = core::array::from_fn(|_| {
+                    $field::from_u512(core::array::from_fn(|_| rng.next_u64())).0
+                });
+                for value in edges.iter().chain(&random) {
+                    let expected = $field::square(&$field(*value)).0;
+                    let actual = square_hi(exact_square(value), &f.modulus, f.inv);
+                    assert_eq!(actual, expected, "{value:x?}");
+                }
+            }};
+        }
+        check!(Fp, &FP);
+        check!(Fq, &FQ);
+    }
+}
