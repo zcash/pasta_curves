@@ -79,7 +79,6 @@ use core::arch::asm;
 
 use super::Limbs;
 use crate::inversion::InvertBlocks;
-use crate::inversion::portable::Backend as Portable;
 
 const PASTA_HIGH_LIMB: u64 = 1 << 62;
 
@@ -805,6 +804,325 @@ pub(super) fn from_mont(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     [o0, o1, o2, o3]
 }
 
+/// One packed half-delta divstep, the step body of s2n-bignum's x86-64
+/// `divstep59`.
+///
+/// The words `pf` and `pg` carry the low bits of `f` and `g` with a row of the
+/// transition matrix in their upper bits, and `td = 2δ`. A step swaps and
+/// subtracts when `g` is odd and `td` is nonnegative, adds `f` to `g` when `g` is
+/// odd and `td` is negative, and does nothing to `g` when it is even; then it
+/// halves `g` and adds two to `td`. As in s2n-bignum, the step is a mask `k`,
+/// which is `-2` to swap and `0` otherwise: `t` is `f` complemented under `k`
+/// (or `0` when `g` is even), which is `-f` for odd `f` since `k` keeps bit 0,
+/// and `td` is complemented under it likewise, which negates the odd `td`.
+/// Each arm but `first` finishes a step, and each arm but `last` starts the
+/// next one: the sign of the new `td` and the parity of the new `g`, tested on
+/// bit 1 before the halving, set its mask. `first` starts a batch's first step
+/// from the parity of `pg` and the sign of `td`, re-creating the zero register
+/// `z` that the conditional moves take.
+macro_rules! divstep {
+    (start) => {
+        concat!(
+            "mov {t}, {pf}\n",       // t = f.
+            "mov {k}, -2\n",         // k = -2: swap, unless...
+        )
+    };
+    (decide) => {
+        concat!(
+            "cmove {k}, {z}\n",      // ...g is even, when k = 0
+            "cmove {t}, {z}\n",      // and t = 0.
+            "xor {t}, {k}\n",        // t = -f when swapping.
+            "xor {td}, {k}\n",       // td = -td when swapping.
+            "bt {k}, 63\n",          // CF = swap.
+            "cmovb {pf}, {pg}\n",    // f = g when swapping.
+        )
+    };
+    (first) => {
+        concat!(
+            "xor {z:e}, {z:e}\n",
+            divstep!(start),
+            "test {td}, {td}\n",
+            "cmovs {k}, {z}\n",      // ...td is negative, when k = 0, or...
+            "test {pg}, 1\n",
+            divstep!(decide),
+        )
+    };
+    () => {
+        concat!(
+            "mov {k}, -2\n",         // The next step's k = -2: swap, unless...
+            "add {td}, 2\n",         // td = td + 2.
+            "lea {pg}, [{pg} + {t}]\n", // g = g + t, leaving the flags of td.
+            "cmovs {k}, {z}\n",      // ...the new td is negative, when k = 0, or...
+            "mov {t}, {pf}\n",       // t = the next step's f.
+            "test {pg}, 2\n",        // The parity of the halved g.
+            "cmove {k}, {z}\n",      // ...g is even, when k = 0
+            "cmove {t}, {z}\n",      // and t = 0.
+            "sar {pg}, 1\n",         // g = g / 2.
+            "xor {t}, {k}\n",
+            "xor {td}, {k}\n",
+            "bt {k}, 63\n",
+            "cmovb {pf}, {pg}\n",
+        )
+    };
+    (last) => {
+        concat!(
+            "add {td}, 2\n",         // td = td + 2.
+            "lea {pg}, [{pg} + {t}]\n", // g = g + t.
+            "sar {pg}, 1\n",         // g = g / 2.
+        )
+    };
+}
+
+/// Fifty-nine half-delta divsteps on the low words of `f` and `g`, returning
+/// the new `two_delta` and the transition matrix.
+///
+/// `two_delta = 2δ`, as a two's-complement word (`1` at the start), and `f0`
+/// and `g0` are the low 64 bits of `f` and `g`, `f` odd. The result is
+/// `[two_delta', u, v, q, r]`: the new `two_delta`, and the 59-step transition
+/// matrix `M` with `2^59 (f', g') = M (f, g)`, as two's-complement words. The
+/// steps are s2n-bignum's x86-64 `divstep59` macro on named registers, and the
+/// arithmetic around them is the AArch64 block's: three batches of 20, 20, and
+/// 19 steps, each on two words that pack the low 20 bits of `f` and `g` with a
+/// row of the batch's matrix in the upper bits, whose matrices are read back
+/// out of the upper bits, negated, and multiplied together. Between batches the
+/// next low words are the matrix rows applied to the current ones, shifted
+/// right by the batch's step count.
+///
+/// s2n-bignum keeps a batch's matrix on the stack while the next batch runs;
+/// this block is `nostack` and holds it in registers instead, thirteen for
+/// the whole block. The steps'
+/// constants `2` and `-2` are immediates, so a step needs six registers. A
+/// packed word's top bits are set with `movabs` through `pg` before `pg` is
+/// formed, and with two `bts` for `pg`, so that packing needs no register
+/// beyond the two words.
+#[inline(always)]
+pub(super) fn divstep59(mut two_delta: u64, f0: u64, g0: u64) -> [u64; 5] {
+    let (u, v, q, r): (u64, u64, u64, u64);
+    // SAFETY: straight-line register-only arithmetic; no memory access, no
+    // stack use, and outputs depend only on the declared inputs.
+    unsafe {
+        asm!(
+            // Batch 1: pack the low 20 bits with the identity's rows, as -2^41
+            // in pf and -2^62 in pg.
+            "movabs {pg}, 0xfffffe0000000000",
+            "mov {pf}, {x}",
+            "and {pf}, 0xfffff",
+            "or {pf}, {pg}",
+            "mov {pg}, {y}",
+            "and {pg}, 0xfffff",
+            "bts {pg}, 63",
+            "bts {pg}, 62",
+            divstep!(first),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(last),
+            // Read the negated matrix of batch 1 out of the upper bits into
+            // (a0, a1; a2, a3): the row's first entry as the 21-bit field at bit 21
+            // after adding 2^20, the second as the arithmetic shift by 42 after
+            // adding 2^20 + 2^41.
+            "lea {a0}, [{pf} + 0x100000]",
+            "shl {a0}, 22",
+            "sar {a0}, 43",
+            "movabs {h}, 0x20000100000",
+            "lea {a1}, [{pf} + {h}]",
+            "sar {a1}, 42",
+            "lea {a2}, [{pg} + 0x100000]",
+            "shl {a2}, 22",
+            "sar {a2}, 43",
+            "lea {a3}, [{pg} + {h}]",
+            "sar {a3}, 42",
+            // The next low words: the rows applied to the current ones, shifted
+            // right by 20.
+            "mov {pf}, {a0}",
+            "imul {pf}, {x}",
+            "mov {pg}, {a1}",
+            "imul {pg}, {y}",
+            "add {pf}, {pg}",
+            "imul {x}, {a2}",
+            "imul {y}, {a3}",
+            "add {y}, {x}",
+            "sar {pf}, 20",
+            "sar {y}, 20",
+            "mov {x}, {pf}",
+            // Batch 2.
+            "movabs {pg}, 0xfffffe0000000000",
+            "mov {pf}, {x}",
+            "and {pf}, 0xfffff",
+            "or {pf}, {pg}",
+            "mov {pg}, {y}",
+            "and {pg}, 0xfffff",
+            "bts {pg}, 63",
+            "bts {pg}, 62",
+            divstep!(first),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(last),
+            // The negated matrix of batch 2 into (t, k; h, z), the second column
+            // first, while h still holds the constant.
+            "movabs {h}, 0x20000100000",
+            "lea {k}, [{pf} + {h}]",
+            "sar {k}, 42",
+            "lea {z}, [{pg} + {h}]",
+            "sar {z}, 42",
+            "lea {t}, [{pf} + 0x100000]",
+            "shl {t}, 22",
+            "sar {t}, 43",
+            "lea {h}, [{pg} + 0x100000]",
+            "shl {h}, 22",
+            "sar {h}, 43",
+            "mov {pf}, {t}",
+            "imul {pf}, {x}",
+            "mov {pg}, {k}",
+            "imul {pg}, {y}",
+            "add {pf}, {pg}",
+            "mov {pg}, {h}",
+            "imul {pg}, {x}",
+            "imul {y}, {z}",
+            "add {y}, {pg}",
+            "sar {pf}, 20",
+            "sar {y}, 20",
+            "mov {x}, {pf}",
+            // Batch 3, of 19 steps.
+            "movabs {pg}, 0xfffffe0000000000",
+            "mov {pf}, {x}",
+            "and {pf}, 0xfffff",
+            "or {pf}, {pg}",
+            "mov {pg}, {y}",
+            "and {pg}, 0xfffff",
+            "bts {pg}, 63",
+            "bts {pg}, 62",
+            // The product of the negated matrices of batches 2 and 1, which is the
+            // product of the matrices themselves, into (x, a0; y, a3), freeing t,
+            // k, and z for the steps.
+            "mov {x}, {t}",
+            "imul {x}, {a0}",
+            "mov {y}, {k}",
+            "imul {y}, {a2}",
+            "add {x}, {y}",
+            "mov {y}, {h}",
+            "imul {y}, {a0}",
+            "mov {a0}, {z}",
+            "imul {a0}, {a2}",
+            "add {y}, {a0}",
+            "mov {a0}, {t}",
+            "imul {a0}, {a1}",
+            "mov {a2}, {k}",
+            "imul {a2}, {a3}",
+            "add {a0}, {a2}",
+            "mov {a2}, {h}",
+            "imul {a2}, {a1}",
+            "imul {a3}, {z}",
+            "add {a3}, {a2}",
+            divstep!(first),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(last),
+            // The negated matrix of batch 3, whose rows sit one bit higher after
+            // 19 steps, into (t, a1; k, a2).
+            "movabs {h}, 0x20000100000",
+            "lea {a1}, [{pf} + {h}]",
+            "sar {a1}, 43",
+            "lea {a2}, [{pg} + {h}]",
+            "sar {a2}, 43",
+            "lea {t}, [{pf} + 0x100000]",
+            "shl {t}, 21",
+            "sar {t}, 43",
+            "lea {k}, [{pg} + 0x100000]",
+            "shl {k}, 21",
+            "sar {k}, 43",
+            // The 59-step matrix: minus the negated matrix of batch 3 times the
+            // product of batches 2 and 1.
+            "mov {pf}, {t}",
+            "imul {pf}, {x}",
+            "mov {pg}, {a1}",
+            "imul {pg}, {y}",
+            "add {pf}, {pg}",
+            "neg {pf}",
+            "mov {pg}, {t}",
+            "imul {pg}, {a0}",
+            "mov {h}, {a1}",
+            "imul {h}, {a3}",
+            "add {pg}, {h}",
+            "neg {pg}",
+            "mov {z}, {k}",
+            "imul {z}, {x}",
+            "mov {t}, {a2}",
+            "imul {t}, {y}",
+            "add {z}, {t}",
+            "neg {z}",
+            "imul {k}, {a0}",
+            "imul {a2}, {a3}",
+            "add {k}, {a2}",
+            "neg {k}",
+            td = inout(reg) two_delta,
+            x = inout(reg) f0 => _,
+            y = inout(reg) g0 => _,
+            pf = out(reg) u,
+            pg = out(reg) v,
+            t = out(reg) _,
+            k = out(reg) r,
+            z = out(reg) q,
+            a0 = out(reg) _,
+            a1 = out(reg) _,
+            a2 = out(reg) _,
+            a3 = out(reg) _,
+            h = out(reg) _,
+            options(pure, nomem, nostack),
+        );
+    }
+    [two_delta, u, v, q, r]
+}
+
 /// The sign-magnitude form of a transition matrix: each entry's magnitude,
 /// and its sign as a mask (all ones for a negative entry, else zero).
 ///
@@ -1235,12 +1553,11 @@ impl super::entry::MontgomeryBlocks for Backend {
     }
 }
 
-/// The inversion's blocks. All but `divstep59` are this backend's assembly;
-/// `divstep59` is the portable block until its x86-64 assembly is written.
-impl crate::inversion::InvertBlocks for Backend {
+/// The inversion's blocks, in this backend's assembly.
+impl InvertBlocks for Backend {
     #[inline(always)]
     fn divstep59(two_delta: u64, f0: u64, g0: u64) -> [u64; 5] {
-        <Portable as InvertBlocks>::divstep59(two_delta, f0, g0)
+        divstep59(two_delta, f0, g0)
     }
 
     #[inline(always)]
