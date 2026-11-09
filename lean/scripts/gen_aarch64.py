@@ -103,13 +103,7 @@ LOOPS = {
 
 # The Lean type of each argument or result kind and, for a structure, its fields in order. The
 # structures are declared in `PastaCurves/Semantics.lean`, shared by the backends.
-KIND_FIELDS = {
-    "Limbs": ["l0", "l1", "l2", "l3"],
-    "Signed5": ["l0", "l1", "l2", "l3", "l4"],
-    "Divstep59Result": ["two_delta", "u", "v", "q", "r"],
-    "SignMag": ["u", "v", "q", "r", "su", "sv", "sq", "sr"],
-    "Nat": None,
-}
+KIND_FIELDS = gen.KIND_FIELDS
 
 
 @dataclasses.dataclass(frozen=True)
@@ -183,85 +177,9 @@ INLINE_ROUTINES = [
         ),
         (("lhs", "Limbs"), ("rhs", "Limbs"), ("modulus", "Limbs")),
     ),
-    RoutineConfig(
-        "divstep59",
-        "divstep59Block",
-        (
-            "The inline `asm!` block of `divstep59`: 59 half-delta divsteps on the low words `f0` and "
-            "`g0` of `f` and `g` at `two_delta`, as three packed batches of 20, 20, and 19 steps in which "
-            "the matrix coefficients ride in the upper bits of the two words, with the two matrix "
-            "products between and after the batches. It is s2n-bignum's `divstep59` macro on named "
-            "registers. The result is the new `two_delta` and the 59-step matrix, as two's-complement words."
-        ),
-        (("two_delta", "Nat"), ("f0", "Nat"), ("g0", "Nat")),
-        result="Divstep59Result",
-    ),
-    RoutineConfig(
-        "sign_mag",
-        "signMagBlock",
-        (
-            "The inline `asm!` block of `sign_mag`: the sign-magnitude form of the four entries of a "
-            "transition matrix, each entry's magnitude and its sign as a mask (all ones when negative, "
-            "else zero), which the row blocks take."
-        ),
-        (("u", "Nat"), ("v", "Nat"), ("q", "Nat"), ("r", "Nat")),
-        result="SignMag",
-    ),
-    RoutineConfig(
-        "fg_row",
-        "fgRowBlock",
-        (
-            "The inline `asm!` block of `fg_row`: one row of the update of `f` and `g`, "
-            "`(m0 f + m1 g) / 2^59` on five-word signed values, from the row's magnitudes `m0`, `m1` "
-            "and sign masks `s0`, `s1`, as a 320-bit accumulation shifted right by 59."
-        ),
-        (
-            ("f", "Signed5"),
-            ("g", "Signed5"),
-            ("m0", "Nat"),
-            ("m1", "Nat"),
-            ("s0", "Nat"),
-            ("s1", "Nat"),
-        ),
-        result="Signed5",
-    ),
-    RoutineConfig(
-        "de_row",
-        "deRowBlock",
-        (
-            "The inline `asm!` block of `de_row`: one row of the combination of `d` and `e`, "
-            "`m0 d + m1 e` as a five-word signed value, from the row's magnitudes `m0`, `m1` and "
-            "sign masks `s0`, `s1`. It is the accumulation of `fgRowBlock` without the shift."
-        ),
-        (
-            ("d", "Limbs"),
-            ("e", "Limbs"),
-            ("m0", "Nat"),
-            ("m1", "Nat"),
-            ("s0", "Nat"),
-            ("s1", "Nat"),
-        ),
-        result="Signed5",
-    ),
-    RoutineConfig(
-        "amontred",
-        "amontredBlock",
-        (
-            "The inline `asm!` block of `amontred`: the almost-Montgomery reduction of a five-word "
-            "signed value by one word, `(s + w p) / 2^64` for `s = t + 2^61 p` and "
-            "`w = s inv mod 2^64`, as four words. For the Pasta shape no top carry is captured and "
-            "no conditional subtraction follows."
-        ),
-        (("t", "Signed5"), ("modulus", "Limbs"), ("inv", "Nat")),
-    ),
-    RoutineConfig(
-        "cond_sub",
-        "condSubBlock",
-        (
-            "The inline `asm!` block of `cond_sub`: the subtraction of the modulus from `value`, kept "
-            "unless it borrows. For `value < 2p` the result is `value mod p`."
-        ),
-        (("value", "Limbs"), ("modulus", "Limbs")),
+    *(
+        RoutineConfig(block.rust_name, block.lean_name, block.doc, block.args, block.result)
+        for block in gen.INVERSION_BLOCKS
     ),
 ]
 
@@ -762,16 +680,7 @@ def parse_inline(path, config):
     return ins, decls, parsed.locals, outputs, returned, parsed.origins
 
 
-def signature(name, args, result):
-    """`def name (a b : K) (c : K') : result :=`, grouping consecutive arguments of one kind."""
-    groups = []
-    for arg, kind in args:
-        if groups and groups[-1][1] == kind:
-            groups[-1][0].append(arg)
-        else:
-            groups.append(([arg], kind))
-    params = " ".join(f"({' '.join(names)} : {kind})" for names, kind in groups)
-    return f"def {name} {params} : {result} :="
+signature = gen.signature
 
 
 def emit_inline(config):
@@ -842,173 +751,35 @@ def emit_inline(config):
     ]
 
 
-def state_struct(cfg):
-    """The declaration of a round's carried-register structure (see `MACRO_ROUNDS`)."""
-    lines = [
-        f"/-- The registers that `{cfg['round']}` carries in and out. -/",
-        f"structure {cfg['state']} where",
-    ]
-    for _, f, desc in cfg["roles"]:
-        lines += [f"  /-- {desc} -/", f"  {f} : {'Flags' if f == 'fl' else 'Nat'}"]
-    words = [f for _, f, _ in cfg["roles"] if f != "fl"]
-    lines += [
-        "  deriving DecidableEq, Repr",
-        "",
-        f"namespace {cfg['state']}",
-        "",
-        "/-- Every word is below `2^64`. -/",
-        f"def Bounded (s : {cfg['state']}) : Prop :=",
-    ]
-    lines += wrap_tactic(
-        "",
-        [f"s.{f} < 2^64" + (" ∧" if i < len(words) - 1 else "") for i, f in enumerate(words)],
-        "",
-        indent="  ",
-    )
-    lines += ["", f"end {cfg['state']}", ""]
-    return "\n".join(lines)
+def _prepare_round(emitter, bound, live_in):
+    """A round's emitter reads the flags in the form that its body binds or reads them."""
+    emitter.flags = "fl" if "fl" in bound or "fl" in live_in else None
+
+
+def _read_round_result(emitter, registers):
+    emitter.cur_reads = set()
+    return [emitter.read(r) for r in registers]
 
 
 def macro_routines(e, ins, origins, config, result, arg_fields):
-    """Split the transcription of a routine whose template invokes macros: each arm listed in
-    `MACRO_ROUNDS` becomes a definition over the registers it carries (`roles`), and each run of
-    consecutive invocations of it a call of the definition iterated over the run; other arms
-    stay expanded in place."""
-    name, doc = config.lean_name, config.doc
-    origin_of = {pc: origin for pc, origin in enumerate(origins)}
-
-    def origin(en):
-        return origin_of.get(en["pc"]) if en["pc"] is not None else None
-
-    def cfg_of(o):
-        return MACRO_ROUNDS.get((o.macro, o.arm)) if o is not None else None
-
-    # The entries in segments: consecutive entries of one round invocation form a segment.
-    segments, current, current_site = [], [], object()
-    for en in e.entries:
-        o = origin(en)
-        site = o.site if cfg_of(o) else None
-        if site != current_site:
-            if current:
-                segments.append((current_site, current))
-            current, current_site = [], site
-        current.append(en)
-    if current:
-        segments.append((current_site, current))
-
-    # The round definitions, one per arm, from each arm's first invocation.
-    rounds = {}  # (macro, arm) -> Routine
-    round_of_site = {}
-    for site, entries in segments:
-        if site is None:
-            continue
-        o = origin(entries[0])
-        key = (o.macro, o.arm)
-        cfg = MACRO_ROUNDS[key]
-        round_of_site[site] = cfg
-        regs = [r for r, _, _ in cfg["roles"]]
-        fields = [f for _, f, _ in cfg["roles"]]
-        # The body's inputs: registers read before the body writes them.
-        bound, live_in = set(), []
-        for en in entries:
-            for r in sorted(en["reads"]):
-                if r not in bound and r not in live_in:
-                    live_in.append(r)
-            bound.add(en["name"])
-        if key in rounds:
-            continue
-        stray = sorted(set(live_in) - set(regs))
-        if stray:
-            raise ValueError(f"{name}: {cfg['round']} reads {stray}, which `roles` does not carry")
-        unused = sorted(set(regs) - set(live_in) - bound)
-        if unused:
-            raise ValueError(f"{name}: {cfg['round']} neither reads nor writes {unused}")
-        re_ = Emitter(ins)
-        sarg = cfg["arg"]
-        for r, f in zip(regs, fields):
-            # The flags field has no bound; its fact only records the equation.
-            kind = "load_flags" if f == "fl" else "load"
-            re_.bind(r, f"{sarg}.{f}", "argument", reads=(), load=True, fact=(kind, sarg, f))
-        re_.entries += [dict(en) for en in entries]
-        re_.flags = "fl" if "fl" in bound or "fl" in live_in else None
-        re_.cur_reads = set()
-        round_result = [re_.read(r) for r in regs]
-        rounds[key] = Routine(
-            f"`{o.macro}!({o.arm})`, {cfg['doc']}",
-            f"def {cfg['round']} ({sarg} : {cfg['state']}) : {cfg['state']} :=",
-            re_.render(round_result),
-            f"  ⟨{', '.join(round_result)}⟩",
-            cfg["round"],
-            re_,
-            round_result,
-            struct=state_struct(cfg) if cfg["emit_struct"] else None,
-            arg_fields={sarg: [f for f in fields if f != "fl"]},
-        )
-    # The block: a run of consecutive invocations of one arm becomes one call, the round iterated
-    # over the run, and the outputs it carries; a proof about the run is then the step theorem
-    # iterated, without one binding per invocation. A run is (cfg, (macro, arm), first site,
-    # last site); a stretch of instructions is (None, None, None, entries).
-    runs = []
-    for site, entries in segments:
-        if site is None:
-            runs.append((None, None, None, entries))
-            continue
-        o = origin(entries[0])
-        key = (o.macro, o.arm)
-        if runs and runs[-1][1] == key:
-            runs[-1] = (runs[-1][0], key, runs[-1][2], site)
-        else:
-            runs.append((round_of_site[site], key, site, site))
-    me = Emitter(ins)
-    for cfg, key, first, last in runs:
-        if cfg is None:
-            me.entries += [dict(en) for en in last]
-            continue
-        regs = [r for r, _, _ in cfg["roles"]]
-        fields = [f for _, f, _ in cfg["roles"]]
-        rname = f"{cfg['call']}{last + 1}"
-        arm = f"{key[0]}!({key[1]})"
-        count = last - first + 1
-        call = cfg["round"] if count == 1 else f"{cfg['round']}^[{count}]"
-        which = (
-            f"invocation {first + 1}" if count == 1 else f"invocations {first + 1} to {last + 1}"
-        )
-        fmt = f"{call} ⟨" + ", ".join(f"{{{i}}}" for i in range(len(regs))) + "⟩"
-        me.entries.append(
-            {
-                "name": rname,
-                "expr": fmt.format(*regs),
-                "comment": f"{arm}, {which}",
-                "reads": set(regs),
-                "load": False,
-                "fact": ("call", fmt, regs),
-                "pc": None,
-            }
-        )
-        for r, f in zip(regs, fields):
-            me.entries.append(
-                {
-                    "name": r,
-                    "expr": f"{rname}.{f}",
-                    "comment": f"{arm}, {which} output",
-                    "reads": {rname},
-                    "load": False,
-                    "optional": True,
-                    "fact": ("callout", rname, f),
-                    "pc": None,
-                }
-            )
-    main = Routine(
-        doc,
-        signature(name, config.args, config.result),
-        me.render(result),
-        f"  ⟨{', '.join(result)}⟩",
-        name,
-        me,
+    """`gen.macro_routines` with this architecture's emitter and its flags field `fl`, a `Flags`
+    structure with no bound."""
+    return gen.macro_routines(
+        e,
+        origins,
+        config.lean_name,
+        config.doc,
+        signature(config.lean_name, config.args, config.result),
         result,
-        arg_fields=arg_fields,
+        arg_fields,
+        MACRO_ROUNDS,
+        make_emitter=lambda: Emitter(ins),
+        routine_class=Routine,
+        field_type=lambda field: "Flags" if field == "fl" else "Nat",
+        load_kind=lambda field: "load_flags" if field == "fl" else "load",
+        prepare_round=_prepare_round,
+        read_result=_read_round_result,
     )
-    return list(rounds.values()) + [main]
 
 
 class SkeletonBackend(gen.SkeletonBackend):
@@ -1104,24 +875,15 @@ class SkeletonBackend(gen.SkeletonBackend):
             context.bound(nm, proof)
             return True
 
-        if kind == "lsl":
-            a, k = ops
-            if k == 62:
-                return False  # the shared skeleton pairs it with the matching `lsr`
-            return bounded(f"{a} * 2^{k} % 2^64", "Nat.mod_lt _ (Nat.two_pow_pos _)")
-        if kind in ("addw", "subw", "madd", "msub", "mneg", "negw", "extr"):
+        shared = self.word_fact(kind, ops, context)
+        if shared is not None:
+            return shared
+        if kind in ("madd", "msub", "mneg"):
             args = " ".join(str(o) for o in ops)
             return bounded(f"{kind} {args}", f"{kind}_lt {args}")
         if kind == "addw_lsl":
             a, b, k = ops
             return bounded(f"addw {a} (lsl {b} {k})", f"addw_lt {a} (lsl {b} {k})")
-        if kind in ("and", "orr", "eor"):
-            a, b = ops
-            fn = f"{kind}w"
-            return bounded(f"{fn} {a} {b}", f"{fn}_lt {a} {b} {context.lt64(a)} {context.lt64(b)}")
-        if kind == "asr":
-            a, k = ops
-            return bounded(f"asr {a} {k}", f"asr_lt {a} {k} {context.lt64(a)}")
         if kind == "sbfx":
             a, lsb, w = ops
             return bounded(f"sbfx {a} {lsb} {w}", f"sbfx_lt {a} {lsb} {w} {context.lt64(a)}")
