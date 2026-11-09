@@ -267,6 +267,32 @@ const FQ_CARRY_SQUARES: [Limbs; 4] = [
     [0x253271754a39c871, 0x885109b7ef9eec83, 0x34167997567fd0e1, 0x10c292d7a6742051],
 ];
 
+/// The multiplication's contract is needed, not only sufficient. Just outside it, an unreduced
+/// `lhs` against a canonical `rhs` whose limb 1 is `2^64 - 1`, each backend's block returns a
+/// wrong result: on AArch64 the carry chain of the high cross-products wraps, as the block's
+/// documentation describes, and the Lean model of the x86-64 block, evaluated on this pair, is
+/// wrong as well. The block is called through the backend, since the entry point asserts the
+/// contract.
+#[test]
+fn mul_is_wrong_just_outside_its_contract() {
+    #[cfg(target_arch = "aarch64")]
+    use super::aarch64::Backend;
+    use super::entry::MontgomeryBlocks;
+    #[cfg(target_arch = "x86_64")]
+    use super::x86_64::Backend;
+    use crate::fields::{Fp, Fq};
+
+    let lhs = [0, u64::MAX, u64::MAX, u64::MAX];
+    let rhs = [u64::MAX, u64::MAX, 0, 0];
+    // `rhs` is canonical, so the portable product is exact.
+    let fp = Fp::mul(&Fp(lhs), &Fp(rhs)).0;
+    let fq = Fq::mul(&Fq(lhs), &Fq(rhs)).0;
+    for (f, product) in [(&FP, fp), (&FQ, fq)] {
+        assert!(!super::mul_contract(&lhs, &rhs, &f.modulus));
+        assert_ne!(Backend::mul(&lhs, &rhs, &f.modulus, f.inv), product);
+    }
+}
+
 /// Operands that flip carry decisions of the AArch64 instruction stream which random operands
 /// reach with probability about `2^-64`: each value is converted and squared, and each pair
 /// multiplied. Unlike the constants above, which follow the algorithm both backends share, these
