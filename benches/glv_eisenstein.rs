@@ -69,7 +69,7 @@ fn bench<C: GlvParams>(c: &mut Criterion, name: &str) {
     // out. Both arms return affine, so the baseline pays the final
     // normalization too (batched).
     let mut group = c.benchmark_group(format!("{name} batch shared scalar"));
-    for size in [16usize, 64, 128, 256, 512] {
+    for size in [16usize, 64, 96, 128, 256, 512] {
         let batch: Vec<C> = (1..=size as u64)
             .map(|i| C::generator() * (k + C::ScalarExt::from(i)))
             .collect();

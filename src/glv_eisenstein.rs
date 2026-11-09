@@ -355,8 +355,9 @@ const MAX_DIGITS: usize = 130;
 ///
 /// The value tracks the cost of [`VartimeField::invert_vartime`], the safegcd
 /// inversion, at about 63 multiplications on the Pasta fields. The two ladders
-/// measure level at a batch of 64 and the affine one is clearly ahead by 96,
-/// which is the value taken here. Against the constant-time Fermat inversion,
+/// measure level at a batch of 64, and at 96, the value taken here, the affine
+/// one is already 7.5 to 15% ahead on an Apple M4 Pro, depending on the curve
+/// and on whether the assembly backend is in use. Against the constant-time Fermat inversion,
 /// at about 417 multiplications, the crossover would instead be near 420.
 pub(crate) const BATCH_AFFINE_THRESHOLD: usize = 96;
 
@@ -712,11 +713,12 @@ where
     /// $I \approx 417$, the same code does not break even until a batch of
     /// about 420.
     ///
-    /// Measured end to end against the split-wNAF GLV ladder on Pallas
-    /// (recode, one table per point, ladder, affine out), taking whichever
-    /// arm this function dispatches to: 9% faster at a batch of 16, 11% at
-    /// 64, 13% at 128, 15% at 256 and 16% at 512. The affine arm is the one
-    /// winning from 128 up.
+    /// Measured end to end against the split-wNAF GLV ladder on Pallas, on an
+    /// Apple M4 Pro (recode, one table per point, ladder, affine out), taking
+    /// whichever ladder this function picks: with the portable field
+    /// arithmetic, 10% faster at a batch of 16 and of 64, 22% at 96, 23% at
+    /// 128, 24% at 256 and 25% at 512; with the assembly backend, 9 to 24%
+    /// over the same sizes. The affine ladder is the one picked from 96 up.
     ///
     /// [`BATCH_AFFINE_THRESHOLD`] records the measured crossover, and
     /// [`Table::batch_mul_affine`] forces the affine ladder regardless.
