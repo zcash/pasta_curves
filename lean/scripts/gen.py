@@ -973,6 +973,7 @@ SPEC_MANIFEST = {
     "lean/PastaCurves/X86_64/Spec/Mul.lean": ("X86_64", ("mulMont", "mulMontRound")),
     "lean/PastaCurves/X86_64/Spec/Square.lean": ("X86_64", ("squareLo", "squareHi")),
     "lean/PastaCurves/X86_64/Spec/CondSub.lean": ("X86_64", ("condSubBlock",)),
+    "lean/PastaCurves/X86_64/Spec/SignMag.lean": ("X86_64", ("signMagBlock",)),
 }
 
 
@@ -1296,7 +1297,6 @@ INVERSION_BLOCKS = (
 UNPROVED_ROUTINES = {
     # The x86-64 inversion blocks, transcribed ahead of their proofs.
     "X86_64": (
-        "signMagBlock",
         "amontredBlock",
         "fgRowBlock",
         "deRowBlock",
