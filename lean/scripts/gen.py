@@ -974,6 +974,7 @@ SPEC_MANIFEST = {
     "lean/PastaCurves/X86_64/Spec/Square.lean": ("X86_64", ("squareLo", "squareHi")),
     "lean/PastaCurves/X86_64/Spec/CondSub.lean": ("X86_64", ("condSubBlock",)),
     "lean/PastaCurves/X86_64/Spec/SignMag.lean": ("X86_64", ("signMagBlock",)),
+    "lean/PastaCurves/X86_64/Spec/Divstep59.lean": ("X86_64", ("divstep59Block",)),
     "lean/PastaCurves/X86_64/Spec/Divstep.lean": ("X86_64", ("divstepRound",)),
     "lean/PastaCurves/X86_64/Spec/DeRow.lean": ("X86_64", ("deRowBlock",)),
     "lean/PastaCurves/X86_64/Spec/FgRow.lean": ("X86_64", ("fgRowBlock",)),
@@ -1298,12 +1299,7 @@ INVERSION_BLOCKS = (
 
 # Missing proofs are tracked by routine, not by hypothetical files; a block transcribed ahead of
 # its proof is listed here under its architecture.
-UNPROVED_ROUTINES = {
-    # The x86-64 inversion blocks, transcribed ahead of their proofs.
-    "X86_64": (
-        "divstep59Block",
-    ),
-}
+UNPROVED_ROUTINES: dict[str, tuple[str, ...]] = {}
 
 
 def architecture_routines():
