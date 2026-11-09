@@ -6,6 +6,7 @@ import PastaCurves.X86_64.Spec.Square
 import PastaCurves.X86_64.Spec.FromMont
 import PastaCurves.X86_64.Spec.CondSub
 import PastaCurves.X86_64.Spec.SignMag
+import PastaCurves.X86_64.Spec.Amontred
 
 /-!
 # Correctness proofs for the x86-64 blocks
