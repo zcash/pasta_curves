@@ -15,10 +15,6 @@ and this project adheres to Rust's notion of
   - `Table`, the precomputation for one point, with `Table::new`,
     `Table::batch` for many points, `Table::mul` and `Table::mul_recoded`.
   - `Recoded`, a recoded scalar that can be reused across points.
-  - `Table::batch_mul` and `Table::batch_mul_affine`, multiplying the points
-    of many tables by one recoded scalar and returning affine points. From
-    `BATCH_AFFINE_THRESHOLD` points, `Table::batch_mul` switches to the
-    affine ladder that `Table::batch_mul_affine` always uses.
 - One free function per call shape, in both `pasta_curves::glv` and
   `pasta_curves::glv_eisenstein`:
   - `mul`, one point against one scalar.
