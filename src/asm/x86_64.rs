@@ -862,9 +862,24 @@ mod tests {
     //! failure says which half is wrong.
 
     use super::{Limbs, square_hi, square_lo};
-    use crate::test_fields::{FP, FQ, ONE, ZERO, p_minus_1};
+    use crate::test_fields::{FP, FQ, Field, ONE, ZERO, p_minus_1};
     use rand::{Rng, SeedableRng};
     use rand_xorshift::XorShiftRng;
+
+    /// `square_lo` behind a call boundary of its own. The block holds fifteen registers, the
+    /// most the compiler will allocate to one block, so it depends on its caller leaving them
+    /// free: inlined into a test, the Windows debug build ran out of registers. The entry points
+    /// are call boundaries for the same reason.
+    #[inline(never)]
+    fn lo(value: Limbs) -> [u64; 8] {
+        square_lo(value)
+    }
+
+    /// `square_hi` behind a call boundary, for the reason given on [`lo`].
+    #[inline(never)]
+    fn hi(product: [u64; 8], modulus: &Limbs, inv: u64) -> Limbs {
+        square_hi(product, modulus, inv)
+    }
 
     /// The 512-bit square of `x` by schoolbook multiplication over `u128` columns, independently
     /// of the assembly. Each column sum is at most `(2^64 - 1)^2 + 2 (2^64 - 1) = 2^128 - 1`.
@@ -901,12 +916,34 @@ mod tests {
             p_minus_1(&FQ),
         ];
         for value in edges {
-            assert_eq!(square_lo(value), exact_square(&value), "{value:x?}");
+            assert_eq!(lo(value), exact_square(&value), "{value:x?}");
         }
         let mut rng = XorShiftRng::from_seed([0x51; 16]);
         for _ in 0..20_000u32 {
             let value: Limbs = core::array::from_fn(|_| rng.next_u64());
-            assert_eq!(square_lo(value), exact_square(&value), "{value:x?}");
+            assert_eq!(lo(value), exact_square(&value), "{value:x?}");
+        }
+    }
+
+    /// `square_hi` on the independently computed square of each of `f`'s canonical edge values
+    /// and of 2000 random canonical values, against `square`, the field's portable Montgomery
+    /// squaring; `from_u512` reduces 512 random bits to a canonical value.
+    fn check_square_hi(
+        f: &Field,
+        square: impl Fn(&Limbs) -> Limbs,
+        from_u512: impl Fn([u64; 8]) -> Limbs,
+    ) {
+        let check = |value: &Limbs| {
+            let actual = hi(exact_square(value), &f.modulus, f.inv);
+            assert_eq!(actual, square(value), "{value:x?}");
+        };
+        let high = [u64::MAX, u64::MAX, u64::MAX, (1 << 62) - 1];
+        for value in [ZERO, ONE, f.r, p_minus_1(f), f.pm2, high] {
+            check(&value);
+        }
+        let mut rng = XorShiftRng::from_seed([0x52; 16]);
+        for _ in 0..2000u32 {
+            check(&from_u512(core::array::from_fn(|_| rng.next_u64())));
         }
     }
 
@@ -914,24 +951,8 @@ mod tests {
     /// square. Its input is the independently computed square, not `square_lo`'s output.
     #[test]
     fn square_hi_reduces_a_canonical_square() {
-        macro_rules! check {
-            ($field:ident, $f:expr) => {{
-                use crate::fields::$field;
-                let f = $f;
-                let high = [u64::MAX, u64::MAX, u64::MAX, (1 << 62) - 1];
-                let edges = [ZERO, ONE, f.r, p_minus_1(f), f.pm2, high];
-                let mut rng = XorShiftRng::from_seed([0x52; 16]);
-                let random: [Limbs; 2000] = core::array::from_fn(|_| {
-                    $field::from_u512(core::array::from_fn(|_| rng.next_u64())).0
-                });
-                for value in edges.iter().chain(&random) {
-                    let expected = $field::square(&$field(*value)).0;
-                    let actual = square_hi(exact_square(value), &f.modulus, f.inv);
-                    assert_eq!(actual, expected, "{value:x?}");
-                }
-            }};
-        }
-        check!(Fp, &FP);
-        check!(Fq, &FQ);
+        use crate::fields::{Fp, Fq};
+        check_square_hi(&FP, |x| Fp::square(&Fp(*x)).0, |w| Fp::from_u512(w).0);
+        check_square_hi(&FQ, |x| Fq::square(&Fq(*x)).0, |w| Fq::from_u512(w).0);
     }
 }
