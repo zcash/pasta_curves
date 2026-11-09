@@ -119,7 +119,9 @@ def csetmMi (fl : Flags) : Nat := if fl.n = 1 then regMod - 1 else 0
 
 -- Boundary cases distinguish AArch64's carry convention from x86-64's borrow convention. Each
 -- mirrors the example of the same operation in `PastaCurves.X86_64.Semantics`, named in its
--- comment: where x86-64's CF is `1` on borrow, AArch64's carry is `0`.
+-- comment: where x86-64's CF is `1` on borrow, AArch64's carry is `0`. The examples illustrate
+-- the convention; `PastaCurves.FlagConventions` proves the correspondence for every in-range
+-- input.
 -- The instructions these examples test correspond as follows (x86-64, then AArch64):
 -- - `sub`, `sbb` and `subs`, `sbcs`: the same difference, with complementary flags (`CF = 1 - C`).
 -- - `mulx` and `umulh` with `mul`: the high and low words of the product.
