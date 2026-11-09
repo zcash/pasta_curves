@@ -1389,15 +1389,15 @@ pub(super) fn de_row(d: &Limbs, e: &Limbs, m0: u64, m1: u64, s0: u64, s1: u64) -
 /// no top carry to capture and no conditional subtraction. Adding `2^61 · p`
 /// for the Pasta shape adds `p0 << 61`, `(p1 : p0) >> 3`, `p1 >> 3`, and
 /// `2^59` at words 0, 1, 2, and 4. All four are formed before the addition,
-/// since the shifts write the flags. `w` is formed in RDX, where `inv`
-/// arrives, so that MULX, which leaves the flags alone, takes it as its
+/// since the shifts write the flags. `w` is formed in RDX, as in
+/// [`from_mont`], so that MULX, which leaves the flags alone, takes it as its
 /// implicit multiplicand. Adding `w · p` is the cancellation step of `mul`:
 /// the low word cancels, with a carry exactly when `s0` is nonzero, which is
 /// the carry that `neg` sets; the high halves and `w · 2^254` go in one chain
 /// and the low half of `w · p1` in another.
 ///
 /// The modulus limbs are read through a pointer, as in [`mul`], which keeps
-/// the block at twelve registers.
+/// the block at thirteen registers.
 #[inline(always)]
 pub(super) fn amontred(t: &[u64; 5], modulus: &Limbs, inv: u64) -> Limbs {
     let (o0, o1, o2, o3): (u64, u64, u64, u64);
@@ -1413,14 +1413,15 @@ pub(super) fn amontred(t: &[u64; 5], modulus: &Limbs, inv: u64) -> Limbs {
             "mov {w1}, qword ptr [{p}]",
             "shrd {w1}, {w2}, 3",
             "shr {w2}, 3",
-            "movabs {w3}, {two59}",
+            "movabs {w3}, 0x800000000000000",
             "add {t0}, {w0}",
             "adc {t1}, {w1}",
             "adc {t2}, {w2}",
             "adc {t3}, 0",
             "adc {t4}, {w3}",
             // w = s0 · inv, and the products of w with the modulus.
-            "imul rdx, {t0}",
+            "mov rdx, {t0}",
+            "imul rdx, {inv}",
             "mulx {w0}, {w1}, qword ptr [{p}]",
             "mulx {w2}, {w3}, qword ptr [{p} + 8]",
             "mov {w1}, rdx",
@@ -1443,13 +1444,13 @@ pub(super) fn amontred(t: &[u64; 5], modulus: &Limbs, inv: u64) -> Limbs {
             t3 = inout(reg) t[3] => o2,
             t4 = inout(reg) t[4] => o3,
             p = in(reg) modulus.as_ptr(),
-            two59 = const 1u64 << 59,
+            inv = in(reg) inv,
             w0 = out(reg) _,
             w1 = out(reg) _,
             w2 = out(reg) _,
             w3 = out(reg) _,
             w4 = out(reg) _,
-            inout("rdx") inv => _,
+            out("rdx") _,
             options(pure, readonly, nostack),
         );
     }

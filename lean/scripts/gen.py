@@ -1291,8 +1291,19 @@ INVERSION_BLOCKS = (
 
 
 # Missing proofs are tracked by routine, not by hypothetical files; a block transcribed ahead of
-# its proof is listed here under its architecture. None at present.
-UNPROVED_ROUTINES = {}
+# its proof is listed here under its architecture.
+UNPROVED_ROUTINES = {
+    # The x86-64 inversion blocks, transcribed ahead of their proofs.
+    "X86_64": (
+        "signMagBlock",
+        "condSubBlock",
+        "amontredBlock",
+        "fgRowBlock",
+        "deRowBlock",
+        "divstepRound",
+        "divstep59Block",
+    ),
+}
 
 
 def architecture_routines():
