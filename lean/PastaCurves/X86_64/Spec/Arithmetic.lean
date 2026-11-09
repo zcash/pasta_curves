@@ -97,4 +97,16 @@ theorem neg_carry_cancel (t0 inv p0 q : Nat) (ht0 : t0 < 2^64) (hinv : inv < 2^6
   rw [hq]
   exact mulLo_cancel_eq_neg_carry t0 inv p0 ht0 hinv hp0 hinvP
 
+/-- `cmove` leaves a word: either of its two words. -/
+theorem cmovz_lt (w a b : Nat) (ha : a < 2^64) (hb : b < 2^64) : cmovz w a b < 2^64 := by
+  unfold cmovz; split <;> assumption
+
+/-- `cmovs` leaves a word: either of its two words. -/
+theorem cmovs_lt (w a b : Nat) (ha : a < 2^64) (hb : b < 2^64) : cmovs w a b < 2^64 := by
+  unfold cmovs; split <;> assumption
+
+/-- `cmovb` leaves a word: either of its two words. -/
+theorem cmovb_lt (cf a b : Nat) (ha : a < 2^64) (hb : b < 2^64) : cmovb cf a b < 2^64 := by
+  unfold cmovb; split <;> assumption
+
 end PastaCurves.X86_64
