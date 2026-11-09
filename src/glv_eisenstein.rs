@@ -121,7 +121,7 @@
 //! | **many points** | [`batch_mul`] | [`mul_pairs`]   |
 //!
 //! [`batch_mul`] is the shape this module optimises hardest: one shared
-//! scalar means one recoding and, above [`BATCH_AFFINE_THRESHOLD`], an
+//! scalar means one recoding and, for a large enough batch, an
 //! affine ladder that fuses each column's doubling and addition and shares
 //! one inversion across every point.
 //!
@@ -358,7 +358,7 @@ const MAX_DIGITS: usize = 130;
 /// measure level at a batch of 64 and the affine one is clearly ahead by 96,
 /// which is the value taken here. Against the constant-time Fermat inversion,
 /// at about 417 multiplications, the crossover would instead be near 420.
-pub const BATCH_AFFINE_THRESHOLD: usize = 96;
+pub(crate) const BATCH_AFFINE_THRESHOLD: usize = 96;
 
 /// The Eisenstein window for one base point: the eight orbit representatives
 /// $r_j P$, each in its three rotations $\omega^i r_j P$, in affine
@@ -720,7 +720,7 @@ where
     ///
     /// [`BATCH_AFFINE_THRESHOLD`] records the measured crossover, and
     /// [`Table::batch_mul_affine`] forces the affine ladder regardless.
-    pub fn batch_mul(tables: &[Self], k: &Recoded<C>) -> Vec<C::AffineExt> {
+    pub(crate) fn batch_mul(tables: &[Self], k: &Recoded<C>) -> Vec<C::AffineExt> {
         if tables.len() >= BATCH_AFFINE_THRESHOLD {
             return Self::batch_mul_affine(tables, k);
         }
@@ -733,9 +733,8 @@ where
     /// Multiplies a whole batch of points by **one** recoded scalar, always
     /// on the batch-affine ladder.
     ///
-    /// Prefer [`Table::batch_mul`], which picks this only when the batch is
-    /// large enough to pay for it (see [`BATCH_AFFINE_THRESHOLD`]). Call this
-    /// directly if you know the field's inversion is cheap.
+    /// [`Table::batch_mul`] picks this only when the batch is large enough to
+    /// pay for it (see [`BATCH_AFFINE_THRESHOLD`]).
     ///
     /// Every accumulator is kept in *affine* coordinates, with a single field
     /// inversion shared across the batch at each ladder column.
@@ -760,7 +759,7 @@ where
     /// already paid for.
     ///
     /// Identity inputs are handled, and mix freely with ordinary points.
-    pub fn batch_mul_affine(tables: &[Self], k: &Recoded<C>) -> Vec<C::AffineExt> {
+    pub(crate) fn batch_mul_affine(tables: &[Self], k: &Recoded<C>) -> Vec<C::AffineExt> {
         let n = tables.len();
         let mut out = alloc::vec![C::AffineExt::identity(); n];
         if n == 0 || k.len == 0 {
@@ -900,13 +899,9 @@ where
         }
     }
 
-    /// The number of columns, i.e. the ladder length.
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
     /// Whether the recoding is empty, which happens exactly for `k == 0`.
-    pub fn is_empty(&self) -> bool {
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
         self.len == 0
     }
 
@@ -1078,9 +1073,10 @@ where
 /// `k * p` for every `p`, sharing one field inversion across the batch at
 /// every ladder column and returning affine results.
 ///
-/// This is [`Table::batch_mul`] with the per-point tables and the recoding
-/// built for you, and the tables also share a single inversion. It picks the ladder by batch size, so it is
-/// never slower than the projective path. Identity inputs are handled.
+/// The per-point tables are built sharing a single inversion too. The ladder
+/// is chosen by batch size: below the measured crossover the projective one,
+/// above it the affine one, so this is never slower than the projective path.
+/// Identity inputs are handled.
 pub fn batch_mul<C>(points: &[C], k: &C::ScalarExt) -> Vec<C::AffineExt>
 where
     C: GlvParams,
@@ -1535,9 +1531,9 @@ mod tests {
         let (mut cols, mut adds, mut max_cols, mut max_adds) = (0usize, 0usize, 0usize, 0usize);
         for k in scalars::<C::ScalarExt>(N) {
             let r = Recoded::<C>::new(&k);
-            cols += r.len();
+            cols += r.len;
             adds += r.additions();
-            max_cols = max_cols.max(r.len());
+            max_cols = max_cols.max(r.len);
             max_adds = max_adds.max(r.additions());
         }
         let mean_cols = cols as f64 / N as f64;

@@ -90,16 +90,13 @@ fn bench<C: GlvParams>(c: &mut Criterion, name: &str) {
                 aff
             })
         });
+        // `batch_mul` takes the projective ladder below the crate's affine
+        // threshold and the batch-affine one from it, so beside the
+        // projective arm below it shows where the affine ladder starts to pay.
         group.bench_with_input(
-            BenchmarkId::new("Eisenstein + batch affine", size),
+            BenchmarkId::new("Eisenstein batch_mul", size),
             &size,
-            |b, _| {
-                b.iter(|| {
-                    let recoded = glv_eisenstein::Recoded::<C>::new(&k);
-                    let tables = glv_eisenstein::Table::batch(&batch);
-                    glv_eisenstein::Table::batch_mul_affine(&tables, &recoded)
-                })
-            },
+            |b, _| b.iter(|| glv_eisenstein::batch_mul(&batch, &k)),
         );
         group.bench_with_input(
             BenchmarkId::new("Eisenstein + projective", size),
