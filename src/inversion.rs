@@ -13,13 +13,12 @@ use crate::limbs::Limbs;
 
 if_asm_supported! {
     // The portable blocks serve wherever the assembly blocks do not; beside the AArch64 backend
-    // they are compiled for their tests and the documentation only. The x86-64 backend runs
-    // them for the blocks it does not implement in assembly yet.
+    // they are compiled for their tests and the documentation only.
     #[cfg(any(not(target_arch = "aarch64"), test, doc))]
-    pub(crate) mod portable;
+    mod portable;
 }
 if_asm_unsupported! {
-    pub(crate) mod portable;
+    mod portable;
 }
 
 /// The six blocks of the inversion, as a backend provides them. The trait mirrors the Lean
