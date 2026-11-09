@@ -360,8 +360,10 @@ The crate's Montgomery entry points, in `Glue/Spec.lean`: `add_with_spec`, `sub_
 `mul_with_spec`, `square_with_spec`, `sqr_n_mul_with_spec`, and `from_mont_with_spec` (all proved)
 are about Aeneas' translation of the generic compositions in `src/asm/entry.rs`. Each holds at
 either of the crate's fields (a `PastaField`, that is `pallasBase` or `vestaBase`), over any backend
-whose blocks meet `BlocksSpec`, the record of the blocks' contracts at that field. Each holds under
-the condition that its entry point checks in a debug build. For `mul` that is `mulContract`. For the
+whose corresponding blocks meet `AddSubBlocksSpec` (addition and subtraction) or `MulBlocksSpec`
+(multiplication, squaring, and conversion) at that field. Backends implementing all five operations
+also meet `BlocksSpec`, which combines the two. Each theorem holds under the condition that its
+entry point checks in a debug build. For `mul` that is `mulContract`. For the
 others —the value operands of `square`, `sqr_n_mul`, `add`, and `sub`— it is `isCanonical`. The
 translated checks compute those Booleans (`is_canonical_spec` and `mul_contract_spec`), and
 `isCanonical_iff` and `mulContract_iff` relate them to the arithmetic conditions of the theorems
