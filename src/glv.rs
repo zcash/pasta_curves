@@ -37,16 +37,22 @@
 //! | **one point**   | [`mul`]       | [`mul_scalars`] |
 //! | **many points** | [`batch_mul`] | [`mul_pairs`]   |
 //!
-//! [`batch_mul`] is the wallet-scanning shape, and the one `glv_eisenstein`
-//! optimises hardest: a shared scalar means one recoding and one fused
-//! column ladder across every point.
+//! [`batch_mul`], one scalar against many points, is the shape
+//! `glv_eisenstein` optimises hardest: a shared scalar means one recoding and
+//! one fused column ladder across every point.
 //!
 //! This module evaluates its two half-width multiplications against a shared
 //! table of odd multiples of $P$ and $\phi(P)$.
 //!
-//! This path is variable-time in the scalar (GLV decomposition plus wNAF
-//! recoding); the `_glv` naming distinguishes it from the native `Mul`
-//! implementations, which are unchanged.
+//! # Security
+//!
+//! Everything in this module runs in variable time with respect to the
+//! scalar: the decomposition, the recoding, and which additions the ladder
+//! performs all depend on it. **The scalar must be public**, as in signature
+//! or proof verification. Do not use this module with a secret scalar, such
+//! as a signing key or a viewing key; the native `Mul` implementations, which
+//! are unchanged and constant-time, are the ones for that. The `_glv` naming
+//! distinguishes the two.
 //!
 //! [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
 //!
@@ -851,7 +857,7 @@ where
 ///
 /// Building this once per scalar hoists the decomposition and digit
 /// recoding out of a loop that multiplies the same scalar against many
-/// tables (e.g. one viewing key against a batch of ephemeral keys).
+/// tables.
 #[derive(Clone, Debug)]
 pub struct Decomposed<C>
 where

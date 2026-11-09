@@ -7,6 +7,14 @@
 //! *shrinking* the precomputed table, and it guarantees at most one addition
 //! per ladder column.
 //!
+//! # Security
+//!
+//! Like [`crate::glv`], everything in this module runs in variable time with
+//! respect to the scalar: the decomposition, the recoding, and which additions
+//! the ladder performs all depend on it. **The scalar must be public.** Do not
+//! use this module with a secret scalar, such as a signing key or a viewing
+//! key; use the native, constant-time `Mul` implementations for that.
+//!
 //! # The structure
 //!
 //! GLV writes $k \equiv k_1 + k_2\lambda \pmod n$ with $|k_1|, |k_2| <
@@ -678,9 +686,8 @@ where
     /// Multiplies a whole batch of points by **one** recoded scalar, choosing
     /// the cheaper ladder for the batch size.
     ///
-    /// The results come back affine, which is what a key-agreement KDF needs
-    /// anyway. Identity inputs are handled and mix freely with ordinary
-    /// points.
+    /// The results come back affine. Identity inputs are handled and mix
+    /// freely with ordinary points.
     ///
     /// # Which ladder, and why it depends on the size
     ///
@@ -733,12 +740,10 @@ where
     /// Every accumulator is kept in *affine* coordinates, with a single field
     /// inversion shared across the batch at each ladder column.
     ///
-    /// This is the shape wallet scanning has: one incoming viewing key against
-    /// many ephemeral keys. Because the scalar is shared, every lane executes
-    /// the same column at the same time, so the inversion that makes affine
-    /// arithmetic impractical for a single multiplication is amortized over
-    /// the batch by Montgomery's trick and costs about three multiplications
-    /// per lane.
+    /// Because the scalar is shared, every lane executes the same column at
+    /// the same time, so the inversion that makes affine arithmetic
+    /// impractical for a single multiplication is amortized over the batch by
+    /// Montgomery's trick and costs about three multiplications per lane.
     ///
     /// That changes which recoding is best. A column here is either a
     /// doubling, which is roughly break-even against Jacobian, or a *fused*
@@ -751,8 +756,8 @@ where
     /// $y$-coordinate go uncomputed, saving a multiplication, and replaces a
     /// separate doubling and addition with two slopes.
     ///
-    /// The results come back affine, which for key agreement is what the KDF
-    /// needs anyway, so the usual final normalization is already paid for.
+    /// The results come back affine, so the usual final normalization is
+    /// already paid for.
     ///
     /// Identity inputs are handled, and mix freely with ordinary points.
     pub fn batch_mul_affine(tables: &[Self], k: &Recoded<C>) -> Vec<C::AffineExt> {
@@ -867,9 +872,7 @@ where
 /// [`Table::mul_recoded`].
 ///
 /// Building this once per scalar hoists the decomposition and recoding out of
-/// a loop that multiplies the same scalar against many tables, the wallet
-/// trial-decryption shape, where one incoming viewing key meets a batch of
-/// ephemeral keys.
+/// a loop that multiplies the same scalar against many tables.
 #[derive(Clone, Debug)]
 pub struct Recoded<C>
 where
@@ -1076,8 +1079,7 @@ where
 /// every ladder column and returning affine results.
 ///
 /// This is [`Table::batch_mul`] with the per-point tables and the recoding
-/// built for you: it is the one call wallet scanning wants, since the tables
-/// also share a single inversion. It picks the ladder by batch size, so it is
+/// built for you, and the tables also share a single inversion. It picks the ladder by batch size, so it is
 /// never slower than the projective path. Identity inputs are handled.
 pub fn batch_mul<C>(points: &[C], k: &C::ScalarExt) -> Vec<C::AffineExt>
 where

@@ -65,19 +65,18 @@ fn bench<C: GlvParams>(c: &mut Criterion, name: &str) {
 
     group.finish();
 
-    // The scanning shape end to end: N ephemeral keys in, N AFFINE shared
-    // secrets out, against one fixed viewing key. Affine is what the KDF
-    // consumes, so the baseline pays the final normalization too (batched).
-    let mut group = c.benchmark_group(format!("{name} batch key agreement"));
+    // One shared scalar against N points end to end, with N AFFINE results
+    // out. Both arms return affine, so the baseline pays the final
+    // normalization too (batched).
+    let mut group = c.benchmark_group(format!("{name} batch shared scalar"));
     for size in [16usize, 64, 128, 256, 512] {
         let batch: Vec<C> = (1..=size as u64)
             .map(|i| C::generator() * (k + C::ScalarExt::from(i)))
             .collect();
 
         // Both arms do the SAME end-to-end work: recode the scalar, build a
-        // table per point, ladder, and hand back affine results. Every
-        // ephemeral key is fresh in the scanning workload, so the table build
-        // belongs inside the timed region.
+        // table per point, ladder, and hand back affine results. Every point
+        // is fresh, so the table build belongs inside the timed region.
         group.bench_with_input(BenchmarkId::new("wNAF + Jacobian", size), &size, |b, _| {
             b.iter(|| {
                 let decomposed = glv::Decomposed::<C>::new(&k);

@@ -90,7 +90,7 @@ def emit(name, const, G, n, zeta):
 
 
 def emit_batch(name, const, G, n):
-    """The wallet-scanning shape: many points, one shared scalar.
+    """Many points, one shared scalar.
 
     The points are emitted as the scalars that produce them, `P = s*G`,
     rather than as coordinates, so the table stays the size of its answers.
