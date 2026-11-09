@@ -851,6 +851,216 @@ pub(super) fn sign_mag(mut u: u64, mut v: u64, mut q: u64, mut r: u64) -> [u64; 
     [u, v, q, r, su, sv, sq, sr]
 }
 
+/// One row of the update of `f` and `g` by a transition matrix:
+/// `(m0 · f + m1 · g) / 2^59`, an exact division, on five-word signed values.
+///
+/// `f` and `g` are five words each, the top word being the sign word. `m0` and
+/// `m1` are the row's magnitudes and `s0` and `s1` its sign masks, from
+/// [`sign_mag`]. A negative entry multiplies the complement of its operand
+/// under the mask, with the magnitude added as the initial carry, so the
+/// initial carry is `(m0 & s0) + (m1 & s1)`. Each column's two products and
+/// the carry stay below `2^128` because `m0 + m1 <= 2^63`, so the high word of
+/// a column is accumulated directly in the next column's word, which starts at
+/// zero, and needs no register of its own. The top column is needed only
+/// modulo `2^64`, so it takes the low products of two-operand IMUL. The
+/// 320-bit sum is then shifted right by 59 in place with SHRD, the top word
+/// arithmetically.
+///
+/// The operand words are read through pointers, and the products use the
+/// one-operand MUL into RAX and RDX, as s2n-bignum's x86-64
+/// `bignum_montinv_p256` forms them. The block uses thirteen registers; with
+/// its ten operand words in registers it would need twenty-one.
+#[inline(always)]
+pub(super) fn fg_row(f: &[u64; 5], g: &[u64; 5], m0: u64, m1: u64, s0: u64, s1: u64) -> [u64; 5] {
+    let (t0, t1, t2, t3, t4): (u64, u64, u64, u64, u64);
+    // SAFETY: straight-line arithmetic reading only the ten words behind the
+    // passed references (`readonly`); no stack use, and outputs depend only on
+    // the declared inputs.
+    unsafe {
+        asm!(
+            // The initial carry, and zero high words.
+            "mov {t0}, {m0}",
+            "and {t0}, {s0}",
+            "mov rax, {m1}",
+            "and rax, {s1}",
+            "add {t0}, rax",
+            "xor {t1:e}, {t1:e}",
+            "xor {t2:e}, {t2:e}",
+            "xor {t3:e}, {t3:e}",
+            "xor {t4:e}, {t4:e}",
+            // Column 0.
+            "mov rax, qword ptr [{x}]",
+            "xor rax, {s0}",
+            "mul {m0}",
+            "add {t0}, rax",
+            "adc {t1}, rdx",
+            "mov rax, qword ptr [{y}]",
+            "xor rax, {s1}",
+            "mul {m1}",
+            "add {t0}, rax",
+            "adc {t1}, rdx",
+            // Column 1.
+            "mov rax, qword ptr [{x} + 8]",
+            "xor rax, {s0}",
+            "mul {m0}",
+            "add {t1}, rax",
+            "adc {t2}, rdx",
+            "mov rax, qword ptr [{y} + 8]",
+            "xor rax, {s1}",
+            "mul {m1}",
+            "add {t1}, rax",
+            "adc {t2}, rdx",
+            // Column 2.
+            "mov rax, qword ptr [{x} + 16]",
+            "xor rax, {s0}",
+            "mul {m0}",
+            "add {t2}, rax",
+            "adc {t3}, rdx",
+            "mov rax, qword ptr [{y} + 16]",
+            "xor rax, {s1}",
+            "mul {m1}",
+            "add {t2}, rax",
+            "adc {t3}, rdx",
+            // Column 3.
+            "mov rax, qword ptr [{x} + 24]",
+            "xor rax, {s0}",
+            "mul {m0}",
+            "add {t3}, rax",
+            "adc {t4}, rdx",
+            "mov rax, qword ptr [{y} + 24]",
+            "xor rax, {s1}",
+            "mul {m1}",
+            "add {t3}, rax",
+            "adc {t4}, rdx",
+            // Column 4, modulo 2^64.
+            "mov rax, qword ptr [{x} + 32]",
+            "xor rax, {s0}",
+            "imul rax, {m0}",
+            "add {t4}, rax",
+            "mov rax, qword ptr [{y} + 32]",
+            "xor rax, {s1}",
+            "imul rax, {m1}",
+            "add {t4}, rax",
+            // The exact division by 2^59.
+            "shrd {t0}, {t1}, 59",
+            "shrd {t1}, {t2}, 59",
+            "shrd {t2}, {t3}, 59",
+            "shrd {t3}, {t4}, 59",
+            "sar {t4}, 59",
+            x = in(reg) f.as_ptr(),
+            y = in(reg) g.as_ptr(),
+            m0 = in(reg) m0,
+            m1 = in(reg) m1,
+            s0 = in(reg) s0,
+            s1 = in(reg) s1,
+            t0 = out(reg) t0,
+            t1 = out(reg) t1,
+            t2 = out(reg) t2,
+            t3 = out(reg) t3,
+            t4 = out(reg) t4,
+            out("rax") _,
+            out("rdx") _,
+            options(pure, readonly, nostack),
+        );
+    }
+    [t0, t1, t2, t3, t4]
+}
+
+/// One row of the combination of `d` and `e` by a transition matrix:
+/// `m0 · d + m1 · e`, as a five-word signed value for [`amontred`].
+///
+/// `d` and `e` are four words, nonnegative, and `m0`, `m1`, `s0`, and `s1` are
+/// as for [`fg_row`]. The block is that of [`fg_row`] without the shift, and
+/// with an implicit top word of zero in `d` and `e`: complemented under a mask,
+/// that word is the mask itself, so the top column multiplies the masks.
+#[inline(always)]
+pub(super) fn de_row(d: &Limbs, e: &Limbs, m0: u64, m1: u64, s0: u64, s1: u64) -> [u64; 5] {
+    let (t0, t1, t2, t3, t4): (u64, u64, u64, u64, u64);
+    // SAFETY: straight-line arithmetic reading only the eight words behind the
+    // passed references (`readonly`); no stack use, and outputs depend only on
+    // the declared inputs.
+    unsafe {
+        asm!(
+            // The initial carry, and zero high words.
+            "mov {t0}, {m0}",
+            "and {t0}, {s0}",
+            "mov rax, {m1}",
+            "and rax, {s1}",
+            "add {t0}, rax",
+            "xor {t1:e}, {t1:e}",
+            "xor {t2:e}, {t2:e}",
+            "xor {t3:e}, {t3:e}",
+            "xor {t4:e}, {t4:e}",
+            // Column 0.
+            "mov rax, qword ptr [{x}]",
+            "xor rax, {s0}",
+            "mul {m0}",
+            "add {t0}, rax",
+            "adc {t1}, rdx",
+            "mov rax, qword ptr [{y}]",
+            "xor rax, {s1}",
+            "mul {m1}",
+            "add {t0}, rax",
+            "adc {t1}, rdx",
+            // Column 1.
+            "mov rax, qword ptr [{x} + 8]",
+            "xor rax, {s0}",
+            "mul {m0}",
+            "add {t1}, rax",
+            "adc {t2}, rdx",
+            "mov rax, qword ptr [{y} + 8]",
+            "xor rax, {s1}",
+            "mul {m1}",
+            "add {t1}, rax",
+            "adc {t2}, rdx",
+            // Column 2.
+            "mov rax, qword ptr [{x} + 16]",
+            "xor rax, {s0}",
+            "mul {m0}",
+            "add {t2}, rax",
+            "adc {t3}, rdx",
+            "mov rax, qword ptr [{y} + 16]",
+            "xor rax, {s1}",
+            "mul {m1}",
+            "add {t2}, rax",
+            "adc {t3}, rdx",
+            // Column 3.
+            "mov rax, qword ptr [{x} + 24]",
+            "xor rax, {s0}",
+            "mul {m0}",
+            "add {t3}, rax",
+            "adc {t4}, rdx",
+            "mov rax, qword ptr [{y} + 24]",
+            "xor rax, {s1}",
+            "mul {m1}",
+            "add {t3}, rax",
+            "adc {t4}, rdx",
+            // Column 4, modulo 2^64: the complemented top words are the masks.
+            "mov rax, {s0}",
+            "imul rax, {m0}",
+            "add {t4}, rax",
+            "mov rax, {s1}",
+            "imul rax, {m1}",
+            "add {t4}, rax",
+            x = in(reg) d.as_ptr(),
+            y = in(reg) e.as_ptr(),
+            m0 = in(reg) m0,
+            m1 = in(reg) m1,
+            s0 = in(reg) s0,
+            s1 = in(reg) s1,
+            t0 = out(reg) t0,
+            t1 = out(reg) t1,
+            t2 = out(reg) t2,
+            t3 = out(reg) t3,
+            t4 = out(reg) t4,
+            out("rax") _,
+            out("rdx") _,
+            options(pure, readonly, nostack),
+        );
+    }
+    [t0, t1, t2, t3, t4]
+}
+
 /// The almost-Montgomery reduction of a five-word signed value by one word:
 /// `(s + w · p) / 2^64` for `s = t + 2^61 · p` and `w = s · inv mod 2^64`, as
 /// four words.
@@ -1025,9 +1235,8 @@ impl super::entry::MontgomeryBlocks for Backend {
     }
 }
 
-/// The inversion's blocks. `sign_mag`, `amontred`, and `cond_sub` are this
-/// backend's assembly; `divstep59` and the two row blocks are the portable
-/// blocks until their x86-64 assembly is written.
+/// The inversion's blocks. All but `divstep59` are this backend's assembly;
+/// `divstep59` is the portable block until its x86-64 assembly is written.
 impl crate::inversion::InvertBlocks for Backend {
     #[inline(always)]
     fn divstep59(two_delta: u64, f0: u64, g0: u64) -> [u64; 5] {
@@ -1041,12 +1250,12 @@ impl crate::inversion::InvertBlocks for Backend {
 
     #[inline(always)]
     fn fg_row(f: &[u64; 5], g: &[u64; 5], m0: u64, m1: u64, s0: u64, s1: u64) -> [u64; 5] {
-        <Portable as InvertBlocks>::fg_row(f, g, m0, m1, s0, s1)
+        fg_row(f, g, m0, m1, s0, s1)
     }
 
     #[inline(always)]
     fn de_row(d: &Limbs, e: &Limbs, m0: u64, m1: u64, s0: u64, s1: u64) -> [u64; 5] {
-        <Portable as InvertBlocks>::de_row(d, e, m0, m1, s0, s1)
+        de_row(d, e, m0, m1, s0, s1)
     }
 
     #[inline(always)]
