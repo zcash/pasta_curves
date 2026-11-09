@@ -179,6 +179,20 @@ fn carry_boundaries_match_the_portable_arithmetic() {
     }
     check!(Fp, &FP, FP_CARRY_PRODUCTS, FP_CARRY_CONVERSIONS, FP_CARRY_SQUARES);
     check!(Fq, &FQ, FQ_CARRY_PRODUCTS, FQ_CARRY_CONVERSIONS, FQ_CARRY_SQUARES);
+    check!(
+        Fp,
+        &FP,
+        FP_INSTRUCTION_CARRY_PRODUCTS,
+        FP_INSTRUCTION_CARRY_VALUES,
+        FP_INSTRUCTION_CARRY_VALUES
+    );
+    check!(
+        Fq,
+        &FQ,
+        FQ_INSTRUCTION_CARRY_PRODUCTS,
+        FQ_INSTRUCTION_CARRY_VALUES,
+        FQ_INSTRUCTION_CARRY_VALUES
+    );
 }
 
 const FP_CARRY_PRODUCTS: [(Limbs, Limbs); 5] = [
@@ -251,6 +265,97 @@ const FQ_CARRY_SQUARES: [Limbs; 4] = [
     [0xffffffffffffffff, 0xf318d7a93e3678b1, 0xa8f66fc21fd82e05, 0x0da670dd9db2bc57],
     [0xb9a416acecbdffef, 0xfa57d3ffda8efe2c, 0x4802dfc351a5c82b, 0x05a4ca4894ffb4a3],
     [0x253271754a39c871, 0x885109b7ef9eec83, 0x34167997567fd0e1, 0x10c292d7a6742051],
+];
+
+/// Operands that flip carry decisions of the AArch64 instruction stream which random operands
+/// reach with probability about `2^-64`: each value is converted and squared, and each pair
+/// multiplied. Unlike the constants above, which follow the algorithm both backends share, these
+/// were chosen for particular instructions, by an interpreter of the AArch64 assembly that is not
+/// part of the crate; they are taken unchanged from commit `5e46ad7`, where it derived them. They
+/// run on both backends.
+const FP_INSTRUCTION_CARRY_PRODUCTS: [(Limbs, Limbs); 8] = [
+    (
+        [0x325a61da00000002, 0xcda6461167ef478b, 0x7cf7340548eeb3db, 0x2aaaaaaaaaaaaaaa],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0xbbd43a3bb7114c25, 0x663ae9430713b837, 0x7d055c0a9fa26498, 0x3aa4665661bbf6cf],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x54a0a6e055555557, 0xb007403564d59f2f, 0xb6cc8abeb7114c23, 0x3cf7340548eeb3db],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x3649feebfe86eb07, 0x4f49a9ff24c960ec, 0xaf500ec0c098e9a5, 0x3cf7340548eeb3dd],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x992d30ed00000001, 0xab5fad155ea24e6f, 0xd24c895a9e440930, 0x3fffffffffffffff],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x2246450655555555, 0xf4932256a791024c, 0xffffffffffffffff, 0x3fffffffffffffff],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x0e979cf32d1634b4, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+        [0xfffffffffffffffc, 0xfffffffffffffffc, 0xf06313fff9a01fe8, 0x0000000000000000],
+    ),
+    (
+        [0x3fd4235992edcf45, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+        [0xfffffffffffffffc, 0xfffffffffffffffc, 0x377b9aa2bb2edb20, 0x0000000000000000],
+    ),
+];
+const FP_INSTRUCTION_CARRY_VALUES: [Limbs; 6] = [
+    [0x0000000000000007, 0x29ef6ceb411acfbc, 0xffffffffffffffff, 0x0000000000000000],
+    [0x992d30ed00000001, 0x86fb5cb0094cf91f, 0xefed33032533e472, 0x1db96703f6b306e3],
+    [0xfde1f4a100000005, 0xab60fcec2e80dd89, 0x66d2cf1300000000, 0x1db96703f6b306e4],
+    [0x992d30ed00000001, 0x8919680f094cf91b, 0xddb96703f6b306e4, 0x3ffffffffffffffe],
+    [0x0000000000000005, 0xffffffffffffffff, 0xffffffffffffffff, 0x3ffffffffffffffe],
+    [0x992d30ed00000001, 0x8919680f094cf91b, 0x08495200fffffffe, 0x3fffffffffffffff],
+];
+const FQ_INSTRUCTION_CARRY_PRODUCTS: [(Limbs, Limbs); 8] = [
+    (
+        [0xabee9f01b770e127, 0xbd05e7fc2956a1b5, 0x167cfefa9fbbfce4, 0x14467d9a621b8bd2],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0xe6e6771d157644ec, 0xc1ad5212056dd6a1, 0x1d16d13998688235, 0x27a1deaff339c985],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x188dd64200000002, 0x342ea321687ea70f, 0x7cf73405488f1ed9, 0x2aaaaaaaaaaaaaaa],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x9476328c55555557, 0x497ee325654d1972, 0x1d54e7ceb770e126, 0x3cf73405488f1ed9],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x8c46eb2100000001, 0x11e80a255ee9fe31, 0xd24c895a9de4742e, 0x3fffffffffffffff],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x7be85c4a55555555, 0xf4932256a7791d0b, 0xffffffffffffffff, 0x3fffffffffffffff],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0xec1d7da0a6eb8c9e, 0x076ce2ef87b0b125, 0x77330bdbd7210dff, 0xf17fd374c6a53877],
+        [0xfc9678ff0000000f, 0x67bb433d891a16e3, 0x7fae231004ccf590, 0x096d41af7ccfdaa9],
+    ),
+    (
+        [0xd6a34d3e558d2adb, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+        [0xfffffffffffffffc, 0xfffffffffffffffc, 0xfb368220216d27a2, 0x0000000000000000],
+    ),
+];
+const FQ_INSTRUCTION_CARRY_VALUES: [Limbs; 6] = [
+    [0x0000000000000005, 0x015bcb7b2fe74c50, 0xffffffffffffffff, 0x0000000000000000],
+    [0xa4d4c16300000003, 0x97ef77781cbdfa9c, 0xfcd378cf2652a376, 0x04655c82fffffffe],
+    [0xbd6297a500000005, 0xab60fcec2fe74c53, 0x73b914df00000000, 0x1db96703f66b5722],
+    [0x8c46eb2100000001, 0x95ffaddb0994a8dd, 0xddb96703f66b5722, 0x3ffffffffffffffe],
+    [0x8c46eb2100000001, 0x95ffaddb0994a8e1, 0xdf15327f2652a372, 0x3ffffffffffffffe],
+    [0x0000000000000001, 0x66abf57f0994a8dc, 0xffffffffffffffff, 0x3ffffffffffffffe],
 ];
 
 #[test]
