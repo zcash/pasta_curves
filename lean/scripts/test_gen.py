@@ -1154,13 +1154,10 @@ class SkeletonCheckerTests(unittest.TestCase):
             self.assertTrue(gen.check_specs())
         for name in gen.UNPROVED_ROUTINES.get("ARMv7EM", ()):
             self.assertIn(f"unproved: ARMv7EM:{name}", output.getvalue())
-        self.assertNotIn("unproved: ARMv7EM:", output.getvalue())
-        self.assertIn("unproved; checks passed", output.getvalue())
+        self.assertIn("0 unproved; checks passed", output.getvalue())
 
-        # The x86-64 inversion blocks are transcribed ahead of their proofs.
-        if not any(gen.UNPROVED_ROUTINES.values()):
-            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                self.assertTrue(gen.check_specs(strict=True))
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertTrue(gen.check_specs(strict=True))
 
 
 class KnownAnswerTests(unittest.TestCase):
