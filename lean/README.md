@@ -133,6 +133,7 @@ PastaCurves/Tactic/WordStep.lean         `word_step`, one instruction's step of 
 PastaCurves/Vectors.lean                 GENERATED: the reference vectors inside the contracts
 ../test-vectors/pasta_mul-armv8-vectors.txt   the hardware outputs the vectors are generated from
 PastaCurves/VectorCheck.lean             a backend's routines, and the vectors it fails
+PastaCurves/ArithmeticChecks.lean        boundary-input arithmetic checks over a backend's routines
 PastaCurves/Words.lean                   the model's values as the translations' words and arrays
 PastaCurves/Inversion/Divstep.lean       half-delta divsteps on integers: the step matrix and its bounds
 PastaCurves/Inversion/Packed.lean        divsteps on packed words: the batch equals the true matrix
@@ -154,6 +155,7 @@ PastaCurves/AArch64/Semantics.lean       AArch64 instruction semantics
 PastaCurves/AArch64/Transcription.lean   GENERATED: the blocks and their factored rounds
 PastaCurves/AArch64/Compositions.lean    `from_mont` as `mul` by one; the inversion blocks' record
 PastaCurves/AArch64/Vectors.lean         the AArch64 blocks on the vectors, kernel-checked
+PastaCurves/AArch64/Checks.lean          the shared arithmetic checks on the AArch64 routines
 PastaCurves/AArch64/Spec.lean            proofs about the AArch64 blocks
 PastaCurves/AArch64/Spec/*.lean          the block proofs, one file per block, imported by Spec.lean
 PastaCurves/AArch64/Entry.lean           the AArch64 blocks at the two fields: the contracts, `invert`
@@ -163,7 +165,7 @@ PastaCurves/X86_64/Semantics.lean        x86-64 instruction semantics and eight-
 PastaCurves/X86_64/Transcription.lean    GENERATED: all six x86-64 assembly blocks
 PastaCurves/X86_64/Compositions.lean     split square
 PastaCurves/X86_64/Vectors.lean          the x86-64 blocks on the vectors, kernel-checked
-PastaCurves/X86_64/Checks.lean           additional kernel-checked arithmetic examples
+PastaCurves/X86_64/Checks.lean           the shared arithmetic checks on the x86-64 routines
 PastaCurves/X86_64/Spec.lean             proofs about the x86-64 blocks
 PastaCurves/X86_64/Spec/*.lean           the block proofs, one file per block, and Arithmetic.lean
 PastaCurves/X86_64/Entry.lean            the x86-64 blocks at the two fields: the contracts

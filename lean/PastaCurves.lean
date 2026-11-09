@@ -6,6 +6,7 @@ import PastaCurves.FieldTypes
 import PastaCurves.KnownAnswers
 import PastaCurves.Compositions
 import PastaCurves.Spec
+import PastaCurves.ArithmeticChecks
 import PastaCurves.Inversion.Divstep
 import PastaCurves.Inversion.Packed
 import PastaCurves.Inversion.Divstep59
