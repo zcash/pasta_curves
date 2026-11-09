@@ -149,6 +149,110 @@ fn entry_points_match_the_portable_arithmetic() {
     );
 }
 
+/// Operands whose Montgomery multiplication, conversion, or squaring carries through a limb that is
+/// exactly all ones, which random operands do with probability about `2^-64`, so the differential
+/// test above never reaches it. They are the same for both backends, though each orders its
+/// partial sums differently. `sage/asm_carry_vectors.py` constructs them, says how, and prints
+/// these constants; each case asserts that it is within its routine's contract.
+#[test]
+fn carry_boundaries_match_the_portable_arithmetic() {
+    macro_rules! check {
+        ($field:ident, $f:expr, $products:expr, $conversions:expr, $squares:expr) => {{
+            use crate::fields::$field;
+            let f = $f;
+            let portable_mul = |x: &Limbs, y: &Limbs| $field::mul(&$field(*x), &$field(*y)).0;
+            for (lhs, rhs) in $products {
+                assert!(super::mul_contract(&lhs, &rhs, &f.modulus), "{lhs:x?} {rhs:x?}");
+                let product = portable_mul(&lhs, &rhs);
+                assert_eq!(mul(&lhs, &rhs, &f.modulus, f.inv), product, "{lhs:x?} {rhs:x?}");
+            }
+            for value in $conversions {
+                let expected = portable_mul(&value, &[1, 0, 0, 0]);
+                assert_eq!(from_mont(&value, &f.modulus, f.inv), expected, "{value:x?}");
+            }
+            for value in $squares {
+                assert!(super::is_canonical(&value, &f.modulus), "{value:x?}");
+                let expected = $field::square(&$field(value)).0;
+                assert_eq!(square(&value, &f.modulus, f.inv), expected, "{value:x?}");
+            }
+        }};
+    }
+    check!(Fp, &FP, FP_CARRY_PRODUCTS, FP_CARRY_CONVERSIONS, FP_CARRY_SQUARES);
+    check!(Fq, &FQ, FQ_CARRY_PRODUCTS, FQ_CARRY_CONVERSIONS, FQ_CARRY_SQUARES);
+}
+
+const FP_CARRY_PRODUCTS: [(Limbs, Limbs); 5] = [
+    (
+        [0xecb361974ad05e8c, 0x3a8f9ecbe676d4e6, 0xfef21d3c38385851, 0x0000000000000000],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x992d30ed00000001, 0x99e23357b3f7a3c7, 0x08e00b2bd69dbe75, 0x34ab5355df06c5ee],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x10733d5083e4e848, 0x1c36c808a1f48465, 0x7dad15c89f64973e, 0x08e00b2bd69dbe75],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x9611991fa589062b, 0xd74aa9080a2e2049, 0x1775f7d611ffb22f, 0x3dad15c89f64973e],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0xfd23a604b8b15bf4, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+        [0xfffffffffffffffd, 0xfffffffffffffffd, 0x7e0502c84b0e62be, 0x0000000000000000],
+    ),
+];
+const FP_CARRY_CONVERSIONS: [Limbs; 5] = [
+    [0xc61a24c5e0711ba4, 0xafaedc63b3647eb4, 0xfcd657b4a8a908f3, 0x0000000000000002],
+    [0x992d30ed00000001, 0x8919680f094cf91f, 0x1aa0218383d93b60, 0x1e01fa019d1451ca],
+    [0x3159b7f18baeb8d8, 0x54a45819e5dd8d2f, 0x79074159de2dc5ba, 0x1aa0218383d93b60],
+    [0x8fda6984f09b127f, 0x4152c9200bf06ea5, 0x4661e78235ff168f, 0x39074159de2dc5ba],
+    [0xfde1f4a100000005, 0x1233cbff2e80dd89, 0xddb96703f6b306e5, 0x3fffffffffffffff],
+];
+const FP_CARRY_SQUARES: [Limbs; 5] = [
+    [0x536967897fffffff, 0x9ed9b6f09c2efadd, 0xfc863910ee916f61, 0x2368692f274511f2],
+    [0x0000000000000001, 0x67746f43c1509ed9, 0x5673e28f52f3f2c9, 0x04838430f1e63364],
+    [0x5d4c91ad11095631, 0x410a440baf4bd943, 0xeaac8a08857bf81c, 0x2f08066660e89aa1],
+    [0x0e6787dca0c77f89, 0x009bf53e9eee1b83, 0x1eaea71f9512ccb4, 0x29338e963d18c13e],
+    [0x95119c357b2ec249, 0xe77902cd01b145d9, 0xac30093e8d12b063, 0x2251f476e1435aba],
+];
+const FQ_CARRY_PRODUCTS: [(Limbs, Limbs); 5] = [
+    (
+        [0xcdc162832a70a600, 0x1a78d004b8d3231d, 0xfb78f599f0145f6d, 0x0000000000000002],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x8c46eb2100000001, 0x9e2ef5465ee9fe35, 0x525ca335dcdcf38b, 0x355b274cb7088afa],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0xfe26d6c423ddd417, 0xf6d74768f2625add, 0x819bad2805879129, 0x125ca335dcdcf38b],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0xfdc7a53a8c8c31d2, 0x5cfac8b8b3e3d133, 0xed01cf7d7f01298f, 0x019bad2805879129],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0xefb9f2c6aa61e488, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+        [0xfffffffffffffffd, 0xfffffffffffffffd, 0x9fad3bf44d7b8661, 0x0000000000000000],
+    ),
+];
+const FQ_CARRY_CONVERSIONS: [Limbs; 5] = [
+    [0x694427897f51f200, 0x4f6a700e2a796959, 0xf26ae0cdd03d1e47, 0x0000000000000008],
+    [0x8c46eb2100000001, 0x95ffaddb0994a8e5, 0xf715e9a19696daa2, 0x201175e62519a0ee],
+    [0xfa74844c6b997c45, 0xe485d63ad7271099, 0x84d307781096b37d, 0x3715e9a19696daa2],
+    [0xf956efafa5a49576, 0x16f05a2a1bab739b, 0xc7056e787d037cae, 0x04d307781096b37d],
+    [0xbd6297a500000005, 0x1f1a11cb2fe74c53, 0xddb96703f66b5723, 0x3fffffffffffffff],
+];
+const FQ_CARRY_SQUARES: [Limbs; 4] = [
+    [0x59dc8a6f7fffffff, 0xa88713f7dbf5ded5, 0x963b0cb29a9af215, 0x1a07a39e090891a9],
+    [0xffffffffffffffff, 0xf318d7a93e3678b1, 0xa8f66fc21fd82e05, 0x0da670dd9db2bc57],
+    [0xb9a416acecbdffef, 0xfa57d3ffda8efe2c, 0x4802dfc351a5c82b, 0x05a4ca4894ffb4a3],
+    [0x253271754a39c871, 0x885109b7ef9eec83, 0x34167997567fd0e1, 0x10c292d7a6742051],
+];
+
 #[test]
 fn add_known_answers() {
     for f in FIELDS {

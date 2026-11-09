@@ -10,6 +10,13 @@ them in the exact shape of the Rust code so the two can be diffed:
 - `glv_boundary_scalars.sage` — the `*_BOUNDARY_SCALAR` witnesses used
   by the `babai_boundary_*` and `native_vs_glv_boundary_*` regression
   tests in `src/glv.rs`.
+- `asm_carry_vectors.py` — the `FP_CARRY_*` and `FQ_CARRY_*`
+  operands of the `carry_boundaries_match_the_portable_arithmetic` test
+  in `src/asm/tests.rs`, whose Montgomery multiplication, conversion,
+  or squaring carries through an all-ones limb. Random operands do that
+  with probability about `2^-64`, so the script constructs them by
+  inverting the cancellation step. It is plain Python and needs no
+  SageMath.
 
 The scripts use exact integer/rational arithmetic and hand-rolled
 lattice reduction only, so their output is deterministic and does not
@@ -25,6 +32,7 @@ pip-installable distribution of SageMath (see `pyproject.toml` /
 ```console
 $ uv run sage glv_constants.sage
 $ uv run sage glv_boundary_scalars.sage
+$ python3 asm_carry_vectors.py
 ```
 
 Any reasonably recent standalone SageMath installation works too:
