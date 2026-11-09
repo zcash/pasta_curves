@@ -189,6 +189,34 @@ theorem divstep_words_add (s : State) (hf : s.f % 2 = 1) (hd : s.two_delta % 2 =
   · split_ifs <;> omega
   · omega
 
+/-- Testing bit 1 of a word finds it clear exactly when `x / 2` is even. A step tests the
+unhalved `g` this way for the parity of the halved one. -/
+theorem andw_two_eq_zero_iff (x : ℕ) : andw x 2 = 0 ↔ x / 2 % 2 = 0 := by
+  have h2 : ∀ i, Nat.testBit 2 i = decide (i = 1) := by
+    intro i
+    rw [show (2 : ℕ) = 2^1 by norm_num, Nat.testBit_two_pow]
+    simp [eq_comm]
+  have hx : x.testBit 1 = decide (x / 2 % 2 = 1) := by
+    simp only [Nat.testBit_eq_decide_div_mod_eq, pow_one]
+  unfold andw
+  constructor
+  · intro h
+    have h1 := congrArg (fun y => Nat.testBit y 1) h
+    simp only [Nat.testBit_and, h2, Nat.zero_testBit, hx] at h1
+    simp at h1
+    omega
+  · intro h
+    apply Nat.eq_of_testBit_eq
+    intro i
+    rw [Nat.testBit_and, h2, Nat.zero_testBit]
+    by_cases hi : i = 1
+    · subst hi; simp [hx, h]
+    · simp [hi]
+
+/-- Testing bit 0 of a word finds it clear exactly when the word is even. -/
+theorem andw_one_eq_zero_iff (x : ℕ) : andw x 1 = 0 ↔ x % 2 = 0 := by
+  unfold andw; rw [Nat.and_one_is_mod]
+
 /-! ## Iterating the step -/
 
 /-- A packed divstep on words, as an implementation computes it: the implementation's state, its

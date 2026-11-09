@@ -26,7 +26,8 @@ take the bound as the hypothesis `hG'`, and the batch proof supplies it for ever
 
 namespace PastaCurves.AArch64
 
-open Inversion (State divstep divstep_words_even divstep_words_swap divstep_words_add)
+open Inversion (State divstep divstep_words_even divstep_words_swap divstep_words_add
+  andw_two_eq_zero_iff)
 
 -- BEGIN divstep lemmas
 /-- `cmp two_delta, xzr`: `N` is the sign bit of `two_delta`, and `V` is clear. -/
@@ -36,29 +37,6 @@ theorem cmpFlags_zero (two_delta : ℕ) (hd : two_delta < 2^64) :
 
 /-- The immediate `#8` of `ccmp` sets `N` alone. -/
 theorem immFlags_eight : immFlags 8 = ⟨1, 0, 0, 0⟩ := rfl
-
-/-- `tst x, #2` finds bit 1 clear exactly when `x / 2` is even. -/
-theorem andw_two_eq_zero_iff (x : ℕ) : andw x 2 = 0 ↔ x / 2 % 2 = 0 := by
-  have h2 : ∀ i, Nat.testBit 2 i = decide (i = 1) := by
-    intro i
-    rw [show (2 : ℕ) = 2^1 by norm_num, Nat.testBit_two_pow]
-    simp [eq_comm]
-  have hx : x.testBit 1 = decide (x / 2 % 2 = 1) := by
-    simp only [Nat.testBit_eq_decide_div_mod_eq, pow_one]
-  unfold andw
-  constructor
-  · intro h
-    have h1 := congrArg (fun y => Nat.testBit y 1) h
-    simp only [Nat.testBit_and, h2, Nat.zero_testBit, hx] at h1
-    simp at h1
-    omega
-  · intro h
-    apply Nat.eq_of_testBit_eq
-    intro i
-    rw [Nat.testBit_and, h2, Nat.zero_testBit]
-    by_cases hi : i = 1
-    · subst hi; simp [hx, h]
-    · simp [hi]
 
 /-- The step on words, from its instruction equations: the new `two_delta`, `f`, and `g` words carry
 the divstep of `s`, and bit 1 of the unhalved `g` word is the parity of the new `g`. The three cases
