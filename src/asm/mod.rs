@@ -9,9 +9,9 @@
 //! With the `asm` feature enabled, the ARMv7E-M backend is intended for
 //! `thumbv7em-none-eabihf`, where it uses rolling UMAAL multiplication and
 //! squaring and dedicated Montgomery conversion; field addition and subtraction
-//! remain portable. The AArch64 backend provides all inversion blocks in
-//! assembly; the ARM backend uses its `divstep59`, `amontred`, and `cond_sub`
-//! blocks alongside portable Rust for the other three.
+//! remain portable. The AArch64 and x86-64 backends provide all inversion
+//! blocks in assembly; the ARM backend uses its `divstep59`, `amontred`, and
+//! `cond_sub` blocks alongside portable Rust for the other three.
 //!
 //! Some ARM targets match the gate but lack the required Thumb-2 or DSP
 //! instructions. Pass `--cfg pasta_curves_noasm` through `RUSTFLAGS` or
@@ -152,7 +152,7 @@ if_asm_supported! {
     pub(crate) mod aarch64;
 
     #[cfg(any(target_arch = "x86_64", doc))]
-    mod x86_64;
+    pub(crate) mod x86_64;
 
     #[cfg(any(target_arch = "arm", doc))]
     pub(crate) mod armv7em;

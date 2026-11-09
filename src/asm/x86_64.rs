@@ -1503,7 +1503,7 @@ pub(super) fn cond_sub(value: &Limbs, modulus: &Limbs) -> Limbs {
 /// The backend's blocks: its Montgomery arithmetic, for the entry points in
 /// `entry.rs`, and its inversion blocks, for the generic driver of
 /// `crate::inversion`.
-pub(super) struct Backend;
+pub(crate) struct Backend;
 
 impl super::entry::MontgomeryBlocks for Backend {
     #[inline(always)]
