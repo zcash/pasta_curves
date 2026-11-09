@@ -4,6 +4,7 @@ import PastaCurves.X86_64.Spec.Sub
 import PastaCurves.X86_64.Spec.Mul
 import PastaCurves.X86_64.Spec.Square
 import PastaCurves.X86_64.Spec.FromMont
+import PastaCurves.X86_64.Spec.CondSub
 
 /-!
 # Correctness proofs for the x86-64 blocks
