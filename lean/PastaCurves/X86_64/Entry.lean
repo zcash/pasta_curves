@@ -14,10 +14,24 @@ backend's record of Montgomery blocks (`Backend.lean`) meets the contracts that 
 states, under the conditions that the entry points assert in a debug build. The theorems of
 `Glue/Spec.lean` carry those contracts through Aeneas' translation of the entry points'
 compositions, so they hold for the crate's `add`, `sub`, `mul`, `square`, `sqr_n_mul`, and
-`from_mont` on this backend.
+`from_mont` on this backend. `invert_entry_spec` is the crate's `invert` on the x86-64 inversion
+blocks. The results are stated against the Montgomery radix `R = 2^256` of `Fields.lean`.
 -/
 
 namespace PastaCurves.X86_64
+
+/-- The crate's `invert` at a Pasta field, on the x86-64 blocks: the shared `invert_entry_spec`
+at `invertBlocks`. The input is canonical, as the entry point asserts, and `e0` is `2^562 mod p`,
+as its contract requires. The result is canonical. For `x = 0` it is `0`; otherwise it is the
+Montgomery inverse, with `x * result ≡ R^2 (mod p)`. -/
+theorem invert_entry_spec (F : PastaField) (x : Limbs) (hx : x.Bounded)
+    (h : isCanonical x F.modulus = true) (e0 : Limbs) (he0 : e0 = Inversion.startE F) :
+    (invert invertBlocks x F.modulus F.inv e0).Bounded ∧
+      (invert invertBlocks x F.modulus F.inv e0).toNat < F.modulus.toNat ∧
+      (x.toNat = 0 → invert invertBlocks x F.modulus F.inv e0 = Limbs.ofNat 0) ∧
+      (x.toNat ≠ 0 →
+        x.toNat * (invert invertBlocks x F.modulus F.inv e0).toNat ≡ R^2 [MOD F.modulus.toNat]) :=
+  PastaCurves.invert_entry_spec invertBlocks F (invertBlocks_spec F) x hx h e0 he0
 
 /-- The x86-64 record meets the blocks' contracts at a Pasta field, by the blocks' theorems,
 including those of its own conversion out of Montgomery form. -/
