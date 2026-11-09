@@ -78,6 +78,8 @@
 use core::arch::asm;
 
 use super::Limbs;
+use crate::inversion::InvertBlocks;
+use crate::inversion::portable::Backend as Portable;
 
 const PASTA_HIGH_LIMB: u64 = 1 << 62;
 
@@ -803,7 +805,175 @@ pub(super) fn from_mont(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     [o0, o1, o2, o3]
 }
 
-/// The backend's blocks, for the entry points in `entry.rs`.
+/// The sign-magnitude form of a transition matrix: each entry's magnitude,
+/// and its sign as a mask (all ones for a negative entry, else zero).
+///
+/// The row blocks multiply by a negative entry `m` as `|m| · ((x ^ mask) + 1)`,
+/// so they take the entries in this form. The result is `[u, v, q, r, su, sv,
+/// sq, sr]`, magnitudes then masks. Each entry is split as s2n-bignum's x86-64
+/// `bignum_montinv_p256` splits it: the mask is the arithmetic shift of the
+/// entry by 63, and the magnitude is the entry xored with the mask minus the
+/// mask.
+#[inline(always)]
+pub(super) fn sign_mag(mut u: u64, mut v: u64, mut q: u64, mut r: u64) -> [u64; 8] {
+    let (su, sv, sq, sr): (u64, u64, u64, u64);
+    // SAFETY: register-only arithmetic with declared inputs and outputs;
+    // no memory or stack access and no data-dependent control flow.
+    unsafe {
+        asm!(
+            "mov {su}, {u}",
+            "sar {su}, 63",
+            "xor {u}, {su}",
+            "sub {u}, {su}",
+            "mov {sv}, {v}",
+            "sar {sv}, 63",
+            "xor {v}, {sv}",
+            "sub {v}, {sv}",
+            "mov {sq}, {q}",
+            "sar {sq}, 63",
+            "xor {q}, {sq}",
+            "sub {q}, {sq}",
+            "mov {sr}, {r}",
+            "sar {sr}, 63",
+            "xor {r}, {sr}",
+            "sub {r}, {sr}",
+            u = inout(reg) u,
+            v = inout(reg) v,
+            q = inout(reg) q,
+            r = inout(reg) r,
+            su = out(reg) su,
+            sv = out(reg) sv,
+            sq = out(reg) sq,
+            sr = out(reg) sr,
+            options(pure, nomem, nostack),
+        );
+    }
+    [u, v, q, r, su, sv, sq, sr]
+}
+
+/// The almost-Montgomery reduction of a five-word signed value by one word:
+/// `(s + w · p) / 2^64` for `s = t + 2^61 · p` and `w = s · inv mod 2^64`, as
+/// four words.
+///
+/// For `|t| < 2^315`, which the row combinations satisfy, the result is below
+/// `2p` and below `2^256` (Lemma 10 of `book/src/design/inversion.md`), so, as
+/// in the AArch64 block and unlike P-256's `amontred` in s2n-bignum, there is
+/// no top carry to capture and no conditional subtraction. Adding `2^61 · p`
+/// for the Pasta shape adds `p0 << 61`, `(p1 : p0) >> 3`, `p1 >> 3`, and
+/// `2^59` at words 0, 1, 2, and 4. All four are formed before the addition,
+/// since the shifts write the flags. `w` is formed in RDX, where `inv`
+/// arrives, so that MULX, which leaves the flags alone, takes it as its
+/// implicit multiplicand. Adding `w · p` is the cancellation step of `mul`:
+/// the low word cancels, with a carry exactly when `s0` is nonzero, which is
+/// the carry that `neg` sets; the high halves and `w · 2^254` go in one chain
+/// and the low half of `w · p1` in another.
+///
+/// The modulus limbs are read through a pointer, as in [`mul`], which keeps
+/// the block at twelve registers.
+#[inline(always)]
+pub(super) fn amontred(t: &[u64; 5], modulus: &Limbs, inv: u64) -> Limbs {
+    let (o0, o1, o2, o3): (u64, u64, u64, u64);
+    // SAFETY: straight-line arithmetic reading only the modulus words behind
+    // the passed reference (`readonly`); no stack use, and outputs depend only
+    // on the declared inputs.
+    unsafe {
+        asm!(
+            // s = t + 2^61 p, in five words.
+            "mov {w0}, qword ptr [{p}]",
+            "shl {w0}, 61",
+            "mov {w2}, qword ptr [{p} + 8]",
+            "mov {w1}, qword ptr [{p}]",
+            "shrd {w1}, {w2}, 3",
+            "shr {w2}, 3",
+            "movabs {w3}, {two59}",
+            "add {t0}, {w0}",
+            "adc {t1}, {w1}",
+            "adc {t2}, {w2}",
+            "adc {t3}, 0",
+            "adc {t4}, {w3}",
+            // w = s0 · inv, and the products of w with the modulus.
+            "imul rdx, {t0}",
+            "mulx {w0}, {w1}, qword ptr [{p}]",
+            "mulx {w2}, {w3}, qword ptr [{p} + 8]",
+            "mov {w1}, rdx",
+            "shl {w1}, 62",
+            "mov {w4}, rdx",
+            "shr {w4}, 2",
+            // s + w p.
+            "neg {t0}",
+            "adc {t1}, {w0}",
+            "adc {t2}, {w2}",
+            "adc {t3}, {w1}",
+            "adc {t4}, {w4}",
+            "add {t1}, {w3}",
+            "adc {t2}, 0",
+            "adc {t3}, 0",
+            "adc {t4}, 0",
+            t0 = inout(reg) t[0] => _,
+            t1 = inout(reg) t[1] => o0,
+            t2 = inout(reg) t[2] => o1,
+            t3 = inout(reg) t[3] => o2,
+            t4 = inout(reg) t[4] => o3,
+            p = in(reg) modulus.as_ptr(),
+            two59 = const 1u64 << 59,
+            w0 = out(reg) _,
+            w1 = out(reg) _,
+            w2 = out(reg) _,
+            w3 = out(reg) _,
+            w4 = out(reg) _,
+            inout("rdx") inv => _,
+            options(pure, readonly, nostack),
+        );
+    }
+    [o0, o1, o2, o3]
+}
+
+/// Subtracts the modulus from `value` unless the subtraction borrows.
+///
+/// For `value < 2p` the result is `value mod p`; the inversion applies it to
+/// the final round's `amontred` output, which is below `2p`. Like [`add`], it
+/// hardcodes the Pasta modulus shape (`modulus[2] == 0`). The differences are
+/// formed in temporaries, since MOV leaves the borrow flag alone, and CMOVNC
+/// takes them when the last subtraction did not borrow.
+#[inline(always)]
+pub(super) fn cond_sub(value: &Limbs, modulus: &Limbs) -> Limbs {
+    let [mut r0, mut r1, mut r2, mut r3] = *value;
+    // SAFETY: register-only arithmetic with declared inputs and outputs;
+    // no memory or stack access and no data-dependent control flow.
+    unsafe {
+        asm!(
+            "mov {t0}, {r0}",
+            "sub {t0}, {p0}",
+            "mov {t1}, {r1}",
+            "sbb {t1}, {p1}",
+            "mov {t2}, {r2}",
+            "sbb {t2}, 0",
+            "mov {t3}, {r3}",
+            "sbb {t3}, {p3}",
+            "cmovnc {r0}, {t0}",
+            "cmovnc {r1}, {t1}",
+            "cmovnc {r2}, {t2}",
+            "cmovnc {r3}, {t3}",
+            r0 = inout(reg) r0,
+            r1 = inout(reg) r1,
+            r2 = inout(reg) r2,
+            r3 = inout(reg) r3,
+            p0 = in(reg) modulus[0],
+            p1 = in(reg) modulus[1],
+            p3 = in(reg) modulus[3],
+            t0 = out(reg) _,
+            t1 = out(reg) _,
+            t2 = out(reg) _,
+            t3 = out(reg) _,
+            options(pure, nomem, nostack),
+        );
+    }
+    [r0, r1, r2, r3]
+}
+
+/// The backend's blocks: its Montgomery arithmetic, for the entry points in
+/// `entry.rs`, and its inversion blocks, for the generic driver of
+/// `crate::inversion`.
 pub(super) struct Backend;
 
 impl super::entry::MontgomeryBlocks for Backend {
@@ -852,5 +1022,107 @@ impl super::entry::MontgomeryBlocks for Backend {
     #[inline(always)]
     fn from_mont(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
         from_mont(value, modulus, inv)
+    }
+}
+
+/// The inversion's blocks. `sign_mag`, `amontred`, and `cond_sub` are this
+/// backend's assembly; `divstep59` and the two row blocks are the portable
+/// blocks until their x86-64 assembly is written.
+impl crate::inversion::InvertBlocks for Backend {
+    #[inline(always)]
+    fn divstep59(two_delta: u64, f0: u64, g0: u64) -> [u64; 5] {
+        <Portable as InvertBlocks>::divstep59(two_delta, f0, g0)
+    }
+
+    #[inline(always)]
+    fn sign_mag(u: u64, v: u64, q: u64, r: u64) -> [u64; 8] {
+        sign_mag(u, v, q, r)
+    }
+
+    #[inline(always)]
+    fn fg_row(f: &[u64; 5], g: &[u64; 5], m0: u64, m1: u64, s0: u64, s1: u64) -> [u64; 5] {
+        <Portable as InvertBlocks>::fg_row(f, g, m0, m1, s0, s1)
+    }
+
+    #[inline(always)]
+    fn de_row(d: &Limbs, e: &Limbs, m0: u64, m1: u64, s0: u64, s1: u64) -> [u64; 5] {
+        <Portable as InvertBlocks>::de_row(d, e, m0, m1, s0, s1)
+    }
+
+    #[inline(always)]
+    fn amontred(t: &[u64; 5], modulus: &Limbs, inv: u64) -> Limbs {
+        amontred(t, modulus, inv)
+    }
+
+    #[inline(always)]
+    fn cond_sub(value: &Limbs, modulus: &Limbs) -> Limbs {
+        cond_sub(value, modulus)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Backend;
+
+    // The inversion's checks, over this backend's blocks.
+
+    #[test]
+    fn sign_mag_known_answers() {
+        crate::inversion::tests::sign_mag_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn divstep59_known_answers() {
+        crate::inversion::tests::divstep59_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn fg_row_known_answers() {
+        crate::inversion::tests::fg_row_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn de_row_known_answers() {
+        crate::inversion::tests::de_row_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn amontred_known_answers() {
+        crate::inversion::tests::amontred_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn cond_sub_known_answers() {
+        crate::inversion::tests::cond_sub_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn invert_known_answers() {
+        crate::inversion::tests::invert_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn invert_small_and_near_modulus() {
+        crate::inversion::tests::invert_small_and_near_modulus::<Backend>();
+    }
+
+    #[test]
+    fn invert_random() {
+        crate::inversion::tests::invert_random::<Backend>();
+    }
+
+    #[test]
+    fn invert_is_the_inverse() {
+        crate::inversion::tests::invert_is_the_inverse::<Backend>();
+    }
+
+    #[test]
+    fn invert_is_multiplicative() {
+        crate::inversion::tests::invert_is_multiplicative::<Backend>();
+    }
+
+    #[test]
+    fn invert_commutes_with_negation() {
+        crate::inversion::tests::invert_commutes_with_negation::<Backend>();
     }
 }
