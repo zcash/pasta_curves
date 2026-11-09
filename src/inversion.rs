@@ -3,8 +3,8 @@
 //! blocks, and `lean/PastaCurves/Inversion/Composition.lean` proves it equal to the algorithm's
 //! model for any blocks that meet the record of their specifications.
 //!
-//! [`invert`] runs the AArch64 assembly blocks where the AArch64 backend is compiled, and the
-//! same blocks in portable Rust (`portable`) everywhere else.
+//! [`invert`] runs the assembly blocks where an assembly backend is compiled, on AArch64 and
+//! x86-64, and the same blocks in portable Rust (`portable`) everywhere else.
 
 // The inversion is not yet reached from the field types.
 #![allow(dead_code)]
@@ -12,9 +12,9 @@
 use crate::limbs::Limbs;
 
 if_asm_supported! {
-    // The portable blocks serve wherever the assembly blocks do not; beside the AArch64 backend
+    // The portable blocks serve wherever the assembly blocks do not; beside an assembly backend
     // they are compiled for their tests and the documentation only.
-    #[cfg(any(not(target_arch = "aarch64"), test, doc))]
+    #[cfg(any(test, doc))]
     mod portable;
 }
 if_asm_unsupported! {
@@ -99,18 +99,18 @@ pub(crate) fn invert_with<B: InvertBlocks>(
 }
 
 if_asm_supported! {
-    /// The blocks that [`invert`] runs: the AArch64 assembly blocks where the AArch64 backend is
-    /// compiled, and the portable blocks elsewhere.
+    /// The blocks that [`invert`] runs: the assembly blocks of the backend compiled into this
+    /// build.
     #[cfg(target_arch = "aarch64")]
     type Selected = crate::asm::aarch64::Backend;
-    /// The blocks that [`invert`] runs: the AArch64 assembly blocks where the AArch64 backend is
-    /// compiled, and the portable blocks elsewhere.
-    #[cfg(not(target_arch = "aarch64"))]
-    type Selected = portable::Backend;
+    /// The blocks that [`invert`] runs: the assembly blocks of the backend compiled into this
+    /// build.
+    #[cfg(target_arch = "x86_64")]
+    type Selected = crate::asm::x86_64::Backend;
 }
 if_asm_unsupported! {
-    /// The blocks that [`invert`] runs: the AArch64 assembly blocks where the AArch64 backend is
-    /// compiled, and the portable blocks elsewhere.
+    /// The blocks that [`invert`] runs: the portable blocks, since no assembly backend is
+    /// compiled into this build.
     type Selected = portable::Backend;
 }
 
@@ -122,18 +122,18 @@ if_asm_unsupported! {
 /// Bernstein, Chen, Harrison, Huang, Maxwell, Wang, Wuille, and Yang, "Accelerating and verifying
 /// constant-time modular inversion" (EUROCRYPT 2026), as in s2n-bignum's `bignum_montinv_p256`: 590
 /// half-delta divsteps in ten rounds of 59, computed on packed words, with the coefficients reduced
-/// by one Montgomery word per round. It runs a fixed sequence of six blocks, in register-only
-/// assembly on AArch64 and in portable Rust on every other target (and on AArch64 with the assembly
-/// disabled), with no data-dependent branch or memory access in either, so its timing does not
-/// depend on `x`. The design and the correctness argument are in `book/src/design/inversion.md`.
+/// by one Montgomery word per round. It runs a fixed sequence of six blocks, in assembly on
+/// AArch64 and x86-64 and in portable Rust on every other target (and wherever the
+/// assembly is disabled), with no data-dependent branch or memory access in either, so its timing
+/// does not depend on `x`. The design and the correctness argument are in `book/src/design/inversion.md`.
 ///
 /// Outputs are canonical.
 ///
 /// # Safety
 ///
 /// `x` must be canonical. This is debug-asserted. Under that precondition the machine-checked
-/// proofs in `lean/` establish the result on AArch64 (`invert_entry_spec`, from `montInv_spec` on
-/// words and the six block proofs). Of the portable blocks, only `cond_sub` is proved, from its
+/// proofs in `lean/` establish the result on AArch64 and on x86-64 (`invert_entry_spec`, from
+/// `montInv_spec` on words and each backend's six block proofs). Of the portable blocks, only `cond_sub` is proved, from its
 /// Aeneas translation; all six are tested against the same known answers as the assembly blocks.
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, `inv` must be correctly derived

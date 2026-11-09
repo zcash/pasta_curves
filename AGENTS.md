@@ -101,9 +101,8 @@ for x86-64. Each contains:
   blocks;
 - a repeated-squaring chain, and the conversion out of Montgomery form, composed from those blocks.
 
-The AArch64 backend also contains the six blocks of a constant-time inversion. Their driver,
-`src/inversion.rs`, runs the same six blocks in portable Rust wherever the AArch64 backend is not
-compiled. The module is the one part of the crate that allows unsafe code. Its priorities are those
+Each backend also contains the six blocks of a constant-time inversion. Their driver,
+`src/inversion.rs`, runs the same six blocks in portable Rust wherever no backend is compiled. The module is the one part of the crate that allows unsafe code. Its priorities are those
 of the crate: **correctness, constant-time behaviour, and performance**, in that order.
 
 The Montgomery routines are transcriptions of Supranational's Semolina v0.1.4, and the
