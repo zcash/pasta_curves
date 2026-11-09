@@ -19,8 +19,12 @@ and this project adheres to Rust's notion of
     of many tables by one recoded scalar and returning affine points. From
     `BATCH_AFFINE_THRESHOLD` points, `Table::batch_mul` switches to the
     affine ladder that `Table::batch_mul_affine` always uses.
-  - `mul`, one point against one scalar, and `batch_mul`, many points
-    against one shared scalar.
+- One free function per call shape, in both `pasta_curves::glv` and
+  `pasta_curves::glv_eisenstein`:
+  - `mul`, one point against one scalar.
+  - `batch_mul`, many points against one shared scalar.
+  - `mul_scalars`, one point against many scalars.
+  - `mul_pairs`, many points against many scalars.
 - `CurveAffine::batch_decode_vartime`, an `alloc`-gated default method that
   decodes public compressed points with one ordered `Option` result per input.
   It is further accelerated when `sqrt-table` is enabled.
