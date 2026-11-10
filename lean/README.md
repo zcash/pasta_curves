@@ -1,20 +1,18 @@
 # Verifying the crate's Pasta assembly routines
 
 The `PastaCurves` library separates shared arithmetic definitions and lemmas from
-architecture-specific models. The AArch64 backend has transcriptions and correctness proofs.
-`PastaCurves/X86_64/Semantics.lean` adds the x86-64 word operations and borrow convention;
-`X86_64/Transcription.lean` mechanically transcribes all six assembly blocks from
-`src/asm/x86_64.rs`. The x86-64 addition and subtraction blocks have correctness proofs in
-`X86_64/Spec/Add.lean` and `X86_64/Spec/Sub.lean`. `X86_64/Spec/Square.lean` proves the exact
-eight-limb square, its `squareHi` Montgomery reduction, and their `sqrMont` composition.
-`X86_64/Spec/FromMont.lean` proves the standalone conversion block for every four-limb input,
-including all four cancellation steps and the final conditional subtraction. `X86_64/Spec/Mul.lean`
-proves Montgomery multiplication under both public operand contracts, using mechanically factored
-internal rounds. `X86_64/Spec.lean` exposes the completed block proofs, `Compositions.lean` mirrors
-the split square, and `Entry.lean` instantiates the block proofs at the two fields.
-`X86_64/Vectors.lean` checks the x86-64 blocks against the 874 in-contract vectors of the shared
-`Vectors.lean`, the existing AArch64 hardware corpus, so these are cross-backend checks rather than
-x86 hardware captures. `Checks.lean` supplies additional kernel-checked arithmetic regressions.
+architecture-specific models: one module per architecture that has an assembly backend, at present
+`AArch64`, `X86_64`, and `ARMv7EM`, each with the same roles (see the layout below). Each holds the
+architecture's instruction semantics, the generated transcription of every block of its backend's
+source file, the Rust compositions around those blocks, the vector checks, a proof of every block,
+and the entry theorems at the two fields. The block structure follows each backend's source: on
+x86-64, for instance, the squaring is split into `squareLo`, the exact eight-limb square, and
+`squareHi`, its Montgomery reduction, which `X86_64/Compositions.lean` composes into `sqrMont`,
+and `from_mont` is a block of its own, proved for every four-limb input. The vectors of the shared
+`Vectors.lean` were recorded on AArch64 hardware, so on any other architecture
+(`X86_64/Vectors.lean`, `ARMv7EM/Vectors.lean`) they are cross-backend checks rather than
+hardware captures of that architecture. The AArch64 and x86-64 `Checks.lean` run the shared
+boundary-input checks of `ArithmeticChecks.lean` on their routines.
 
 The assembly backends use `scripts/gen.py`, with shared Rust `asm!` parsing and
 architecture-specific instruction emitters; `--check` compares generated output without
@@ -385,8 +383,8 @@ The inversion's blocks, each equated with the word-level function of the shared 
   `PastaCurves/Compositions.lean`, which mirrors the Rust driver over a record of the six blocks,
   computes `montInvModel` for any backend whose blocks meet `InvertBlocks.Spec`, the record of
   the six statements above. Each round carries the model's state by those statements, whose
-  bounds come from the model's round invariant. `invertBlocks_spec` instantiates the record for
-  the AArch64 blocks.
+  bounds come from the model's round invariant. Each architecture's `invertBlocks_spec`
+  instantiates the record for its backend's blocks.
 
 The crate's Montgomery entry points, in `Glue/Spec.lean`: `add_with_spec`, `sub_with_spec`,
 `mul_with_spec`, `square_with_spec`, `sqr_n_mul_with_spec`, and `from_mont_with_spec` (all proved)
