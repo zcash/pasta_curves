@@ -7,8 +7,10 @@ import PastaCurves.Fields
 The inputs and the expected outputs of each of the inversion's six blocks, computed from the
 integer model of the algorithm's rounds on both fields, as the crate's tests in `src/inversion.rs`
 record them. Each implementation of the blocks is checked against them: the AArch64 and x86-64
-transcriptions by the kernel in `AArch64/Vectors.lean` and `X86_64/Vectors.lean`, and Aeneas'
-translation of the portable blocks as compiled tests in `Portable/Vectors.lean`.
+transcriptions by the kernel, through `Inversion/VectorCheck.lean`, in each architecture's
+`Vectors.lean`, and Aeneas' translation of the portable blocks as compiled tests in
+`Portable/Vectors.lean`. `divstepTrace` records the packed state step by step through one batch,
+against which each architecture checks its transcribed divstep round.
 -/
 
 namespace PastaCurves.Inversion
@@ -328,5 +330,30 @@ def condSubVectors : List (Limbs × PastaField × Limbs) := [
     ⟨0x8fb07221fffffff2, 0xba8b55be807a91f9, 0x8051dceffb330a6f, 0x3692be5083302556⟩),
   (⟨0xe5c6fb7bddd0cf4b, 0x65ee805e3b7d0d89, 0x7562671be840d861, 0x1253ce66fd1d1868⟩, vestaBase,
     ⟨0xe5c6fb7bddd0cf4b, 0x65ee805e3b7d0d89, 0x7562671be840d861, 0x1253ce66fd1d1868⟩)]
+
+/-- The packed state `(two_delta, f, g)` before each of the first batch's twenty steps on the first
+vector, and after the last, as in the crate's `divstep_trace`. -/
+def divstepTrace : List (Nat × Nat × Nat) := [
+  (0x0000000000000001, 0xfffffe0000000001, 0xc0000000000d9046),
+  (0x0000000000000003, 0xfffffe0000000001, 0xe00000000006c823),
+  (0xffffffffffffffff, 0xe00000000006c823, 0xf000010000036411),
+  (0x0000000000000001, 0xe00000000006c823, 0xe80000800005161a),
+  (0x0000000000000003, 0xe00000000006c823, 0xf400004000028b0d),
+  (0xffffffffffffffff, 0xf400004000028b0d, 0x0a00001ffffde175),
+  (0x0000000000000001, 0xf400004000028b0d, 0xff00003000003641),
+  (0x0000000000000001, 0xff00003000003641, 0x057ffff7fffed59a),
+  (0x0000000000000003, 0xff00003000003641, 0x02bffffbffff6acd),
+  (0xffffffffffffffff, 0x02bffffbffff6acd, 0x01dfffe5ffff9a46),
+  (0x0000000000000001, 0x02bffffbffff6acd, 0x00effff2ffffcd23),
+  (0x0000000000000001, 0x00effff2ffffcd23, 0xff17fffb8000312b),
+  (0x0000000000000001, 0xff17fffb8000312b, 0xff14000440003204),
+  (0x0000000000000003, 0xff17fffb8000312b, 0xff8a000220001902),
+  (0x0000000000000005, 0xff17fffb8000312b, 0xffc5000110000c81),
+  (0xfffffffffffffffd, 0xffc5000110000c81, 0x00568002c7ffedab),
+  (0xffffffffffffffff, 0xffc5000110000c81, 0x000dc001ebfffd16),
+  (0x0000000000000001, 0xffc5000110000c81, 0x0006e000f5fffe8b),
+  (0x0000000000000001, 0x0006e000f5fffe8b, 0x0020effff2fff905),
+  (0x0000000000000001, 0x0020effff2fff905, 0x000d07ff7e7ffd3d),
+  (0x0000000000000001, 0x000d07ff7e7ffd3d, 0xfff60bffc5c0021c)]
 
 end PastaCurves.Inversion
