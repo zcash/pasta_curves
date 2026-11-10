@@ -94,6 +94,8 @@ pub(crate) mod fixed_base;
 
 pub(crate) mod msm;
 
+// The sealed trait is unnameable outside the crate, so its crate-private AVX2 types stay hidden.
+#[allow(private_interfaces)]
 mod private {
     use crate::arithmetic::{CurveAffine, CurveExt};
 
