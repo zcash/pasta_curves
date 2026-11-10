@@ -2,3 +2,7 @@
 # and its formatter; both run by CI and by scripts/ci.sh.
 line-length = 100
 target-version = "py310"
+
+# `src()` and `dst()` build a node's operand fields: `dataclasses.field`s, not shared defaults.
+[lint.flake8-bugbear]
+extend-immutable-calls = ["asm2lean.ir.src", "asm2lean.ir.dst"]

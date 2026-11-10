@@ -211,13 +211,22 @@ describes the tools in more detail.
   per architecture. Split per-block proof files belong under `<Architecture>/Spec/`, imported by
   its `Spec.lean`. Shared arithmetic, constants, and architecture-independent lemmas stay outside
   ISA modules.
-- **Extend the shared generator pipeline.** `gen.py` owns CLI orchestration, binding storage,
-  liveness, formatting, vector emission, SSA naming, and proof skeleton generation/checking.
-  `asm_source.py` owns the self-contained Rust source parser and operand/output validation.
-  `gen_<architecture>.py` backends supply ISA-specific operand, instruction, flag, and
-  round-recognition rules through the shared machinery. Keep common code in `gen.py`, near
-  the existing implementation; a separate general-purpose module needs a substantial,
-  self-contained responsibility. Extend shared components rather than duplicating them.
+- **Extend the generator as the compiler it is.** `lean/scripts/asm2lean/` is a pipeline over
+  one intermediate representation: `rust.py` is the fail-closed front end for the Rust `asm!`
+  syntax; `block.py` is the driver every instruction set shares (operand binding, lifting,
+  results, rerolling, validation); each instruction set is one file of `isa/`
+  (`isa/aarch64.py`, `isa/x86_64.py`) that declares an `Isa` (the interface is
+  `isa/__init__.py`) and lifts instructions to IR nodes (`ir.py`) with that instruction set's
+  checks, mnemonics and conditions as enums; a binding's right-hand side is a term, not text;
+  `reroll.py` folds unrolled rounds, finding the renaming between them by matching, and
+  `validate.py` checks that every rerolled block computes the flat block's results; `lean.py`
+  and `skeleton.py` are the two back ends, and each node states its own Lean `let`s and its own
+  proof step. The crate's configuration (blocks, round folding, proof conventions, the spec
+  manifest, and the data modules) is in `lean/scripts/pasta/`, and `gen.py` is only the command
+  line. A new instruction set adds an `Isa`, a `Lifter` subclass, and node classes for its
+  operations, not branches in shared code. Generated output must stay byte-identical unless the
+  change means to alter it. The generator and its tests are fully typed: annotate every function
+  and method.
   Reject unsupported syntax, uninitialized register/flag reads, and unmodeled memory accesses;
   test those rejection paths. For x86, CF and OF are independent and must not be conflated.
 - **The Aeneas translations are generated** (`Types.lean` and `Funs.lean` under `Portable/`
