@@ -74,13 +74,13 @@ fn detect() -> bool {
 
 use super::fields::SqrtTableHelpers;
 
-const L: usize = 9;
-const BITS: i32 = 29;
-const MASK: u64 = (1 << BITS) - 1;
+pub(super) const L: usize = 9;
+pub(super) const BITS: i32 = 29;
+pub(super) const MASK: u64 = (1 << BITS) - 1;
 
 /// Four field elements, limb-major.
 #[derive(Clone, Copy)]
-struct V([__m256i; L]);
+pub(super) struct V(pub(super) [__m256i; L]);
 
 /// Little-endian 256-bit integers, four per vector, `G` vectors.
 pub(crate) type Lanes<const G: usize> = [[[u64; 4]; 4]; G];
@@ -104,7 +104,7 @@ const fn to29(x: &[u64; 4]) -> [u64; L] {
 
 /// Converts a Pasta modulus to radix 2^29, checking the sparse shape that `mul` and `sqr`
 /// assume.
-const fn pasta_limbs29(p: &[u64; 4]) -> [u64; L] {
+pub(super) const fn pasta_limbs29(p: &[u64; 4]) -> [u64; L] {
     let l = to29(p);
     assert!(l[0] == 1 && l[5] == 0 && l[6] == 0 && l[7] == 0 && l[8] == 1 << 22);
     l
@@ -113,7 +113,10 @@ const fn pasta_limbs29(p: &[u64; 4]) -> [u64; L] {
 /// Lane-wise Montgomery product.
 #[target_feature(enable = "avx2")]
 #[inline]
-unsafe fn mul<const P0: u64, const P1: u64, const P2: u64, const P3: u64>(a: &V, b: &V) -> V {
+pub(super) unsafe fn mul<const P0: u64, const P1: u64, const P2: u64, const P3: u64>(
+    a: &V,
+    b: &V,
+) -> V {
     // SAFETY: callers establish AVX2 availability; lane bounds are documented above.
     unsafe {
         let p = const { pasta_limbs29(&[P0, P1, P2, P3]) };
@@ -676,7 +679,7 @@ unsafe fn sqr<const P0: u64, const P1: u64, const P2: u64, const P3: u64>(a: &V)
 /// Packs four little-endian 256-bit integers (each below 2^261).
 #[target_feature(enable = "avx2")]
 #[inline]
-unsafe fn pack(x: &[[u64; 4]; 4]) -> V {
+pub(super) unsafe fn pack(x: &[[u64; 4]; 4]) -> V {
     // SAFETY: callers establish AVX2 availability; lane bounds are documented above.
     unsafe {
         let l = [to29(&x[0]), to29(&x[1]), to29(&x[2]), to29(&x[3])];
@@ -697,7 +700,7 @@ unsafe fn pack(x: &[[u64; 4]; 4]) -> V {
 /// leave them).
 #[target_feature(enable = "avx2")]
 #[inline]
-unsafe fn unpack(v: &V) -> [[u64; 4]; 4] {
+pub(super) unsafe fn unpack(v: &V) -> [[u64; 4]; 4] {
     // SAFETY: callers establish AVX2 availability; lane bounds are documented above.
     unsafe {
         let mut limbs = [[0u64; 4]; L];

@@ -26,11 +26,27 @@
 use alloc::{boxed::Box, vec, vec::Vec};
 use core::fmt;
 
-use ff::{Field, WithSmallOrderMulGroup};
+#[cfg(not(all(
+    feature = "asm",
+    feature = "sqrt-table",
+    target_arch = "x86_64",
+    target_feature = "avx2",
+    not(pasta_curves_noasm)
+)))]
+use ff::Field;
+use ff::WithSmallOrderMulGroup;
 
+#[cfg(not(all(
+    feature = "asm",
+    feature = "sqrt-table",
+    target_arch = "x86_64",
+    target_feature = "avx2",
+    not(pasta_curves_noasm)
+)))]
+use super::msm::{AffinePoint, reduce_affine_buckets};
 use super::{
     decompose,
-    msm::{AffinePoint, GLV_COMPONENT_BITS, MsmCurve, reduce_affine_buckets},
+    msm::{GLV_COMPONENT_BITS, MsmCurve},
 };
 use crate::arithmetic::PreparedFixedBaseSum;
 
@@ -72,6 +88,17 @@ pub(crate) fn prepare_fixed_base_sum<C: MsmCurve>(
 struct FixedBaseSum<C: MsmCurve> {
     bases: usize,
     points: Vec<C::AffineExt>,
+    /// `points` in radix 2^29 as `[x, zeta x, y, -y]`, for the AVX2
+    /// reduction: converted once here rather than for every sum, with `-y`
+    /// stored so a negated term is a plain copy (as for the MSM bases).
+    #[cfg(all(
+        feature = "asm",
+        feature = "sqrt-table",
+        target_arch = "x86_64",
+        target_feature = "avx2",
+        not(pasta_curves_noasm)
+    ))]
+    points29: Vec<[crate::arithmetic::avx2_chord::Limbs29; 4]>,
 }
 
 impl<C: MsmCurve> fmt::Debug for FixedBaseSum<C> {
@@ -101,9 +128,37 @@ impl<C: MsmCurve> FixedBaseSum<C> {
         }
         let mut points = vec![C::AffineExt::default(); projective.len()];
         C::batch_normalize_vartime(&projective, &mut points);
+        #[cfg(all(
+            feature = "asm",
+            feature = "sqrt-table",
+            target_arch = "x86_64",
+            target_feature = "avx2",
+            not(pasta_curves_noasm)
+        ))]
+        let points29 = points
+            .iter()
+            .map(|point| {
+                let (x, y) = C::affine_xy(point);
+                let y29 = C::to29(&y);
+                [
+                    C::to29(&x),
+                    C::to29(&(x * C::Base::ZETA)),
+                    y29,
+                    C::neg29(&y29),
+                ]
+            })
+            .collect();
         FixedBaseSum {
             bases: bases.len(),
             points,
+            #[cfg(all(
+                feature = "asm",
+                feature = "sqrt-table",
+                target_arch = "x86_64",
+                target_feature = "avx2",
+                not(pasta_curves_noasm)
+            ))]
+            points29,
         }
     }
 
@@ -118,7 +173,29 @@ impl<C: MsmCurve> FixedBaseSum<C> {
         endo: bool,
         mut f: impl FnMut(C::AffineExt, bool),
     ) {
-        let windows = &self.points[base * WINDOWS * MAGNITUDES..][..WINDOWS * MAGNITUDES];
+        self.for_each_term_index(base, negative, half, |index, negate| {
+            let point = self.points[index];
+            let point = if endo {
+                let (x, y) = C::affine_xy(&point);
+                C::affine_unchecked(x * C::Base::ZETA, y)
+            } else {
+                point
+            };
+            f(point, negate);
+        });
+    }
+
+    /// Calls `f(index, negate)` for each nonzero signed digit of
+    /// `[(-1)^negative * half] * P_base`, where `index` is the digit's entry
+    /// in `points`.
+    fn for_each_term_index(
+        &self,
+        base: usize,
+        negative: bool,
+        half: u128,
+        mut f: impl FnMut(usize, bool),
+    ) {
+        let start = base * WINDOWS * MAGNITUDES;
         let mut carry = 0u128;
         for window in 0..WINDOWS {
             let shift = window * WINDOW_BITS;
@@ -141,14 +218,10 @@ impl<C: MsmCurve> FixedBaseSum<C> {
                 continue;
             }
             // `value` is at most `MAGNITUDES`, so the cast is lossless.
-            let point = windows[window * MAGNITUDES + value as usize - 1];
-            let point = if endo {
-                let (x, y) = C::affine_xy(&point);
-                C::affine_unchecked(x * C::Base::ZETA, y)
-            } else {
-                point
-            };
-            f(point, negative ^ digit_negative);
+            f(
+                start + window * MAGNITUDES + value as usize - 1,
+                negative ^ digit_negative,
+            );
         }
         debug_assert_eq!(carry, 0, "a half fits in WINDOWS signed windows");
     }
@@ -193,7 +266,64 @@ impl<C: MsmCurve> PreparedFixedBaseSum<C> for FixedBaseSum<C> {
 }
 
 impl<C: MsmCurve> FixedBaseSum<C> {
+    /// [`Self::reduce_sums`] from the radix-2^29 table.
+    #[cfg(all(
+        feature = "asm",
+        feature = "sqrt-table",
+        target_arch = "x86_64",
+        target_feature = "avx2",
+        not(pasta_curves_noasm)
+    ))]
+    fn reduce_sums(&self, scalars: &[&[C::ScalarExt]]) -> Vec<C> {
+        use crate::arithmetic::avx2_chord::Point29;
+        let mut points =
+            Vec::with_capacity(scalars.iter().map(|s| s.len()).sum::<usize>() * 2 * WINDOWS);
+        let mut offsets = Vec::with_capacity(scalars.len() + 1);
+        offsets.push(0);
+        for scalars in scalars {
+            assert!(
+                scalars.len() <= self.bases,
+                "at most one scalar per prepared base"
+            );
+            for (base, scalar) in scalars.iter().enumerate() {
+                let ((negative1, half1), (negative2, half2)) = decompose::<C>(scalar);
+                for (negative, half, endo) in [(negative1, half1, false), (negative2, half2, true)]
+                {
+                    self.for_each_term_index(base, negative, half, |index, negate| {
+                        let [x, endo_x, y, neg_y] = &self.points29[index];
+                        // Identity entries are (0, 0); see the scalar path.
+                        if x.0.iter().chain(&y.0).all(|&limb| limb == 0) {
+                            return;
+                        }
+                        points.push(Point29 {
+                            x: if endo { *endo_x } else { *x },
+                            y: if negate { *neg_y } else { *y },
+                        });
+                    });
+                }
+            }
+            offsets.push(points.len());
+        }
+        match super::msm::reduce_affine_buckets29::<C>(points, offsets) {
+            Some(sums) => sums
+                .into_iter()
+                .map(|sum| match sum {
+                    Some(p) => C::from(C::affine_unchecked(p.x, p.y)),
+                    None => C::identity(),
+                })
+                .collect(),
+            None => scalars.iter().map(|s| self.sum_vartime(s)).collect(),
+        }
+    }
+
     /// Reduces the sums of `scalars` together; see [`REDUCE_SUMS`].
+    #[cfg(not(all(
+        feature = "asm",
+        feature = "sqrt-table",
+        target_arch = "x86_64",
+        target_feature = "avx2",
+        not(pasta_curves_noasm)
+    )))]
     fn reduce_sums(&self, scalars: &[&[C::ScalarExt]]) -> Vec<C> {
         // One bucket per sum, laid out contiguously for the reducer.
         let mut points =
