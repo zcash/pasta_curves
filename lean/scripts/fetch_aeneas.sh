@@ -27,7 +27,7 @@ dir=${dir:-lean/work/aeneas}
 
 # The release built at the pinned revision, and the SHA-256 of its tarball for each platform that it
 # supports. Moving the pin means moving these to the release built at the new revision.
-tag=nightly-2026.09.26-b86120d
+tag=nightly-2026.11.09-5a392f4
 
 # A release's tag ends with the abbreviated revision that it was built at.
 rev=$(awk '/^\[\[require\]\]/ { aeneas = 0 } /^name = "aeneas"/ { aeneas = 1 }
@@ -46,13 +46,13 @@ fi
 case "$(uname -s)-$(uname -m)" in
   Linux-x86_64)
     platform=linux-x86_64
-    sha256=583c14726c9e4e9aebd624eb84e750b51167ec39dd9db49bd4f655546956a391 ;;
+    sha256=54982f0f6bb8ec7080ef9d2a23932aebe6e3c032f32015963bbccc43103f723a ;;
   Linux-aarch64)
     platform=linux-aarch64
-    sha256=11bc02245bcdd7764e5f3f0427323bf1751b8e1a7096ed1182755451cf7645e7 ;;
+    sha256=b062d39662ada16ad077429a10aab7bf52d486c312bd3befa5e28fbb2378e641 ;;
   Darwin-arm64)
     platform=macos-aarch64
-    sha256=8739a2425d639badd629a58905027f9009cbdae77c78f7a7f6496dee021be350 ;;
+    sha256=b1d5ffeb85646b3a1944977068354a9f0ef257307dc3d391d874f19528b118f9 ;;
   *)
     echo "error: Aeneas does not publish a release for $(uname -s) on $(uname -m)" >&2
     exit 1 ;;

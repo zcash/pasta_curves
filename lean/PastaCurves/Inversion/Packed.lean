@@ -66,7 +66,7 @@ theorem divsteps_packedStart (j : ℕ) (hj : j ≤ 20) (s : State) (hf : s.f % 2
       rw [mul_assoc, mul_assoc]; omega
     by_cases h : 0 < t.two_delta ∧ t.g % 2 = 1
     · have h' : 0 < t.two_delta ∧ (t.g - 2 * X * N.q - 2 * Y * N.r) % 2 = 1 := by rw [hpar]; exact h
-      simp only [divstep, T, if_pos h, if_pos h', Mat2.mul]
+      simp only [divstep, T, ite_eq_left h, ite_eq_left h', Mat2.mul]
       obtain ⟨G, hG⟩ : ∃ G, t.g - t.f = 2 * G := ⟨(t.g - t.f) / 2, by omega⟩
       have hdiv : (t.g - t.f) / 2 = G := by omega
       have hpk : t.g - 2 * X * N.q - 2 * Y * N.r - (t.f - 2 * X * N.u - 2 * Y * N.v) =
@@ -74,7 +74,7 @@ theorem divsteps_packedStart (j : ℕ) (hj : j ≤ 20) (s : State) (hf : s.f % 2
       rw [hpk, Int.mul_ediv_cancel_left _ two_ne_zero, hdiv]
       simp only [State.mk.injEq]
       refine ⟨trivial, ?_, ?_⟩ <;> ring
-    · simp only [divstep, T, if_neg h, Mat2.mul, hpar]
+    · simp only [divstep, T, ite_eq_right h, Mat2.mul, hpar]
       rcases Int.emod_two_eq_zero_or_one t.g with h2 | h2
       · rw [h2]
         obtain ⟨G, hG⟩ : ∃ G, t.g = 2 * G := ⟨t.g / 2, by omega⟩
@@ -223,9 +223,9 @@ theorem divsteps_packedStart_g_abs_lt (j : ℕ) (s : State) (hf : s.f % 2 = 1)
   have hdisj : |r'| ≤ 2 * Z - 1 ∨ 1 ≤ |q'| := by
     obtain ⟨hq'', hr''⟩ := hstep
     by_cases h : 0 < (divsteps j P).two_delta ∧ (divsteps j P).g % 2 = 1
-    · simp only [T, if_pos h] at hq'' hr''
+    · simp only [T, ite_eq_left h] at hq'' hr''
       left; rw [hr'', abs_le]; constructor <;> omega
-    · simp only [T, if_neg h] at hq'' hr''
+    · simp only [T, ite_eq_right h] at hq'' hr''
       rcases Int.emod_two_eq_zero_or_one (divsteps j P).g with h2 | h2
       · rw [h2] at hr''; left; rw [hr'', abs_le]; constructor <;> omega
       · rw [h2] at hq'' hr''

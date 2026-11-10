@@ -34,11 +34,11 @@ theorem signMag_word (z : ℤ) (hz : |z| < 2^63) (m : ℕ) (hm : (m : ℤ) = z %
   rw [hfl]
   rcases lt_or_ge z 0 with hneg | hnn
   · have h1 : m / 2^63 = 1 := by omega
-    rw [if_pos h1, if_pos h1, if_pos hneg]
+    rw [ite_eq_left h1, ite_eq_left h1, ite_eq_left hneg]
     refine ⟨?_, rfl⟩
     omega
   · have h0 : ¬ m / 2^63 = 1 := by omega
-    rw [if_neg h0, if_neg h0, if_neg (not_lt.mpr hnn)]
+    rw [ite_eq_right h0, ite_eq_right h0, ite_eq_right (not_lt.mpr hnn)]
     refine ⟨?_, rfl⟩
     omega
 

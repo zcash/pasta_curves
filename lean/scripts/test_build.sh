@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Check that `build.sh` accepts a warning inside Aeneas' library and rejects one outside it. First
-# its check runs on synthetic logs: a warning of Aeneas', and one outside Aeneas plain, coloured,
-# and after a carriage return. Then a throwaway module whose theorem uses `sorry` builds, with a
-# warning, and the script must fail on it and say why.
+# Check that `build.sh` rejects every warning. First its check runs on synthetic logs: a warning
+# of Aeneas' library, and one of the package plain, coloured, and after a carriage return. Then a
+# throwaway module whose theorem uses `sorry` builds, with a warning, and the script must fail on
+# it and say why.
 #
 # Run from anywhere; LAKE selects lake (default: `lake` from PATH).
 set -euo pipefail
@@ -24,11 +24,9 @@ printf '%s[33mwarning:%s[0m PastaCurves/X.lean:1:1: unused variable\n' "$esc" "$
   > "$logs/coloured"
 printf 'Building PastaCurves.X\rwarning: PastaCurves/X.lean:1:1: unused variable\n' \
   > "$logs/overwritten"
-scripts/build.sh --check-log "$logs/aeneas" > /dev/null ||
-  { echo "error: build.sh rejected a warning inside Aeneas' library" >&2; exit 1; }
-for kind in plain coloured overwritten; do
+for kind in aeneas plain coloured overwritten; do
   if scripts/build.sh --check-log "$logs/$kind" > /dev/null 2>&1; then
-    echo "error: build.sh accepted a $kind warning outside Aeneas' library" >&2
+    echo "error: build.sh accepted a $kind warning" >&2
     exit 1
   fi
 done
@@ -41,6 +39,6 @@ if out=$(scripts/build.sh "${probe//\//.}" 2>&1); then
 fi
 grep -q "^warning: $probe.lean:.*sorry" <<< "$out" ||
   { echo "$out"; echo "error: build.sh failed, but not on the probe's warning" >&2; exit 1; }
-grep -q "outside Aeneas' library" <<< "$out" ||
+grep -q "the build printed the warnings above" <<< "$out" ||
   { echo "$out"; echo "error: build.sh failed without its own message" >&2; exit 1; }
-echo "build.sh accepts Aeneas' warnings and rejects any other."
+echo "build.sh rejects every warning."

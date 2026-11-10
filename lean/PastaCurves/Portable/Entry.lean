@@ -166,16 +166,21 @@ theorem cond_sub_ok (value modulus : Std.Array Std.U64 4#usize) :
   exact WP.spec_mono (cond_sub_spec _ _ (limbsOfArray_bounded value)
     (limbsOfArray_bounded modulus)) fun _ _ => trivial
 
+/-- A call that satisfies a triple succeeds, with a result that satisfies its postcondition. -/
+theorem exists_ok_of_spec {α : Type} {m : Result α} {P : α → Prop} (h : m ⦃ a => P a ⦄) :
+    ∃ a, m = .ok a ∧ P a := by
+  cases m <;> simp_all
+
 /-- A call that satisfies a triple succeeds. -/
 theorem ok_of_spec {α : Type} {m : Result α} {P : α → Prop} (h : m ⦃ a => P a ⦄) :
     ∃ a, m = .ok a :=
-  (WP.spec_imp_exists h).imp fun _ h => h.1
+  (exists_ok_of_spec h).imp fun _ h => h.1
 
 /-- The result of a call that satisfies a triple, read back with any default, satisfies the
 triple's postcondition. -/
 theorem getD_of_spec {α : Type} {m : Result α} {P : α → Prop} (h : m ⦃ a => P a ⦄) (d : α) :
     P ((Option.ofResult m).getD d) := by
-  obtain ⟨a, rfl, ha⟩ := WP.spec_imp_exists h
+  obtain ⟨a, rfl, ha⟩ := exists_ok_of_spec h
   simpa [Option.ofResult] using ha
 
 /-- The portable blocks succeed whatever words they are given. -/

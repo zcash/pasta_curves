@@ -35,7 +35,7 @@ theorem is_canonical_word_spec (value modulus : Std.Array Std.U64 4#usize) :
   have hm : limbsOfArray modulus = ⟨i1.val, i4.val, i7.val, i10.val⟩ := by
     simp [limbsOfArray, i1_post, i4_post, i7_post, i10_post]
   rw [hv, hm]
-  simp only [Limbs.toNat]
+  unfold Limbs.toNat
   split_ifs <;> scalar_tac
 
 /-- The translated `is_canonical` is the model's `isCanonical` on the limbs that it reads. -/
@@ -48,11 +48,11 @@ theorem is_canonical_spec (value modulus : Std.Array Std.U64 4#usize) :
   have hiff := isCanonical_iff (limbsOfArray value) (limbsOfArray modulus)
     (limbsOfArray_bounded value) (limbsOfArray_bounded modulus)
   by_cases h : (limbsOfArray value).toNat < (limbsOfArray modulus).toNat
-  · rw [if_pos h] at i_post
+  · rw [ite_eq_left h] at i_post
     rw [hiff.2 h]
     simp only [decide_eq_true_eq]
     scalar_tac
-  · rw [if_neg h] at i_post
+  · rw [ite_eq_right h] at i_post
     have hf : isCanonical (limbsOfArray value) (limbsOfArray modulus) = false :=
       Bool.eq_false_iff.mpr fun ht => h (hiff.1 ht)
     rw [hf]

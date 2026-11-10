@@ -147,12 +147,12 @@ theorem addMod_spec (lhs rhs modulus : Limbs) (hlhs : lhs.Bounded) (hrhs : rhs.B
       r0_2 + 2^64 * r1_2 + 2^128 * r2_2 + 2^192 * r3_2 + modulus.toNat = lhs.toNat + rhs.toNat)
   obtain hc | hc : c_6 = 0 ∨ c_6 = 1 := by clear * - b_c_6; omega
   · -- Carry clear: the sum is below `p`, and the block keeps it.
-    rw [if_pos hc] at e_r0_2 e_r1_2 e_r2_2 e_r3_2
+    rw [ite_eq_left hc] at e_r0_2 e_r1_2 e_r2_2 e_r3_2
     left
     clear * - hS hk hD hc e_r0_2 e_r1_2 e_r2_2 e_r3_2 b_t0 b_t1 b_t2 b_t3
     omega
   · -- Carry set: the sum is at least `p`, and the block keeps the difference.
-    rw [if_neg (by clear * - hc; omega)] at e_r0_2 e_r1_2 e_r2_2 e_r3_2
+    rw [ite_eq_right (by clear * - hc; omega)] at e_r0_2 e_r1_2 e_r2_2 e_r3_2
     right
     clear * - hS hk hD hc e_r0_2 e_r1_2 e_r2_2 e_r3_2
     omega

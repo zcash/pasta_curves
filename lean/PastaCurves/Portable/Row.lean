@@ -83,7 +83,7 @@ theorem negate_spec (x : Std.Array Std.U64 5#usize) (s : Std.U64)
   rcases hs with h | h
   · simp only [h, Nat.xor_zero, Nat.zero_and]
       at i1_post i4_post i7_post i10_post i13_post carry_post
-    simp only [h, if_true, one_mul]
+    simp only [h, ite_true, one_mul]
     agrind
   · have hones (w : Std.U64) : w.val ^^^ (2^64 - 1) = 2^64 - 1 - w.val :=
       Inversion.eorw_ones w.val w.hBounds
@@ -95,7 +95,7 @@ theorem negate_spec (x : Std.Array Std.U64 5#usize) (s : Std.U64)
     have b2 : i6.val < 2^64 := by scalar_tac
     have b3 : i9.val < 2^64 := by scalar_tac
     have b4 : i12.val < 2^64 := by scalar_tac
-    simp only [h, if_neg (show (2:ℕ)^64 - 1 ≠ 0 by norm_num), neg_one_mul]
+    simp only [h, ite_eq_right (show (2:ℕ)^64 - 1 ≠ 0 by norm_num), neg_one_mul]
     clear * - hchain b0 b1 b2 b3 b4
     agrind
 
@@ -104,8 +104,8 @@ its mask. -/
 theorem signMagRep_sign {m s : ℕ} {a : ℤ} (h : SignMagRep m s a) :
     (m : ℤ) * (if s = 0 then 1 else -1) = a := by
   rcases h with ⟨hs, hm⟩ | ⟨hs, hm⟩
-  · rw [hs, if_pos rfl, mul_one, hm]
-  · rw [hs, if_neg (by norm_num), hm, mul_neg_one, neg_neg]
+  · rw [hs, ite_eq_left rfl, mul_one, hm]
+  · rw [hs, ite_eq_right (by norm_num), hm, mul_neg_one, neg_neg]
 
 open pasta_curves.inversion.portable in
 /-- `row` on two sides with entries `a` and `b` in sign-magnitude form, whose magnitudes sum to at

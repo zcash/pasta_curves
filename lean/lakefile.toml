@@ -1,14 +1,17 @@
 name = "PastaCurves"
 defaultTargets = ["PastaCurves"]
+# The development does not use the module system, while Mathlib's modules are designed for it;
+# without this, Lake warns about every file that imports Mathlib.
+allowNonModules = true
 
 [leanOptions]
 autoImplicit = false
 
-# Pinned to the revision tagged for Lean v4.31.0, which Aeneas' Lean library pins too.
+# Pinned to the revision tagged for Lean v4.35.0, which Aeneas' Lean library pins too.
 [[require]]
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4"
-rev = "fabf563a7c95a166b8d7b6efca11c8b4dc9d911f"
+rev = "56a005855ea17e0b0958f73ec801ae140b0a1679"
 
 # Aeneas' Lean library, which the translation of the portable inversion blocks
 # (`PastaCurves/Portable/`) imports; pinned to the revision whose Charon and Aeneas binaries
@@ -16,7 +19,7 @@ rev = "fabf563a7c95a166b8d7b6efca11c8b4dc9d911f"
 [[require]]
 name = "aeneas"
 git = "https://github.com/AeneasVerif/aeneas"
-rev = "b86120db3183b0107eb5f2637b11c424cd06ef1c"
+rev = "5a392f4b80a4d0d05abc240eb2a7fa70622a9a35"
 subDir = "backends/lean"
 
 [[lean_lib]]

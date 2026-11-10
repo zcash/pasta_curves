@@ -91,7 +91,7 @@ theorem divstep_spec (s : State) (hf : s.f % 2 = 1) (hd : s.two_delta % 2 = 1)
       have hodd : odd.val = 0 := by agrind
       have hswap : swap.val = 0 := by rw [hsw, hodd]; simp
       have hi6 : i6.val = 0 := by rw [h6, hodd]; simp
-      simp only [hswap, if_true] at two_delta_new_post f_new_post sum_post
+      simp only [hswap, ite_true] at two_delta_new_post f_new_post sum_post
       subst two_delta_new f_new sum
       obtain ⟨r1, r2, r3, -⟩ := Inversion.divstep_words_even s hd hG two_delta.val f.val g.val
         ed ef eg hg0 0 two_delta.val f.val i7.val i4.val i8.val rfl rfl rfl (by rw [h7, hi6]) h4
@@ -101,12 +101,12 @@ theorem divstep_spec (s : State) (hf : s.f % 2 = 1) (hd : s.two_delta % 2 = 1)
       · -- The swap: `2 - two_delta`, `f := g`, and `(g - f) / 2`.
         have hodd : odd.val = 2^64 - 1 := by agrind
         have hi2 : i2.val = 2^64 - 1 := by
-          rw [i2_post, if_neg]
+          rw [i2_post, ite_eq_right]
           rw [h1]
           simp only [negw, regMod]
           agrind
         have hswap : swap.val ≠ 0 := by rw [hsw, hodd, hi2]; simp
-        simp only [hswap, if_false] at two_delta_new_post f_new_post sum_post
+        simp only [hswap, ite_false] at two_delta_new_post f_new_post sum_post
         subst two_delta_new f_new sum
         obtain ⟨r1, r2, r3, -⟩ := Inversion.divstep_words_swap s hf hd hG' two_delta.val f.val
           g.val htd hfb ed ef eg ⟨hdpos, hg1⟩ (negw f.val) (negw two_delta.val) g.val i5.val
@@ -115,13 +115,13 @@ theorem divstep_spec (s : State) (hf : s.f % 2 = 1) (hd : s.two_delta % 2 = 1)
       · -- The addition: `two_delta + 2`, `f`, and `(g + f) / 2`.
         have hodd : odd.val = 2^64 - 1 := by agrind
         have hi2 : i2.val = 0 := by
-          rw [i2_post, if_pos]
+          rw [i2_post, ite_eq_left]
           rw [h1]
           simp only [negw, regMod]
           agrind
         have hswap : swap.val = 0 := by rw [hsw, hi2]; simp
         have hi6 : i6.val = f.val := by rw [h6, hodd, ones_and hfb]
-        simp only [hswap, if_true] at two_delta_new_post f_new_post sum_post
+        simp only [hswap, ite_true] at two_delta_new_post f_new_post sum_post
         subst two_delta_new f_new sum
         obtain ⟨r1, r2, r3, -⟩ := Inversion.divstep_words_add s hf hd hD hG' two_delta.val f.val
           g.val ed ef eg hg1 hdnp f.val two_delta.val f.val i7.val i4.val i8.val rfl rfl rfl

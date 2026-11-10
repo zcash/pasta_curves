@@ -11,6 +11,7 @@ set_option linter.unusedVariables false
 set_option linter.style.whitespace false
 set_option linter.style.setOption false
 set_option linter.style.longLine false
+set_option linter.internalConstructors false
 
 /- You can set the `maxHeartbeats` value with the `-max-heartbeats` CLI option -/
 set_option maxHeartbeats 1000000
@@ -535,7 +536,7 @@ def inversion.portable.Backend.Insts.Pasta_curvesInversionInvertBlocks :
     Source: 'src/inversion.rs', lines 82:4-93:5 -/
 @[rust_loop_body]
 def inversion.invert_with_loop.body
-  {B : Type} (InvertBlocksInst : inversion.InvertBlocks B)
+  {B : Type _} (InvertBlocksInst : inversion.InvertBlocks B)
   (modulus : Array Std.U64 4#usize) (inv : Std.U64)
   (iter : core.ops.range.Range Std.I32) (two_delta : Std.U64)
   (f : Array Std.U64 5#usize) (g : Array Std.U64 5#usize)
@@ -579,7 +580,7 @@ def inversion.invert_with_loop.body
     Source: 'src/inversion.rs', lines 82:4-93:5 -/
 @[rust_loop]
 def inversion.invert_with_loop
-  {B : Type} (InvertBlocksInst : inversion.InvertBlocks B)
+  {B : Type _} (InvertBlocksInst : inversion.InvertBlocks B)
   (iter : core.ops.range.Range Std.I32) (modulus : Array Std.U64 4#usize)
   (inv : Std.U64) (two_delta : Std.U64) (f : Array Std.U64 5#usize)
   (g : Array Std.U64 5#usize) (d : Array Std.U64 4#usize)
@@ -595,7 +596,7 @@ def inversion.invert_with_loop
 /-- [pasta_curves::inversion::invert_with]:
     Source: 'src/inversion.rs', lines 71:0-99:1 -/
 def inversion.invert_with
-  {B : Type} (InvertBlocksInst : inversion.InvertBlocks B)
+  {B : Type _} (InvertBlocksInst : inversion.InvertBlocks B)
   (x : Array Std.U64 4#usize) (modulus : Array Std.U64 4#usize) (inv : Std.U64)
   (e0 : Array Std.U64 4#usize) :
   Result (Array Std.U64 4#usize)

@@ -143,7 +143,7 @@ theorem subMod_spec (lhs rhs modulus : Limbs) (hlhs : lhs.Bounded) (hrhs : rhs.B
         lhs.toNat + modulus.toNat)
   obtain hborrow | hborrow : cf_3 = 0 ∨ cf_3 = 1 := by clear * - b_cf_3; omega
   · -- No borrow: the difference is exact, and the selected limbs are `0`.
-    rw [if_pos hborrow] at e_p0_1 e_p1_1 e_p3_1
+    rw [ite_eq_left hborrow] at e_p0_1 e_p1_1 e_p3_1
     have hselected : p0_1 + 2^64 * p1_1 + 2^192 * p3_1 = 0 := by
       clear * - e_z e_p0_1 e_p1_1 e_p3_1
       omega
@@ -158,7 +158,7 @@ theorem subMod_spec (lhs rhs modulus : Limbs) (hlhs : lhs.Bounded) (hrhs : rhs.B
     clear * - hD hborrow hOut hfinalCarry
     omega
   · -- Borrow: `lhs < rhs`, the selected limbs are `p`, and the dropped carry undoes the wrap.
-    rw [if_neg (by omega)] at e_p0_1 e_p1_1 e_p3_1
+    rw [ite_eq_right (by omega)] at e_p0_1 e_p1_1 e_p3_1
     have hselected : p0_1 + 2^64 * p1_1 + 2^192 * p3_1 = modulus.toNat := by
       clear * - e_p0_1 e_p1_1 e_p3_1 hP
       omega

@@ -824,13 +824,13 @@ theorem mulMont_spec (lhs rhs modulus : Limbs) (inv : Nat) (hlhs : lhs.Bounded)
     2^256 * (r0_5 + 2^64 * r1_7 + 2^128 * r2_7 + 2^192 * r3_7)
       ≡ lhs.toNat * rhs.toNat [MOD modulus.toNat]
   obtain hc | hc : c_13 = 0 ∨ c_13 = 1 := by clear * - b_c_13; omega
-  · rw [if_pos hc] at e_r0_5 e_r1_7 e_r2_7 e_r3_7
+  · rw [ite_eq_left hc] at e_r0_5 e_r1_7 e_r2_7 e_r3_7
     refine ⟨?_, modEq_of_add_mul _ _ 0 (q + 2^64 * q_1 + 2^128 * q_2 + 2^192 * q_3) _ (by
       clear * - hmain hk e_r0_5 e_r1_7 e_r2_7 e_r3_7
       omega)⟩
     · clear * - hD hc hk hP e_q_4 b_t0_2 b_t1_6 b_t2_1 b_t3_6 e_r0_5 e_r1_7 e_r2_7 e_r3_7
       omega
-  · rw [if_neg (by clear * - hc; omega)] at e_r0_5 e_r1_7 e_r2_7 e_r3_7
+  · rw [ite_eq_right (by clear * - hc; omega)] at e_r0_5 e_r1_7 e_r2_7 e_r3_7
     refine ⟨?_, modEq_of_add_mul _ _ (2^256) (q + 2^64 * q_1 + 2^128 * q_2 + 2^192 * q_3) _ (by
       clear * - hmain hD hc hk hP e_q_4 e_r0_5 e_r1_7 e_r2_7 e_r3_7
       omega)⟩
