@@ -2,10 +2,8 @@
 """AArch64 backend for the unified Lean transcription generator.
 
 The shared fail-closed Rust/``asm!`` parser feeds this architecture-specific
-instruction emitter. It produces
-
-- `lean/PastaCurves/AArch64/Transcription.lean`: the AArch64 blocks as Lean definitions; and
-- `lean/PastaCurves/AArch64/Vectors.lean`: kernel-checked AArch64 reference vectors.
+instruction emitter. It produces `lean/PastaCurves/AArch64/Transcription.lean`, the AArch64
+blocks as Lean definitions.
 
 Invoke it through ``python3 lean/scripts/gen.py``.
 
