@@ -20,7 +20,6 @@ pub(crate) mod avx2_sqrt;
     feature = "asm",
     feature = "sqrt-table",
     target_arch = "x86_64",
-    target_feature = "avx2",
     not(pasta_curves_noasm)
 ))]
 pub(crate) mod avx2_chord;

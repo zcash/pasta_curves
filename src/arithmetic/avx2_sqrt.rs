@@ -110,7 +110,8 @@ pub(super) const fn pasta_limbs29(p: &[u64; 4]) -> [u64; L] {
     l
 }
 
-/// Lane-wise Montgomery product.
+/// Lane-wise Montgomery product. The chord backend also uses normalized
+/// operands below 2^261; its wider bounds are documented in `avx2_chord`.
 #[target_feature(enable = "avx2")]
 #[inline]
 pub(super) unsafe fn mul<const P0: u64, const P1: u64, const P2: u64, const P3: u64>(
@@ -700,7 +701,7 @@ pub(super) unsafe fn pack(x: &[[u64; 4]; 4]) -> V {
 /// leave them).
 #[target_feature(enable = "avx2")]
 #[inline]
-pub(super) unsafe fn unpack(v: &V) -> [[u64; 4]; 4] {
+unsafe fn unpack(v: &V) -> [[u64; 4]; 4] {
     // SAFETY: callers establish AVX2 availability; lane bounds are documented above.
     unsafe {
         let mut limbs = [[0u64; 4]; L];

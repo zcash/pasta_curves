@@ -10,12 +10,59 @@ fn lanes(v: [Fp; 4]) -> [[u64; 4]; 4] {
 }
 
 #[test]
+fn constant_time_primitives_bypass_public_batch_vartime_inversion() {
+    fn check<C: crate::arithmetic::CurveExt>() {
+        INVERT_LANES_VARTIME_CALLS.with(|calls| calls.set(0));
+        let base = C::Base::from(7);
+        assert_eq!(
+            base * <C::Base as Field>::invert(&base).unwrap(),
+            C::Base::ONE
+        );
+        let scalar = C::ScalarExt::from(11);
+        assert_eq!(
+            scalar * <C::ScalarExt as Field>::invert(&scalar).unwrap(),
+            C::ScalarExt::ONE,
+        );
+
+        let mut rng = rand_xorshift::XorShiftRng::from_seed([0x70; 16]);
+        let bases: Vec<_> = (0..7).map(|_| C::random(&mut rng).to_affine()).collect();
+        let mut scalars: Vec<_> = (0..7).map(|_| C::ScalarExt::random(&mut rng)).collect();
+        scalars[..3].copy_from_slice(&[C::ScalarExt::ZERO, C::ScalarExt::ONE, -C::ScalarExt::ONE]);
+        let expected: C = bases
+            .iter()
+            .zip(&scalars)
+            .map(|(point, scalar)| {
+                let product = *point * *scalar;
+                assert_eq!(C::from(*point) * *scalar, product);
+                product
+            })
+            .sum();
+        let table = C::try_prepare_fixed_base_sum(&bases).expect("Pasta has a fixed-base backend");
+        assert_eq!(table.sum_vartime(&scalars), expected);
+        assert_eq!(INVERT_LANES_VARTIME_CALLS.with(|calls| calls.get()), 0);
+
+        // Only the explicit public batch API may enter the AVX2 inversion.
+        assert_eq!(table.sum_batch_vartime(&[&scalars]), [expected]);
+        assert_eq!(
+            INVERT_LANES_VARTIME_CALLS.with(|calls| calls.get()) > 0,
+            crate::arithmetic::avx2_sqrt::available(),
+        );
+    }
+
+    check::<crate::pallas::Point>();
+    check::<crate::vesta::Point>();
+}
+
+#[test]
 fn building_blocks_match_scalar() {
+    if !crate::arithmetic::avx2_sqrt::available() {
+        return;
+    }
     let mut rng = rand_xorshift::XorShiftRng::from_seed([3; 16]);
     for _ in 0..200 {
         let a: [Fp; 4] = core::array::from_fn(|_| Fp::random(&mut rng));
         let b: [Fp; 4] = core::array::from_fn(|_| Fp::random(&mut rng));
-        // SAFETY: test runs only where pasta_curves_avx2 guarantees AVX2.
+        // SAFETY: the test checked runtime AVX2 support.
         unsafe {
             let m = mul::<{ P[0] }, { P[1] }, { P[2] }, { P[3] }>(
                 &shl5(&pack(&lanes(a))),
@@ -71,7 +118,7 @@ fn limbs29(x: &[u64; 5]) -> [u64; L] {
 }
 
 fn vector(lanes: [[u64; L]; 4]) -> V {
-    // SAFETY: tests run only where `pasta_curves_avx2` guarantees AVX2.
+    // SAFETY: every calling test checked runtime AVX2 support.
     V(core::array::from_fn(|i| unsafe {
         _mm256_set_epi64x(
             lanes[3][i] as i64,
@@ -131,11 +178,14 @@ macro_rules! boundary_tests {
 
             #[test]
             fn canonical_accepts_top_limb_equal_to_2_pow_25() {
+                if !crate::arithmetic::avx2_sqrt::available() {
+                    return;
+                }
                 // 2^257 is below 8p, but its top limb equals 2^25.
                 let input = [0u64, 0, 0, 0, 2];
                 let v = limbs29(&input);
                 assert_eq!(v[L - 1], 1 << 25);
-                // SAFETY: AVX2 is guaranteed (see `vector`).
+                // SAFETY: runtime AVX2 support was checked (see `vector`).
                 let got = unsafe {
                     store4(&canonical(&vector([v; 4]), &pasta_limbs29(&P)))
                 };
@@ -151,6 +201,9 @@ macro_rules! boundary_tests {
 
             #[test]
             fn full_radix_mul_and_reducers_match_independent_oracle() {
+                if !crate::arithmetic::avx2_sqrt::available() {
+                    return;
+                }
                 use rand::Rng;
                 let mut rng = rand_xorshift::XorShiftRng::from_seed([0xa7; 16]);
                 let exponent = L as u64 * BITS as u64;
@@ -168,7 +221,7 @@ macro_rules! boundary_tests {
                             })
                         })
                     });
-                    // SAFETY: AVX2 is guaranteed (see `vector`).
+                    // SAFETY: runtime AVX2 support was checked (see `vector`).
                     let product = unsafe {
                         unpack_wide(&mul::<{ P[0] }, { P[1] }, { P[2] }, { P[3] }>(
                             &vector(inputs[0]), &vector(inputs[1]),
@@ -197,7 +250,7 @@ macro_rules! boundary_tests {
                         let r = <$field>::random(&mut rng).chord_limbs();
                         k_p_plus(((sample + lane) % 8) as u64, &P, &r)
                     });
-                    // SAFETY: AVX2 is guaranteed (see `vector`).
+                    // SAFETY: runtime AVX2 support was checked (see `vector`).
                     let got = unsafe {
                         store4(&canonical(&vector(wide.map(|x| limbs29(&x))), &p29))
                     };
@@ -214,6 +267,9 @@ macro_rules! boundary_tests {
 
             #[test]
             fn extreme_coordinates_long_prefixes_and_output_order() {
+                if !crate::arithmetic::avx2_sqrt::available() {
+                    return;
+                }
                 // Exercise 8192 full lane groups followed by a short tail.
                 const LONG_PREFIX_ADDITIONS: usize = LANES * 8192 + 1;
 
@@ -310,6 +366,9 @@ macro_rules! boundary_tests {
             /// all-maximum limb pattern just below `8p`.
             #[test]
             fn canonical_up_to_8p() {
+                if !crate::arithmetic::avx2_sqrt::available() {
+                    return;
+                }
                 let p29 = pasta_limbs29(&P);
                 let mut minus = P;
                 minus[0] -= 1;
@@ -319,7 +378,7 @@ macro_rules! boundary_tests {
                 for k in 0..8 {
                     for r in &residues {
                         let v = limbs29(&k_p_plus(k, &P, r));
-                        // SAFETY: AVX2 is guaranteed (see `vector`).
+                        // SAFETY: runtime AVX2 support was checked (see `vector`).
                         let got = unsafe { store4(&canonical(&vector([v; 4]), &p29)) };
                         let want = limbs29(&[r[0], r[1], r[2], r[3], 0]);
                         for lane in got {
@@ -328,7 +387,7 @@ macro_rules! boundary_tests {
                     }
                 }
                 let top = max_limbs_below(&k_p_plus(8, &P, &[0; 4]));
-                // SAFETY: AVX2 is guaranteed (see `vector`).
+                // SAFETY: runtime AVX2 support was checked (see `vector`).
                 let got = unsafe { store4(&canonical(&vector([top; 4]), &p29)) };
                 let want = reduce_wide(&integer(&top), &P);
                 assert_eq!(got[0].to_limbs(), want);
@@ -339,13 +398,16 @@ macro_rules! boundary_tests {
             /// result is exactly `a + c p - b`, normalized.
             #[test]
             fn sub_at_dominance_limit() {
+                if !crate::arithmetic::avx2_sqrt::available() {
+                    return;
+                }
                 let p29 = pasta_limbs29(&P);
                 for c in [2u64, 3, 4, 5] {
                     let k = kp(&p29, c);
                     let mut b = [MASK; L];
                     b[8] = c * (1 << 22) - 2;
                     for a in [[0u64; L], max_limbs_below(&k_p_plus(96, &P, &[0; 4]))] {
-                        // SAFETY: AVX2 is guaranteed (see `vector`).
+                        // SAFETY: runtime AVX2 support was checked (see `vector`).
                         let got =
                             unsafe { lanes_of(&sub(&vector([a; 4]), &vector([b; 4]), &k)) };
                         let got: [u64; L] = core::array::from_fn(|i| got[i][0]);
@@ -374,6 +436,9 @@ macro_rules! boundary_tests {
             /// exact Montgomery product `a b / 2^261 mod p`.
             #[test]
             fn mul_at_kernel_bounds() {
+                if !crate::arithmetic::avx2_sqrt::available() {
+                    return;
+                }
                 let inv32 = <$field>::from(32).invert().unwrap();
                 let mut minus = P;
                 minus[0] -= 1;
@@ -385,7 +450,7 @@ macro_rules! boundary_tests {
                 };
                 for a in operands(96) {
                     for b in operands(5).into_iter().chain(operands(36)) {
-                        // SAFETY: AVX2 is guaranteed (see `vector`).
+                        // SAFETY: runtime AVX2 support was checked (see `vector`).
                         let got = unsafe {
                             unpack_wide(&mul::<{ P[0] }, { P[1] }, { P[2] }, { P[3] }>(
                                 &vector([a; 4]),

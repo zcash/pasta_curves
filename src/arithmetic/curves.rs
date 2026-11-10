@@ -119,11 +119,13 @@ pub trait CurveExt:
     /// Attempts to prepare a doubling-free sum over fixed public bases.
     ///
     /// Implementations without a suitable backend return `None`; callers must
-    /// retain a generic fallback. Pasta tables retain about 76 KiB per base.
+    /// retain a generic fallback. Pasta tables retain about 76 KiB per base, plus
+    /// about 171 KiB per base where the AVX2 batch path is available.
     ///
     /// # Security
     ///
-    /// Evaluation is variable-time in the scalars, which must be public.
+    /// Both bases and evaluation scalars must be public. Preparation and
+    /// evaluation may use variable-time arithmetic; never use secret inputs.
     fn try_prepare_fixed_base_sum(
         _bases: &[Self::AffineExt],
     ) -> Option<Box<dyn PreparedFixedBaseSum<Self>>> {
@@ -161,7 +163,9 @@ pub trait CurveExt:
 /// A prepared sum over fixed bases, obtained from
 /// [`CurveExt::try_prepare_fixed_base_sum`].
 ///
-/// All evaluation methods are variable-time and require public scalars.
+/// Both the prepared bases and all evaluation scalars must be public.
+/// Preparation and evaluation are variable-time; Rust types do not encode
+/// secrecy, so callers must uphold this contract.
 #[cfg(feature = "alloc")]
 pub trait PreparedFixedBaseSum<C: CurveExt>: core::fmt::Debug + Send + Sync {
     /// The number of prepared bases.
@@ -170,13 +174,17 @@ pub trait PreparedFixedBaseSum<C: CurveExt>: core::fmt::Debug + Send + Sync {
     /// Computes the sum pairing each scalar with its prepared base.
     ///
     /// Omitted trailing scalars are zero. Panics if there are more scalars
-    /// than prepared bases. Scalars must be public.
+    /// than prepared bases. Both scalars and prepared bases must be public.
     fn sum_vartime(&self, scalars: &[C::ScalarExt]) -> C;
 
     /// Evaluates each independent sum in order, optionally sharing work.
     ///
     /// Returns exactly one result per input vector. Each vector has the same
     /// length bound and public-input requirement as [`Self::sum_vartime`].
+    ///
+    /// Pallas and Vesta sums built with `glv`, `asm` and `sqrt-table` on x86-64 reduce batches
+    /// with AVX2 when the CPU and operating system support it; other builds, unsupported CPUs
+    /// and `--cfg pasta_curves_noasm` use the scalar path.
     fn sum_batch_vartime(&self, scalars: &[&[C::ScalarExt]]) -> alloc::vec::Vec<C> {
         scalars.iter().map(|s| self.sum_vartime(s)).collect()
     }

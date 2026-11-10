@@ -26,27 +26,11 @@
 use alloc::{boxed::Box, vec, vec::Vec};
 use core::fmt;
 
-#[cfg(not(all(
-    feature = "asm",
-    feature = "sqrt-table",
-    target_arch = "x86_64",
-    target_feature = "avx2",
-    not(pasta_curves_noasm)
-)))]
-use ff::Field;
-use ff::WithSmallOrderMulGroup;
+use ff::{Field, WithSmallOrderMulGroup};
 
-#[cfg(not(all(
-    feature = "asm",
-    feature = "sqrt-table",
-    target_arch = "x86_64",
-    target_feature = "avx2",
-    not(pasta_curves_noasm)
-)))]
-use super::msm::{AffinePoint, reduce_affine_buckets};
 use super::{
     decompose,
-    msm::{GLV_COMPONENT_BITS, MsmCurve},
+    msm::{AffinePoint, GLV_COMPONENT_BITS, MsmCurve, reduce_affine_buckets},
 };
 use crate::arithmetic::PreparedFixedBaseSum;
 
@@ -88,17 +72,16 @@ pub(crate) fn prepare_fixed_base_sum<C: MsmCurve>(
 struct FixedBaseSum<C: MsmCurve> {
     bases: usize,
     points: Vec<C::AffineExt>,
-    /// `points` in radix 2^29 as `[x, zeta x, y, -y]`, for the AVX2
-    /// reduction: converted once here rather than for every sum, with `-y`
-    /// stored so a negated term is a plain copy (as for the MSM bases).
+    /// Canonical scalar-Montgomery limbs as `[x, zeta x, y, -y]`, cached
+    /// only when runtime detection permits AVX2. Unsupported CPUs keep no
+    /// additional table and use the existing scalar reducer.
     #[cfg(all(
         feature = "asm",
         feature = "sqrt-table",
         target_arch = "x86_64",
-        target_feature = "avx2",
         not(pasta_curves_noasm)
     ))]
-    points29: Vec<[crate::arithmetic::avx2_chord::Limbs29; 4]>,
+    points29: Option<Vec<[crate::arithmetic::avx2_chord::Limbs29; 4]>>,
 }
 
 impl<C: MsmCurve> fmt::Debug for FixedBaseSum<C> {
@@ -132,22 +115,23 @@ impl<C: MsmCurve> FixedBaseSum<C> {
             feature = "asm",
             feature = "sqrt-table",
             target_arch = "x86_64",
-            target_feature = "avx2",
             not(pasta_curves_noasm)
         ))]
-        let points29 = points
-            .iter()
-            .map(|point| {
-                let (x, y) = C::affine_xy(point);
-                let y29 = C::to29(&y);
-                [
-                    C::to29(&x),
-                    C::to29(&(x * C::Base::ZETA)),
-                    y29,
-                    C::neg29(&y29),
-                ]
-            })
-            .collect();
+        let points29 = crate::arithmetic::avx2_sqrt::available().then(|| {
+            points
+                .iter()
+                .map(|point| {
+                    let (x, y) = C::affine_xy(point);
+                    let y29 = C::to29(&y);
+                    [
+                        C::to29(&x),
+                        C::to29(&(x * C::Base::ZETA)),
+                        y29,
+                        C::neg29(&y29),
+                    ]
+                })
+                .collect()
+        });
         FixedBaseSum {
             bases: bases.len(),
             points,
@@ -155,7 +139,6 @@ impl<C: MsmCurve> FixedBaseSum<C> {
                 feature = "asm",
                 feature = "sqrt-table",
                 target_arch = "x86_64",
-                target_feature = "avx2",
                 not(pasta_curves_noasm)
             ))]
             points29,
@@ -185,9 +168,8 @@ impl<C: MsmCurve> FixedBaseSum<C> {
         });
     }
 
-    /// Calls `f(index, negate)` for each nonzero signed digit of
-    /// `[(-1)^negative * half] * P_base`, where `index` is the digit's entry
-    /// in `points`.
+    /// Calls `f(index, negate)` for each nonzero signed digit, sharing the
+    /// unchanged recoding between the affine and cached radix-29 tables.
     fn for_each_term_index(
         &self,
         base: usize,
@@ -266,16 +248,20 @@ impl<C: MsmCurve> PreparedFixedBaseSum<C> for FixedBaseSum<C> {
 }
 
 impl<C: MsmCurve> FixedBaseSum<C> {
-    /// [`Self::reduce_sums`] from the radix-2^29 table.
+    /// Cached-point reduction. Scalars and coordinates are public.
     #[cfg(all(
         feature = "asm",
         feature = "sqrt-table",
         target_arch = "x86_64",
-        target_feature = "avx2",
         not(pasta_curves_noasm)
     ))]
-    fn reduce_sums(&self, scalars: &[&[C::ScalarExt]]) -> Vec<C> {
+    fn reduce_sums29(
+        &self,
+        scalars: &[&[C::ScalarExt]],
+        table: &[[crate::arithmetic::avx2_chord::Limbs29; 4]],
+    ) -> Vec<C> {
         use crate::arithmetic::avx2_chord::Point29;
+
         let mut points =
             Vec::with_capacity(scalars.iter().map(|s| s.len()).sum::<usize>() * 2 * WINDOWS);
         let mut offsets = Vec::with_capacity(scalars.len() + 1);
@@ -290,8 +276,8 @@ impl<C: MsmCurve> FixedBaseSum<C> {
                 for (negative, half, endo) in [(negative1, half1, false), (negative2, half2, true)]
                 {
                     self.for_each_term_index(base, negative, half, |index, negate| {
-                        let [x, endo_x, y, neg_y] = &self.points29[index];
-                        // Identity entries are (0, 0); see the scalar path.
+                        let [x, endo_x, y, neg_y] = &table[index];
+                        // Identity entries are (0, 0), as on the scalar path.
                         if x.0.iter().chain(&y.0).all(|&limb| limb == 0) {
                             return;
                         }
@@ -317,14 +303,17 @@ impl<C: MsmCurve> FixedBaseSum<C> {
     }
 
     /// Reduces the sums of `scalars` together; see [`REDUCE_SUMS`].
-    #[cfg(not(all(
-        feature = "asm",
-        feature = "sqrt-table",
-        target_arch = "x86_64",
-        target_feature = "avx2",
-        not(pasta_curves_noasm)
-    )))]
     fn reduce_sums(&self, scalars: &[&[C::ScalarExt]]) -> Vec<C> {
+        #[cfg(all(
+            feature = "asm",
+            feature = "sqrt-table",
+            target_arch = "x86_64",
+            not(pasta_curves_noasm)
+        ))]
+        if let Some(table) = &self.points29 {
+            return self.reduce_sums29(scalars, table);
+        }
+
         // One bucket per sum, laid out contiguously for the reducer.
         let mut points =
             Vec::with_capacity(scalars.iter().map(|s| s.len()).sum::<usize>() * 2 * WINDOWS);

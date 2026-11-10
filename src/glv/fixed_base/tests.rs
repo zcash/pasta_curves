@@ -140,3 +140,131 @@ fn fixed_base_sum_rejects_extra_scalars() {
         .expect("Pasta has a fixed-base backend");
     let _ = table.sum_vartime(&[pallas::Scalar::ONE, pallas::Scalar::ONE]);
 }
+
+fn check_dispatch<C: MsmCurve>()
+where
+    C::ScalarExt: FromUniformBytes<64>,
+{
+    use crate::arithmetic::PreparedFixedBaseSum;
+
+    let mut rng = XorShiftRng::seed_from_u64(0x702);
+    let bases: Vec<_> = (0..7)
+        .map(|_| C::random(&mut rng).to_affine())
+        .chain(core::iter::once(C::identity().to_affine()))
+        .collect();
+    let table = super::FixedBaseSum::<C>::new(&bases);
+    let columns: Vec<Vec<_>> = (0..19)
+        .map(|i| {
+            (0..(i % (bases.len() + 1)))
+                .map(|_| C::ScalarExt::random(&mut rng))
+                .collect()
+        })
+        .collect();
+    let slices: Vec<_> = columns.iter().map(Vec::as_slice).collect();
+    let expected: Vec<C> = columns
+        .iter()
+        .map(|scalars| scalars.iter().zip(&bases).map(|(k, p)| *p * k).sum())
+        .collect();
+    assert_eq!(table.sum_batch_vartime(&slices), expected);
+
+    #[cfg(all(
+        feature = "asm",
+        feature = "sqrt-table",
+        target_arch = "x86_64",
+        not(pasta_curves_noasm)
+    ))]
+    let table = {
+        let mut table = table;
+        assert_eq!(
+            table.points29.is_some(),
+            crate::arithmetic::avx2_sqrt::available(),
+        );
+        // Force the same unsupported-CPU branch without changing global CPU
+        // detection or requiring AVX2 on the machine running the tests.
+        table.points29 = None;
+        table
+    };
+    // Also runs with no asm, no sqrt-table, and pasta_curves_noasm, where
+    // neither the vector backend nor its private coordinate adapters exist.
+    assert_eq!(table.sum_batch_vartime(&slices), expected);
+}
+
+#[test]
+fn fixed_base_runtime_and_feature_disabled_fallback() {
+    check_dispatch::<pallas::Point>();
+    check_dispatch::<vesta::Point>();
+}
+
+#[cfg(all(
+    feature = "asm",
+    feature = "sqrt-table",
+    target_arch = "x86_64",
+    not(pasta_curves_noasm)
+))]
+fn check_radix29_reducer<C: MsmCurve>() {
+    use crate::arithmetic::avx2_chord::Point29;
+
+    let mut rng = XorShiftRng::seed_from_u64(0x70229);
+    let p = C::random(&mut rng).to_affine();
+    let mut q = C::random(&mut rng).to_affine();
+    while C::affine_xy(&p).0 == C::affine_xy(&q).0 {
+        q = C::random(&mut rng).to_affine();
+    }
+    // A single bucket crosses both sides of the 32-addition threshold;
+    // lengths not divisible by eight cover vector padding and odd tree tails.
+    for len in [0, 1, 2, 3, 61, 62, 63, 64, 65, 66, 67, 129, 257] {
+        for exceptional in 0..5 {
+            let mut inputs: Vec<_> = (0..len).map(|_| C::random(&mut rng).to_affine()).collect();
+            if len >= 4 {
+                match exceptional {
+                    1 => inputs[..2].copy_from_slice(&[p, p]),
+                    2 => inputs[..2].copy_from_slice(&[p, -p]),
+                    // The first vector level succeeds, then its outputs
+                    // meet equal-x doubling or cancellation one level later.
+                    3 => inputs[..4].copy_from_slice(&[p, q, p, q]),
+                    4 => inputs[..4].copy_from_slice(&[p, q, -p, -q]),
+                    _ => {}
+                }
+            }
+            let expected: C = inputs.iter().map(|p| C::from(*p)).sum();
+            let points = inputs
+                .iter()
+                .map(|point| {
+                    let (x, y) = C::affine_xy(point);
+                    Point29 {
+                        x: C::to29(&x),
+                        y: C::to29(&y),
+                    }
+                })
+                .collect();
+            // Empty buckets on both sides ensure offsets stay aligned after
+            // cancellations and after the vector-to-scalar transition.
+            let sums = super::super::msm::reduce_affine_buckets29::<C>(
+                points,
+                Vec::from([0, 0, len, len]),
+            )
+            .expect("valid points have complete affine sums");
+            let actual: Vec<_> = sums
+                .into_iter()
+                .map(|p| p.map_or_else(C::identity, |p| C::from(C::affine_unchecked(p.x, p.y))))
+                .collect();
+            assert_eq!(
+                actual,
+                [C::identity(), expected, C::identity()],
+                "len={len}, case={exceptional}"
+            );
+        }
+    }
+}
+
+#[test]
+#[cfg(all(
+    feature = "asm",
+    feature = "sqrt-table",
+    target_arch = "x86_64",
+    not(pasta_curves_noasm)
+))]
+fn fixed_base_common_radix29_thresholds_and_exceptions() {
+    check_radix29_reducer::<pallas::Point>();
+    check_radix29_reducer::<vesta::Point>();
+}

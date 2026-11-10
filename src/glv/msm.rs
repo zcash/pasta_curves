@@ -38,42 +38,34 @@ pub(crate) trait MsmCurve: GlvParams {
     fn affine_unchecked(x: Self::Base, y: Self::Base) -> Self::AffineExt;
     fn affine_xy(point: &Self::AffineExt) -> (Self::Base, Self::Base);
 
-    /// `x` in radix 2^29, for the AVX2 chord additions.
     #[cfg(all(
         feature = "asm",
         feature = "sqrt-table",
         target_arch = "x86_64",
-        target_feature = "avx2",
         not(pasta_curves_noasm)
     ))]
     fn to29(x: &Self::Base) -> crate::arithmetic::avx2_chord::Limbs29;
 
-    /// The inverse of [`MsmCurve::to29`].
     #[cfg(all(
         feature = "asm",
         feature = "sqrt-table",
         target_arch = "x86_64",
-        target_feature = "avx2",
         not(pasta_curves_noasm)
     ))]
     fn from29(x: &crate::arithmetic::avx2_chord::Limbs29) -> Self::Base;
 
-    /// `-x` in radix 2^29.
     #[cfg(all(
         feature = "asm",
         feature = "sqrt-table",
         target_arch = "x86_64",
-        target_feature = "avx2",
         not(pasta_curves_noasm)
     ))]
     fn neg29(x: &crate::arithmetic::avx2_chord::Limbs29) -> crate::arithmetic::avx2_chord::Limbs29;
 
-    /// One level of AVX2 chord additions (`avx2_chord::chord_level`).
     #[cfg(all(
         feature = "asm",
         feature = "sqrt-table",
         target_arch = "x86_64",
-        target_feature = "avx2",
         not(pasta_curves_noasm)
     ))]
     fn chord_level29(
@@ -102,19 +94,17 @@ macro_rules! impl_msm_curve {
                 feature = "asm",
                 feature = "sqrt-table",
                 target_arch = "x86_64",
-                target_feature = "avx2",
                 not(pasta_curves_noasm)
             ))]
             fn to29(x: &Self::Base) -> crate::arithmetic::avx2_chord::Limbs29 {
-                use crate::arithmetic::avx2_chord::Avx2ChordField;
-                crate::arithmetic::avx2_chord::Limbs29::from_limbs(&x.chord_limbs())
+                use crate::arithmetic::avx2_chord::{Avx2ChordField, Limbs29};
+                Limbs29::from_limbs(&x.chord_limbs())
             }
 
             #[cfg(all(
                 feature = "asm",
                 feature = "sqrt-table",
                 target_arch = "x86_64",
-                target_feature = "avx2",
                 not(pasta_curves_noasm)
             ))]
             fn from29(x: &crate::arithmetic::avx2_chord::Limbs29) -> Self::Base {
@@ -126,7 +116,6 @@ macro_rules! impl_msm_curve {
                 feature = "asm",
                 feature = "sqrt-table",
                 target_arch = "x86_64",
-                target_feature = "avx2",
                 not(pasta_curves_noasm)
             ))]
             fn neg29(
@@ -140,7 +129,6 @@ macro_rules! impl_msm_curve {
                 feature = "asm",
                 feature = "sqrt-table",
                 target_arch = "x86_64",
-                target_feature = "avx2",
                 not(pasta_curves_noasm)
             ))]
             fn chord_level29(
@@ -715,18 +703,6 @@ fn window_assignments<C>(
 /// The incomplete pass writes nothing until inversion succeeds. On a zero
 /// denominator, retry the unchanged level with complete formulas. Successful
 /// results are then compacted in place, retaining the input allocation.
-// AVX2 builds reduce fixed-base sums through `reduce_affine_buckets29`;
-// only tests call this scalar entry point.
-#[cfg_attr(
-    all(
-        feature = "asm",
-        feature = "sqrt-table",
-        target_arch = "x86_64",
-        target_feature = "avx2",
-        not(pasta_curves_noasm)
-    ),
-    allow(dead_code)
-)]
 pub(super) fn reduce_affine_buckets<F: VartimeField>(
     mut points: Vec<AffinePoint<F>>,
     mut offsets: Vec<usize>,
@@ -843,86 +819,28 @@ fn reduce_affine_buckets_reusing<F: VartimeField, const COMPLETE: bool>(
     )
 }
 
-/// Below this many additions, a tree level's batch inversion dominates the
-/// AVX2 work, and the rest of the reduction runs on the scalar path.
+// Uses the level threshold and staged radix-29 tree of the code this was ported from, then this
+// crate's existing failure-atomic scalar reducer for tails and equal-x pairs.
 #[cfg(all(
     feature = "asm",
     feature = "sqrt-table",
     target_arch = "x86_64",
-    target_feature = "avx2",
-    not(pasta_curves_noasm)
-))]
-const AVX2_MIN_LEVEL_ADDITIONS: usize = 32;
-
-/// [`reduce_affine_buckets`] over radix-2^29 points, one AVX2 level at a time.
-///
-/// Levels with at least [`AVX2_MIN_LEVEL_ADDITIONS`] additions run in AVX2;
-/// the remaining levels finish on [`reduce_affine_buckets`]. A level whose
-/// pairs include equal x-coordinates writes nothing (see `chord_level`), and
-/// its unchanged inputs finish on the complete formulas, as the scalar path
-/// would. Same invariants as [`reduce_affine_buckets`].
-#[cfg(all(
-    feature = "asm",
-    feature = "sqrt-table",
-    target_arch = "x86_64",
-    target_feature = "avx2",
     not(pasta_curves_noasm)
 ))]
 pub(super) fn reduce_affine_buckets29<C: MsmCurve>(
     mut points: Vec<crate::arithmetic::avx2_chord::Point29>,
     mut offsets: Vec<usize>,
 ) -> Option<Vec<Option<AffinePoint<C::Base>>>> {
-    reduce_affine_buckets29_reusing::<C>(
-        &mut points,
-        &mut offsets,
-        &mut ReduceScratch29::default(),
-        &mut Vec::new(),
-        &mut ReduceScratch::default(),
-    )
-}
+    use crate::arithmetic::avx2_chord::{ChordScratch, Point29};
 
-/// Buffers of [`reduce_affine_buckets29_reusing`], reusable across calls.
-#[cfg(all(
-    feature = "asm",
-    feature = "sqrt-table",
-    target_arch = "x86_64",
-    target_feature = "avx2",
-    not(pasta_curves_noasm)
-))]
-#[derive(Default)]
-struct ReduceScratch29 {
-    next: Vec<crate::arithmetic::avx2_chord::Point29>,
-    next_offsets: Vec<usize>,
-    pairs: Vec<(usize, usize, usize)>,
-    chord: crate::arithmetic::avx2_chord::ChordScratch,
-}
+    // Levels below 32 additions, the ported code's threshold, finish on the scalar path,
+    // independently of eight-lane padding.
+    const AVX2_MIN_LEVEL_ADDITIONS: usize = 32;
 
-/// [`reduce_affine_buckets29`] on caller-owned buffers, as
-/// [`reduce_affine_buckets_reusing`]: `points` and `offsets` are consumed as
-/// scratch, `affine` stages the levels that finish on the scalar path, and
-/// every buffer keeps its capacity for the next call.
-#[cfg(all(
-    feature = "asm",
-    feature = "sqrt-table",
-    target_arch = "x86_64",
-    target_feature = "avx2",
-    not(pasta_curves_noasm)
-))]
-fn reduce_affine_buckets29_reusing<C: MsmCurve>(
-    points: &mut Vec<crate::arithmetic::avx2_chord::Point29>,
-    offsets: &mut Vec<usize>,
-    scratch: &mut ReduceScratch29,
-    affine: &mut Vec<AffinePoint<C::Base>>,
-    reduce: &mut ReduceScratch<C::Base>,
-) -> Option<Vec<Option<AffinePoint<C::Base>>>> {
-    use crate::arithmetic::avx2_chord::Point29;
-    debug_assert!(!offsets.is_empty());
-    let ReduceScratch29 {
-        next,
-        next_offsets,
-        pairs,
-        chord,
-    } = scratch;
+    let mut next = Vec::new();
+    let mut next_offsets = Vec::new();
+    let mut pairs = Vec::new();
+    let mut chord = ChordScratch::default();
     let exceptional = loop {
         pairs.clear();
         next.clear();
@@ -943,21 +861,26 @@ fn reduce_affine_buckets29_reusing<C: MsmCurve>(
         if pairs.len() < AVX2_MIN_LEVEL_ADDITIONS {
             break false;
         }
-        if C::chord_level29(pairs.len(), |i| pairs[i], points, next, chord).is_none() {
+        if C::chord_level29(pairs.len(), |i| pairs[i], &points, &mut next, &mut chord).is_none() {
+            // The failed chord level wrote nothing; retry its unchanged
+            // inputs with complete formulas for all remaining levels.
             break true;
         }
-        core::mem::swap(points, next);
-        core::mem::swap(offsets, next_offsets);
+        core::mem::swap(&mut points, &mut next);
+        core::mem::swap(&mut offsets, &mut next_offsets);
     };
-    affine.clear();
-    affine.extend(points.iter().map(|p| AffinePoint {
-        x: C::from29(&p.x),
-        y: C::from29(&p.y),
-    }));
+    let mut affine = points
+        .iter()
+        .map(|p| AffinePoint {
+            x: C::from29(&p.x),
+            y: C::from29(&p.y),
+        })
+        .collect();
+    let mut scratch = ReduceScratch::default();
     if exceptional {
-        reduce_affine_buckets_reusing::<C::Base, true>(affine, offsets, reduce)
+        reduce_affine_buckets_reusing::<C::Base, true>(&mut affine, &mut offsets, &mut scratch)
     } else {
-        reduce_affine_buckets_reusing::<C::Base, false>(affine, offsets, reduce)
+        reduce_affine_buckets_reusing::<C::Base, false>(&mut affine, &mut offsets, &mut scratch)
     }
 }
 
