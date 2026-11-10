@@ -1,6 +1,6 @@
 //! Four-way AVX2 arithmetic for the square-root exponentiation chain.
 //!
-//! [`crate::pallas::Affine::batch_from_bytes`] spends nearly all of its time in
+//! [`crate::pallas::Affine::batch_from_bytes_vartime`] spends nearly all of its time in
 //! one square root per point, a chain of about 250 squarings. A scalar chain
 //! already saturates the x86 multiplier, so this module runs four chains in one
 //! set of AVX2 registers instead.
@@ -33,7 +33,7 @@
 //!   stays below 2^64.
 //!
 //! The value of each lane is identical to the scalar Montgomery arithmetic's
-//! after conversion; `batch_from_bytes` is tested against `from_bytes`.
+//! after conversion; `batch_from_bytes_vartime` is tested against `from_bytes`.
 #![allow(unsafe_code)]
 // Target-feature operations and calls require explicit unsafe blocks on the MSRV.
 #![allow(unused_unsafe)]
