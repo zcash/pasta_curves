@@ -19,6 +19,8 @@ and this project adheres to Rust's notion of
 - GLV MSMs reuse window and affine-reduction scratch. With `multicore`, each
   thread retains at most 8 MiB of scratch per field between calls, without
   sharing checked-out buffers with nested work.
+- The public-input GLV MSM planner weights affine and projective bucket costs
+  separately and considers up to two wider windows when selecting a backend.
 
 ## [0.6.3] - 2026-11-16
 ### Added

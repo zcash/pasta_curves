@@ -107,19 +107,9 @@ fn estimated_signed_booth_work(
     ))
 }
 
-/// Relative cost weights for the planner's Signed-Booth work estimates, in
-/// units of one fifth of a doubling.
-///
-/// The two backends add points differently. The GLV ladder gathers each
-/// window's points into buckets with batched affine additions (one shared
-/// inversion per reduction level), the cheapest addition available, while the
-/// generic ladder adds each point into a projective bucket. Both then sum
-/// their buckets with projective additions. Counting every addition alike
-/// overprices the GLV ladder, so the planner chose the generic MSM in cells
-/// where GLV measured up to 1.8x faster (e.g. 7,150 terms on 6, 10, or 12
-/// workers). The weights below were fitted to timing grids on Apple M4 (asm
-/// backend) and two AMD Zen 4 hosts (portable and `-C target-cpu=native`
-/// builds), 256 to 65,536 terms on 1 to 16 workers.
+/// Backend-specific work weights, in fifths of a doubling. Calibrated on
+/// Apple M4 and AMD Zen 4, 256–65,536 terms and 1–16 workers: GLV's
+/// batched affine visits cost less than the generic projective bucket visits.
 #[derive(Clone, Copy)]
 struct PlannerWeights {
     point_visit: usize,
@@ -141,7 +131,6 @@ const GLV_PLANNER_WEIGHTS: PlannerWeights = PlannerWeights {
     doubling: 5,
 };
 
-/// The generic ladder: projective (mixed) point visits and bucket sums.
 const GENERIC_PLANNER_WEIGHTS: PlannerWeights = PlannerWeights {
     point_visit: 7,
     bucket_addition: 5,
@@ -244,8 +233,8 @@ where
     )
 }
 
-/// Choose a GLV window only when its estimated work beats the generic MSM.
-/// Compare both the default width and its successor to account for worker waves.
+/// Choose the cheapest weighted GLV width when it is no worse than generic.
+/// Half-width components can favor up to two bits beyond the generic width.
 pub(super) fn glv_multiexp_window_bits<C>(terms: usize, num_threads: usize) -> Option<usize>
 where
     C: GlvParams,
@@ -282,10 +271,6 @@ where
     (glv <= generic).then_some(glv_window_bits)
 }
 
-/// How far past the generic default width the GLV ladder may widen. Its
-/// components are half as long, so wider windows (fewer of them) often pay
-/// off; the timing grids put the best width at most two bits above the
-/// default in nearly every cell.
 const GLV_EXTRA_WINDOW_BITS: usize = 2;
 
 /// The number of threads the MSM may use: Rayon's with `multicore`, except on
