@@ -4,8 +4,8 @@ Assembly backends for the crate's Pasta (Pallas and Vesta) field arithmetic. The
 AArch64 and x86-64 backends for modular addition and subtraction, Montgomery multiplication and
 squaring, a repeated-squaring chain, conversion out of Montgomery form, and the blocks of the
 constant-time inversion. The inversion's driver, `src/inversion.rs`, runs a backend's blocks where
-the module has one, and the same blocks in portable Rust (`src/inversion/portable.rs`) on every
-other target.
+the module has a backend that provides them, and the same blocks in portable Rust
+(`src/inversion/portable.rs`) on every other target.
 
 ## Provenance
 
@@ -100,7 +100,7 @@ The generic compositions that run them as the six Montgomery entry points (`entr
 translated to Lean by Aeneas, and proved over any backend whose blocks meet their contracts. So each
 entry point is proved at either Pasta field, under the condition that it asserts. The inversion's
 algorithm is proved on words (`montInv_spec`), each of its six blocks is proved, on each backend,
-to compute its word-level function, and `invert` over either backend's blocks is proved at either
+to compute its word-level function, and `invert` over each backend's blocks is proved at either
 field from their composition (`invert_entry_spec`). Of the portable blocks, only `cond_sub` is proved, from its
 Aeneas translation; all six are checked against the same known answers as the assembly blocks. The
 transcription is generated from the module's own inline blocks, CI regenerates and diffs it, and the

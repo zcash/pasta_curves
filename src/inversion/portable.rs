@@ -1,4 +1,4 @@
-//! The inversion's six blocks in portable Rust, for the targets without the AArch64 assembly
+//! The inversion's six blocks in portable Rust, for the targets without assembly inversion
 //! blocks.
 //!
 //! Each function computes what its block contract in [`InvertBlocks`] states, in the shape that the

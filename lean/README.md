@@ -1,22 +1,20 @@
 # Verifying the crate's Pasta assembly routines
 
 The `PastaCurves` library separates shared arithmetic definitions and lemmas from
-architecture-specific models. The AArch64 backend has transcriptions and correctness proofs.
-`PastaCurves/X86_64/Semantics.lean` adds the x86-64 word operations and borrow convention;
-`X86_64/Transcription.lean` mechanically transcribes all six assembly blocks from
-`src/asm/x86_64.rs`. The x86-64 addition and subtraction blocks have correctness proofs in
-`X86_64/Spec/Add.lean` and `X86_64/Spec/Sub.lean`. `X86_64/Spec/Square.lean` proves the exact
-eight-limb square, its `squareHi` Montgomery reduction, and their `sqrMont` composition.
-`X86_64/Spec/FromMont.lean` proves the standalone conversion block for every four-limb input,
-including all four cancellation steps and the final conditional subtraction. `X86_64/Spec/Mul.lean`
-proves Montgomery multiplication under both public operand contracts, using mechanically factored
-internal rounds. `X86_64/Spec.lean` exposes the completed block proofs, `Compositions.lean` mirrors
-the split square, and `Entry.lean` instantiates the block proofs at the two fields.
-`X86_64/Vectors.lean` checks the x86-64 blocks against the 874 in-contract vectors of the shared
-`Vectors.lean`, the existing AArch64 hardware corpus, so these are cross-backend checks rather than
-x86 hardware captures. `Checks.lean` supplies additional kernel-checked arithmetic regressions.
+architecture-specific models: one module per architecture that has an assembly backend, at present
+`AArch64` and `X86_64`, each with the same roles (see the layout below). Each holds the
+architecture's instruction semantics, the generated transcription of every block of its backend's
+source file, the Rust compositions around those blocks, the vector checks, a proof of every block,
+and the entry theorems at the two fields. The block structure follows each backend's source: on
+x86-64, for instance, the squaring is split into `squareLo`, the exact eight-limb square, and
+`squareHi`, its Montgomery reduction, which `X86_64/Compositions.lean` composes into `sqrMont`,
+and `from_mont` is a block of its own, proved for every four-limb input. The vectors of the shared
+`Vectors.lean` were recorded on AArch64 hardware, so on any other architecture
+(`X86_64/Vectors.lean`) they are cross-backend checks rather than hardware captures of that
+architecture. Each architecture's `Checks.lean` runs the shared boundary-input checks of
+`ArithmeticChecks.lean` on its routines.
 
-Both architectures use `scripts/gen.py`, with shared Rust `asm!` parsing and
+Every architecture uses `scripts/gen.py`, with shared Rust `asm!` parsing and
 architecture-specific instruction emitters; `--check` compares generated output without
 rewriting it. The x86-64 emitter checks operand bindings and output order, read-only input-limb addresses,
 register initialization, and CF/OF availability. Ordinary arithmetic models CF but invalidates
@@ -54,9 +52,9 @@ contracts. Since the portable blocks meet them at either of the crate's fields, 
 proved to return the Montgomery inverse there.
 
 The generic compositions that run the entry points over a backend's blocks (`src/asm/entry.rs`) are
-translated too (`PastaCurves/Glue/`). That translation is run over both backends' blocks, on the
+translated too (`PastaCurves/Glue/`). That translation is run over every backend's blocks, on the
 reference vectors and the entry points' known answers. It is also proved to meet the entry points'
-contracts over any backend whose blocks meet theirs, and both backends' blocks are proved to meet
+contracts over any backend whose blocks meet theirs, and every backend's blocks are proved to meet
 them. So `sqr_n_mul`, which composes blocks, is covered through the translation rather than mirrored
 by hand.
 
@@ -207,12 +205,12 @@ scripts/check_export_axioms.py           the axiom census of the export, run by 
 
 Shared declarations use namespace `PastaCurves`; architecture declarations use `PastaCurves.AArch64`
 and `PastaCurves.X86_64`; the Aeneas translations use `pasta_curves`, the crate's name, as Aeneas
-names it. Shared modules do not import architecture-specific modules, so both models reuse them
-without depending on one another. The exception is `Glue/Vectors.lean`, which runs the translated
-glue over both backends' records, and which nothing imports but the root module. The package is
-built with Lake from this directory (`scripts/build.sh`), with Mathlib and Aeneas' Lean library
-pinned in `lake-manifest.json`. `scripts/ci.sh` at the repository root runs these checks together
-with the crate's.
+names it. Shared modules do not import architecture-specific modules, so every architecture's
+model reuses them without depending on another's. The exception is `Glue/Vectors.lean`, which runs
+the translated glue over every backend's record, and which nothing imports but the root module. The
+package is built with Lake from this directory (`scripts/build.sh`), with Mathlib and Aeneas' Lean
+library pinned in `lake-manifest.json`. `scripts/ci.sh` at the repository root runs these checks
+together with the crate's.
 
 `scripts/gen_aeneas.sh` regenerates or checks the Aeneas translations. It runs the Charon and
 Aeneas binaries from the release that Aeneas' CI built at the pinned revision.
@@ -358,8 +356,8 @@ The inversion's blocks, each equated with the word-level function of the shared 
   `PastaCurves/Compositions.lean`, which mirrors the Rust driver over a record of the six blocks,
   computes `montInvModel` for any backend whose blocks meet `InvertBlocks.Spec`, the record of
   the six statements above. Each round carries the model's state by those statements, whose
-  bounds come from the model's round invariant. `invertBlocks_spec` instantiates the record for
-  the AArch64 blocks.
+  bounds come from the model's round invariant. Each architecture's `invertBlocks_spec`
+  instantiates the record for its backend's blocks.
 
 The crate's Montgomery entry points, in `Glue/Spec.lean`: `add_with_spec`, `sub_with_spec`,
 `mul_with_spec`, `square_with_spec`, `sqr_n_mul_with_spec`, and `from_mont_with_spec` (all proved)
@@ -380,7 +378,7 @@ above.
 
 `montgomeryBlocks_spec`, in each architecture's `Entry.lean`, proves that the backend's blocks meet
 `BlocksSpec` at either field. It passes the block theorems above, as `LimbsSpec` states them, to
-`blocksOf_spec`, which proves the record's contracts from them once for both backends. Each
+`blocksOf_spec`, which proves the record's contracts from them once for every backend. Each
 backend's `from_mont` is its own: on AArch64 the multiplication by one (`fromMont_spec` of
 `AArch64/Spec/Mul.lean`), and on x86-64 the conversion block (`fromMont_spec` of
 `X86_64/Spec/FromMont.lean`). `invert_entry_spec` (proved) restates `montInv_spec` for the crate's
@@ -405,12 +403,12 @@ against a step-by-step trace of one batch. The proofs cover:
 * the addition and subtraction blocks for every pair of operands on which they are exact (on
   x86-64, the subtraction for `rhs < p`), with their corollaries for canonical operands and, on
   AArch64, for a lazily reduced left operand;
-* the inversion's six blocks on both backends against the word-level functions of the shared
-  layer, and `invert` over any backend's blocks against `montInvModel`, instantiated for both;
+* the inversion's six blocks on every backend against the word-level functions of the shared
+  layer, and `invert` over any backend's blocks against `montInvModel`, instantiated for each;
 * Aeneas' translation of the entry points' compositions, with their assertions, over any
   backend whose blocks meet their contracts, including the repeated squaring of `sqr_n_mul`;
-* from those, the six Montgomery entry points on both backends at either field under the
-  conditions they assert, and `invert` over either backend's blocks at either field;
+* from those, the six Montgomery entry points on every backend at either field under the
+  conditions they assert, and `invert` over every backend's blocks at either field;
 * the Aeneas translation of the portable `cond_sub` against its contract.
 
 This covers the crate's current code except the other five portable inversion blocks and the

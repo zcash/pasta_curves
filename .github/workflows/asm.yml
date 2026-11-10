@@ -122,8 +122,8 @@ jobs:
     # `#![no_std]` keeps std out of the crate's own code, but the targets the
     # backend compiles on have a std to link, so build core from source instead
     # of using the sysroot: nothing that reaches for std can compile. The code
-    # differs between the two backends and the portable fallback, so build
-    # each: AArch64, x86-64, and Intel macOS, which has no backend. A library
+    # differs between the backends and the portable fallback, so build each:
+    # AArch64, x86-64, and Intel macOS, which has no backend. A library
     # build links nothing, so any host can build for all three.
     runs-on: ubuntu-latest
     steps:

@@ -25,7 +25,7 @@ A template line may invoke a `macro_rules!` macro of the source file for a repea
 instruction sequence (`asm_source.parse_macros`). A backend transcribes a sequence listed in
 its round table once and calls it per invocation; the AArch64 table is `MACRO_ROUNDS`.
 
-For both architectures, the proof skeletons lift and extract the `let`s with merging off, so
+For every architecture, the proof skeletons lift and extract the `let`s with merging off, so
 every binding is its own `let`, equal values or not.
 
 Run from the repository root:

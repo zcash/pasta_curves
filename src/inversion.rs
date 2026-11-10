@@ -3,8 +3,8 @@
 //! blocks, and `lean/PastaCurves/Inversion/Composition.lean` proves it equal to the algorithm's
 //! model for any blocks that meet the record of their specifications.
 //!
-//! [`invert`] runs the assembly blocks where an assembly backend is compiled, on AArch64 and
-//! x86-64, and the same blocks in portable Rust (`portable`) everywhere else.
+//! [`invert`] runs the assembly blocks where the compiled backend provides them, at present on
+//! AArch64 and x86-64, and the same blocks in portable Rust (`portable`) everywhere else.
 
 // The inversion is not yet reached from the field types.
 #![allow(dead_code)]
@@ -127,10 +127,11 @@ if_asm_unsupported! {
 /// Bernstein, Chen, Harrison, Huang, Maxwell, Wang, Wuille, and Yang, "Accelerating and verifying
 /// constant-time modular inversion" (EUROCRYPT 2026), as in s2n-bignum's `bignum_montinv_p256`: 590
 /// half-delta divsteps in ten rounds of 59, computed on packed words, with the coefficients reduced
-/// by one Montgomery word per round. It runs a fixed sequence of six blocks, in assembly on
-/// AArch64 and x86-64 and in portable Rust on every other target (and wherever the
-/// assembly is disabled), with no data-dependent branch or memory access in either, so its timing
-/// does not depend on `x`. The design and the correctness argument are in `book/src/design/inversion.md`.
+/// by one Montgomery word per round. It runs a fixed sequence of six blocks, in assembly
+/// where the backend provides them (at present AArch64 and x86-64) and in portable Rust
+/// everywhere else (including wherever the assembly is disabled), with no data-dependent branch
+/// or memory access in either, so its timing does not depend on `x`. The design and the
+/// correctness argument are in `book/src/design/inversion.md`.
 ///
 /// Outputs are canonical.
 ///

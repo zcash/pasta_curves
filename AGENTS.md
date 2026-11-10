@@ -94,8 +94,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ## The assembly backends (`src/asm`)
 
-The `asm` module provides assembly backends for the Pasta field arithmetic, one for AArch64 and one
-for x86-64. Each contains:
+The `asm` module provides assembly backends for the Pasta field arithmetic, one per supported
+architecture: at present AArch64 and x86-64. Each contains:
 
 - Montgomery multiplication and squaring, and modular addition and subtraction, as inline `asm!`
   blocks;

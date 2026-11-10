@@ -9,8 +9,8 @@ import PastaCurves.Portable.Driver
 The translated portable blocks succeed whatever words they are given (`blocks_succeeds`). As
 functions on the model's values, they satisfy `InvertBlocks.Spec` at any Pasta field
 (`blocks_spec`), by the blocks' theorems. So Aeneas' translation of `invert_with` over them returns
-the Montgomery inverse at either of the crate's fields (`invert_entry_spec`), as the AArch64 blocks
-do.
+the Montgomery inverse at either of the crate's fields (`invert_entry_spec`), as each backend's
+assembly blocks do.
 
 The contracts' step lemmas assume more than success needs, so the proofs of success (`divstep59_ok`
 and the others) name the callee's own success lemma wherever `step*` would apply a contract.
