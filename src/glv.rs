@@ -90,6 +90,8 @@ use group::CurveAffine as _;
 use crate::arithmetic::{CurveExt, VartimeField, mac, sbb};
 use crate::{pallas, vesta};
 
+pub(crate) mod msm;
+
 mod private {
     use crate::arithmetic::{CurveAffine, CurveExt};
 

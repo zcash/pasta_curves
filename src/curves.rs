@@ -30,6 +30,14 @@ use crate::arithmetic::{Coordinates, CurveAffine, CurveExt, CurveExtUnchecked, V
 macro_rules! impl_batch_mul_same_scalar_vartime {
     (glv, $name:ident) => {
         #[cfg(feature = "glv")]
+        fn try_multiexp_vartime(
+            scalars: &[Self::ScalarExt],
+            bases: &[Self::AffineExt],
+        ) -> Option<Self> {
+            crate::glv::msm::try_multiexp::<$name>(scalars, bases)
+        }
+
+        #[cfg(feature = "glv")]
         fn batch_mul_same_scalar_vartime(
             points: &[Self::AffineExt],
             scalar: &Self::ScalarExt,
