@@ -6,9 +6,6 @@
 //! [`invert`] runs the assembly blocks where the compiled backend provides them, at present on
 //! AArch64 and x86-64, and the same blocks in portable Rust (`portable`) everywhere else.
 
-// The inversion is not yet reached from the field types.
-#![allow(dead_code)]
-
 use crate::limbs::Limbs;
 
 if_asm_supported! {

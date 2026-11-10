@@ -532,7 +532,7 @@ def inversion.portable.Backend.Insts.Pasta_curvesInversionInvertBlocks :
 }
 
 /-- [pasta_curves::inversion::invert_with]: loop body 0:
-    Source: 'src/inversion.rs', lines 83:4-94:5 -/
+    Source: 'src/inversion.rs', lines 80:4-91:5 -/
 @[rust_loop_body]
 def inversion.invert_with_loop.body
   {B : Type} (InvertBlocksInst : inversion.InvertBlocks B)
@@ -576,7 +576,7 @@ def inversion.invert_with_loop.body
     ok (cont (iter1, two_delta_new, f_new, g1, d1, e1))
 
 /-- [pasta_curves::inversion::invert_with]: loop 0:
-    Source: 'src/inversion.rs', lines 83:4-94:5 -/
+    Source: 'src/inversion.rs', lines 80:4-91:5 -/
 @[rust_loop]
 def inversion.invert_with_loop
   {B : Type} (InvertBlocksInst : inversion.InvertBlocks B)
@@ -593,7 +593,7 @@ def inversion.invert_with_loop
     (iter, two_delta, f, g, d, e)
 
 /-- [pasta_curves::inversion::invert_with]:
-    Source: 'src/inversion.rs', lines 72:0-100:1 -/
+    Source: 'src/inversion.rs', lines 69:0-97:1 -/
 def inversion.invert_with
   {B : Type} (InvertBlocksInst : inversion.InvertBlocks B)
   (x : Array Std.U64 4#usize) (modulus : Array Std.U64 4#usize) (inv : Std.U64)

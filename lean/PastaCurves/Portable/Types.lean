@@ -25,7 +25,7 @@ namespace pasta_curves
 def inversion.portable.Backend := Unit
 
 /-- Trait declaration: [pasta_curves::inversion::InvertBlocks]
-    Source: 'src/inversion.rs', lines 29:0-58:1 -/
+    Source: 'src/inversion.rs', lines 26:0-55:1 -/
 structure inversion.InvertBlocks (Self : Type) where
   divstep59 : Std.U64 → Std.U64 → Std.U64 → Result (Array Std.U64
     5#usize)
