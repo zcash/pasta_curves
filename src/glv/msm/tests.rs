@@ -295,6 +295,49 @@ fn all_window_widths() {
     forced_windows::<vesta::Point>();
 }
 
+/// The MSM against a projective sum, for `terms` random terms.
+fn multiexp_matches_naive<C: MsmCurve>(terms: usize, window_bits: usize, seed: u8) {
+    use rand::SeedableRng;
+    let mut rng = rand_xorshift::XorShiftRng::from_seed([seed; 16]);
+    let points: Vec<C> = (0..terms).map(|_| C::random(&mut rng)).collect();
+    let scalars: Vec<C::ScalarExt> = (0..terms).map(|_| C::ScalarExt::random(&mut rng)).collect();
+    let want = points
+        .iter()
+        .zip(&scalars)
+        .fold(C::identity(), |acc, (p, k)| acc + *p * k);
+    let mut affine = alloc::vec![C::AffineExt::identity(); terms];
+    C::batch_normalize(&points, &mut affine);
+    let components = scalars
+        .iter()
+        .map(decompose::<C>)
+        .map(checked_signed_magnitudes)
+        .collect::<Option<Vec<_>>>()
+        .unwrap();
+    let bases = multiexp_bases::<C>(&affine);
+    assert_eq!(
+        multiexp_serial::<C>(&components, &bases, window_bits),
+        Some(want),
+        "{terms} terms at width {window_bits}"
+    );
+    #[cfg(feature = "multicore")]
+    assert_eq!(
+        multiexp_parallel::<C>(&components, &bases, window_bits),
+        Some(want),
+        "{terms} terms at width {window_bits}, parallel"
+    );
+}
+
+/// Window buffers are cached per thread across MSMs (`with_window_scratch`):
+/// alternating curves, shrinking and growing sizes and widths must not
+/// leak state from one MSM into the next.
+#[test]
+fn cached_window_scratch_does_not_leak_between_msms() {
+    for (terms, window_bits) in [(300, 7), (17, 3), (300, 4), (64, 9), (5, 2)] {
+        multiexp_matches_naive::<pallas::Point>(terms, window_bits, terms as u8);
+        multiexp_matches_naive::<vesta::Point>(terms, window_bits, window_bits as u8);
+    }
+}
+
 #[test]
 fn planner_boundaries() {
     assert_eq!(glv_multiexp_window_bits::<pallas::Point>(255, 1), None);
