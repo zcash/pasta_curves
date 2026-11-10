@@ -40,6 +40,22 @@ jobs:
       - name: Check the Python scripts' formatting
         run: '"$RUNNER_TEMP/lint-venv/bin/ruff" format --check .'
 
+  mypy:
+    name: mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Pinned by version and by hashes in the same requirements file as ruff; the files and
+      # the strict settings are in mypy.ini.
+      - name: Install mypy, hash-pinned
+        run: |
+          python3 -m venv "$RUNNER_TEMP/lint-venv"
+          "$RUNNER_TEMP/lint-venv/bin/pip" install --require-hashes -r scripts/lint-requirements.txt
+      - name: Type-check the generator and its tests
+        run: '"$RUNNER_TEMP/lint-venv/bin/mypy"'
+
   actionlint:
     name: actionlint
     runs-on: ubuntu-latest
