@@ -38,6 +38,13 @@ macro_rules! impl_batch_mul_same_scalar_vartime {
         }
 
         #[cfg(feature = "glv")]
+        fn try_prepare_fixed_base_sum(
+            bases: &[Self::AffineExt],
+        ) -> Option<alloc::boxed::Box<dyn crate::arithmetic::PreparedFixedBaseSum<Self>>> {
+            Some(crate::glv::prepare_fixed_base_sum::<$name>(bases))
+        }
+
+        #[cfg(feature = "glv")]
         fn batch_mul_same_scalar_vartime(
             points: &[Self::AffineExt],
             scalar: &Self::ScalarExt,

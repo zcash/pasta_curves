@@ -74,6 +74,8 @@ use bucket::{CachedField, multiexp, multiexp_bases};
 use plan::{current_num_threads, glv_multiexp_window_bits};
 use straus::planned_straus_multiexp;
 
+pub(super) use bucket::{AffinePoint, reduce_affine_buckets};
+
 use super::{GlvParams, decompose, private::AffineBase};
 
 /// Declines unprofitable input shapes and failed arithmetic guards so callers
