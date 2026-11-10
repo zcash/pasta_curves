@@ -149,6 +149,241 @@ fn entry_points_match_the_portable_arithmetic() {
     );
 }
 
+/// Operands whose Montgomery multiplication, conversion, or squaring carries through a limb that is
+/// exactly all ones, which random operands do with probability about `2^-64`, so the differential
+/// test above never reaches it. They are the same for both backends, though each orders its
+/// partial sums differently. `sage/asm_carry_vectors.py` constructs them, says how, and prints
+/// these constants; each case asserts that it is within its routine's contract.
+#[test]
+fn carry_boundaries_match_the_portable_arithmetic() {
+    macro_rules! check {
+        ($field:ident, $f:expr, $products:expr, $conversions:expr, $squares:expr) => {{
+            use crate::fields::$field;
+            let f = $f;
+            let portable_mul = |x: &Limbs, y: &Limbs| $field::mul(&$field(*x), &$field(*y)).0;
+            for (lhs, rhs) in $products {
+                assert!(super::mul_contract(&lhs, &rhs, &f.modulus), "{lhs:x?} {rhs:x?}");
+                let product = portable_mul(&lhs, &rhs);
+                assert_eq!(mul(&lhs, &rhs, &f.modulus, f.inv), product, "{lhs:x?} {rhs:x?}");
+            }
+            for value in $conversions {
+                let expected = portable_mul(&value, &[1, 0, 0, 0]);
+                assert_eq!(from_mont(&value, &f.modulus, f.inv), expected, "{value:x?}");
+            }
+            for value in $squares {
+                assert!(super::is_canonical(&value, &f.modulus), "{value:x?}");
+                let expected = $field::square(&$field(value)).0;
+                assert_eq!(square(&value, &f.modulus, f.inv), expected, "{value:x?}");
+            }
+        }};
+    }
+    check!(Fp, &FP, FP_CARRY_PRODUCTS, FP_CARRY_CONVERSIONS, FP_CARRY_SQUARES);
+    check!(Fq, &FQ, FQ_CARRY_PRODUCTS, FQ_CARRY_CONVERSIONS, FQ_CARRY_SQUARES);
+    check!(
+        Fp,
+        &FP,
+        FP_INSTRUCTION_CARRY_PRODUCTS,
+        FP_INSTRUCTION_CARRY_VALUES,
+        FP_INSTRUCTION_CARRY_VALUES
+    );
+    check!(
+        Fq,
+        &FQ,
+        FQ_INSTRUCTION_CARRY_PRODUCTS,
+        FQ_INSTRUCTION_CARRY_VALUES,
+        FQ_INSTRUCTION_CARRY_VALUES
+    );
+}
+
+const FP_CARRY_PRODUCTS: [(Limbs, Limbs); 5] = [
+    (
+        [0xecb361974ad05e8c, 0x3a8f9ecbe676d4e6, 0xfef21d3c38385851, 0x0000000000000000],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x992d30ed00000001, 0x99e23357b3f7a3c7, 0x08e00b2bd69dbe75, 0x34ab5355df06c5ee],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x10733d5083e4e848, 0x1c36c808a1f48465, 0x7dad15c89f64973e, 0x08e00b2bd69dbe75],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x9611991fa589062b, 0xd74aa9080a2e2049, 0x1775f7d611ffb22f, 0x3dad15c89f64973e],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0xfd23a604b8b15bf4, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+        [0xfffffffffffffffd, 0xfffffffffffffffd, 0x7e0502c84b0e62be, 0x0000000000000000],
+    ),
+];
+const FP_CARRY_CONVERSIONS: [Limbs; 5] = [
+    [0xc61a24c5e0711ba4, 0xafaedc63b3647eb4, 0xfcd657b4a8a908f3, 0x0000000000000002],
+    [0x992d30ed00000001, 0x8919680f094cf91f, 0x1aa0218383d93b60, 0x1e01fa019d1451ca],
+    [0x3159b7f18baeb8d8, 0x54a45819e5dd8d2f, 0x79074159de2dc5ba, 0x1aa0218383d93b60],
+    [0x8fda6984f09b127f, 0x4152c9200bf06ea5, 0x4661e78235ff168f, 0x39074159de2dc5ba],
+    [0xfde1f4a100000005, 0x1233cbff2e80dd89, 0xddb96703f6b306e5, 0x3fffffffffffffff],
+];
+const FP_CARRY_SQUARES: [Limbs; 5] = [
+    [0x536967897fffffff, 0x9ed9b6f09c2efadd, 0xfc863910ee916f61, 0x2368692f274511f2],
+    [0x0000000000000001, 0x67746f43c1509ed9, 0x5673e28f52f3f2c9, 0x04838430f1e63364],
+    [0x5d4c91ad11095631, 0x410a440baf4bd943, 0xeaac8a08857bf81c, 0x2f08066660e89aa1],
+    [0x0e6787dca0c77f89, 0x009bf53e9eee1b83, 0x1eaea71f9512ccb4, 0x29338e963d18c13e],
+    [0x95119c357b2ec249, 0xe77902cd01b145d9, 0xac30093e8d12b063, 0x2251f476e1435aba],
+];
+const FQ_CARRY_PRODUCTS: [(Limbs, Limbs); 5] = [
+    (
+        [0xcdc162832a70a600, 0x1a78d004b8d3231d, 0xfb78f599f0145f6d, 0x0000000000000002],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x8c46eb2100000001, 0x9e2ef5465ee9fe35, 0x525ca335dcdcf38b, 0x355b274cb7088afa],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0xfe26d6c423ddd417, 0xf6d74768f2625add, 0x819bad2805879129, 0x125ca335dcdcf38b],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0xfdc7a53a8c8c31d2, 0x5cfac8b8b3e3d133, 0xed01cf7d7f01298f, 0x019bad2805879129],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0xefb9f2c6aa61e488, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+        [0xfffffffffffffffd, 0xfffffffffffffffd, 0x9fad3bf44d7b8661, 0x0000000000000000],
+    ),
+];
+const FQ_CARRY_CONVERSIONS: [Limbs; 5] = [
+    [0x694427897f51f200, 0x4f6a700e2a796959, 0xf26ae0cdd03d1e47, 0x0000000000000008],
+    [0x8c46eb2100000001, 0x95ffaddb0994a8e5, 0xf715e9a19696daa2, 0x201175e62519a0ee],
+    [0xfa74844c6b997c45, 0xe485d63ad7271099, 0x84d307781096b37d, 0x3715e9a19696daa2],
+    [0xf956efafa5a49576, 0x16f05a2a1bab739b, 0xc7056e787d037cae, 0x04d307781096b37d],
+    [0xbd6297a500000005, 0x1f1a11cb2fe74c53, 0xddb96703f66b5723, 0x3fffffffffffffff],
+];
+const FQ_CARRY_SQUARES: [Limbs; 4] = [
+    [0x59dc8a6f7fffffff, 0xa88713f7dbf5ded5, 0x963b0cb29a9af215, 0x1a07a39e090891a9],
+    [0xffffffffffffffff, 0xf318d7a93e3678b1, 0xa8f66fc21fd82e05, 0x0da670dd9db2bc57],
+    [0xb9a416acecbdffef, 0xfa57d3ffda8efe2c, 0x4802dfc351a5c82b, 0x05a4ca4894ffb4a3],
+    [0x253271754a39c871, 0x885109b7ef9eec83, 0x34167997567fd0e1, 0x10c292d7a6742051],
+];
+
+/// The multiplication's contract is needed, not only sufficient. Just outside it, an unreduced
+/// `lhs` against a canonical `rhs` whose limb 1 is `2^64 - 1`, each backend's block returns a
+/// wrong result: on AArch64 the carry chain of the high cross-products wraps, as the block's
+/// documentation describes, and the Lean model of the x86-64 block, evaluated on this pair, is
+/// wrong as well. The block is called through the backend, since the entry point asserts the
+/// contract.
+#[test]
+fn mul_is_wrong_just_outside_its_contract() {
+    #[cfg(target_arch = "aarch64")]
+    use super::aarch64::Backend;
+    use super::entry::MontgomeryBlocks;
+    #[cfg(target_arch = "x86_64")]
+    use super::x86_64::Backend;
+    use crate::fields::{Fp, Fq};
+
+    let lhs = [0, u64::MAX, u64::MAX, u64::MAX];
+    let rhs = [u64::MAX, u64::MAX, 0, 0];
+    // `rhs` is canonical, so the portable product is exact.
+    let fp = Fp::mul(&Fp(lhs), &Fp(rhs)).0;
+    let fq = Fq::mul(&Fq(lhs), &Fq(rhs)).0;
+    for (f, product) in [(&FP, fp), (&FQ, fq)] {
+        assert!(!super::mul_contract(&lhs, &rhs, &f.modulus));
+        assert_ne!(Backend::mul(&lhs, &rhs, &f.modulus, f.inv), product);
+    }
+}
+
+/// Operands that flip carry decisions of the AArch64 instruction stream which random operands
+/// reach with probability about `2^-64`: each value is converted and squared, and each pair
+/// multiplied. Unlike the constants above, which follow the algorithm both backends share, these
+/// were chosen for particular instructions, by an interpreter of the AArch64 assembly that is not
+/// part of the crate; they are taken unchanged from commit `5e46ad7`, where it derived them. They
+/// run on both backends.
+const FP_INSTRUCTION_CARRY_PRODUCTS: [(Limbs, Limbs); 8] = [
+    (
+        [0x325a61da00000002, 0xcda6461167ef478b, 0x7cf7340548eeb3db, 0x2aaaaaaaaaaaaaaa],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0xbbd43a3bb7114c25, 0x663ae9430713b837, 0x7d055c0a9fa26498, 0x3aa4665661bbf6cf],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x54a0a6e055555557, 0xb007403564d59f2f, 0xb6cc8abeb7114c23, 0x3cf7340548eeb3db],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x3649feebfe86eb07, 0x4f49a9ff24c960ec, 0xaf500ec0c098e9a5, 0x3cf7340548eeb3dd],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x992d30ed00000001, 0xab5fad155ea24e6f, 0xd24c895a9e440930, 0x3fffffffffffffff],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x2246450655555555, 0xf4932256a791024c, 0xffffffffffffffff, 0x3fffffffffffffff],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x0e979cf32d1634b4, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+        [0xfffffffffffffffc, 0xfffffffffffffffc, 0xf06313fff9a01fe8, 0x0000000000000000],
+    ),
+    (
+        [0x3fd4235992edcf45, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+        [0xfffffffffffffffc, 0xfffffffffffffffc, 0x377b9aa2bb2edb20, 0x0000000000000000],
+    ),
+];
+const FP_INSTRUCTION_CARRY_VALUES: [Limbs; 6] = [
+    [0x0000000000000007, 0x29ef6ceb411acfbc, 0xffffffffffffffff, 0x0000000000000000],
+    [0x992d30ed00000001, 0x86fb5cb0094cf91f, 0xefed33032533e472, 0x1db96703f6b306e3],
+    [0xfde1f4a100000005, 0xab60fcec2e80dd89, 0x66d2cf1300000000, 0x1db96703f6b306e4],
+    [0x992d30ed00000001, 0x8919680f094cf91b, 0xddb96703f6b306e4, 0x3ffffffffffffffe],
+    [0x0000000000000005, 0xffffffffffffffff, 0xffffffffffffffff, 0x3ffffffffffffffe],
+    [0x992d30ed00000001, 0x8919680f094cf91b, 0x08495200fffffffe, 0x3fffffffffffffff],
+];
+const FQ_INSTRUCTION_CARRY_PRODUCTS: [(Limbs, Limbs); 8] = [
+    (
+        [0xabee9f01b770e127, 0xbd05e7fc2956a1b5, 0x167cfefa9fbbfce4, 0x14467d9a621b8bd2],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0xe6e6771d157644ec, 0xc1ad5212056dd6a1, 0x1d16d13998688235, 0x27a1deaff339c985],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x188dd64200000002, 0x342ea321687ea70f, 0x7cf73405488f1ed9, 0x2aaaaaaaaaaaaaaa],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x9476328c55555557, 0x497ee325654d1972, 0x1d54e7ceb770e126, 0x3cf73405488f1ed9],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x8c46eb2100000001, 0x11e80a255ee9fe31, 0xd24c895a9de4742e, 0x3fffffffffffffff],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0x7be85c4a55555555, 0xf4932256a7791d0b, 0xffffffffffffffff, 0x3fffffffffffffff],
+        [0x0000000000000003, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+    ),
+    (
+        [0xec1d7da0a6eb8c9e, 0x076ce2ef87b0b125, 0x77330bdbd7210dff, 0xf17fd374c6a53877],
+        [0xfc9678ff0000000f, 0x67bb433d891a16e3, 0x7fae231004ccf590, 0x096d41af7ccfdaa9],
+    ),
+    (
+        [0xd6a34d3e558d2adb, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+        [0xfffffffffffffffc, 0xfffffffffffffffc, 0xfb368220216d27a2, 0x0000000000000000],
+    ),
+];
+const FQ_INSTRUCTION_CARRY_VALUES: [Limbs; 6] = [
+    [0x0000000000000005, 0x015bcb7b2fe74c50, 0xffffffffffffffff, 0x0000000000000000],
+    [0xa4d4c16300000003, 0x97ef77781cbdfa9c, 0xfcd378cf2652a376, 0x04655c82fffffffe],
+    [0xbd6297a500000005, 0xab60fcec2fe74c53, 0x73b914df00000000, 0x1db96703f66b5722],
+    [0x8c46eb2100000001, 0x95ffaddb0994a8dd, 0xddb96703f66b5722, 0x3ffffffffffffffe],
+    [0x8c46eb2100000001, 0x95ffaddb0994a8e1, 0xdf15327f2652a372, 0x3ffffffffffffffe],
+    [0x0000000000000001, 0x66abf57f0994a8dc, 0xffffffffffffffff, 0x3ffffffffffffffe],
+];
+
 #[test]
 fn add_known_answers() {
     for f in FIELDS {
