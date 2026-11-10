@@ -350,13 +350,27 @@ fn blocks_match_single_block<C: GlvParams>() {
     for width in [1, 3, 6] {
         for window in 0..GLV_COMPONENT_BITS / width + 1 {
             let whole = as_points(
-                fill_window_in_blocks::<C>(&components, &bases, width, window, components.len())
-                    .unwrap(),
+                fill_window_in_blocks::<C>(
+                    &components,
+                    &bases,
+                    width,
+                    window,
+                    components.len(),
+                    &mut WindowScratch::default(),
+                )
+                .unwrap(),
             );
             for block_terms in [1, 2, 3, 5, 16, 63] {
                 let blocked = as_points(
-                    fill_window_in_blocks::<C>(&components, &bases, width, window, block_terms)
-                        .unwrap(),
+                    fill_window_in_blocks::<C>(
+                        &components,
+                        &bases,
+                        width,
+                        window,
+                        block_terms,
+                        &mut WindowScratch::default(),
+                    )
+                    .unwrap(),
                 );
                 assert_eq!(
                     blocked, whole,
@@ -371,6 +385,49 @@ fn blocks_match_single_block<C: GlvParams>() {
 fn window_blocks() {
     blocks_match_single_block::<pallas::Point>();
     blocks_match_single_block::<vesta::Point>();
+}
+
+/// The MSM against a projective sum, for `terms` random terms.
+fn multiexp_matches_naive<C: GlvParams>(terms: usize, window_bits: usize, seed: u8) {
+    use rand::SeedableRng;
+    let mut rng = rand_xorshift::XorShiftRng::from_seed([seed; 16]);
+    let points: Vec<C> = (0..terms).map(|_| C::random(&mut rng)).collect();
+    let scalars: Vec<C::ScalarExt> = (0..terms).map(|_| C::ScalarExt::random(&mut rng)).collect();
+    let want = points
+        .iter()
+        .zip(&scalars)
+        .fold(C::identity(), |acc, (p, k)| acc + *p * k);
+    let mut affine = alloc::vec![C::AffineExt::identity(); terms];
+    C::batch_normalize(&points, &mut affine);
+    let components = scalars
+        .iter()
+        .map(decompose::<C>)
+        .map(checked_signed_magnitudes)
+        .collect::<Option<Vec<_>>>()
+        .unwrap();
+    let bases = multiexp_bases::<C>(&affine);
+    assert_eq!(
+        multiexp_serial::<C>(&components, &bases, window_bits),
+        Some(want),
+        "{terms} terms at width {window_bits}"
+    );
+    #[cfg(feature = "multicore")]
+    assert_eq!(
+        multiexp_parallel::<C>(&components, &bases, window_bits),
+        Some(want),
+        "{terms} terms at width {window_bits}, parallel"
+    );
+}
+
+/// Window buffers are cached per thread across MSMs (`with_window_scratch`):
+/// alternating curves, shrinking and growing sizes and widths must not
+/// leak state from one MSM into the next.
+#[test]
+fn cached_window_scratch_does_not_leak_between_msms() {
+    for (terms, window_bits) in [(300, 7), (17, 3), (300, 4), (64, 9), (5, 2)] {
+        multiexp_matches_naive::<pallas::Point>(terms, window_bits, terms as u8);
+        multiexp_matches_naive::<vesta::Point>(terms, window_bits, window_bits as u8);
+    }
 }
 
 #[test]
