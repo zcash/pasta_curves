@@ -12,6 +12,11 @@ and this project adheres to Rust's notion of
   decodes public compressed points with one ordered `Option` result per input.
   It is further accelerated when `sqrt-table` is enabled.
 
+### Changed
+- Public point batch decoding uses four-lane AVX2 square-root arithmetic on
+  x86-64 with `asm` and `sqrt-table` when runtime CPU and OS state checks permit
+  it. Unsupported environments retain the scalar backend.
+
 ## [0.6.1] - 2026-10-09
 ### Added
 - `asm` feature flag, which enables assembly field arithmetic on supported
