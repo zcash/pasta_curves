@@ -18,6 +18,10 @@ and this project adheres to Rust's notion of
 - `multicore` feature flag, which enables `glv` and parallel MSM evaluation
   using Rayon.
 
+### Changed
+- The public-input GLV MSM planner weights affine and projective bucket costs
+  separately and considers up to two wider windows when selecting a backend.
+
 ## [0.6.1] - 2026-10-09
 ### Added
 - `asm` feature flag, which enables assembly field arithmetic on supported

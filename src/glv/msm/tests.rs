@@ -305,88 +305,64 @@ fn planner_boundaries() {
     assert_eq!(default_multiexp_window_bits(55), Some(5));
     assert_eq!(estimated_signed_booth_costs(usize::MAX, 256, 8, 1), None);
     assert_eq!(estimated_signed_booth_costs(2048, 256, 0, 1), None);
+}
 
-    // Beyond the measured grids the weighted model extrapolates to GLV at
-    // a width within its candidate range; an overflowing term count is
-    // never planned.
-    let default = multiexp_window_bits::<pallas::Point>(1_000_000, 8).unwrap();
-    let width = glv_multiexp_window_bits::<pallas::Point>(1_000_000, 8).unwrap();
-    assert!((default..=default + GLV_EXTRA_WINDOW_BITS).contains(&width));
+#[test]
+fn weighted_planner_matches_calibrated_cells() {
+    for (terms, threads, expected) in [
+        (255, 1, None),
+        (255, 8, None),
+        (7_150, 6, Some(11)),
+        (7_150, 12, Some(11)),
+        (2_049, 12, Some(8)),
+        (4_096, 6, Some(11)),
+        (16_384, 10, Some(10)),
+        (32_768, 10, Some(13)),
+        (256, 1, Some(6)),
+        (256, 4, Some(7)),
+        (512, 4, Some(8)),
+        (1_024, 1, Some(8)),
+        (1_024, 6, Some(8)),
+        (4_096, 1, Some(10)),
+        (7_150, 2, Some(11)),
+        (8_192, 4, Some(11)),
+        (8_192, 6, Some(11)),
+        (16_384, 3, Some(11)),
+        (32_768, 2, Some(13)),
+        (32_768, 4, Some(11)),
+        (65_536, 2, Some(13)),
+        (32_768, 8, Some(11)),
+        (65_536, 8, Some(12)),
+    ] {
+        assert_eq!(
+            glv_multiexp_window_bits::<pallas::Point>(terms, threads),
+            expected,
+            "{terms} terms on {threads} workers, Pallas"
+        );
+        assert_eq!(
+            glv_multiexp_window_bits::<vesta::Point>(terms, threads),
+            expected,
+            "{terms} terms on {threads} workers, Vesta"
+        );
+    }
+    for threads in [1, 3, 8] {
+        for terms in [2_600, 8_192, 65_536, 1_000_000] {
+            let default = multiexp_window_bits::<pallas::Point>(terms, threads).unwrap();
+            if let Some(width) = glv_multiexp_window_bits::<pallas::Point>(terms, threads) {
+                assert!((default..=default + GLV_EXTRA_WINDOW_BITS).contains(&width));
+            }
+        }
+    }
     assert_eq!(
         glv_multiexp_window_bits::<pallas::Point>(usize::MAX, 8),
         None
     );
-}
-
-/// The planner's decisions at cells of the timing grids
-/// (`glv_vs_generic_timing_grid`): Apple M4 with the asm backend on 1-16
-/// workers, and two AMD Zen 4 hosts with portable and
-/// `-C target-cpu=native` builds on 1-8 workers. Unless noted, every
-/// pinned decision measured within 3% of the fastest backend and width on
-/// every grid that ran the cell.
-#[test]
-fn glv_multiexp_plan_matches_measured_cells() {
-    fn plan(terms: usize, threads: usize) -> Option<usize> {
-        glv_multiexp_window_bits::<pallas::Point>(terms, threads)
-    }
-
-    assert_eq!(plan(255, 1), None);
-    assert_eq!(plan(255, 8), None);
-
-    // Cells where the unweighted model chose the generic ladder although
-    // GLV measured 1.3-1.8x faster: the weights price GLV's batched affine
-    // point visits below the generic ladder's projective ones. The 7,150-
-    // term cells are the final MSM of a 64-bundle Orchard batch.
-    assert_eq!(plan(7_150, 6), Some(11));
-    assert_eq!(plan(7_150, 12), Some(11));
-    assert_eq!(plan(2_049, 12), Some(8));
-    assert_eq!(plan(4_096, 6), Some(11));
-    // GLV at w = 10 beats the generic ladder 1.3x here, though w = 13
-    // measured faster still: the model's wave count does not capture it.
-    assert_eq!(plan(16_384, 10), Some(10));
-    assert_eq!(plan(32_768, 10), Some(13));
-
-    // Cells measured within 3% of the best on all five grids.
-    for (terms, threads, width) in [
-        (256, 1, 6),
-        (256, 4, 7),
-        (512, 4, 8),
-        (1_024, 1, 8),
-        (1_024, 6, 8),
-        (4_096, 1, 10),
-        (7_150, 2, 11),
-        (8_192, 4, 11),
-        (8_192, 6, 11),
-        (16_384, 3, 11),
-        (32_768, 2, 13),
-        (32_768, 4, 11),
-        (65_536, 2, 13),
-    ] {
-        assert_eq!(
-            plan(terms, threads),
-            Some(width),
-            "{terms} terms on {threads}"
-        );
-    }
-
-    // The grids disagree at the largest sizes on eight workers: GLV
-    // measured 1.3x faster on M4, the generic ladder 2-9% faster on Zen 4.
-    // The planner keeps GLV there.
-    assert_eq!(plan(32_768, 8), Some(11));
-    assert_eq!(plan(65_536, 8), Some(12));
-
-    // The planner widens at most GLV_EXTRA_WINDOW_BITS past the generic
-    // default, and both curves plan identically.
-    for terms in [2_600usize, 8_192, 65_536] {
-        for threads in [1usize, 3, 8] {
-            let default = multiexp_window_bits::<pallas::Point>(terms, threads).unwrap();
-            if let Some(width) = plan(terms, threads) {
-                assert!((default..=default + GLV_EXTRA_WINDOW_BITS).contains(&width));
-            }
-            assert_eq!(
-                plan(terms, threads),
-                glv_multiexp_window_bits::<vesta::Point>(terms, threads)
-            );
-        }
-    }
+    assert_eq!(
+        estimated_weighted_work(usize::MAX, 256, 8, 1, GLV_PLANNER_WEIGHTS),
+        None
+    );
+    assert_eq!(
+        estimated_weighted_work(2048, 256, 0, 1, GENERIC_PLANNER_WEIGHTS),
+        None
+    );
 }
