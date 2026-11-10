@@ -32,6 +32,12 @@ theorem sbb_value_lt (a b cin : Nat) : (sbb a b cin).1 < 2^64 := by
   simp only [sbb]
   exact Nat.mod_lt _ (Nat.two_pow_pos 64)
 
+/-- The value written by `neg` is a 64-bit word. It is stated on `neg` itself, so that a kernel
+matches it against `(neg a).1` by the name alone. Stated as `sbb_value_lt 0 a 0`, it must instead be
+matched by unfolding `neg`, which an independent checker such as nanoda can do by evaluating `a`, at
+great cost when `a` is the end of a long symbolic computation. -/
+theorem neg_value_lt (a : Nat) : (neg a).1 < 2^64 := sbb_value_lt 0 a 0
+
 /-- The x86 subtraction borrow-out is a bit. -/
 theorem sbb_borrow_le_one (a b cin : Nat) : (sbb a b cin).2 ≤ 1 := by
   simp only [sbb]
