@@ -77,7 +77,7 @@ is 64 bits. Congruences are modulo `p`.
   the modulus, and the coefficients `d` and `e` are four limbs.
 * **Five words** (`Signed5`): a signed integer as four limbs and a top word `l4` of weight
   `2^256`, read as a two's-complement word, which together form a 320-bit two's-complement
-  integer (`Signed5.toInt`). The Rust type is `[u64; 5]`. A value `z` with `abs(z) < 2^k` has
+  integer (`Signed5.toInt`). The Rust type is `[u64; 5]`. A value `y` with `abs(y) < 2^k` has
   bits `k` to `319` all equal to its sign. For the row combination `t` of Lemma 10, `k = 315`,
   so the top word is laid out as:
 
@@ -93,14 +93,19 @@ is 64 bits. Congruences are modulo `p`.
 * **Mask**: a word that is all ones (`2^64 - 1`) or `0`, used as a sign, so that a selection is
   an `and` or `xor` rather than a branch.
 * **Sign-magnitude**: a signed entry `a` as the pair `(m, s)` with `m = abs(a)` and `s` the mask
-  of `a < 0` (`SignMagRep`). The multiplication instructions are unsigned, so the row blocks
-  multiply an operand `y` by a negative entry as `m * ((y xor s) + 1)`, which is `m * (-y)` in
-  two's complement, and fold the `+ m` into the initial carry. `0` has both forms, `(0, 0)` and
-  `(0, 2^64 - 1)`, which the last round relies on when it flips a row's masks.
+  of `a < 0` (`SignMagRep`). The multiplication instructions are unsigned, so a row block
+  multiplies an operand `y` by a negative entry as `m * ((y xor s) + 1)`, which is `m * (-y)` in
+  two's complement. The assembly row blocks fold the `+ m` into the initial carry; the portable
+  ones negate the whole operand first, as `(y xor s) + 1` over its five words, then multiply by
+  `m`. `0` has both forms, `(0, 0)` and `(0, 2^64 - 1)`, which the last round relies on when it
+  flips a row's masks.
 * **Packed word** (Lemma 6): inside `divstep59`, one signed word carries the low 20 bits of `f`
-  (or `g`) together with two entries of the matrix being built, at weights `2^41` and `2^62`
-  (`packedStart` subtracts `2^41` from `f` and `2^62` from `g`). Every divstep then updates the
-  state and the matrix at once. Lemma 7 unpacks the entries after a batch.
+  (or `g`) together with a row of the matrix being built, negated, at weights that start at
+  `2^41` and `2^62` (`packedStart` subtracts `2^41` from `f` and `2^62` from `g`, the identity's
+  rows) and halve with each step: after `j` steps the words are
+  `w_f = phi_j - 2^(41 - j) u_j - 2^(62 - j) v_j` and likewise `w_g` with `q_j`, `r_j`. Every
+  divstep thus updates the state and the matrix at once. Lemma 7 unpacks the entries after a
+  batch.
 
 ### Inputs, constants, and output
 
@@ -130,9 +135,14 @@ Both have the fields `two_delta`, `f`, `g`, `d`, `e`, the names of the Rust driv
 
 * `two_delta`: twice the half-delta `delta` of Bernstein and Yang, a half integer, so
   `two_delta` is odd. With the parity of `g`, it decides which branch each divstep takes (the
-  definition of `divstep`, section 1 of the book), and it stays small.
+  definition of `divstep`, section 1 of the book). Each step maps it to `2 - two_delta` or
+  `two_delta + 2`, changing its magnitude by at most 2, so from `1` it stays within
+  `abs(two_delta) <= 1 + 2 * 590 = 1181 < 2^11` over the 590 divsteps, far inside the
+  `abs(two_delta) < 2^61` that `divstep59`'s contract requires.
 * `f`, `g`: the divstep state, starting at `(p, x)`. Divsteps never increase the larger
-  magnitude (Lemma 3), so `abs(f), abs(g) <= p < 2^255`; they are signed, hence five words.
+  magnitude (Lemma 3), so `abs(f), abs(g) <= p < 2^255`. They are signed. Four words of two's
+  complement would hold them, but they are kept in five (`Signed5`), the layout of the row
+  `u f + v g` that `fg_row` forms before its shift, which needs five words (Lemma 9).
 * `d`, `e`: the coefficients, starting at `(0, e0)`. They are unsigned: `amontred` returns a
   nonnegative value below `2 p`, hence below `2^256` (Lemma 10). They are not reduced below `p`
   between rounds, since the next round only needs them below `2^256`.
@@ -221,7 +231,7 @@ values' own names.
 
 | value       | range              | encoding    | Lean                                       |
 |-------------|--------------------|-------------|--------------------------------------------|
-| `two_delta` | odd, starts at `1` | signed word | `InvertState`, `RoundState`, `State`       |
+| `two_delta` | odd, `abs <= 1181` | signed word | `InvertState`, `RoundState`, `State`       |
 | `f`, `g`    | `abs <= p`         | 5 words     | `InvertState`, `RoundState`, `State`       |
 | `d`, `e`    | `< 2 p`            | 4 limbs     | `InvertState`, `RoundState`                |
 
