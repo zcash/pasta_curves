@@ -18,7 +18,7 @@ use group::CurveAffine as _;
 use maybe_rayon::prelude::*;
 
 use super::{Decomposed, GlvParams, Table, decompose};
-use crate::arithmetic::{CurveAffine, VartimeField};
+use crate::arithmetic::VartimeField;
 use crate::{pallas, vesta};
 
 #[cfg(test)]
@@ -38,10 +38,8 @@ macro_rules! impl_msm_curve {
                 $curve::Affine::from_xy_unchecked(x, y)
             }
 
-            fn affine_xy(point: &Self::AffineExt) -> (Self::Base, Self::Base) {
-                Option::<crate::arithmetic::Coordinates<$curve::Affine>>::from(point.coordinates())
-                    .map(|p| (*p.x(), *p.y()))
-                    .unwrap_or((Self::Base::ZERO, Self::Base::ZERO))
+            fn affine_xy(p: &Self::AffineExt) -> (Self::Base, Self::Base) {
+                p.raw_xy()
             }
         }
     };
