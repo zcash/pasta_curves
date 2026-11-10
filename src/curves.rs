@@ -222,11 +222,9 @@ macro_rules! new_curve_impl {
             fn batch_normalize_vartime(p: &[Self], q: &mut [Self::Affine]) {
                 assert_eq!(p.len(), q.len());
 
+                // Two chains hide multiplication latency for larger batches.
                 // Below this length, the two-lane variant's fixed overhead
-                // (three extra multiplications) and lane bookkeeping outweigh
-                // the dependency-chain split; measured crossover on both
-                // x86-64 (Zen 4, portable) and Apple aarch64 (assembly
-                // backend) is ~32 elements.
+                // and lane bookkeeping outweigh the dependency-chain split.
                 const TWO_LANE_MIN: usize = 32;
 
                 if p.len() < TWO_LANE_MIN {
@@ -234,12 +232,8 @@ macro_rules! new_curve_impl {
                         return;
                     };
                     let (first_q, q) = q.split_first_mut().unwrap();
-                    let first_skip = first_p.z.is_zero_vartime();
-                    let mut acc = if first_skip {
-                        $base::one()
-                    } else {
-                        first_p.z
-                    };
+                    let first_skip = first_p.is_identity_vartime();
+                    let mut acc = if first_skip { $base::one() } else { first_p.z };
                     for (p, q) in p.iter().zip(q.iter_mut()) {
                         // We use the `x` field of $name_affine to store the
                         // product of previous z-coordinates seen.
@@ -281,53 +275,42 @@ macro_rules! new_curve_impl {
                     if first_skip {
                         *first_q = $name_affine::identity();
                     } else {
-                        let tmp = acc;
-                        let tmp2 = Field::square(&tmp);
-                        let tmp3 = tmp2 * tmp;
+                        let tmp2 = Field::square(&acc);
+                        let tmp3 = tmp2 * acc;
                         first_q.x = first_p.x * tmp2;
                         first_q.y = first_p.y * tmp3;
                     }
                     return;
                 }
 
-                // Two-lane Montgomery batch inversion: even- and odd-indexed
-                // elements run independent prefix-product and back-substitution
-                // chains (throughput-bound instead of latency-bound), joined
-                // around a single shared field inversion. Identity handling is
-                // unchanged from the single-chain path above.
+                // Even- and odd-indexed points form independent prefix-product
+                // and back-substitution chains, sharing a single field inversion.
                 let (first_p, p) = p.split_at(2);
                 let (first_q, q) = q.split_at_mut(2);
                 let first_skip = [
-                    first_p[0].z.is_zero_vartime(),
-                    first_p[1].z.is_zero_vartime(),
+                    first_p[0].is_identity_vartime(),
+                    first_p[1].is_identity_vartime(),
                 ];
                 let mut acc = [
-                    if first_skip[0] {
-                        $base::one()
-                    } else {
-                        first_p[0].z
-                    },
-                    if first_skip[1] {
-                        $base::one()
-                    } else {
-                        first_p[1].z
-                    },
+                    if first_skip[0] { $base::one() } else { first_p[0].z },
+                    if first_skip[1] { $base::one() } else { first_p[1].z },
                 ];
                 for (i, (p, q)) in p.iter().zip(q.iter_mut()).enumerate() {
+                    // Store each lane's prefix in the output's unused x coordinate.
                     q.x = acc[i & 1];
-                    if !p.z.is_zero_vartime() {
+                    if !p.is_identity_vartime() {
                         acc[i & 1] *= p.z;
                     }
                 }
 
-                // Join the lane products, invert once, and recover each
-                // lane's inverse seed.
-                let inverse = (acc[0] * acc[1]).invert().unwrap();
+                // Join the lane products, invert once, and recover the inverse
+                // of each lane's product.
+                let inverse = (acc[0] * acc[1]).invert_vartime().unwrap();
                 let mut acc = [inverse * acc[1], inverse * acc[0]];
 
                 for (i, (p, q)) in p.iter().zip(q.iter_mut()).enumerate().rev() {
                     let lane = i & 1;
-                    if p.z.is_zero_vartime() {
+                    if p.is_identity_vartime() {
                         *q = $name_affine::identity();
                         continue;
                     }
@@ -345,9 +328,8 @@ macro_rules! new_curve_impl {
                     if first_skip[lane] {
                         first_q[lane] = $name_affine::identity();
                     } else {
-                        let tmp = acc[lane];
-                        let tmp2 = Field::square(&tmp);
-                        let tmp3 = tmp2 * tmp;
+                        let tmp2 = Field::square(&acc[lane]);
+                        let tmp3 = tmp2 * acc[lane];
                         first_q[lane].x = first_p[lane].x * tmp2;
                         first_q[lane].y = first_p[lane].y * tmp3;
                     }
@@ -363,13 +345,13 @@ macro_rules! new_curve_impl {
             fn batch_normalize(p: &[Self], q: &mut [Self::Affine]) {
                 assert_eq!(p.len(), q.len());
 
+                // Two chains hide multiplication latency for larger batches.
                 // Below this length, the two-lane variant's fixed overhead
-                // (three extra multiplications) and lane bookkeeping outweigh
-                // the dependency-chain split; measured crossover on both
-                // x86-64 (Zen 4, portable) and Apple aarch64 (assembly
-                // backend) is ~32 elements.
+                // and lane bookkeeping outweigh the dependency-chain split.
                 const TWO_LANE_MIN: usize = 32;
 
+                // Only the public batch length selects the single- or two-chain
+                // path. Identity handling and inversion remain constant-time.
                 if p.len() < TWO_LANE_MIN {
                     let Some((first_p, p)) = p.split_first() else {
                         return;
@@ -377,9 +359,7 @@ macro_rules! new_curve_impl {
                     let (first_q, q) = q.split_first_mut().unwrap();
                     let first_skip = first_p.is_identity();
                     let mut acc = $base::conditional_select(
-                        &first_p.z,
-                        &$base::one(),
-                        first_skip,
+                        &first_p.z, &$base::one(), first_skip,
                     );
                     for (p, q) in p.iter().zip(q.iter_mut()) {
                         // We use the `x` field of $name_affine to store the
@@ -410,30 +390,24 @@ macro_rules! new_curve_impl {
                         q.x = p.x * tmp2;
                         q.y = p.y * tmp3;
 
-                        *q = $name_affine::conditional_select(&q, &$name_affine::identity(), skip);
+                        *q = $name_affine::conditional_select(q, &$name_affine::identity(), skip);
                     }
 
                     // The first prefix is one, and the accumulator is dead
                     // after producing its inverse, so both multiplications
                     // at this endpoint can be omitted.
-                    let tmp = acc;
-                    let tmp2 = Field::square(&tmp);
-                    let tmp3 = tmp2 * tmp;
+                    let tmp2 = Field::square(&acc);
+                    let tmp3 = tmp2 * acc;
                     first_q.x = first_p.x * tmp2;
                     first_q.y = first_p.y * tmp3;
                     *first_q = $name_affine::conditional_select(
-                        &first_q,
-                        &$name_affine::identity(),
-                        first_skip,
+                        first_q, &$name_affine::identity(), first_skip,
                     );
                     return;
                 }
 
-                // Two-lane Montgomery batch inversion: even- and odd-indexed
-                // elements run independent prefix-product and back-substitution
-                // chains (throughput-bound instead of latency-bound), joined
-                // around a single shared field inversion. Identity handling is
-                // unchanged from the single-chain path above.
+                // Even- and odd-indexed points form independent prefix-product
+                // and back-substitution chains, sharing a single field inversion.
                 let (first_p, p) = p.split_at(2);
                 let (first_q, q) = q.split_at_mut(2);
                 let first_skip = [first_p[0].is_identity(), first_p[1].is_identity()];
@@ -442,16 +416,15 @@ macro_rules! new_curve_impl {
                     $base::conditional_select(&first_p[1].z, &$base::one(), first_skip[1]),
                 ];
                 for (i, (p, q)) in p.iter().zip(q.iter_mut()).enumerate() {
-                    q.x = acc[i & 1];
-                    acc[i & 1] = $base::conditional_select(
-                        &(acc[i & 1] * p.z),
-                        &acc[i & 1],
-                        p.is_identity(),
+                    let lane = i & 1;
+                    q.x = acc[lane];
+                    acc[lane] = $base::conditional_select(
+                        &(acc[lane] * p.z), &acc[lane], p.is_identity(),
                     );
                 }
 
-                // Join the lane products, invert once, and recover each
-                // lane's inverse seed.
+                // Join the lane products, invert once, and recover the inverse
+                // of each lane's product.
                 let inverse = (acc[0] * acc[1]).invert().unwrap();
                 let mut acc = [inverse * acc[1], inverse * acc[0]];
 
@@ -460,33 +433,24 @@ macro_rules! new_curve_impl {
                     let skip = p.is_identity();
                     let tmp = q.x * acc[lane];
                     acc[lane] = $base::conditional_select(
-                        &(acc[lane] * p.z),
-                        &acc[lane],
-                        skip,
+                        &(acc[lane] * p.z), &acc[lane], skip,
                     );
                     let tmp2 = Field::square(&tmp);
                     let tmp3 = tmp2 * tmp;
                     q.x = p.x * tmp2;
                     q.y = p.y * tmp3;
-                    *q = $name_affine::conditional_select(
-                        &q,
-                        &$name_affine::identity(),
-                        skip,
-                    );
+                    *q = $name_affine::conditional_select(q, &$name_affine::identity(), skip);
                 }
 
                 for lane in 0..2 {
                     // The first prefix in each lane is one, and its final
                     // accumulator update is dead.
-                    let tmp = acc[lane];
-                    let tmp2 = Field::square(&tmp);
-                    let tmp3 = tmp2 * tmp;
+                    let tmp2 = Field::square(&acc[lane]);
+                    let tmp3 = tmp2 * acc[lane];
                     first_q[lane].x = first_p[lane].x * tmp2;
                     first_q[lane].y = first_p[lane].y * tmp3;
                     first_q[lane] = $name_affine::conditional_select(
-                        &first_q[lane],
-                        &$name_affine::identity(),
-                        first_skip[lane],
+                        &first_q[lane], &$name_affine::identity(), first_skip[lane],
                     );
                 }
             }

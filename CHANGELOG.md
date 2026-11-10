@@ -31,6 +31,8 @@ and this project adheres to Rust's notion of
   respect to the points as well as the scalar, so the points must be public
   too. With the `glv` feature, the Pallas and Vesta implementations already
   did.
+- The `group::Curve::batch_normalize` and `CurveExt::batch_normalize_vartime`
+  impls for Pallas and Vesta are now faster for larger batches.
 
 ## [0.6.1] - 2026-10-09
 ### Added
