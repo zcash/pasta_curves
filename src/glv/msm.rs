@@ -114,6 +114,81 @@ fn estimated_signed_booth_costs(
     ))
 }
 
+/// Relative cost weights for the planner's Signed-Booth work estimates, in
+/// units of one fifth of a doubling.
+///
+/// The two backends add points differently. The GLV ladder gathers each
+/// window's points into buckets with batched affine additions (one shared
+/// inversion per reduction level), the cheapest addition available, while the
+/// generic ladder adds each point into a projective bucket. Both then sum
+/// their buckets with projective additions. Counting every addition alike
+/// overprices the GLV ladder, so the planner chose the generic MSM in cells
+/// where GLV measured up to 1.8x faster (e.g. 7,150 terms on 6, 10, or 12
+/// workers). The weights below were fitted to timing grids on Apple M4 (asm
+/// backend) and two AMD Zen 4 hosts (portable and `-C target-cpu=native`
+/// builds), 256 to 65,536 terms on 1 to 16 workers.
+#[derive(Clone, Copy)]
+struct PlannerWeights {
+    point_visit: usize,
+    bucket_addition: usize,
+    doubling: usize,
+}
+
+/// The GLV ladder: affine batched point visits, projective bucket sums.
+const GLV_PLANNER_WEIGHTS: PlannerWeights = PlannerWeights {
+    point_visit: 5,
+    bucket_addition: 10,
+    doubling: 5,
+};
+
+/// The generic ladder: projective (mixed) point visits and bucket sums.
+const GENERIC_PLANNER_WEIGHTS: PlannerWeights = PlannerWeights {
+    point_visit: 7,
+    bucket_addition: 5,
+    doubling: 5,
+};
+
+/// [`estimated_signed_booth_costs`]'s work component, with each operation
+/// weighted by its backend's cost (see [`PlannerWeights`]).
+fn estimated_weighted_work(
+    terms: usize,
+    scalar_bits: usize,
+    window_bits: usize,
+    num_threads: usize,
+    weights: PlannerWeights,
+) -> Option<usize> {
+    let windows = scalar_bits.checked_div(window_bits)?.checked_add(1)?;
+    let bucket_shift = u32::try_from(window_bits.checked_sub(1)?).ok()?;
+    let buckets = 1usize.checked_shl(bucket_shift)?;
+    let visit = |count: usize| count.checked_mul(weights.point_visit);
+    let bucket_adds = |count: usize| count.checked_mul(weights.bucket_addition);
+    let doublings = |count: usize| count.checked_mul(weights.doubling);
+
+    if num_threads <= 1 {
+        return visit(terms.checked_mul(windows)?)?
+            .checked_add(bucket_adds(buckets.checked_mul(windows)?.checked_mul(2)?)?)?
+            .checked_add(doublings(
+                window_bits.checked_mul(windows.checked_sub(1)?)?,
+            )?);
+    }
+
+    let workers = num_threads.min(windows);
+    let waves = windows.div_ceil(workers);
+    let per_window = visit(terms)?.checked_add(bucket_adds(buckets.checked_mul(2)?)?)?;
+    let mut shift_doublings = 0usize;
+    let mut window = windows.checked_sub(1)?;
+    for _ in 0..waves {
+        shift_doublings = shift_doublings.checked_add(window_bits.checked_mul(window)?)?;
+        match window.checked_sub(workers) {
+            Some(next) => window = next,
+            None => break,
+        }
+    }
+    per_window
+        .checked_mul(waves)?
+        .checked_add(doublings(shift_doublings)?)
+}
+
 /// Floors of `e^k` for `k = 4..=22`.
 ///
 /// These preserve the established `ceil(ln(terms))` window schedule without
@@ -194,42 +269,38 @@ fn glv_multiexp_window_bits<C: MsmCurve>(terms: usize, num_threads: usize) -> Op
     if terms < MIN_GLV_MULTIEXP_TERMS {
         return None;
     }
-    let (generic, _) = estimated_generic_costs::<C>(terms, num_threads)?;
-    let (glv, glv_window_bits) = booth_multiexp_estimate::<C>(terms, num_threads)?;
-    (glv < generic).then_some(glv_window_bits)
-}
-
-/// The generic Signed-Booth MSM's estimated `(work, traffic)` costs at its
-/// default width (see [`estimated_signed_booth_costs`]).
-fn estimated_generic_costs<C: MsmCurve>(
-    terms: usize,
-    num_threads: usize,
-) -> Option<(usize, usize)> {
     let window_bits = multiexp_window_bits::<C>(terms, num_threads)?;
-    let scalar_bits = scalar_repr_bits::<C>()?;
-    estimated_signed_booth_costs(terms, scalar_bits, window_bits, num_threads)
-}
-
-/// The Signed-Booth GLV backend's cheapest `(work, window width)` over the
-/// candidate widths `w` and `w + 1` (see [`glv_multiexp_window_bits`]).
-fn booth_multiexp_estimate<C: MsmCurve>(
-    terms: usize,
-    num_threads: usize,
-) -> Option<(usize, usize)> {
-    let window_bits = multiexp_window_bits::<C>(terms, num_threads)?;
+    let generic = estimated_weighted_work(
+        terms,
+        scalar_repr_bits::<C>()?,
+        window_bits,
+        num_threads,
+        GENERIC_PLANNER_WEIGHTS,
+    )?;
     let glv_terms = terms.checked_mul(2)?;
     let mut best: Option<(usize, usize)> = None;
-    for candidate in window_bits..=window_bits.checked_add(1)? {
-        if let Some((work, _)) =
-            estimated_signed_booth_costs(glv_terms, GLV_COMPONENT_BITS, candidate, num_threads)
-        {
+    for candidate in window_bits..=window_bits.checked_add(GLV_EXTRA_WINDOW_BITS)? {
+        if let Some(work) = estimated_weighted_work(
+            glv_terms,
+            GLV_COMPONENT_BITS,
+            candidate,
+            num_threads,
+            GLV_PLANNER_WEIGHTS,
+        ) {
             if best.is_none_or(|(best_work, _)| work < best_work) {
                 best = Some((work, candidate));
             }
         }
     }
-    best
+    let (glv, glv_window_bits) = best?;
+    (glv <= generic).then_some(glv_window_bits)
 }
+
+/// How far past the generic default width the GLV ladder may widen. Its
+/// components are half as long, so wider windows (fewer of them) often pay
+/// off; the timing grids put the best width at most two bits above the
+/// default in nearly every cell.
+const GLV_EXTRA_WINDOW_BITS: usize = 2;
 
 fn current_num_threads() -> usize {
     #[cfg(all(
