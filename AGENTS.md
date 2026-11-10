@@ -200,11 +200,14 @@ describes the tools in more detail.
   or proof scripts are not a substitute for this synchronization check.
 - **Architecture modules have consistent roles.** `Semantics` defines instruction behavior;
   `Transcription` contains generated block models; `Compositions` models Rust around those
-  blocks; `Vectors` checks the backend's routines against the shared generated vectors by kernel
-  evaluation; `Spec` proves block and composition correctness; `Backend` builds the backend's
-  record of Montgomery blocks, with `Glue.blocksOf`, that the Aeneas-translated glue runs over;
-  `Entry` contains correctness **theorems** specializing those results to `PastaField` and the
-  actual asserted operand contracts, not redundant value wrappers. Split per-block proof files
+  blocks; `Vectors` checks the backend's routines against the shared generated vectors and its
+  inversion blocks against the shared known answers, by kernel evaluation through
+  `VectorCheck.lean` and `Inversion/VectorCheck.lean`; `Spec` proves block and composition
+  correctness; `Backend` builds the backend's record of Montgomery blocks, with `Glue.blocksOf`,
+  that the Aeneas-translated glue runs over; `Entry` contains correctness **theorems** specializing
+  those results to `PastaField` and the actual asserted operand contracts, not redundant value
+  wrappers. Checks that are the same for every backend are written once over the backend's
+  records, not copied per architecture. Split per-block proof files
   belong under `<Architecture>/Spec/`, imported by its `Spec.lean`. Shared arithmetic, constants,
   and architecture-independent lemmas stay outside ISA modules.
 - **Extend the shared generator pipeline.** `gen.py` owns CLI orchestration, binding storage,

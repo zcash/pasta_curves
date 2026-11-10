@@ -6,9 +6,10 @@ Reads the inline `asm!` blocks in `src/asm/aarch64.rs` and `src/asm/x86_64.rs`, 
 - `lean/PastaCurves/<Architecture>/Transcription.lean`: each block as a Lean definition over
   its instruction semantics, one `let` per instruction result, in the block's order,
   with the instruction as a trailing comment;
-- `lean/PastaCurves/<Architecture>/Vectors.lean`: one kernel-checked example per line of
-  `test-vectors/pasta_mul-armv8-vectors.txt` whose operands are inside the backend's
-  contracts, the outputs of the real routines on an Apple M-series machine.
+- `lean/PastaCurves/Vectors.lean`: the vectors of `test-vectors/pasta_mul-armv8-vectors.txt`
+  whose operands are inside the backends' contracts, the outputs of the real routines on an
+  Apple M-series machine, which each architecture's `Vectors.lean` checks through
+  `VectorCheck.lean`.
 
 The transcription is deliberately mechanical. A block is read from its template lines, with
 the operand placeholders as register names, rebound by each instruction that writes them:
