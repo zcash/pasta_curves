@@ -99,12 +99,13 @@ ARMv7E-M routines instead operate on eight 32-bit words with UMAAL.
 Where the module has a backend, `cargo test --release --features asm` runs known-answer tests of the
 entry points for both fields and replays the reference vectors recorded from the AArch64 assembly;
 in a debug build it also checks that the operand assertions fire outside the contracts. The
-inversion's blocks have known-answer checks over assembly and portable Rust, and the AArch64 and
-x86-64 blocks are also compared with the portable blocks on random inputs inside each block's
-contract; the driver is tested against known answers, `x · x^-1 = 1`, and the field types' own
-inverse. Without the `asm` feature, outside the gated targets, or with `--cfg pasta_curves_noasm`,
-the backend has no tests to run, and the inversion's tests over the portable blocks are the ones
-that run. `scripts/ci.sh` runs every check CI runs.
+inversion's blocks have known-answer checks over assembly and portable Rust. The portable blocks
+are also tested against an independent computation of each block's contract on random inputs
+inside it, and the AArch64 and x86-64 blocks against the portable blocks on such inputs; the driver
+is tested against known answers, `x · x^-1 = 1`, and the field types' own inverse. Without the
+`asm` feature, outside the gated targets, or with `--cfg pasta_curves_noasm`, the backend has no
+tests to run, and the inversion's tests over the portable blocks are the ones that run.
+`scripts/ci.sh` runs every check CI runs.
 
 ## Formal verification
 
