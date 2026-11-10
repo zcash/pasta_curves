@@ -65,6 +65,11 @@ use crate::glv::booth::{SignedMagnitude, booth_digit, window_count};
 use crate::glv::{
     GlvParams, HALVES, affine_from_xy_unchecked, affine_xy, phi_x, private::AffineBase,
 };
+#[cfg(feature = "asm")]
+#[cfg(feature = "sqrt-table")]
+#[cfg(target_arch = "x86_64")]
+#[cfg(not(pasta_curves_noasm))]
+pub(in crate::glv) use affine::reduce_affine_buckets29;
 pub(in crate::glv) use affine::{AffinePoint, reduce_affine_buckets};
 use affine::{ReduceScratch, reduce_affine_buckets_reusing};
 pub(crate) use cache::CachedField;

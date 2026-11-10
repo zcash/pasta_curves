@@ -6,7 +6,12 @@
 //! the additions of a level, so [`chord_level`] runs eight at a time: two
 //! vectors of four lanes, in the radix-2^29 arithmetic of
 //! [`super::avx2_sqrt`] (availability and the AVX2 guarantee are documented
-//! there). Only AVX2 is used.
+//! there). Every safe entry checks CPU and OS support at runtime; only AVX2 is used.
+//!
+//! Public inputs only: the production entry is
+//! [`PreparedFixedBaseSum::sum_batch_vartime`](super::PreparedFixedBaseSum::sum_batch_vartime),
+//! through `glv::fixed_base` and its radix-29 bucket reducer. Neither ordinary
+//! `Field::invert` nor native scalar multiplication calls this module.
 //!
 //! Points stay in radix 2^29 ([`Point29`], canonical Montgomery limbs below
 //! `p`) for the whole reduction, so a level loads and stores limbs without
@@ -32,6 +37,13 @@
 //! multiple of `p` whose limbs dominate the subtrahend's ([`kp`]), and every
 //! level's outputs are reduced to canonical form ([`canonical`]). The tests
 //! exercise each helper at these limits.
+//!
+//! The reused `avx2_sqrt::mul` also accepts these operands. For normalized inputs
+//! below 2^261 all nine limbs are below 2^29, including limb 8. Each column has at
+//! most nine input products and five modulus terms, each below 2^58, plus a carry
+//! below 2^35: even the conservative sum is below 2^63. Thus `vpmuludq` truncates no
+//! operand, `vpaddq` loses no carry, and the broader chord bounds do not rely on the
+//! sqrt caller's 2p bound.
 #![allow(unsafe_code)]
 #![allow(unused_unsafe)]
 
@@ -39,6 +51,7 @@ use core::arch::x86_64::*;
 
 use super::avx2_sqrt::{BITS, L, MASK, V, mul, pack, pasta_limbs29};
 use alloc::vec::Vec;
+use ff::Field;
 
 /// Additions in flight: two vectors of four lanes.
 const G: usize = 2;
@@ -188,12 +201,14 @@ fn reduce_wide(x: &[u64; 5], p: &[u64; 4]) -> [u64; 4] {
 }
 
 /// A Pasta base field whose batched chord additions run in AVX2.
-pub(crate) trait Avx2ChordField: ff::Field {
+///
+/// Public inputs only; used by the explicit variable-time fixed-base batch sum.
+pub(crate) trait Avx2ChordField: crate::arithmetic::VartimeField {
     /// Canonical Montgomery limbs.
     fn chord_limbs(&self) -> [u64; 4];
     /// The element with canonical Montgomery limbs `limbs`.
     fn from_chord_limbs(limbs: [u64; 4]) -> Self;
-    /// [`chord_level`] for this field.
+    /// [`chord_level`] for this field. All input points must be public.
     fn chord_level(
         n: usize,
         pair: impl Fn(usize) -> (usize, usize, usize),
@@ -205,12 +220,23 @@ pub(crate) trait Avx2ChordField: ff::Field {
     fn modulus29() -> [u64; L];
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static INVERT_LANES_VARTIME_CALLS: core::cell::Cell<usize> =
+        const { core::cell::Cell::new(0) };
+}
+
 /// Replaces eight Montgomery values (below 2^256) with `32` times their
 /// inverses, sharing one inversion; `None` if any is zero.
-pub(crate) fn invert_lanes<F: Avx2ChordField>(
+///
+/// Variable-time; public inputs only. Called only by the field adapter for
+/// `PreparedFixedBaseSum::sum_batch_vartime`, never by ordinary `Field::invert`.
+fn invert_lanes_vartime<F: Avx2ChordField>(
     lanes: &mut [[u64; 4]; LANES],
     modulus: &[u64; 4],
 ) -> Option<()> {
+    #[cfg(test)]
+    INVERT_LANES_VARTIME_CALLS.with(|calls| calls.set(calls.get() + 1));
     let values: [F; LANES] = core::array::from_fn(|i| {
         F::from_chord_limbs(reduce_wide(
             &[lanes[i][0], lanes[i][1], lanes[i][2], lanes[i][3], 0],
@@ -223,7 +249,8 @@ pub(crate) fn invert_lanes<F: Avx2ChordField>(
         *prefix = acc;
         acc *= value;
     }
-    let mut inverse = Option::<F>::from(acc.invert())?;
+    // Only public chord denominators reach this variable-time inversion.
+    let mut inverse = acc.invert_vartime()?;
     let scale = F::ONE.double().double().double().double().double();
     for i in (0..LANES).rev() {
         lanes[i] = (inverse * prefix[i] * scale).chord_limbs();
@@ -235,7 +262,7 @@ pub(crate) fn invert_lanes<F: Avx2ChordField>(
 /// Per-chunk buffers of [`chord_level`] (about 144 bytes per addition),
 /// reused across the levels of one reduction.
 #[derive(Default)]
-pub struct ChordScratch {
+pub(crate) struct ChordScratch {
     scaled: Vec<[V; G]>,
     denominators: Vec<[V; G]>,
 }
@@ -250,11 +277,11 @@ impl core::fmt::Debug for ChordScratch {
 
 /// A canonical field element (Montgomery form, below `p`) in radix 2^29.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
-pub struct Limbs29(pub(crate) [u32; L]);
+pub(crate) struct Limbs29(pub(crate) [u32; L]);
 
 /// An affine point with [`Limbs29`] coordinates.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
-pub struct Point29 {
+pub(crate) struct Point29 {
     pub(crate) x: Limbs29,
     pub(crate) y: Limbs29,
 }
@@ -394,6 +421,8 @@ unsafe fn canonical(v: &V, p: &[u64; L]) -> V {
 /// points[right]`. The x-coordinates of each pair must differ; otherwise
 /// returns `None` without writing `next`.
 ///
+/// Variable-time; public inputs only, including the lane-inversion callback.
+///
 /// Bounds (scales as in the module docs): differences below `3p`, their
 /// 32-scaled forms below `96p`; lane products, scaled numerators and running
 /// inverses stay below `4.01p` (a bound `Bp` becomes at most
@@ -402,7 +431,7 @@ unsafe fn canonical(v: &V, p: &[u64; L]) -> V {
 /// `y3` below `4.69p`; outputs are reduced to canonical.
 #[target_feature(enable = "avx2")]
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn chord_level<const P0: u64, const P1: u64, const P2: u64, const P3: u64>(
+unsafe fn chord_level<const P0: u64, const P1: u64, const P2: u64, const P3: u64>(
     n: usize,
     pair: impl Fn(usize) -> (usize, usize, usize),
     points: &[Point29],
@@ -488,9 +517,9 @@ pub(crate) unsafe fn chord_level<const P0: u64, const P1: u64, const P2: u64, co
 
         for chunk in (0..chunks).rev() {
             let base = chunk * LANES;
-            for g in 0..G {
-                let slope = mul!(&scaled[chunk][g], &j[g]);
-                j[g] = mul!(&j[g], &denominators[chunk][g]);
+            for (g, jg) in j.iter_mut().enumerate() {
+                let slope = mul!(&scaled[chunk][g], &*jg);
+                *jg = mul!(&*jg, &denominators[chunk][g]);
                 let slope32 = shl5(&slope);
                 let first = base + 4 * g;
                 let ops = [
@@ -518,6 +547,54 @@ pub(crate) unsafe fn chord_level<const P0: u64, const P1: u64, const P2: u64, co
         Some(())
     }
 }
+
+// The scalar fields keep canonical Montgomery limbs. This adapter is private
+// to the public-input fixed-base reducer; ordinary field operations do not change.
+macro_rules! impl_chord_field {
+    ($field:ident, $p0:expr, $p1:expr) => {
+        impl Avx2ChordField for crate::$field {
+            fn chord_limbs(&self) -> [u64; 4] {
+                self.0
+            }
+
+            fn from_chord_limbs(limbs: [u64; 4]) -> Self {
+                Self(limbs)
+            }
+
+            fn chord_level(
+                n: usize,
+                pair: impl Fn(usize) -> (usize, usize, usize),
+                points: &[Point29],
+                next: &mut [Point29],
+                scratch: &mut ChordScratch,
+            ) -> Option<()> {
+                if !super::avx2_sqrt::available() {
+                    return None;
+                }
+                // SAFETY: runtime detection checks AVX2 and enabled XMM/YMM
+                // state, even on no_std and builds without AVX2 target features.
+                unsafe {
+                    chord_level::<$p0, $p1, 0, { 1 << 62 }>(
+                        n,
+                        pair,
+                        points,
+                        next,
+                        scratch,
+                        &Limbs29::from_limbs(&Self::ONE.0),
+                        &Limbs29::from_limbs(&Self::from(32).0),
+                        |lanes| invert_lanes_vartime::<Self>(lanes, &[$p0, $p1, 0, 1 << 62]),
+                    )
+                }
+            }
+
+            fn modulus29() -> [u64; L] {
+                modulus29(&[$p0, $p1, 0, 1 << 62])
+            }
+        }
+    };
+}
+impl_chord_field!(Fp, 0x992d30ed00000001, 0x224698fc094cf91b);
+impl_chord_field!(Fq, 0x8c46eb2100000001, 0x224698fc0994a8dd);
 
 #[cfg(test)]
 mod tests;
