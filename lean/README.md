@@ -195,7 +195,7 @@ scripts/gen_aarch64.py                   AArch64 decoding, round factoring, and 
 scripts/gen_x86_64.py                    x86-64 decoding, flag validation, and proof-fact hooks
 scripts/test_*.py                        the generator's tests, run by check.sh
 scripts/check.sh                         regenerate and diff, skeleton check, generator tests (CI)
-scripts/build.sh                         lake build, failing on warnings outside Aeneas' library (CI)
+scripts/build.sh                         lake build, failing on any warning (CI)
 scripts/test_build.sh                    check that build.sh rejects a warning (CI)
 scripts/gen_aeneas.sh                    regenerate, or check, the Aeneas translations (CI)
 scripts/fetch_aeneas.sh                  fetch the Charon and Aeneas that gen_aeneas.sh runs (CI)

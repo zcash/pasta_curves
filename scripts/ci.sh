@@ -172,7 +172,7 @@ else
 fi
 
 # ---- The formalization (lean.yml) ----
-step "lake build, with warnings outside Aeneas' library failing it"
+step "lake build, with any warning failing it"
 LAKE="$LAKE" lean/scripts/build.sh
 LAKE="$LAKE" lean/scripts/test_build.sh
 

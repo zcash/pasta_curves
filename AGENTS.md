@@ -167,9 +167,8 @@ lean/scripts/fetch_aeneas.sh   # fetch Charon and Aeneas, once per pinned releas
 lean/scripts/gen_aeneas.sh     # regenerate the Aeneas translations; --check compares instead
 ```
 
-`lean/scripts/build.sh` fails the build on any warning, as `lake build --wfail` would, except
-for warnings in Aeneas' library. The package requires that library but does not maintain it,
-and Lake cannot exempt one package from `--wfail`.
+`lean/scripts/build.sh` fails the build on any warning, as `lake build --wfail` would, including
+warnings in Aeneas' library when Lake compiles it rather than fetching its pinned release's build.
 
 `lean/scripts/gen_aeneas.sh` runs the Charon and Aeneas binaries that `fetch_aeneas.sh` fetched.
 When the pin moves to another Aeneas release, it fails until `fetch_aeneas.sh` is run again; it

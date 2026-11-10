@@ -69,9 +69,8 @@ jobs:
         with:
           lake-package-directory: lean
           build: "false"
-      # Warnings fail the build, except those in Aeneas' library, which the package requires
-      # but does not maintain; the test checks that a warning of the package's own is rejected.
-      - name: Build, with warnings outside Aeneas' library failing it
+      # Any warning fails the build; the test checks that a warning is rejected.
+      - name: Build, with any warning failing it
         run: lean/scripts/build.sh
       - name: Check that the build rejects a warning
         run: lean/scripts/test_build.sh
