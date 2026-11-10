@@ -204,7 +204,7 @@ theorem mulMontRound_spec (lhs modulus : Limbs) (inv b : Nat) (acc : MulMontAcc)
   have sh_s3_1 : s3_1 + 2^64 * (s3 / 2^2) = s3 * 2^62 := by
     rw [e_s3_1]; exact lsl62_lsr2_split _
   -- n: neg {be}
-  word_step -clear n, r0_2 := (neg r0_1).1 using sbb_value_lt 0 r0_1 0, cf_6 := (neg r0_1).2
+  word_step -clear n, r0_2 := (neg r0_1).1 using neg_value_lt r0_1, cf_6 := (neg r0_1).2
   have b_cf_6 : cf_6 ≤ 1 := by
     rw [e_cf_6]; simp only [neg]; split <;> omega
   -- r1_3: adc {ce}, {s1}
@@ -464,7 +464,7 @@ theorem mulMont_spec (lhs rhs modulus : Limbs) (inv : Nat) (hlhs : lhs.Bounded)
   have sh_s3_1 : s3_1 + 2^64 * (s3 / 2^2) = s3 * 2^62 := by
     rw [e_s3_1]; exact lsl62_lsr2_split _
   -- n: neg {ae}
-  word_step -clear n, ae_1 := (neg ae).1 using sbb_value_lt 0 ae 0, cf_4 := (neg ae).2
+  word_step -clear n, ae_1 := (neg ae).1 using neg_value_lt ae, cf_4 := (neg ae).2
   have b_cf_4 : cf_4 ≤ 1 := by
     rw [e_cf_4]; simp only [neg]; split <;> omega
   -- be_2: adc {be}, {s1}
@@ -834,7 +834,7 @@ theorem mulMont_spec (lhs rhs modulus : Limbs) (inv : Nat) (hlhs : lhs.Bounded)
   have sh_s3_6 : s3_6 + 2^64 * (s3_5 / 2^2) = s3_5 * 2^62 := by
     rw [e_s3_6]; exact lsl62_lsr2_split _
   -- n_1: neg {de}
-  word_step -clear n_1, de_7 := (neg de_6).1 using sbb_value_lt 0 de_6 0, cf_20 := (neg de_6).2
+  word_step -clear n_1, de_7 := (neg de_6).1 using neg_value_lt de_6, cf_20 := (neg de_6).2
   have b_cf_20 : cf_20 ≤ 1 := by
     rw [e_cf_20]; simp only [neg]; split <;> omega
   -- ee_8: adc {ee}, {s1}

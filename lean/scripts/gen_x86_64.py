@@ -590,7 +590,7 @@ class SkeletonBackend(gen.SkeletonBackend):
             (operand,) = ops
             value_name, flag_name = group_names[1:3]
             context.eq(value_name, f"(neg {operand}).1")
-            context.bound(value_name, f"sbb_value_lt 0 {operand} 0")
+            context.bound(value_name, f"neg_value_lt {operand}")
             context.ren[group[1][0]["name"]] = value_name
             context.eq(flag_name, f"(neg {operand}).2")
             context.lines.append(f"  have b_{flag_name} : {flag_name} ≤ 1 := by")
