@@ -1,3 +1,16 @@
+//! Variable-time GLV MSMs for public scalars and bases.
+//!
+//! With `glv`, `CurveExt::try_multiexp_vartime` offers a variable-time MSM backend
+//! for public scalars and bases. It uses a shared-doubling GLV-Strauss ladder for
+//! small inputs and signed-Booth GLV buckets with batched affine additions for
+//! large inputs. It returns `None` when its cost model prefers the caller's
+//! generic MSM; callers must keep that fallback. Enable `multicore` to evaluate
+//! independent windows through the Rayon pool; WebAssembly without atomics uses
+//! the serial implementation. Neither feature changes ordinary constant-time
+//! scalar multiplication.
+//!
+//! The small-MSM ladder reuses the existing split-wNAF tables unchanged.
+
 use alloc::vec::Vec;
 use ff::{Field, PrimeField, WithSmallOrderMulGroup};
 use group::CurveAffine as _;
@@ -5,7 +18,7 @@ use group::CurveAffine as _;
 use maybe_rayon::prelude::*;
 
 use super::{Decomposed, GlvParams, Table, decompose};
-use crate::arithmetic::CurveAffine;
+use crate::arithmetic::{CurveAffine, VartimeField};
 use crate::{pallas, vesta};
 
 #[cfg(test)]
@@ -40,30 +53,22 @@ impl_msm_curve!(vesta);
 /// and the two temporary vectors.
 const MIN_GLV_MULTIEXP_TERMS: usize = 256;
 
-/// Largest serial leaf in the GLV-Strauss backend. The crossover is
-/// benchmark-tuned against halo2's generic Signed-Booth fallback at the
-/// power-of-two sizes reached by the late IPA rounds.
+/// Largest serial GLV-Strauss leaf; larger tables have higher setup costs.
 const STRAUSS_LEAF_TERMS: usize = 16;
 
-/// Smallest MSM worth splitting across an IPA side's worker budget.
+/// Smallest MSM worth splitting across worker jobs.
 #[cfg(feature = "multicore")]
 const MIN_PARALLEL_STRAUSS_TERMS: usize = 3;
 
 /// Largest parallel MSM split into [`STRAUSS_LEAF_TERMS`]-or-smaller Strauss
-/// leaves. This includes a 64-term late IPA half plus its two auxiliary terms.
-/// Above this, the generic or GLV bucket backends amortize their bucket setup
-/// and use the worker pool more efficiently.
+/// leaves. Above this conservative crossover, the generic or GLV bucket
+/// backends amortize their bucket setup more effectively.
 #[cfg(feature = "multicore")]
 const MAX_PARALLEL_STRAUSS_TERMS: usize = 66;
 
 /// Each GLV decomposition component has magnitude strictly below `2^127`.
 const GLV_COMPONENT_BITS: usize = 127;
 
-/// Estimates a Signed-Booth MSM's costs as a `(work, traffic)` pair: the
-/// dominant group work, and the total point/window visits plus bucket
-/// additions — the traffic the planner's shared-bandwidth floor scales,
-/// since a wide pool cannot divide it away (see `plan_multiexp`).
-///
 /// The serial work model counts total point/window visits, bucket additions,
 /// and accumulator doublings. The parallel model estimates the corresponding
 /// critical-worker cost when windows have independent accumulators. Both omit
@@ -107,17 +112,6 @@ fn estimated_signed_booth_costs(
             .checked_add(shift_doublings)?,
         traffic,
     ))
-}
-
-/// Test convenience: the work component of [`estimated_signed_booth_costs`].
-#[cfg(test)]
-fn estimated_signed_booth_work(
-    terms: usize,
-    scalar_bits: usize,
-    window_bits: usize,
-    num_threads: usize,
-) -> Option<usize> {
-    estimated_signed_booth_costs(terms, scalar_bits, window_bits, num_threads).map(|(work, _)| work)
 }
 
 /// Floors of `e^k` for `k = 4..=22`.
@@ -166,14 +160,13 @@ fn scalar_repr_bits<C: MsmCurve>() -> Option<usize> {
     <C::ScalarExt as PrimeField>::Repr::default()
         .as_ref()
         .len()
-        .checked_mul(u8::BITS as usize)
+        .checked_mul(8)
 }
 
 /// Selects the backend's signed-window width.
 ///
-/// The accepted serial sweep found a wider successor useful only when the
-/// default selected 9 bits. Keep that comparison narrow because the operation
-/// model deliberately omits cache behavior.
+/// Compare the nine-bit schedule with its wider successor in serial mode.
+/// Keep the comparison narrow because this model omits cache behavior.
 fn multiexp_window_bits<C: MsmCurve>(terms: usize, num_threads: usize) -> Option<usize> {
     let window_bits = default_multiexp_window_bits(terms)?;
     if num_threads != 1 || window_bits != 9 {
@@ -195,31 +188,8 @@ fn multiexp_window_bits<C: MsmCurve>(terms: usize, num_threads: usize) -> Option
     )
 }
 
-/// Plans a GLV multiscalar multiplication: the window width the GLV ladder
-/// should use for `terms` on `num_threads` workers, or `None` when the
-/// generic MSM is estimated to be cheaper.
-///
-/// The generic MSM runs at the default width `w` from
-/// [`multiexp_window_bits`]. The GLV ladder is evaluated at both `w` and
-/// `w + 1` and takes the cheaper; it is chosen when that beats the generic
-/// estimate. GLV has about half as many windows as the generic ladder
-/// (127-bit components), so the parallel model's wave count — windows
-/// divided by workers, rounded up — is much more sensitive to the width for
-/// GLV than for the generic ladder, and comparing the two at a single width
-/// chosen for the generic ladder mispredicts: e.g. 8,192 terms on 3 workers
-/// puts 13 GLV windows into 5 waves at `w = 10` but 12 windows into exactly
-/// 4 waves at `w = 11`. Measured on Apple M4 (asm backend) and EPYC
-/// (portable) across 1–16 workers and 2,150–65,536 terms, this choice
-/// selected the faster backend in every one of 46 cells, where the
-/// single-width comparison was wrong in 8 (M4) and 5 (EPYC) — all cases
-/// where GLV was faster by 4–27% but not chosen. The width is only ever
-/// widened: a narrower GLV window never measured a meaningful gain.
-/// (Under the `orbits` feature, production planning goes through
-/// `plan_multiexp`, which extends this Booth-versus-generic comparison with
-/// the orbit backend and this becomes test-only — the measured-cell
-/// contract for the Booth half of that decision, pinned by
-/// `glv_multiexp_plan_matches_measured_cells`. Without the feature this is
-/// the production planner, as before.)
+/// Choose a GLV window only when its estimated work beats the generic MSM.
+/// Compare both the default width and its successor to account for worker waves.
 fn glv_multiexp_window_bits<C: MsmCurve>(terms: usize, num_threads: usize) -> Option<usize> {
     if terms < MIN_GLV_MULTIEXP_TERMS {
         return None;
@@ -262,23 +232,24 @@ fn booth_multiexp_estimate<C: MsmCurve>(
 }
 
 fn current_num_threads() -> usize {
-    #[cfg(feature = "multicore")]
+    #[cfg(all(
+        feature = "multicore",
+        not(all(target_arch = "wasm32", not(target_feature = "atomics")))
+    ))]
     {
         maybe_rayon::current_num_threads()
     }
-    #[cfg(not(feature = "multicore"))]
+    #[cfg(any(
+        not(feature = "multicore"),
+        all(target_arch = "wasm32", not(target_feature = "atomics"))
+    ))]
     {
         1
     }
 }
 
-/// A small MSM through one shared doubling ladder over jointly recoded GLV
-/// scalars. Each point's eight orbit representatives are batch-normalized with
-/// every other table, then each nonzero digit contributes one mixed addition.
-///
-/// This is Strauss' algorithm with the existing joint width-3 Eisenstein NAF
-/// in place of two independent integer wNAFs. It retains the ~127-column GLV
-/// ladder while averaging fewer additions and one table per input point.
+/// Share the doubling ladder across all scalar/base pairs, reusing the
+/// upstream GLV decomposition and width-four split-wNAF tables unchanged.
 fn strauss_multiexp<C: MsmCurve>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C {
     debug_assert_eq!(scalars.len(), bases.len());
 
@@ -333,10 +304,9 @@ fn planned_strauss_multiexp<C: MsmCurve>(
     if (MIN_PARALLEL_STRAUSS_TERMS..=MAX_PARALLEL_STRAUSS_TERMS).contains(&scalars.len())
         && num_threads > 1
     {
-        // Late IPA evaluates L and R together. Give this side at most half the
-        // pool, so both commitments make progress at once. Each worker retains
-        // the measured leaf crossover internally rather than building one wide
-        // table for its entire share.
+        // Bound small-MSM jobs to half the pool, rounded up, leaving room for
+        // concurrent caller work. Keep each leaf small instead of building
+        // one wide table for an entire worker's share.
         let worker_jobs = num_threads.div_ceil(2).min(scalars.len());
         if worker_jobs == 1 {
             return Some(strauss_multiexp_leaves::<C>(scalars, bases));
@@ -349,7 +319,7 @@ fn planned_strauss_multiexp<C: MsmCurve>(
                     let end = scalars.len() * (job + 1) / worker_jobs;
                     strauss_multiexp_leaves::<C>(&scalars[start..end], &bases[start..end])
                 })
-                .reduce(C::identity, |left, right| left + right),
+                .sum(),
         );
     }
 
@@ -380,11 +350,8 @@ impl From<(bool, u128)> for SignedMagnitude {
 /// Converts decomposed halves into the representation used by the
 /// Signed-Booth MSM, rejecting values outside the decomposition bound.
 ///
-/// This check must remain on the MSM path because it does not construct a
-/// [`Decomposed`], whose constructor enforces the same bound. Returning
-/// `None` lets the caller use the generic MSM instead of panicking. The
-/// rejection boundary is covered by
-/// `multiexp_component_guard_returns_none_out_of_bounds`.
+/// The large MSM does not construct a [`Decomposed`], so check the bound
+/// before extracting digits. Declining lets the caller retain its generic MSM.
 fn checked_signed_magnitudes(
     (first, second): ((bool, u128), (bool, u128)),
 ) -> Option<(SignedMagnitude, SignedMagnitude)> {
@@ -429,7 +396,8 @@ impl WindowAssignment {
 fn booth_digit(component: SignedMagnitude, window_bits: usize, window: usize) -> BoothDigit {
     let window_start = window * window_bits;
     let radix = 1usize << window_bits;
-    let value = if window_start < u128::BITS as usize {
+    let value = if window_start < 128 {
+        // Only the low window_bits bits survive; widths are below usize::BITS.
         ((component.magnitude >> window_start) as usize) & (radix - 1)
     } else {
         0
@@ -437,6 +405,7 @@ fn booth_digit(component: SignedMagnitude, window_bits: usize, window: usize) ->
     let overlap = if window_start == 0 {
         0
     } else {
+        // The masked bit is either zero or one, which always fits usize.
         ((component.magnitude >> (window_start - 1)) & 1) as usize
     };
 
@@ -478,9 +447,8 @@ const BATCH_INVERSION_LANES: usize = 2;
 /// denominators is zero. In that case, this function has not written to
 /// `points`: the prefix pass changes only disposable pending numerators, and
 /// the output pass starts only after the product is successfully inverted.
-/// [`reduce_affine_buckets`] combines this failure-atomic behavior with
-/// separate level staging before it retries an exceptional level.
-fn batch_invert_and_add<F: Field>(
+/// The reducer relies on this failure-atomic behavior to retry the level.
+fn batch_invert_and_add<F: VartimeField>(
     additions: &mut [PendingAffineAddition<F>],
     points: &mut [AffinePoint<F>],
 ) -> Option<()> {
@@ -489,7 +457,7 @@ fn batch_invert_and_add<F: Field>(
     };
 
     if additions.is_empty() {
-        let denominator_inverse = Option::<F>::from(first.denominator.invert())?;
+        let denominator_inverse = first.denominator.invert_vartime()?;
         let left = points[first.output];
         let slope = first.numerator * denominator_inverse;
         let x = slope.square() - first.x_sum;
@@ -523,7 +491,7 @@ fn batch_invert_and_add<F: Field>(
     let product = lane_products[0] * lane_products[1];
     // This MSM is already variable-time with respect to scalar digits; batch
     // inversion does not provide a constant-time guarantee.
-    let product_inverse = Option::<F>::from(product.invert())?;
+    let product_inverse = product.invert_vartime()?;
     let mut lane_inverses = [
         lane_products[1] * product_inverse,
         lane_products[0] * product_inverse,
@@ -631,187 +599,97 @@ where
     (assignments, counts)
 }
 
-/// Reduces every affine bucket through shared Montgomery batch inversions.
-///
-/// `offsets` partitions `points` into one contiguous range per bucket. At
-/// each tree level, all independent additions share one inversion. The normal
-/// route uses incomplete chord additions without per-pair coordinate checks;
-/// a zero batch product restarts that level with complete handling for
-/// identity, doubling, and inverse pairs.
-///
-/// For valid points on a short-Weierstrass curve over an odd-prime field,
-/// equal x-coordinates imply equal or opposite y-coordinates. Thus the only
-/// zero-denominator cases omitted by the incomplete chord formula are a
-/// doubling and an inverse pair. The latter includes the y = 0 overlap, which
-/// is a point of order two and sums with itself to the identity.
-///
-/// Each level is built in `next_points` and `next_offsets`, while `points` and
-/// `offsets` continue to hold its unchanged inputs. The vectors are swapped
-/// only after every addition succeeds. An exceptional incomplete level can
-/// therefore discard its staging and safely retry the same inputs with the
-/// complete formulas.
-///
-/// # Invariants
-///
-/// - Every coordinate in `points` represents a valid, non-identity point on
-///   the same short-Weierstrass curve with `a = 0`. The doubling numerator is
-///   therefore `3x^2`, with no `+ a` term.
-/// - `offsets` begins at zero, is non-decreasing, and ends at `points.len()`.
-///   Its consecutive entries partition `points` into buckets.
-///
-/// The callers in this module establish these invariants by sourcing points
-/// from a single Pasta curve and skipping identity inputs before building the
-/// buckets. The function is generic over the field only for reuse between
-/// [`crate::Fp`] and [`crate::Fq`].
-fn reduce_affine_buckets<F: Field>(
+/// Reduce buckets with one Montgomery inversion per tree level. Inputs are
+/// valid nonidentity points on a Pasta curve (a = 0); offsets partition them.
+/// The incomplete pass writes nothing until inversion succeeds. On a zero
+/// denominator, retry the unchanged level with complete formulas. Successful
+/// results are then compacted in place, retaining the input allocation.
+fn reduce_affine_buckets<F: VartimeField>(
     points: Vec<AffinePoint<F>>,
     offsets: Vec<usize>,
 ) -> Option<Vec<Option<AffinePoint<F>>>> {
     reduce_affine_buckets_inner::<F, false>(points, offsets)
 }
 
-/// Destructively compacts every incomplete affine reduction level into its
-/// input buffer. This is for callers that can reconstruct the original points
-/// if a zero denominator declines the incomplete formulas.
-#[cfg(test)]
-fn reduce_affine_buckets_in_place<F: Field>(
+fn reduce_affine_buckets_inner<F: VartimeField, const COMPLETE: bool>(
     mut points: Vec<AffinePoint<F>>,
     mut offsets: Vec<usize>,
 ) -> Option<Vec<Option<AffinePoint<F>>>> {
     debug_assert!(!offsets.is_empty());
-    let bucket_count = offsets.len() - 1;
     let mut next_offsets = Vec::with_capacity(offsets.len());
     let mut pending = Vec::with_capacity(points.len() / 2);
 
     while offsets.windows(2).any(|range| range[1] - range[0] > 1) {
-        next_offsets.clear();
         pending.clear();
-        next_offsets.push(0);
-        let mut output = 0;
-
         for range in offsets.windows(2) {
-            let mut input = range[0];
-            while input + 1 < range[1] {
+            for input in (range[0]..range[1] - (range[1] - range[0]) % 2).step_by(2) {
                 let left = points[input];
                 let right = points[input + 1];
-                points[output] = left;
-                pending.push(PendingAffineAddition {
-                    output,
-                    x_sum: left.x + right.x,
-                    numerator: right.y - left.y,
-                    denominator: right.x - left.x,
-                });
-                input += 2;
-                output += 1;
-            }
-            if input < range[1] {
-                points[output] = points[input];
-                output += 1;
-            }
-            next_offsets.push(output);
-        }
-
-        batch_invert_and_add(&mut pending, &mut points)?;
-        points.truncate(output);
-        core::mem::swap(&mut offsets, &mut next_offsets);
-    }
-
-    let mut buckets = alloc::vec![None; bucket_count];
-    for (bucket, range) in buckets.iter_mut().zip(offsets.windows(2)) {
-        if range[0] != range[1] {
-            debug_assert_eq!(range[1] - range[0], 1);
-            *bucket = Some(points[range[0]]);
-        }
-    }
-    Some(buckets)
-}
-
-fn reduce_affine_buckets_inner<F: Field, const COMPLETE: bool>(
-    mut points: Vec<AffinePoint<F>>,
-    mut offsets: Vec<usize>,
-) -> Option<Vec<Option<AffinePoint<F>>>> {
-    debug_assert!(!offsets.is_empty());
-    let bucket_count = offsets.len() - 1;
-    let mut next_points = Vec::with_capacity((points.len() + bucket_count) / 2);
-    let mut next_offsets = Vec::with_capacity(offsets.len());
-    let mut pending = Vec::with_capacity(points.len() / 2);
-
-    while offsets.windows(2).any(|range| range[1] - range[0] > 1) {
-        next_points.clear();
-        next_offsets.clear();
-        pending.clear();
-        next_offsets.push(0);
-
-        for range in offsets.windows(2) {
-            let bucket = &points[range[0]..range[1]];
-            for pair in bucket.chunks_exact(2) {
-                let left = pair[0];
-                let right = pair[1];
-
                 let dx = right.x - left.x;
                 let (numerator, denominator) = if COMPLETE && dx.is_zero_vartime() {
-                    // Valid curve points with the same x-coordinate have the
-                    // same or opposite y-coordinate. Handle both branches
-                    // before asking the batch inverter to divide.
+                    // Equal x means equal or opposite points. Omit inverse
+                    // pairs, including order-two points, from the next level.
                     if !(right.y - left.y).is_zero_vartime() || left.y.is_zero_vartime() {
-                        // The points are inverses, or this is a point of order
-                        // two. Their sum is the identity, which is omitted.
                         continue;
                     }
-                    let x_squared = left.x.square();
-                    (x_squared.double() + x_squared, left.y.double())
+                    let square = left.x.square();
+                    (square.double() + square, left.y.double())
                 } else {
                     (right.y - left.y, dx)
                 };
-
-                let output = next_points.len();
-                // Preserve the left input in its result slot until the batch
-                // inversion completes. This avoids duplicating its coordinates
-                // in every pending addition.
-                next_points.push(left);
                 pending.push(PendingAffineAddition {
-                    output,
+                    output: input,
                     x_sum: left.x + right.x,
                     numerator,
                     denominator,
                 });
             }
-            if bucket.len() % 2 == 1 {
-                next_points.push(bucket[bucket.len() - 1]);
-            }
-            next_offsets.push(next_points.len());
         }
 
-        if batch_invert_and_add(&mut pending, &mut next_points).is_none() {
+        if batch_invert_and_add(&mut pending, &mut points).is_none() {
             if !COMPLETE {
-                // At least one incomplete chord had equal x-coordinates. The
-                // failed batch has not overwritten any staged point, and the
-                // source vectors are not swapped until success, so `points`
-                // and `offsets` are still the exact inputs to this level.
-                // Retry them and keep complete formulas enabled for every
-                // remaining level; this prevents a later exceptional pair
-                // from entering an incomplete formula too.
                 return reduce_affine_buckets_inner::<F, true>(points, offsets);
             }
-            // Complete formulas cannot produce a zero denominator under the
-            // invariants above. If the guard nevertheless fails, propagate
-            // `None` so the verifier caller uses the generic MSM instead of a
-            // potentially incomplete result.
+            // Complete formulas have nonzero denominators for valid inputs.
+            // Decline rather than returning a partial MSM if that guard fails.
             return None;
         }
 
-        core::mem::swap(&mut points, &mut next_points);
+        // Pending outputs identify surviving pairs; cancelled pairs have no
+        // record. A carried odd point survives unchanged. The write index is
+        // never ahead of the read index, so compaction cannot clobber a result.
+        next_offsets.clear();
+        next_offsets.push(0);
+        let mut additions = pending.iter().peekable();
+        let mut output = 0;
+        for range in offsets.windows(2) {
+            let end_pairs = range[1] - (range[1] - range[0]) % 2;
+            for input in (range[0]..end_pairs).step_by(2) {
+                if additions
+                    .peek()
+                    .is_some_and(|addition| addition.output == input)
+                {
+                    points[output] = points[input];
+                    output += 1;
+                    additions.next();
+                }
+            }
+            if end_pairs != range[1] {
+                points[output] = points[end_pairs];
+                output += 1;
+            }
+            next_offsets.push(output);
+        }
+        points.truncate(output);
         core::mem::swap(&mut offsets, &mut next_offsets);
     }
 
-    let mut buckets = alloc::vec![None; bucket_count];
-    for (bucket, range) in buckets.iter_mut().zip(offsets.windows(2)) {
-        if range[0] != range[1] {
-            debug_assert_eq!(range[1] - range[0], 1);
-            *bucket = Some(points[range[0]]);
-        }
-    }
-    Some(buckets)
+    Some(
+        offsets
+            .windows(2)
+            .map(|range| (range[0] != range[1]).then(|| points[range[0]]))
+            .collect(),
+    )
 }
 
 fn sum_buckets<C: MsmCurve>(buckets: &[Option<AffinePoint<C::Base>>]) -> C {
@@ -966,24 +844,19 @@ fn multiexp_bases<C: MsmCurve>(bases: &[C::AffineExt]) -> Vec<MultiexpBase<C::Ba
         .collect()
 }
 
-/// Attempts a GLV bucket multiscalar multiplication for a large Pasta MSM,
-/// through whichever backend `plan_multiexp` selects (with the `orbits`
-/// feature disabled, the Signed-Booth backend at
-/// `glv_multiexp_window_bits`'s width).
-///
-/// Returns `None` when the cost model selects the generic MSM or when an
-/// internal arithmetic guard fails, allowing verifier callers to use the
-/// generic implementation instead of panicking.
+/// Declines unprofitable input shapes and failed arithmetic guards so callers
+/// can retain their generic MSM. Mismatched lengths also decline.
 pub(crate) fn try_multiexp<C: MsmCurve>(
     scalars: &[C::ScalarExt],
     bases: &[C::AffineExt],
 ) -> Option<C> {
-    assert_eq!(scalars.len(), bases.len());
+    if scalars.len() != bases.len() {
+        return None;
+    }
     let num_threads = current_num_threads();
     if let Some(result) = planned_strauss_multiexp::<C>(scalars, bases, num_threads) {
         return Some(result);
     }
-
     let window_bits = glv_multiexp_window_bits::<C>(scalars.len(), num_threads)?;
     let components = scalars
         .iter()
