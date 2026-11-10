@@ -116,6 +116,27 @@ pub trait CurveExt:
         None
     }
 
+    /// Attempts to build a doubling-free table for sums over a few fixed
+    /// `bases` (see [`PreparedFixedBaseSum`]). Implementations without such a
+    /// backend return `None`.
+    ///
+    /// The Pasta implementation stores every positive signed-digit magnitude
+    /// of each GLV half-scalar window, shifted into position, for each base:
+    /// about 76 KiB per base.
+    ///
+    /// # Security
+    ///
+    /// The returned handle runs in variable time with respect to its scalars,
+    /// which must be public.
+    #[cfg(feature = "glv")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "glv")))]
+    fn try_prepare_fixed_base_sum(
+        bases: &[Self::AffineExt],
+    ) -> Option<Box<dyn PreparedFixedBaseSum<Self>>> {
+        let _ = bases;
+        None
+    }
+
     /// Multiplies every point in `points` by the same `scalar`, writing the
     /// corresponding products to `output`.
     ///
@@ -141,6 +162,46 @@ pub trait CurveExt:
         for (point, output) in points.iter().zip(output.iter_mut()) {
             *output = *point * scalar;
         }
+    }
+}
+
+/// An object-safe handle to a prepared, doubling-free fixed-base sum
+/// $\sum_i \[k_i\] P_i$ over the bases $P_i$ captured at preparation.
+/// Obtained from [`CurveExt::try_prepare_fixed_base_sum`].
+///
+/// Evaluation uses only table lookups, negations, and mixed additions: no
+/// doublings. It suits sums over a handful of bases evaluated many times,
+/// such as commitments to short public vectors.
+#[cfg(feature = "glv")]
+#[cfg_attr(docsrs, doc(cfg(feature = "glv")))]
+pub trait PreparedFixedBaseSum<C: CurveExt>: core::fmt::Debug + Send + Sync {
+    /// The number of prepared bases.
+    fn bases(&self) -> usize;
+
+    /// $\sum_i \[k_i\] P_i$, pairing `scalars[i]` with the `i`-th prepared
+    /// base. Bases past `scalars.len()` have implicit zero scalars.
+    ///
+    /// # Security
+    ///
+    /// Variable-time in the scalars, which must be public.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `scalars.len()` exceeds [`Self::bases`].
+    fn sum_vartime(&self, scalars: &[C::ScalarExt]) -> C;
+
+    /// [`Self::sum_vartime`] of each scalar vector, in order. Implementations
+    /// may share work across the sums.
+    ///
+    /// # Security
+    ///
+    /// Variable-time in the scalars, which must be public.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any vector is longer than [`Self::bases`].
+    fn sum_batch_vartime(&self, scalars: &[&[C::ScalarExt]]) -> alloc::vec::Vec<C> {
+        scalars.iter().map(|s| self.sum_vartime(s)).collect()
     }
 }
 

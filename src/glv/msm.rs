@@ -608,6 +608,22 @@ fn window_assignments<C>(
     }
 }
 
+/// Reduce buckets with one Montgomery inversion per tree level. Inputs are
+/// valid nonidentity points on a Pasta curve (a = 0); offsets partition them.
+/// The incomplete pass writes nothing until inversion succeeds. On a zero
+/// denominator, retry the unchanged level with complete formulas. Successful
+/// results are then compacted in place, retaining the input allocation.
+pub(super) fn reduce_affine_buckets<F: VartimeField>(
+    mut points: Vec<AffinePoint<F>>,
+    mut offsets: Vec<usize>,
+) -> Option<Vec<Option<AffinePoint<F>>>> {
+    reduce_affine_buckets_reusing::<F, false>(
+        &mut points,
+        &mut offsets,
+        &mut ReduceScratch::default(),
+    )
+}
+
 /// The existing failure-atomic reducer compacts points in place, so unlike
 /// the source implementation's staged reducer it needs no second point buffer.
 struct ReduceScratch<F> {
