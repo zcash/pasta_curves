@@ -979,6 +979,16 @@ macro_rules! new_curve_impl {
 
         }
 
+        #[cfg(feature = "glv")]
+        impl $name_affine {
+            /// Stored coordinates, including the identity's `(0, 0)` representation.
+            // The isogenous curves share this macro but never read their coordinates this way.
+            #[allow(dead_code)]
+            pub(crate) const fn raw_xy(&self) -> ($base, $base) {
+                (self.x, self.y)
+            }
+        }
+
         impl GroupEncoding for $name_affine {
             type Repr = [u8; 32];
 

@@ -95,8 +95,6 @@ pub(crate) mod fixed_base;
 pub(crate) mod msm;
 
 mod private {
-    use ff::Field;
-
     use crate::arithmetic::{CurveAffine, CurveExt};
 
     /// The field of a curve's affine coordinates.
@@ -122,22 +120,30 @@ mod private {
         /// the inverse of [`Sealed::affine_from_xy_unchecked`]. $(0, 0)$ is on
         /// neither curve ($b = 5$), so the identity's encoding collides with no
         /// point.
-        fn affine_xy(point: &Self::AffineExt) -> (AffineBase<Self>, AffineBase<Self>) {
-            Option::<crate::arithmetic::Coordinates<Self::AffineExt>>::from(point.coordinates())
-                .map(|p| (*p.x(), *p.y()))
-                .unwrap_or((AffineBase::<Self>::ZERO, AffineBase::<Self>::ZERO))
-        }
+        ///
+        /// It reads the stored coordinates, which already encode the identity
+        /// as $(0, 0)$; `CurveAffine::coordinates` would return the same pair
+        /// after a constant-time identity check.
+        fn affine_xy(point: &Self::AffineExt) -> (AffineBase<Self>, AffineBase<Self>);
     }
 
     impl Sealed for crate::pallas::Point {
         fn affine_from_xy_unchecked(x: AffineBase<Self>, y: AffineBase<Self>) -> Self::AffineExt {
             crate::pallas::Affine::from_xy_unchecked(x, y)
         }
+
+        fn affine_xy(point: &Self::AffineExt) -> (AffineBase<Self>, AffineBase<Self>) {
+            point.raw_xy()
+        }
     }
 
     impl Sealed for crate::vesta::Point {
         fn affine_from_xy_unchecked(x: AffineBase<Self>, y: AffineBase<Self>) -> Self::AffineExt {
             crate::vesta::Affine::from_xy_unchecked(x, y)
+        }
+
+        fn affine_xy(point: &Self::AffineExt) -> (AffineBase<Self>, AffineBase<Self>) {
+            point.raw_xy()
         }
     }
 }
@@ -1137,6 +1143,36 @@ pub(crate) mod tests {
     use super::*;
     use crate::arithmetic::adc;
     use ff::Field;
+    use rand::SeedableRng;
+    use rand_xorshift::XorShiftRng;
+
+    #[test]
+    fn raw_affine_coordinates_match_checked_coordinates() {
+        fn check<C: GlvParams>() {
+            let mut rng = XorShiftRng::from_seed([0x42; 16]);
+            let points = [C::identity(), C::generator(), -C::generator()]
+                .into_iter()
+                .chain((0..128).flat_map(|_| {
+                    let point = C::random(&mut rng);
+                    [point, -point]
+                }));
+            for point in points {
+                let affine = C::AffineExt::from(point);
+                let expected = Option::<crate::arithmetic::Coordinates<C::AffineExt>>::from(
+                    affine.coordinates(),
+                )
+                .map(|coordinates| (*coordinates.x(), *coordinates.y()))
+                .unwrap_or((
+                    private::AffineBase::<C>::ZERO,
+                    private::AffineBase::<C>::ZERO,
+                ));
+                assert_eq!(affine_xy::<C>(&affine), expected);
+            }
+        }
+
+        check::<pallas::Point>();
+        check::<vesta::Point>();
+    }
 
     #[test]
     fn integer_multiplication_carry_boundaries() {
