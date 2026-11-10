@@ -101,21 +101,14 @@ pub trait CurveExt:
         }
     }
 
-    /// Attempts an optimized variable-time multiscalar multiplication.
-    ///
-    /// Implementations own the backend and tuning decisions. Implementations
-    /// without a specialized backend return `None`.
+    /// Attempts a multiscalar multiplication, returning `None` when this curve
+    /// has no suitable optimized backend. Callers must retain a generic MSM
+    /// fallback. Different-length slices return `None`.
     ///
     /// # Security
     ///
-    /// This method may run in variable time with respect to `scalars`. Inputs
-    /// should be public unless the caller explicitly accepts timing leakage
-    /// from secret scalar material.
-    ///
-    /// # Panics
-    ///
-    /// Implementations may panic if `scalars` and `bases` have different
-    /// lengths.
+    /// This method is variable-time in both scalars and bases. All inputs must
+    /// be public; do not use it with secret scalar or point material.
     fn try_multiexp_vartime(
         _scalars: &[Self::ScalarExt],
         _bases: &[Self::AffineExt],
