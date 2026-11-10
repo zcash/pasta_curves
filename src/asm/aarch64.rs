@@ -1335,4 +1335,36 @@ mod tests {
         crate::inversion::tests::invert_commutes_with_negation::<Backend>();
     }
 
+    // The backend's blocks against the portable blocks, on random inputs inside the contracts.
+
+    #[test]
+    fn divstep59_matches_portable() {
+        crate::inversion::tests::divstep59_matches_portable::<Backend>();
+    }
+
+    #[test]
+    fn sign_mag_matches_portable() {
+        crate::inversion::tests::sign_mag_matches_portable::<Backend>();
+    }
+
+    #[test]
+    fn fg_row_matches_portable() {
+        crate::inversion::tests::fg_row_matches_portable::<Backend>();
+    }
+
+    #[test]
+    fn de_row_matches_portable() {
+        crate::inversion::tests::de_row_matches_portable::<Backend>();
+    }
+
+    #[test]
+    fn amontred_matches_portable() {
+        crate::inversion::tests::amontred_matches_portable::<Backend>();
+    }
+
+    #[test]
+    fn cond_sub_matches_portable() {
+        crate::inversion::tests::cond_sub_matches_portable::<Backend>();
+    }
+
 }

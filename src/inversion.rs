@@ -160,7 +160,7 @@ pub(crate) mod tests {
     use crate::limbs::Limbs;
     use crate::test_fields::{
         FIELDS, Field, ZERO, check_property, field_and_residue, field_and_two_residues, p_minus_1,
-        sub_limbs,
+        residue, sub_limbs,
     };
     use proptest::prelude::*;
 
@@ -1666,6 +1666,175 @@ pub(crate) mod tests {
             prop_assert_eq!(inverse(&neg(&x)), neg(&inverse(&x)), "{:x?}", x);
             Ok(())
         });
+    }
+
+    // Differential tests: on random inputs inside each block's contract, a backend's block agrees
+    // with the portable block. The known answers test a handful of inputs per block; these test
+    // many, and they check two independent implementations against each other on real hardware,
+    // which the Lean proofs, being about the transcription of the assembly, cannot.
+
+    type Portable = super::portable::Backend;
+
+    /// A two's-complement word whose magnitude is below `2^bits`.
+    fn signed_word(bits: u32) -> impl Strategy<Value = u64> {
+        (any::<u64>(), any::<bool>()).prop_map(move |(m, negative)| {
+            let m = m >> (64 - bits);
+            if negative { m.wrapping_neg() } else { m }
+        })
+    }
+
+    /// The five-word two's complement of `-x`.
+    fn neg5(x: [u64; 5]) -> [u64; 5] {
+        let mut out = [0; 5];
+        let mut borrow = 0;
+        for i in 0..5 {
+            let (d, b1) = 0u64.overflowing_sub(x[i]);
+            let (d, b2) = d.overflowing_sub(borrow);
+            out[i] = d;
+            borrow = u64::from(b1 | b2);
+        }
+        out
+    }
+
+    /// A five-word two's-complement value whose magnitude is below `2^(256 + top_bits)`.
+    fn signed5(top_bits: u32) -> impl Strategy<Value = [u64; 5]> {
+        (any::<[u64; 5]>(), any::<bool>()).prop_map(move |(mut x, negative)| {
+            x[4] = if top_bits == 0 {
+                0
+            } else {
+                x[4] >> (64 - top_bits)
+            };
+            if negative { neg5(x) } else { x }
+        })
+    }
+
+    /// A row's coefficients as the row blocks take them: magnitudes `m0`, `m1` with
+    /// `m0 + m1 <= 2^63`, and independent sign masks. One case in four lies on the bound.
+    fn coefficients() -> impl Strategy<Value = (u64, u64, u64, u64)> {
+        (
+            any::<u64>(),
+            any::<u64>(),
+            0..4u8,
+            any::<bool>(),
+            any::<bool>(),
+        )
+            .prop_map(|(a, b, k, n0, n1)| {
+                let m0 = a >> 1;
+                let room = (1 << 63) - m0;
+                let m1 = if k == 0 { room } else { b % (room + 1) };
+                let mask = |n: bool| if n { u64::MAX } else { 0 };
+                (m0, m1, mask(n0), mask(n1))
+            })
+    }
+
+    /// `divstep59` on odd `f0` and odd `two_delta` below `2^61` in magnitude.
+    pub(crate) fn divstep59_matches_portable<B: InvertBlocks>() {
+        let strategy = (signed_word(61), any::<u64>(), any::<u64>());
+        check_property(strategy, |(two_delta, f0, g0)| {
+            let (two_delta, f0) = (two_delta | 1, f0 | 1);
+            prop_assert_eq!(
+                B::divstep59(two_delta, f0, g0),
+                Portable::divstep59(two_delta, f0, g0),
+                "{:x?}",
+                (two_delta, f0, g0)
+            );
+            Ok(())
+        });
+    }
+
+    /// `sign_mag` on entries below `2^63` in magnitude.
+    pub(crate) fn sign_mag_matches_portable<B: InvertBlocks>() {
+        check_property(
+            (
+                signed_word(63),
+                signed_word(63),
+                signed_word(63),
+                signed_word(63),
+            ),
+            |(u, v, q, r)| {
+                prop_assert_eq!(
+                    B::sign_mag(u, v, q, r),
+                    Portable::sign_mag(u, v, q, r),
+                    "{:x?}",
+                    (u, v, q, r)
+                );
+                Ok(())
+            },
+        );
+    }
+
+    /// `fg_row` on `f` and `g` below `2^256` in magnitude.
+    pub(crate) fn fg_row_matches_portable<B: InvertBlocks>() {
+        check_property(
+            (signed5(0), signed5(0), coefficients()),
+            |(f, g, (m0, m1, s0, s1))| {
+                prop_assert_eq!(
+                    B::fg_row(&f, &g, m0, m1, s0, s1),
+                    Portable::fg_row(&f, &g, m0, m1, s0, s1),
+                    "{:x?}",
+                    (f, g, m0, m1, s0, s1)
+                );
+                Ok(())
+            },
+        );
+    }
+
+    /// `de_row` on any four-limb `d` and `e`.
+    pub(crate) fn de_row_matches_portable<B: InvertBlocks>() {
+        let strategy = (any::<Limbs>(), any::<Limbs>(), coefficients());
+        check_property(strategy, |(d, e, (m0, m1, s0, s1))| {
+            prop_assert_eq!(
+                B::de_row(&d, &e, m0, m1, s0, s1),
+                Portable::de_row(&d, &e, m0, m1, s0, s1),
+                "{:x?}",
+                (d, e, m0, m1, s0, s1)
+            );
+            Ok(())
+        });
+    }
+
+    /// `amontred` on `t` below `2^315` in magnitude, at either field.
+    pub(crate) fn amontred_matches_portable<B: InvertBlocks>() {
+        check_property((0..FIELDS.len(), signed5(59)), |(i, t)| {
+            let f = FIELDS[i];
+            prop_assert_eq!(
+                B::amontred(&t, &f.modulus, f.inv),
+                Portable::amontred(&t, &f.modulus, f.inv),
+                "{:x?}",
+                (i, t)
+            );
+            Ok(())
+        });
+    }
+
+    /// `cond_sub` on values below `2 p`: a residue, or a residue plus `p`.
+    pub(crate) fn cond_sub_matches_portable<B: InvertBlocks>() {
+        let strategy = (0..FIELDS.len()).prop_flat_map(|i| (Just(i), residue(i), any::<bool>()));
+        check_property(strategy, |(i, x, plus_p)| {
+            let f = FIELDS[i];
+            let value = if plus_p { add_limbs(&x, &f.modulus) } else { x };
+            prop_assert_eq!(
+                B::cond_sub(&value, &f.modulus),
+                Portable::cond_sub(&value, &f.modulus),
+                "{:x?}",
+                (i, value)
+            );
+            Ok(())
+        });
+    }
+
+    /// `a + b` over four limbs, for sums below `2^256`.
+    fn add_limbs(a: &Limbs, b: &Limbs) -> Limbs {
+        let mut out = [0; 4];
+        let mut carry = false;
+        for i in 0..4 {
+            let (s, c1) = a[i].overflowing_add(b[i]);
+            let (s, c2) = s.overflowing_add(u64::from(carry));
+            out[i] = s;
+            carry = c1 | c2;
+        }
+        assert!(!carry);
+        out
     }
 
     /// The entry point `invert` runs the selected blocks, and in a debug build its assertion
