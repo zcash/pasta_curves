@@ -108,8 +108,10 @@ fn backend_name() {
         "aarch64"
     } else if cfg!(target_arch = "arm") {
         "armv7em"
-    } else {
+    } else if cfg!(target_arch = "x86_64") {
         "x86-64"
+    } else {
+        panic!("the assembly backend for this architecture has no expected name")
     };
     assert_eq!(BACKEND, expected);
 }
