@@ -84,13 +84,14 @@ The squaring blocks and the conversion out of Montgomery form make the same canc
 Where the module has a backend, `cargo test --release --features asm` runs known-answer tests of the
 entry points for both fields and replays the reference vectors recorded from the AArch64 assembly;
 in a debug build it also checks that the operand assertions fire outside the contracts. The
-inversion's blocks are tested one by one against an integer model of the algorithm, and the
-inversion against known answers, the identity `x · x^-1 = 1`, and the field types' own inverse,
-over a backend's assembly blocks where the module has one, and over the portable blocks
-everywhere. Without the `asm`
-feature, on unsupported platforms, or with `--cfg pasta_curves_noasm`, the backend has no tests to
-run, and the inversion's tests over the portable blocks are the ones that run. `scripts/ci.sh` runs
-every check CI runs.
+inversion's blocks are tested one by one against an integer model of the algorithm, the portable
+blocks against an independent computation of each block's contract on random inputs inside it, and
+a backend's blocks against the portable blocks on such inputs; the inversion is
+tested against known answers, the identity `x · x^-1 = 1`, and the field types' own inverse, over a
+backend's assembly blocks where the module has one, and over the portable blocks everywhere. Without
+the `asm` feature, on unsupported platforms, or with `--cfg pasta_curves_noasm`, the backend has no
+tests to run, and the inversion's tests over the portable blocks are the ones that run.
+`scripts/ci.sh` runs every check CI runs.
 
 ## Formal verification
 

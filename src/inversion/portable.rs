@@ -354,4 +354,34 @@ mod tests {
     fn invert_commutes_with_negation() {
         checks::invert_commutes_with_negation::<Backend>();
     }
+
+    #[test]
+    fn divstep59_meets_spec() {
+        checks::divstep59_meets_spec::<Backend>();
+    }
+
+    #[test]
+    fn divstep59_rows_divide_exactly() {
+        checks::divstep59_rows_divide_exactly::<Backend>();
+    }
+
+    #[test]
+    fn sign_mag_meets_spec() {
+        checks::sign_mag_meets_spec::<Backend>();
+    }
+
+    #[test]
+    fn fg_row_meets_spec() {
+        checks::fg_row_meets_spec::<Backend>();
+    }
+
+    #[test]
+    fn de_row_meets_spec() {
+        checks::de_row_meets_spec::<Backend>();
+    }
+
+    #[test]
+    fn amontred_meets_spec() {
+        checks::amontred_meets_spec::<Backend>();
+    }
 }
