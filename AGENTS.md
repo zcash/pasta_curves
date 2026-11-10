@@ -204,12 +204,13 @@ describes the tools in more detail.
   inversion blocks against the shared known answers, by kernel evaluation through
   `VectorCheck.lean` and `Inversion/VectorCheck.lean`; `Spec` proves block and composition
   correctness; `Backend` builds the backend's record of Montgomery blocks, with `Glue.blocksOf`,
-  that the Aeneas-translated glue runs over; `Entry` contains correctness **theorems** specializing
-  those results to `PastaField` and the actual asserted operand contracts, not redundant value
-  wrappers. Checks that are the same for every backend are written once over the backend's
-  records, not copied per architecture. Split per-block proof files
-  belong under `<Architecture>/Spec/`, imported by its `Spec.lean`. Shared arithmetic, constants,
-  and architecture-independent lemmas stay outside ISA modules.
+  that the Aeneas-translated glue runs over; `Entry` proves the records' contracts at a
+  `PastaField` and instantiates the shared `EntrySpecs` (`PastaCurves/Entry.lean`), which states the
+  entry points' correctness under the actual asserted operand contracts. Checks and statements
+  that are the same for every backend are written once over the backend's records, not copied
+  per architecture. Split per-block proof files belong under `<Architecture>/Spec/`, imported by
+  its `Spec.lean`. Shared arithmetic, constants, and architecture-independent lemmas stay outside
+  ISA modules.
 - **Extend the shared generator pipeline.** `gen.py` owns CLI orchestration, binding storage,
   liveness, formatting, vector emission, SSA naming, and proof skeleton generation/checking.
   `asm_source.py` owns the self-contained Rust source parser and operand/output validation.
