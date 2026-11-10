@@ -46,6 +46,8 @@ pub(crate) struct Field {
     pub(crate) portable_inverse: fn(&Limbs) -> Limbs,
     /// The negation by the field type's inherent `const fn`s, independent of the backends.
     pub(crate) portable_neg: fn(&Limbs) -> Limbs,
+    /// The sum by the field type's inherent `const fn`s, independent of the backends.
+    pub(crate) portable_add: fn(&Limbs, &Limbs) -> Limbs,
 }
 
 /// The Pallas base field (`pasta_curves::Fp`).
@@ -173,6 +175,7 @@ pub(crate) const FP: Field = Field {
     portable_mul: fp_mul,
     portable_inverse: fp_inverse,
     portable_neg: fp_neg,
+    portable_add: fp_add,
 };
 
 /// The Vesta base field (`pasta_curves::Fq`).
@@ -300,6 +303,7 @@ pub(crate) const FQ: Field = Field {
     portable_mul: fq_mul,
     portable_inverse: fq_inverse,
     portable_neg: fq_neg,
+    portable_add: fq_add,
 };
 
 pub(crate) const FIELDS: [&Field; 2] = [&FP, &FQ];
@@ -354,6 +358,20 @@ fn fp_neg(x: &Limbs) -> Limbs {
 fn fq_neg(x: &Limbs) -> Limbs {
     use crate::fields::Fq;
     Fq::neg(&Fq(*x)).0
+}
+
+/// The sum of the canonical residues `x` and `y` by `Fp`'s inherent `const fn`s, which never use
+/// the backend.
+fn fp_add(x: &Limbs, y: &Limbs) -> Limbs {
+    use crate::fields::Fp;
+    Fp::add(&Fp(*x), &Fp(*y)).0
+}
+
+/// The sum of the canonical residues `x` and `y` by `Fq`'s inherent `const fn`s, which never use
+/// the backend.
+fn fq_add(x: &Limbs, y: &Limbs) -> Limbs {
+    use crate::fields::Fq;
+    Fq::add(&Fq(*x), &Fq(*y)).0
 }
 
 /// `base` to the power `exponent` by square-and-multiply, over the given Montgomery squaring and
