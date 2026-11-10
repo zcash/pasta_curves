@@ -1,6 +1,81 @@
 //! Differential checks for Booth recoding and the failure-atomic affine reducer.
 use super::*;
 
+// Preserved pre-port reducer: an allocating, failure-atomic arithmetic oracle.
+fn original_reduce_affine_buckets<F: VartimeField, const COMPLETE: bool>(
+    mut points: Vec<AffinePoint<F>>,
+    mut offsets: Vec<usize>,
+) -> Option<Vec<Option<AffinePoint<F>>>> {
+    debug_assert!(!offsets.is_empty());
+    let mut next_offsets = Vec::with_capacity(offsets.len());
+    let mut pending = Vec::with_capacity(points.len() / 2);
+
+    while offsets.windows(2).any(|range| range[1] - range[0] > 1) {
+        pending.clear();
+        for range in offsets.windows(2) {
+            for input in (range[0]..range[1] - (range[1] - range[0]) % 2).step_by(2) {
+                let left = points[input];
+                let right = points[input + 1];
+                let dx = right.x - left.x;
+                let (numerator, denominator) = if COMPLETE && dx.is_zero_vartime() {
+                    if !(right.y - left.y).is_zero_vartime() || left.y.is_zero_vartime() {
+                        continue;
+                    }
+                    let square = left.x.square();
+                    (square.double() + square, left.y.double())
+                } else {
+                    (right.y - left.y, dx)
+                };
+                pending.push(PendingAffineAddition {
+                    output: input,
+                    x_sum: left.x + right.x,
+                    numerator,
+                    denominator,
+                });
+            }
+        }
+
+        if batch_invert_and_add(&mut pending, &mut points).is_none() {
+            if !COMPLETE {
+                return original_reduce_affine_buckets::<F, true>(points, offsets);
+            }
+            return None;
+        }
+
+        next_offsets.clear();
+        next_offsets.push(0);
+        let mut additions = pending.iter().peekable();
+        let mut output = 0;
+        for range in offsets.windows(2) {
+            let end_pairs = range[1] - (range[1] - range[0]) % 2;
+            for input in (range[0]..end_pairs).step_by(2) {
+                if additions
+                    .peek()
+                    .is_some_and(|addition| addition.output == input)
+                {
+                    points[output] = points[input];
+                    output += 1;
+                    additions.next();
+                }
+            }
+            if end_pairs != range[1] {
+                points[output] = points[end_pairs];
+                output += 1;
+            }
+            next_offsets.push(output);
+        }
+        points.truncate(output);
+        core::mem::swap(&mut offsets, &mut next_offsets);
+    }
+
+    Some(
+        offsets
+            .windows(2)
+            .map(|range| (range[0] != range[1]).then(|| points[range[0]]))
+            .collect(),
+    )
+}
+
 fn batch_invert_and_add_two_lanes_matches_individual<F>()
 where
     F: VartimeField + From<u64>,
@@ -81,7 +156,11 @@ fn assert_affine_bucket_results_match_native<C: MsmCurve>(
     }
 }
 
-fn assert_batch_affine_buckets_match_native<C: MsmCurve>(case: &str, source: &[Vec<C>]) {
+fn assert_batch_affine_buckets_match_native<C: MsmCurve>(
+    case: &str,
+    source: &[Vec<C>],
+    scratch: &mut ReduceScratch<C::Base>,
+) {
     let mut points = Vec::new();
     let mut offsets = Vec::with_capacity(source.len() + 1);
     offsets.push(0);
@@ -94,8 +173,17 @@ fn assert_batch_affine_buckets_match_native<C: MsmCurve>(case: &str, source: &[V
         offsets.push(points.len());
     }
 
-    let reduced = reduce_affine_buckets(points, offsets)
+    let original = original_reduce_affine_buckets::<_, false>(points.clone(), offsets.clone())
+        .unwrap_or_else(|| panic!("original reducer must succeed in case {case}"));
+    let reduced = reduce_affine_buckets_reusing::<_, false>(&mut points, &mut offsets, scratch)
         .unwrap_or_else(|| panic!("valid curve points must reduce in case {case}"));
+    for (actual, expected) in reduced.iter().zip(&original) {
+        assert_eq!(
+            actual.map(|point| (point.x, point.y)),
+            expected.map(|point| (point.x, point.y)),
+            "reused reducer differs from original in case {case}"
+        );
+    }
     assert_affine_bucket_results_match_native::<C>(case, reduced, source);
 }
 
@@ -145,38 +233,15 @@ fn batch_affine_buckets_match_native<C: MsmCurve>() {
         ),
     ];
 
+    let mut scratch = ReduceScratch::default();
     for (case, source) in cases {
-        assert_batch_affine_buckets_match_native::<C>(case, &source);
+        assert_batch_affine_buckets_match_native::<C>(case, &source, &mut scratch);
     }
-
-    // Powers of two keep every intermediate pair distinct, so this
-    // exercises successful in-place reduction without its fallback.
-    let clean_source = [
-        Vec::new(),
-        alloc::vec![generator],
-        alloc::vec![generator, two],
-        alloc::vec![generator, two, four],
-        (0..9)
-            .map(|bit| generator * C::ScalarExt::from(1u64 << bit))
-            .collect(),
-    ];
-    let mut clean_points = Vec::new();
-    let mut clean_offsets = Vec::with_capacity(clean_source.len() + 1);
-    clean_offsets.push(0);
-    for bucket in &clean_source {
-        for point in bucket {
-            let affine = C::AffineExt::from(*point);
-            let (x, y) = C::affine_xy(&affine);
-            clean_points.push(AffinePoint { x, y });
-        }
-        clean_offsets.push(clean_points.len());
-    }
-    let clean_reduced = reduce_affine_buckets(clean_points, clean_offsets)
-        .expect("distinct points should use the in-place reducer");
-    assert_affine_bucket_results_match_native::<C>(
-        "direct successful in-place reduction",
-        clean_reduced,
-        &clean_source,
+    // Revisit a short cancellation after larger batches have populated scratch.
+    assert_batch_affine_buckets_match_native::<C>(
+        "reused cancellation",
+        &[alloc::vec![generator, -generator], Vec::new()],
+        &mut scratch,
     );
 }
 
@@ -245,16 +310,23 @@ fn booth_digits_reconstruct_components() {
     }
 }
 
-fn forced_windows<C: MsmCurve>() {
-    let scalars = (0..64)
+fn forced_window<C: MsmCurve>(terms: usize, width: usize) {
+    let scalars = (0..terms)
         .map(|i| {
-            (C::ScalarExt::from(i + 0x9e3779b97f4a7c15).square() + C::ScalarExt::from(i)).square()
+            let i = u64::try_from(i).unwrap();
+            match i % 8 {
+                0 => C::ScalarExt::ZERO,
+                1 | 2 => C::ScalarExt::ONE,
+                3 => -C::ScalarExt::ONE,
+                _ => (C::ScalarExt::from(i + 0x9e3779b97f4a7c15).square() + C::ScalarExt::from(i))
+                    .square(),
+            }
         })
         .collect::<Vec<_>>();
     // Equal and opposite bases, as well as identities, force exceptional
     // reductions independently of which backend the cost planner would pick.
     let generator = C::generator();
-    let bases = (0..64)
+    let bases = (0..terms)
         .map(|i| {
             match i % 4 {
                 0 => C::identity(),
@@ -276,66 +348,102 @@ fn forced_windows<C: MsmCurve>() {
         .collect::<Option<Vec<_>>>()
         .unwrap();
     let bases = multiexp_bases::<C>(&bases);
-    for width in [1, 3, 6, 8, 9, 10] {
-        assert_eq!(
-            multiexp_serial::<C>(&components, &bases, width),
-            Some(expected)
-        );
-        #[cfg(feature = "multicore")]
-        assert_eq!(
-            multiexp_parallel::<C>(&components, &bases, width),
-            Some(expected)
-        );
-    }
+    assert_eq!(
+        multiexp_serial::<C>(&components, &bases, width),
+        Some(expected),
+        "{terms} terms at width {width}"
+    );
+    #[cfg(feature = "multicore")]
+    assert_eq!(
+        multiexp_parallel::<C>(&components, &bases, width),
+        Some(expected),
+        "{terms} terms at width {width}, parallel"
+    );
 }
 
 #[test]
 fn all_window_widths() {
-    forced_windows::<pallas::Point>();
-    forced_windows::<vesta::Point>();
-}
-
-/// The MSM against a projective sum, for `terms` random terms.
-fn multiexp_matches_naive<C: MsmCurve>(terms: usize, window_bits: usize, seed: u8) {
-    use rand::SeedableRng;
-    let mut rng = rand_xorshift::XorShiftRng::from_seed([seed; 16]);
-    let points: Vec<C> = (0..terms).map(|_| C::random(&mut rng)).collect();
-    let scalars: Vec<C::ScalarExt> = (0..terms).map(|_| C::ScalarExt::random(&mut rng)).collect();
-    let want = points
-        .iter()
-        .zip(&scalars)
-        .fold(C::identity(), |acc, (p, k)| acc + *p * k);
-    let mut affine = alloc::vec![C::AffineExt::identity(); terms];
-    C::batch_normalize(&points, &mut affine);
-    let components = scalars
-        .iter()
-        .map(decompose::<C>)
-        .map(checked_signed_magnitudes)
-        .collect::<Option<Vec<_>>>()
-        .unwrap();
-    let bases = multiexp_bases::<C>(&affine);
-    assert_eq!(
-        multiexp_serial::<C>(&components, &bases, window_bits),
-        Some(want),
-        "{terms} terms at width {window_bits}"
-    );
-    #[cfg(feature = "multicore")]
-    assert_eq!(
-        multiexp_parallel::<C>(&components, &bases, window_bits),
-        Some(want),
-        "{terms} terms at width {window_bits}, parallel"
-    );
-}
-
-/// Window buffers are cached per thread across MSMs (`with_window_scratch`):
-/// alternating curves, shrinking and growing sizes and widths must not
-/// leak state from one MSM into the next.
-#[test]
-fn cached_window_scratch_does_not_leak_between_msms() {
-    for (terms, window_bits) in [(300, 7), (17, 3), (300, 4), (64, 9), (5, 2)] {
-        multiexp_matches_naive::<pallas::Point>(terms, window_bits, terms as u8);
-        multiexp_matches_naive::<vesta::Point>(terms, window_bits, window_bits as u8);
+    for width in [1, 3, 6, 8, 9, 10] {
+        forced_window::<pallas::Point>(64, width);
+        forced_window::<vesta::Point>(64, width);
     }
+}
+
+#[test]
+fn cached_scratch_alternating_curves_sizes_and_widths() {
+    for (terms, width) in [
+        (300, 7),
+        (0, 1),
+        (17, 3),
+        (300, 4),
+        (64, 9),
+        (1, 2),
+        (5, 10),
+        (257, 6),
+    ] {
+        forced_window::<pallas::Point>(terms, width);
+        forced_window::<vesta::Point>(terms, width);
+    }
+}
+
+#[cfg(feature = "multicore")]
+#[test]
+fn nested_parallel_scratch_is_independent() {
+    // One worker guarantees nested Rayon jobs re-enter the checkout thread.
+    for workers in [1, 2] {
+        let pool = maybe_rayon::ThreadPoolBuilder::new()
+            .num_threads(workers)
+            .build()
+            .unwrap();
+        pool.install(|| {
+            with_window_scratch::<crate::Fp, _>(|outer| {
+                outer.counts.extend([123, 456]);
+                let outer_pointer = outer.counts.as_ptr().addr();
+                maybe_rayon::join(
+                    || {
+                        with_window_scratch::<crate::Fp, _>(|nested| {
+                            assert_ne!(nested.counts.as_ptr().addr(), outer_pointer);
+                            nested.counts.clear();
+                            nested.counts.push(789);
+                            forced_window::<pallas::Point>(65, 4);
+                            assert_eq!(nested.counts, [789]);
+                        });
+                    },
+                    || {
+                        forced_window::<vesta::Point>(17, 3);
+                        forced_window::<pallas::Point>(33, 6);
+                    },
+                );
+                assert_eq!(outer.counts, [123, 456]);
+            });
+            forced_window::<pallas::Point>(5, 2);
+            forced_window::<vesta::Point>(0, 8);
+        });
+    }
+}
+
+#[cfg(feature = "multicore")]
+#[test]
+fn tls_scratch_reuses_capacity_and_drops_oversized_buffers() {
+    // Isolate this cache from other tests and the test runner's worker threads.
+    std::thread::spawn(|| {
+        let capacity = with_window_scratch::<crate::Fp, _>(|scratch| {
+            scratch.assignments.reserve(128);
+            scratch.assignments.capacity()
+        });
+        with_window_scratch::<crate::Fp, _>(|scratch| {
+            assert_eq!(scratch.assignments.capacity(), capacity);
+            scratch.assignments.reserve(
+                MAX_CACHED_WINDOW_SCRATCH_BYTES / core::mem::size_of::<WindowAssignment>() + 1,
+            );
+            assert!(scratch.capacity_bytes() > MAX_CACHED_WINDOW_SCRATCH_BYTES);
+        });
+        with_window_scratch::<crate::Fp, _>(|scratch| {
+            assert_eq!(scratch.capacity_bytes(), 0);
+        });
+    })
+    .join()
+    .unwrap();
 }
 
 #[test]
