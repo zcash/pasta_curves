@@ -92,8 +92,10 @@ fn backend_name() {
         "portable"
     } else if cfg!(target_arch = "aarch64") {
         "aarch64"
-    } else {
+    } else if cfg!(target_arch = "x86_64") {
         "x86-64"
+    } else {
+        panic!("the assembly backend for this architecture has no expected name")
     };
     assert_eq!(BACKEND, expected);
 }
