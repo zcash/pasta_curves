@@ -168,10 +168,11 @@ pub trait CurveAffine:
     ///
     /// Returns exactly one result per input, matching
     /// [`group::GroupEncoding::from_bytes`] converted to an `Option`.
+    ///
     /// Inputs must be public: implementations may use variable-time arithmetic
     /// and table lookups to interleave independent encodings.
     /// The default decodes each input individually.
-    fn batch_decode(bytes: &[Self::Repr]) -> alloc::vec::Vec<Option<Self>> {
+    fn batch_decode_vartime(bytes: &[Self::Repr]) -> alloc::vec::Vec<Option<Self>> {
         bytes
             .iter()
             .map(|bytes| Self::from_bytes(bytes).into())

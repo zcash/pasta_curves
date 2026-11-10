@@ -741,14 +741,15 @@ macro_rules! new_curve_impl {
         }
 
         #[cfg(all(feature = "sqrt-table", feature = "alloc"))]
-        #[allow(dead_code)]
         impl $name_affine {
             /// Decodes compressed public points with interleaved square-root chains.
             ///
             /// Every result matches [`GroupEncoding::from_bytes`] converted to an
-            /// `Option`, including noncanonical encodings and the identity. Inputs
-            /// must be public: decoding and square-root table lookups are variable-time.
-            pub fn batch_from_bytes(items: &[[u8; 32]]) -> alloc::vec::Vec<Option<Self>> {
+            /// `Option`, including noncanonical encodings and the identity.
+            ///
+            /// Inputs must be public: decoding and square-root table lookups are
+            /// variable-time.
+            fn batch_from_bytes_vartime(items: &[[u8; 32]]) -> alloc::vec::Vec<Option<Self>> {
                 let mut out = alloc::vec::Vec::with_capacity(items.len());
                 let mut chunks = items.chunks_exact(8);
                 for chunk in &mut chunks {
@@ -860,8 +861,8 @@ macro_rules! new_curve_impl {
             type CurveExt = $name;
 
             #[cfg(feature = "sqrt-table")]
-            fn batch_decode(bytes: &[Self::Repr]) -> alloc::vec::Vec<Option<Self>> {
-                Self::batch_from_bytes(bytes)
+            fn batch_decode_vartime(bytes: &[Self::Repr]) -> alloc::vec::Vec<Option<Self>> {
+                Self::batch_from_bytes_vartime(bytes)
             }
 
             fn is_on_curve(&self) -> Choice {

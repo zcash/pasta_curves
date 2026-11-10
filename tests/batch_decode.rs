@@ -31,7 +31,7 @@ fn check<C: CurveAffine<Repr = [u8; 32]>>() {
     }
     // Every tail width, identity, noncanonical x, nonsquare x and both sign bits.
     for len in 0..=encodings.len() {
-        let actual = C::batch_decode(&encodings[..len]);
+        let actual = C::batch_decode_vartime(&encodings[..len]);
         let expected = encodings[..len]
             .iter()
             .map(|bytes| Option::<C>::from(C::from_bytes(bytes)))

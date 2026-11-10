@@ -8,10 +8,9 @@ and this project adheres to Rust's notion of
 ## [Unreleased]
 
 ### Added
-- `CurveAffine::batch_decode`, an `alloc`-gated default method that decodes
-  public compressed points with one ordered `Option` result per input.
-- `{EpAffine, EqAffine}::batch_from_bytes` with `sqrt-table`, interleaving
-  independent square-root chains while preserving scalar decoding semantics.
+- `CurveAffine::batch_decode_vartime`, an `alloc`-gated default method that
+  decodes public compressed points with one ordered `Option` result per input.
+  It is further accelerated when `sqrt-table` is enabled.
 
 ## [0.6.1] - 2026-10-09
 ### Added

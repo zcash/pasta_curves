@@ -350,7 +350,7 @@ impl<F: SqrtTableHelpers> SqrtTables<F> {
     }
 
     /// Computes independent square roots with interleaved dependency chains.
-    pub fn sqrt_alt_lanes<const K: usize>(&self, u: &[F; K]) -> [(Choice, F); K] {
+    pub(crate) fn sqrt_alt_lanes<const K: usize>(&self, u: &[F; K]) -> [(Choice, F); K] {
         let v = F::pow_by_t_minus1_over2_lanes(u);
         let uv = mul_lanes(u, &v);
         let x3 = mul_lanes(&uv, &v);
