@@ -12,9 +12,10 @@
 use crate::limbs::Limbs;
 
 if_asm_supported! {
-    // The portable blocks serve wherever the assembly blocks do not; beside an assembly backend
-    // they are compiled for their tests and the documentation only.
-    #[cfg(any(test, doc))]
+    // The portable blocks serve wherever the assembly blocks do not: on an architecture whose
+    // backend has no inversion blocks. Beside the blocks of a backend they are compiled for their
+    // tests and the documentation only.
+    #[cfg(any(not(any(target_arch = "aarch64", target_arch = "x86_64")), test, doc))]
     mod portable;
 }
 if_asm_unsupported! {
@@ -107,6 +108,10 @@ if_asm_supported! {
     /// build.
     #[cfg(target_arch = "x86_64")]
     type Selected = crate::asm::x86_64::Backend;
+    /// The blocks that [`invert`] runs: the portable blocks, since this build's backend has no
+    /// inversion blocks.
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    type Selected = portable::Backend;
 }
 if_asm_unsupported! {
     /// The blocks that [`invert`] runs: the portable blocks, since no assembly backend is
