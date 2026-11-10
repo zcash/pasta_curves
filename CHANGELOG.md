@@ -26,6 +26,9 @@ and this project adheres to Rust's notion of
 - GLV MSMs reuse window and affine-reduction scratch. With `multicore`, each
   thread retains at most 8 MiB of scratch per field between calls, without
   sharing checked-out buffers with nested work.
+- Public point batch decoding uses four-lane AVX2 square-root arithmetic on
+  x86-64 with `asm` and `sqrt-table` when runtime CPU and OS state checks permit
+  it. Unsupported environments retain the scalar backend.
 
 ## [0.6.1] - 2026-10-09
 ### Added
