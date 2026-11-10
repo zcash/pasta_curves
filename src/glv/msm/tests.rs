@@ -1,5 +1,35 @@
 //! Differential checks for Booth recoding and the failure-atomic affine reducer.
 use super::*;
+use crate::arithmetic::CurveAffine;
+use rand::SeedableRng;
+use rand_xorshift::XorShiftRng;
+
+#[test]
+fn raw_affine_coordinates_match_checked_coordinates() {
+    fn check<C: MsmCurve>()
+    where
+        C::AffineExt: CurveAffine<Base = C::Base>,
+    {
+        let mut rng = XorShiftRng::from_seed([0x42; 16]);
+        let points = [C::identity(), C::generator(), -C::generator()]
+            .into_iter()
+            .chain((0..128).flat_map(|_| {
+                let point = C::random(&mut rng);
+                [point, -point]
+            }));
+        for point in points {
+            let affine = C::AffineExt::from(point);
+            let expected =
+                Option::<crate::arithmetic::Coordinates<C::AffineExt>>::from(affine.coordinates())
+                    .map(|coordinates| (*coordinates.x(), *coordinates.y()))
+                    .unwrap_or((C::Base::ZERO, C::Base::ZERO));
+            assert_eq!(C::affine_xy(&affine), expected);
+        }
+    }
+
+    check::<pallas::Point>();
+    check::<vesta::Point>();
+}
 
 fn batch_invert_and_add_two_lanes_matches_individual<F>()
 where

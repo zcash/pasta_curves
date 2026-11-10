@@ -38,8 +38,8 @@ macro_rules! impl_msm_curve {
                 $curve::Affine::from_xy_unchecked(x, y)
             }
 
-            fn affine_xy(p: &Self::AffineExt) -> (Self::Base, Self::Base) {
-                p.raw_xy()
+            fn affine_xy(point: &Self::AffineExt) -> (Self::Base, Self::Base) {
+                point.raw_xy()
             }
         }
     };

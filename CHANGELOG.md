@@ -18,6 +18,10 @@ and this project adheres to Rust's notion of
 - `multicore` feature flag, which enables `glv` and parallel MSM evaluation
   using Rayon.
 
+### Changed
+- Public-input GLV MSMs read stored affine coordinates directly, preserving
+  the identity's zero coordinates without checked-coordinate conversion.
+
 ## [0.6.1] - 2026-10-09
 ### Added
 - `asm` feature flag, which enables assembly field arithmetic on supported

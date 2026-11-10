@@ -814,14 +814,9 @@ macro_rules! new_curve_impl {
 
         }
 
-        /// Raw-coordinate plumbing for the GLV module, reached through the
-        /// private trait sealing `crate::glv::GlvParams`, which needs to
-        /// read affine coordinates without going through `CtOption`. The
-        /// matching constructor is `from_xy_unchecked`, which
-        /// skips the on-curve check outside debug builds.
         #[cfg(feature = "glv")]
         impl $name_affine {
-            /// The raw affine coordinates (`(0, 0)` for the identity).
+            /// Stored coordinates, including the identity's `(0, 0)` representation.
             #[allow(dead_code)]
             pub(crate) const fn raw_xy(&self) -> ($base, $base) {
                 (self.x, self.y)
