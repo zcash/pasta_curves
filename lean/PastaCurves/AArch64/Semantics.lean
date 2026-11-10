@@ -31,7 +31,16 @@ namespace PastaCurves.AArch64
 /-- `subs` and `sbcs`: the low 64 bits of `a - b - (1 - c)` and the carry-out, where a carry of
 `1` means that no borrow occurred. `subs` passes carry-in `1`. The difference is formed as
 `a + 2^64 - b - (1 - c)`, which is nonnegative for in-range operands, so the quotient by `2^64`
-is `1` exactly when `a ≥ b + (1 - c)`. -/
+is `1` exactly when `a ≥ b + (1 - c)`.
+
+This is how Arm defines the two instructions: as additions of the complement. The Operation of
+`SUBS` is `AddWithCarry(X[n], NOT(X[m]), '1')` and that of `SBCS` is
+`AddWithCarry(X[n], NOT(X[m]), PSTATE.C)`, and `AddWithCarry` returns the low 64 bits of
+`x + y + carry_in` with a carry of `1` exactly when that sum does not fit in 64 bits. Since
+`NOT(b) = 2^64 - 1 - b`, the sum `a + NOT(b) + c` is `a + 2^64 - b - (1 - c)`, the difference
+above, which is why the carry means that no borrow occurred. (Arm A64 Instruction Set
+Architecture, DDI 0602: `SUBS (shifted register)`, `SBCS`, and the shared pseudocode's
+`AddWithCarry`.) -/
 def subc (a b c : Nat) : Nat × Nat :=
   ((a + regMod - b - (1 - c)) % regMod, (a + regMod - b - (1 - c)) / regMod)
 
@@ -105,5 +114,37 @@ def cnegMi (fl : Flags) (a : Nat) : Nat := if fl.n = 1 then negw a else a
 
 /-- `csetm d, mi`: all ones when `N` is set, else zero. -/
 def csetmMi (fl : Flags) : Nat := if fl.n = 1 then regMod - 1 else 0
+
+/-! ## Boundary cases of the carry convention -/
+
+-- Boundary cases distinguish AArch64's carry convention from x86-64's borrow convention. Each
+-- mirrors the example of the same operation in `PastaCurves.X86_64.Semantics`, named in its
+-- comment: where x86-64's CF is `1` on borrow, AArch64's carry is `0`. The examples illustrate
+-- the convention; `PastaCurves.FlagConventions` proves the correspondence for every in-range
+-- input.
+-- The instructions these examples test correspond as follows (x86-64, then AArch64):
+-- - `sub`, `sbb` and `subs`, `sbcs`: the same difference, with complementary flags (`CF = 1 - C`).
+-- - `mulx` and `umulh` with `mul`: the high and low words of the product.
+-- - `cmovnc d, s` and `csel d, s, d, cs` (equivalently `csel d, d, s, lo`): both take `s`
+--   exactly when the subtraction did not borrow.
+-- - `neg r` and `subs xzr, r, #1`: the same flag value, set exactly when `r` is nonzero.
+-- No borrow (`sbb 0 0 0 = (0, 0)`, `neg 0 = (0, 0)`): `subs` sets the carry.
+example : subc 0 0 1 = (0, 1) := by decide +kernel
+-- Borrow in and out (`sbb 0 0 1 = (2^64 - 1, 1)` and
+-- `sbb (2^64 - 1) (2^64 - 1) 1 = (2^64 - 1, 1)`): `sbcs` with the carry clear clears it.
+example : subc 0 0 0 = (2^64 - 1, 0) := by decide +kernel
+example : subc (2^64 - 1) (2^64 - 1) 0 = (2^64 - 1, 0) := by decide +kernel
+-- `0 - 1`, the subtraction that `neg 1 = (2^64 - 1, 1)` performs: it borrows, so the carry is
+-- clear.
+example : subc 0 1 1 = (2^64 - 1, 0) := by decide +kernel
+-- The two words of a product (`mulx (2^64 - 1) 2 = (1, 2^64 - 2)`), by `umulh` and `mul`.
+example : umulh (2^64 - 1) 2 = 1 ∧ mulLo (2^64 - 1) 2 = 2^64 - 2 := by decide +kernel
+-- Selection on the carry (`cmovnc 0 3 5 = 5 ∧ cmovnc 1 3 5 = 3`), on either condition.
+example : cselLo 0 3 5 = 3 ∧ cselLo 1 3 5 = 5 := by decide +kernel
+example : cselCs 0 3 5 = 5 ∧ cselCs 1 3 5 = 3 := by decide +kernel
+-- `subs xzr, r, #1`, which the multiplication and squaring blocks use to set the carry of the
+-- low-limb cancellation: the carry is set exactly when `r` is nonzero.
+example : (subc 0 1 1).2 = 0 ∧ (subc 1 1 1).2 = 1 ∧ (subc (2^64 - 1) 1 1).2 = 1 := by
+  decide +kernel
 
 end PastaCurves.AArch64

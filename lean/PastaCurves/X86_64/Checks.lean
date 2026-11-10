@@ -1,53 +1,29 @@
-import PastaCurves.Fields
-import PastaCurves.X86_64.Compositions
+import PastaCurves.ArithmeticChecks
+import PastaCurves.X86_64.Vectors
 
 /-!
 # Kernel-checked arithmetic checks for the x86-64 transcription
 
-These closed examples compare the transcribed programs with integer arithmetic for both
-Pasta fields. They are regression checks, not substitutes for universally quantified
-correctness theorems, and are not claimed to be hardware-generated vectors.
+The kernel evaluates the shared checks of `PastaCurves.ArithmeticChecks` on the x86-64 routines,
+for both Pasta fields. x86-64 squares in two blocks, so the unreduced eight-word square of
+`squareLo` is also checked on the same inputs.
 -/
 
 namespace PastaCurves.X86_64
 
-private def cases (F : PastaField) : List Limbs :=
-  [Limbs.ofNat 0, Limbs.ofNat 1, Limbs.ofNat 2,
-   Limbs.ofNat (2^64 - 1), Limbs.ofNat (2^128 - 1),
-   Limbs.ofNat (F.modulus.toNat - 1)]
+/-- The x86-64 routines that the checks exercise. -/
+def arithmeticBackend : ArithmeticBackend := ⟨vectorBackend, addMod, subMod⟩
 
-private def arithmeticChecks (F : PastaField) : Bool :=
-  (cases F).all fun a =>
-    ((sqrMont a F.modulus F.inv).toNat * 2^256 % F.modulus.toNat ==
-      a.toNat * a.toNat % F.modulus.toNat) &&
-    ((sqrMont a F.modulus F.inv).toNat < F.modulus.toNat) &&
-    ((fromMont a F.modulus F.inv).toNat * 2^256 % F.modulus.toNat ==
-      a.toNat % F.modulus.toNat) &&
-    ((fromMont a F.modulus F.inv).toNat < F.modulus.toNat) &&
-    ((squareLo a).toNat == a.toNat * a.toNat) &&
-    (cases F).all fun b =>
-      ((addMod a b F.modulus).toNat == (a.toNat + b.toNat) % F.modulus.toNat) &&
-      ((subMod a b F.modulus).toNat == (a.toNat + F.modulus.toNat - b.toNat) % F.modulus.toNat) &&
-      ((mulMont a b F.modulus F.inv).toNat * 2^256 % F.modulus.toNat ==
-        a.toNat * b.toNat % F.modulus.toNat) &&
-      ((mulMont a b F.modulus F.inv).toNat < F.modulus.toNat)
+example : arithmeticBackend.checks pallasBase = true := by decide +kernel
+example : arithmeticBackend.checks vestaBase = true := by decide +kernel
+example : arithmeticBackend.fromMontAllOnes pallasBase = true := by decide +kernel
+example : arithmeticBackend.fromMontAllOnes vestaBase = true := by decide +kernel
 
-example : arithmeticChecks pallasBase = true := by decide +kernel
-example : arithmeticChecks vestaBase = true := by decide +kernel
+/-- Whether `squareLo` is the exact square on every input of `checkCases F`. -/
+private def squareLoChecks (F : PastaField) : Bool :=
+  (checkCases F).all fun a => (squareLo a).toNat == a.toNat * a.toNat
 
--- Conversion accepts arbitrary words, not just canonical field elements.
-example :
-    let value := Limbs.ofNat (2^256 - 1)
-    let r := fromMont value pallasBase.modulus pallasBase.inv
-    r.toNat < pallasBase.modulus.toNat ∧
-      r.toNat * 2^256 % pallasBase.modulus.toNat = value.toNat % pallasBase.modulus.toNat := by
-  decide +kernel
-
-example :
-    let value := Limbs.ofNat (2^256 - 1)
-    let r := fromMont value vestaBase.modulus vestaBase.inv
-    r.toNat < vestaBase.modulus.toNat ∧
-      r.toNat * 2^256 % vestaBase.modulus.toNat = value.toNat % vestaBase.modulus.toNat := by
-  decide +kernel
+example : squareLoChecks pallasBase = true := by decide +kernel
+example : squareLoChecks vestaBase = true := by decide +kernel
 
 end PastaCurves.X86_64

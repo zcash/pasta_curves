@@ -6,6 +6,7 @@ import PastaCurves.FieldTypes
 import PastaCurves.KnownAnswers
 import PastaCurves.Compositions
 import PastaCurves.Spec
+import PastaCurves.ArithmeticChecks
 import PastaCurves.Inversion.Divstep
 import PastaCurves.Inversion.Packed
 import PastaCurves.Inversion.Divstep59
@@ -23,6 +24,7 @@ import PastaCurves.Inversion.Composition
 import PastaCurves.Inversion.Vectors
 import PastaCurves.AArch64
 import PastaCurves.X86_64
+import PastaCurves.FlagConventions
 import PastaCurves.Portable.Funs
 import PastaCurves.Portable.Words
 import PastaCurves.Portable.Vectors
