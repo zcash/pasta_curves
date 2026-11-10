@@ -171,6 +171,17 @@ else
   (the last is CI's pinned build; https://docs.astral.sh/ruff/)"
 fi
 
+step "mypy"
+if command -v mypy >/dev/null; then
+  mypy
+else
+  skip "mypy" \
+    "  install it with one of:
+    pipx install mypy
+    python3 -m venv DIR && DIR/bin/pip install --require-hashes -r scripts/lint-requirements.txt
+  (the last is CI's pinned build; the configuration is in mypy.ini)"
+fi
+
 # ---- The formalization (lean.yml) ----
 step "lake build, with warnings outside Aeneas' library failing it"
 LAKE="$LAKE" lean/scripts/build.sh

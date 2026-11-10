@@ -226,7 +226,8 @@ describes the tools in more detail.
   line. A new instruction set adds an `Isa`, a `Lifter` subclass, and node classes for its
   operations, not branches in shared code. Generated output must stay byte-identical unless the
   change means to alter it. The generator and its tests are fully typed: annotate every function
-  and method.
+  and method, and keep `mypy` (strict, configured in `mypy.ini`, pinned in
+  `scripts/lint-requirements.txt`) clean; CI and `scripts/ci.sh` run it.
   Reject unsupported syntax, uninitialized register/flag reads, and unmodeled memory accesses;
   test those rejection paths. For x86, CF and OF are independent and must not be conflated.
 - **The Aeneas translations are generated** (`Types.lean` and `Funs.lean` under `Portable/`
