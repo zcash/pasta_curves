@@ -116,24 +116,17 @@ pub trait CurveExt:
         None
     }
 
-    /// Attempts to build a doubling-free table for sums over a few fixed
-    /// `bases` (see [`PreparedFixedBaseSum`]). Implementations without such a
-    /// backend return `None`.
+    /// Attempts to prepare a doubling-free sum over fixed public bases.
     ///
-    /// The Pasta implementation stores every positive signed-digit magnitude
-    /// of each GLV half-scalar window, shifted into position, for each base:
-    /// about 76 KiB per base.
+    /// Implementations without a suitable backend return `None`; callers must
+    /// retain a generic fallback. Pasta tables retain about 76 KiB per base.
     ///
     /// # Security
     ///
-    /// The returned handle runs in variable time with respect to its scalars,
-    /// which must be public.
-    #[cfg(feature = "glv")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "glv")))]
+    /// Evaluation is variable-time in the scalars, which must be public.
     fn try_prepare_fixed_base_sum(
-        bases: &[Self::AffineExt],
+        _bases: &[Self::AffineExt],
     ) -> Option<Box<dyn PreparedFixedBaseSum<Self>>> {
-        let _ = bases;
         None
     }
 
@@ -165,41 +158,25 @@ pub trait CurveExt:
     }
 }
 
-/// An object-safe handle to a prepared, doubling-free fixed-base sum
-/// $\sum_i \[k_i\] P_i$ over the bases $P_i$ captured at preparation.
-/// Obtained from [`CurveExt::try_prepare_fixed_base_sum`].
+/// A prepared sum over fixed bases, obtained from
+/// [`CurveExt::try_prepare_fixed_base_sum`].
 ///
-/// Evaluation uses only table lookups, negations, and mixed additions: no
-/// doublings. It suits sums over a handful of bases evaluated many times,
-/// such as commitments to short public vectors.
-#[cfg(feature = "glv")]
-#[cfg_attr(docsrs, doc(cfg(feature = "glv")))]
+/// All evaluation methods are variable-time and require public scalars.
+#[cfg(feature = "alloc")]
 pub trait PreparedFixedBaseSum<C: CurveExt>: core::fmt::Debug + Send + Sync {
     /// The number of prepared bases.
     fn bases(&self) -> usize;
 
-    /// $\sum_i \[k_i\] P_i$, pairing `scalars[i]` with the `i`-th prepared
-    /// base. Bases past `scalars.len()` have implicit zero scalars.
+    /// Computes the sum pairing each scalar with its prepared base.
     ///
-    /// # Security
-    ///
-    /// Variable-time in the scalars, which must be public.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `scalars.len()` exceeds [`Self::bases`].
+    /// Omitted trailing scalars are zero. Panics if there are more scalars
+    /// than prepared bases. Scalars must be public.
     fn sum_vartime(&self, scalars: &[C::ScalarExt]) -> C;
 
-    /// [`Self::sum_vartime`] of each scalar vector, in order. Implementations
-    /// may share work across the sums.
+    /// Evaluates each independent sum in order, optionally sharing work.
     ///
-    /// # Security
-    ///
-    /// Variable-time in the scalars, which must be public.
-    ///
-    /// # Panics
-    ///
-    /// Panics if any vector is longer than [`Self::bases`].
+    /// Returns exactly one result per input vector. Each vector has the same
+    /// length bound and public-input requirement as [`Self::sum_vartime`].
     fn sum_batch_vartime(&self, scalars: &[&[C::ScalarExt]]) -> alloc::vec::Vec<C> {
         scalars.iter().map(|s| self.sum_vartime(s)).collect()
     }
@@ -331,75 +308,4 @@ impl<C: CurveAffine> ConditionallySelectable for Coordinates<C> {
 }
 
 #[cfg(all(test, feature = "alloc"))]
-mod tests {
-    use super::*;
-    use crate::{pallas, vesta};
-    use ff::{Field, PrimeField, WithSmallOrderMulGroup};
-    use group::CurveAffine;
-
-    const BATCH_SIZES: [usize; 15] = [0, 1, 2, 3, 7, 8, 15, 16, 17, 63, 64, 65, 127, 128, 129];
-
-    fn batch_mul_same_scalar_matches_native<C: CurveExt>() {
-        let full_width = (C::ScalarExt::from(0x9E37_79B9_7F4A_7C15u64).square()
-            + C::ScalarExt::from(0x0123_4567_89AB_CDEFu64))
-        .square();
-        let scalars = [
-            C::ScalarExt::ZERO,
-            C::ScalarExt::ONE,
-            -C::ScalarExt::ONE,
-            C::ScalarExt::from(2),
-            C::ScalarExt::ZETA,
-            -C::ScalarExt::ZETA,
-            C::ScalarExt::ZETA + C::ScalarExt::ONE,
-            C::ScalarExt::from(u64::MAX),
-            C::ScalarExt::from_u128((1u128 << 127) - 1),
-            C::ScalarExt::from_u128(1u128 << 127),
-            full_width,
-        ];
-
-        for size in BATCH_SIZES {
-            let projective: alloc::vec::Vec<C> = (0..size)
-                .map(|i| {
-                    if size > 2 && i == size / 2 {
-                        C::identity()
-                    } else {
-                        C::generator()
-                            * (C::ScalarExt::from(i as u64 + 1).square()
-                                + C::ScalarExt::from(0xDEAD_BEEFu64))
-                    }
-                })
-                .collect();
-            let points: alloc::vec::Vec<C::AffineExt> =
-                projective.iter().copied().map(C::AffineExt::from).collect();
-            let mut output = alloc::vec![C::identity(); size];
-
-            for scalar in scalars {
-                C::batch_mul_same_scalar_vartime(&points, &scalar, &mut output);
-                for ((point, output), expected) in
-                    points.iter().zip(output.iter()).zip(projective.iter())
-                {
-                    assert_eq!(*output, *point * scalar);
-                    assert_eq!(*output, *expected * scalar);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn batch_mul_same_scalar_pallas() {
-        batch_mul_same_scalar_matches_native::<pallas::Point>();
-    }
-
-    #[test]
-    fn batch_mul_same_scalar_vesta() {
-        batch_mul_same_scalar_matches_native::<vesta::Point>();
-    }
-
-    #[test]
-    #[should_panic]
-    fn batch_mul_same_scalar_length_mismatch_panics() {
-        let points = [pallas::Affine::generator()];
-        let mut output = [];
-        pallas::Point::batch_mul_same_scalar_vartime(&points, &pallas::Scalar::ONE, &mut output);
-    }
-}
+mod tests;

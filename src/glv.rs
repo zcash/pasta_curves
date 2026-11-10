@@ -43,8 +43,7 @@ use group::CurveAffine as _;
 use crate::arithmetic::{CurveExt, mac, sbb};
 use crate::{pallas, vesta};
 
-mod fixed_base;
-pub(super) use fixed_base::prepare_fixed_base_sum;
+pub(crate) mod fixed_base;
 
 pub(crate) mod msm;
 

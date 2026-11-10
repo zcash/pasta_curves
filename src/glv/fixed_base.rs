@@ -100,7 +100,7 @@ impl<C: MsmCurve> FixedBaseSum<C> {
             }
         }
         let mut points = vec![C::AffineExt::default(); projective.len()];
-        C::batch_normalize(&projective, &mut points);
+        C::batch_normalize_vartime(&projective, &mut points);
         FixedBaseSum {
             bases: bases.len(),
             points,

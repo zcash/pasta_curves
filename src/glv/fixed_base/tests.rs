@@ -5,7 +5,8 @@ use group::CurveAffine as _;
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 
-use super::{MsmCurve, WINDOWS, prepare_fixed_base_sum};
+use super::{MsmCurve, WINDOWS};
+use crate::arithmetic::CurveExt;
 use crate::{pallas, vesta};
 
 fn check<C: MsmCurve>()
@@ -17,17 +18,21 @@ where
         .map(|_| C::random(&mut rng).to_affine())
         .chain(core::iter::once(C::identity().to_affine()))
         .collect();
-    let table = prepare_fixed_base_sum::<C>(&bases);
+    let table = C::try_prepare_fixed_base_sum(&bases).expect("Pasta has a fixed-base backend");
     assert_eq!(table.bases(), bases.len());
+    let empty = C::try_prepare_fixed_base_sum(&[]).expect("Pasta supports empty fixed-base sums");
+    assert_eq!(empty.bases(), 0);
+    assert_eq!(empty.sum_vartime(&[]), C::identity());
+    assert_eq!(empty.sum_batch_vartime(&[&[], &[]]), [C::identity(); 2]);
 
     let mut edges = Vec::from([
         C::ScalarExt::ZERO,
         C::ScalarExt::ONE,
         -C::ScalarExt::ONE,
-        C::ScalarExt::from(31),
-        C::ScalarExt::from(32),
-        C::ScalarExt::from(33),
-        -C::ScalarExt::from(32),
+        C::ScalarExt::from(63),
+        C::ScalarExt::from(64),
+        C::ScalarExt::from(65),
+        -C::ScalarExt::from(64),
         C::ScalarExt::from(u64::MAX),
         C::ScalarExt::from_u128(u128::MAX),
     ]);
@@ -44,6 +49,32 @@ where
         assert_eq!(table.sum_vartime(scalars), expected, "{len} scalars");
     }
     assert_eq!(WINDOWS, 19);
+
+    // Exercise carries through every signed window independently of the
+    // GLV decomposition's distribution of half-scalars.
+    let positioned = super::FixedBaseSum::<C>::new(&bases[..1]);
+    for half in [63, 64, 65, (1u128 << 127) - 1, u128::MAX] {
+        for negative in [false, true] {
+            for endo in [false, true] {
+                let mut actual = C::identity();
+                positioned.for_each_term(0, negative, half, endo, |point, negate| {
+                    if negate {
+                        actual -= point;
+                    } else {
+                        actual += point;
+                    }
+                });
+                let mut expected = bases[0] * C::ScalarExt::from_u128(half);
+                if endo {
+                    expected = expected.endo();
+                }
+                if negative {
+                    expected = -expected;
+                }
+                assert_eq!(actual, expected);
+            }
+        }
+    }
 }
 
 #[test]
@@ -68,7 +99,7 @@ where
         C::random(&mut rng).to_affine(),
         C::identity().to_affine(),
     ];
-    let table = prepare_fixed_base_sum::<C>(&bases);
+    let table = C::try_prepare_fixed_base_sum(&bases).expect("Pasta has a fixed-base backend");
     let k = C::ScalarExt::random(&mut rng);
     let mut columns: Vec<Vec<C::ScalarExt>> = Vec::from([
         Vec::new(),
@@ -85,7 +116,13 @@ where
     }));
     for count in [0, 1, 2, 7, columns.len()] {
         let slices: Vec<&[C::ScalarExt]> = columns[..count].iter().map(Vec::as_slice).collect();
-        let expected: Vec<C> = slices.iter().map(|s| table.sum_vartime(s)).collect();
+        let expected: Vec<C> = slices
+            .iter()
+            .map(|s| s.iter().zip(&bases).map(|(k, p)| *p * k).sum())
+            .collect();
+        for (scalars, expected) in slices.iter().zip(&expected) {
+            assert_eq!(table.sum_vartime(scalars), *expected);
+        }
         assert_eq!(table.sum_batch_vartime(&slices), expected, "{count} sums");
     }
 }
@@ -99,6 +136,7 @@ fn fixed_base_sum_batch_matches_single() {
 #[test]
 #[should_panic(expected = "at most one scalar per prepared base")]
 fn fixed_base_sum_rejects_extra_scalars() {
-    let table = prepare_fixed_base_sum::<pallas::Point>(&[pallas::Affine::generator()]);
+    let table = pallas::Point::try_prepare_fixed_base_sum(&[pallas::Affine::generator()])
+        .expect("Pasta has a fixed-base backend");
     let _ = table.sum_vartime(&[pallas::Scalar::ONE, pallas::Scalar::ONE]);
 }
