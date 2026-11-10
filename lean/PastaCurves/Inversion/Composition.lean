@@ -319,8 +319,8 @@ theorem invert_eq_model (B : InvertBlocks) (F : PastaField) (hB : B.Spec F) (x :
   apply Limbs.ext_of_toNat _ _ hRb (Limbs.ofNat_bounded _)
   rw [Limbs.toNat_ofNat _ hqlt]
   rcases hR with ⟨h1, h2⟩ | ⟨h1, h2⟩
-  · rw [h2, if_pos (by omega)]
-  · rw [if_neg (by omega)]; omega
+  · rw [h2, ite_eq_left (by omega)]
+  · rw [ite_eq_right (by omega)]; omega
 
 /-- The crate's `invert` over blocks that meet their specification, at a Pasta field. The input
 is canonical, as the entry point asserts, and `e0` is `2^562 mod p`, as its contract requires.

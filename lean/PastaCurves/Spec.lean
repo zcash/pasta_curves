@@ -126,8 +126,8 @@ theorem asr_lt (a k : Nat) (ha : a < 2^64) : asr a k < 2^64 := by
   have hle : (2 : Nat)^(64 - k) ≤ 2^64 := Nat.pow_le_pow_right (by decide) (by omega)
   unfold asr
   by_cases hs : a < 2^63
-  · rw [if_pos hs]; exact lt_of_lt_of_le h hle
-  · rw [if_neg hs]
+  · rw [ite_eq_left hs]; exact lt_of_lt_of_le h hle
+  · rw [ite_eq_right hs]
     calc a / 2^k + (2^64 - 2^(64 - k)) < 2^(64 - k) + (2^64 - 2^(64 - k)) :=
           Nat.add_lt_add_right h _
       _ = 2^64 := Nat.add_sub_of_le hle

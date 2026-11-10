@@ -221,7 +221,7 @@ describes the tools in more detail.
   and `Glue/`, by `lean/scripts/gen_aeneas.sh`); never edit them by hand. `Glue/FunsExternal.lean`
   is written by hand: it defines the one external function that the glue calls. Proofs about the
   translations follow Aeneas' own guidance at the revision that `lean/lakefile.toml` pins: the
-  skill files in [`documentation/skills/`](https://github.com/AeneasVerif/aeneas/tree/b86120db3183b0107eb5f2637b11c424cd06ef1c/documentation/skills)
+  skill files in [`documentation/skills/`](https://github.com/AeneasVerif/aeneas/tree/5a392f4b80a4d0d05abc240eb2a7fa70622a9a35/documentation/skills)
   (`aeneas-lean-core`, `aeneas-tactics-quickref`, `proof-patterns`, and
   `aeneas-crypto-verification` are the ones for proofs) and the guides beside them in
   `documentation/`. A build fetches the same files to `lean/.lake/packages/aeneas/`.

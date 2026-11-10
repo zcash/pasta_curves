@@ -61,7 +61,7 @@ theorem fromMont_conclude {a0 a1 a2 a3 d0 d1 d2 d3 b0 b1 b2 b3
   show r0 + 2^64 * r1 + 2^128 * r2 + 2^192 * r3 < modulus.toNat ∧
     2^256 * (r0 + 2^64 * r1 + 2^128 * r2 + 2^192 * r3) ≡ value.toNat [MOD modulus.toNat]
   obtain hb | hb : b3 = 0 ∨ b3 = 1 := by omega
-  · rw [if_pos hb] at er0 er1 er2 er3
+  · rw [ite_eq_left hb] at er0 er1 er2 er3
     have hout : r0 + 2^64 * r1 + 2^128 * r2 + 2^192 * r3 + modulus.toNat =
         a0 + 2^64 * a1 + 2^128 * a2 + 2^192 * a3 := by omega
     refine ⟨by omega, modEq_of_add_mul _ _ (2^256) Q _ ?_⟩
@@ -69,7 +69,7 @@ theorem fromMont_conclude {a0 a1 a2 a3 d0 d1 d2 d3 b0 b1 b2 b3
       2^256 * (r0 + 2^64 * r1 + 2^128 * r2 + 2^192 * r3) + 2^256 * modulus.toNat =
           2^256 * (a0 + 2^64 * a1 + 2^128 * a2 + 2^192 * a3) := by omega
       _ = value.toNat + Q * modulus.toNat := hmain
-  · rw [if_neg (by omega)] at er0 er1 er2 er3
+  · rw [ite_eq_right (by omega)] at er0 er1 er2 er3
     have hout : r0 + 2^64 * r1 + 2^128 * r2 + 2^192 * r3 =
         a0 + 2^64 * a1 + 2^128 * a2 + 2^192 * a3 := by omega
     have hdiff : d0 + 2^64 * d1 + 2^128 * d2 + 2^192 * d3 < 2^256 := by

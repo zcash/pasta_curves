@@ -185,7 +185,7 @@ theorem addMod_spec (lhs rhs modulus : Limbs) (hlhs : lhs.Bounded) (hrhs : rhs.B
   obtain hborrow | hborrow : cf_7 = 0 ∨ cf_7 = 1 := by
     clear * - b_cf_7
     omega
-  · rw [if_pos hborrow] at e_p0_1 e_p1_1 e_p3_1
+  · rw [ite_eq_left hborrow] at e_p0_1 e_p1_1 e_p3_1
     have hselected : p0_1 + 2^64 * p1_1 + 2^192 * p3_1 = 0 := by
       clear * - e_z e_p0_1 e_p1_1 e_p3_1
       omega
@@ -199,7 +199,7 @@ theorem addMod_spec (lhs rhs modulus : Limbs) (hlhs : lhs.Bounded) (hrhs : rhs.B
     right
     clear * - hSD hborrow hOut hfinalCarry
     omega
-  · rw [if_neg (by omega)] at e_p0_1 e_p1_1 e_p3_1
+  · rw [ite_eq_right (by omega)] at e_p0_1 e_p1_1 e_p3_1
     have hselected : p0_1 + 2^64 * p1_1 + 2^192 * p3_1 = modulus.toNat := by
       clear * - e_p0_1 e_p1_1 e_p3_1 hP
       omega

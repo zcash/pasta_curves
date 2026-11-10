@@ -642,6 +642,13 @@ class AxiomCensus(unittest.TestCase):
         self.assertIn("MyAxiom", p.stdout)
 
 
+# A native-evaluation axiom that Aeneas' library declares from Lean v4.35, in the shape of the
+# export's: a private name of the module, then the using declaration's name.
+AENEAS_NATIVE = (
+    "_private.Aeneas.Tactic.Lemmas.0.Aeneas.Std.U64.bv_mod_size._native.bv_decide.ax_1_5"
+)
+
+
 class AeneasExemption(unittest.TestCase):
     """Aeneas' library declares axioms of its own, and two of its tests cite `sorryAx`. A
     violation is accepted only when its axiom is `sorryAx` or Aeneas', and every citer is
@@ -758,11 +765,44 @@ class AeneasExemption(unittest.TestCase):
         self.assertIn("PastaCurves.main", p.stderr)
 
     def test_native_decide_stays_forbidden_in_aeneas(self):
+        # The route of Lean before v4.35: every native evaluation cites `Lean.ofReduceBool`.
         e = baseline()
         e.axiom("Lean.ofReduceBool")
         e.defn("Aeneas.Tactic.Test.fast", value=e.const("Lean.ofReduceBool"))
         p = run(e, ("propext", "Lean.ofReduceBool"))
         self.assertEqual(p.returncode, 1, p.stdout)
+
+    # From Lean v4.35, `native_decide` and `bv_decide` declare one axiom per use instead, named
+    # after the declaration that uses it. Such an axiom is an axiom like any other: outside the
+    # permitted list in the package, and accepted in Aeneas only while nothing outside Aeneas
+    # depends on it.
+
+    def test_native_evaluation_in_the_package_fails(self):
+        e = baseline()
+        native = "PastaCurves.fast._native.native_decide.ax_1_1"
+        e.axiom(native)
+        e.thm("PastaCurves.fast", value=e.const(native))
+        p = run(e)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn(native, p.stderr)
+
+    def test_native_evaluation_in_aeneas_cited_only_by_aeneas_passes(self):
+        e = baseline()
+        native = AENEAS_NATIVE
+        e.axiom(native)
+        e.thm("Aeneas.Std.U64.bv_mod_size", value=e.const(native))
+        p = run(e)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_native_evaluation_in_aeneas_reaching_the_package_fails(self):
+        e = baseline()
+        native = AENEAS_NATIVE
+        e.axiom(native)
+        e.thm("Aeneas.Std.U64.bv_mod_size", value=e.const(native))
+        e.thm("PastaCurves.main", value=e.const("Aeneas.Std.U64.bv_mod_size"))
+        p = run(e)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("PastaCurves.main", p.stderr)
 
     def test_nanoda_config_gains_aeneas_axioms_only_when_clean(self):
         e = baseline()

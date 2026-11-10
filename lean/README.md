@@ -104,8 +104,9 @@ What is trusted, beyond Lean's kernel and standard axioms:
    models that its methods run, as the Rust impl does, and `blocksOf` (`Glue/Blocks.lean`) builds
    the record from them. The records are checked against the impls by inspection.
 
-   Aeneas' library declares axioms of its own, for opaque Rust items, and two of its tests cite
-   `sorryAx`. The axiom census (`scripts/check_export_axioms.py`) checks that no declaration
+   Aeneas' library declares axioms of its own, for opaque Rust items and, from Lean v4.35, one for
+   each use of `native_decide` or `bv_decide` (five `bv_decide` lemmas and one test), and two of
+   its tests cite `sorryAx`. The axiom census (`scripts/check_export_axioms.py`) checks that no declaration
    outside Aeneas' library depends on any of them, directly or through Aeneas' declarations, so
    the package's theorems rest on the standard axioms alone. nanoda is told of them, since its
    strict mode rejects any declared axiom it is not told of.

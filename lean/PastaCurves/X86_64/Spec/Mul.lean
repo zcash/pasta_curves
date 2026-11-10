@@ -345,11 +345,11 @@ private theorem mul_conclude {a0 a1 a2 a3 d0 d1 d2 d3 c r0 r1 r2 r3 input q p : 
     r0 + 2^64*r1 + 2^128*r2 + 2^192*r3 < p ∧
     2^256*(r0 + 2^64*r1 + 2^128*r2 + 2^192*r3) ≡ input [MOD p] := by
   obtain hc | hc : c = 0 ∨ c = 1 := by omega
-  · rw [if_pos hc] at e0 e1 e2 e3
+  · rw [ite_eq_left hc] at e0 e1 e2 e3
     have ho : r0 + 2^64*r1 + 2^128*r2 + 2^192*r3 + p = a0 + 2^64*a1 + 2^128*a2 + 2^192*a3 := by omega
     refine ⟨by omega, conclude_mod _ _ _ _ _ 1 hi ?_⟩
     simpa only [Nat.one_mul] using ho
-  · rw [if_neg (by omega)] at e0 e1 e2 e3
+  · rw [ite_eq_right (by omega)] at e0 e1 e2 e3
     have ho : r0 + 2^64*r1 + 2^128*r2 + 2^192*r3 = a0 + 2^64*a1 + 2^128*a2 + 2^192*a3 := by omega
     refine ⟨by omega, conclude_mod _ _ _ _ _ 0 hi ?_⟩
     simpa only [Nat.zero_mul, Nat.add_zero] using ho

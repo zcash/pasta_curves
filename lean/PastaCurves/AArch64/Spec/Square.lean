@@ -117,9 +117,9 @@ theorem sqrMont_conclude {a0 a1 a2 a3 ka z0 z1 z2 z3 c0 dz0 dz1 dz2 r0 r1 r2 r3 
   show r0 + 2^64 * r1 + 2^128 * r2 + 2^192 * r3 < modulus.toNat ∧
     2^256 * (r0 + 2^64 * r1 + 2^128 * r2 + 2^192 * r3) ≡ vv [MOD modulus.toNat]
   obtain hc | hc : c0 = 0 ∨ c0 = 1 := by omega
-  · rw [if_pos hc] at er0 er1 er2 er3
+  · rw [ite_eq_left hc] at er0 er1 er2 er3
     exact ⟨by omega, modEq_of_add_mul _ _ 0 Q _ (by omega)⟩
-  · rw [if_neg (by omega)] at er0 er1 er2 er3
+  · rw [ite_eq_right (by omega)] at er0 er1 er2 er3
     exact ⟨by omega, modEq_of_add_mul _ _ (2^256) Q _ (by omega)⟩
 -- END sqrMont lemmas
 
