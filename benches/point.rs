@@ -1,6 +1,6 @@
 //! Benchmarks for point operations.
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
 use pasta_curves::arithmetic::CurveExt;
 use pasta_curves::{pallas, vesta};
@@ -34,15 +34,57 @@ fn point_bench<C: CurveExt>(c: &mut Criterion, name: &str) {
         bencher.iter(|| a.to_affine_vartime())
     });
 
-    for &n in [100, 1000, 10000].iter() {
-        let input = vec![a; n];
+    for n in [0, 1, 2, 16, 31, 32, 33, 64, 100, 1000, 10000] {
+        // Use nontrivial, varying Jacobian scales instead of only z = 1.
+        let mut input: Vec<C> = (0..n)
+            .scan(a, |point, _| {
+                *point = point.double();
+                Some(*point)
+            })
+            .collect();
         let mut output = vec![C::Affine::default(); n];
         group.bench_function(format!("point batch_normalize/{n}"), |bencher| {
-            bencher.iter(|| C::batch_normalize(input.as_slice(), output.as_mut_slice()));
+            bencher.iter(|| {
+                C::batch_normalize(
+                    black_box(input.as_slice()),
+                    black_box(output.as_mut_slice()),
+                );
+                black_box(&output);
+            });
         });
         group.bench_function(format!("point batch_normalize_vartime/{n}"), |bencher| {
-            bencher.iter(|| C::batch_normalize_vartime(input.as_slice(), output.as_mut_slice()));
+            bencher.iter(|| {
+                C::batch_normalize_vartime(
+                    black_box(input.as_slice()),
+                    black_box(output.as_mut_slice()),
+                );
+                black_box(&output);
+            });
         });
+        for point in input.iter_mut().step_by(3) {
+            *point = C::identity();
+        }
+        group.bench_function(format!("point batch_normalize mixed/{n}"), |bencher| {
+            bencher.iter(|| {
+                C::batch_normalize(
+                    black_box(input.as_slice()),
+                    black_box(output.as_mut_slice()),
+                );
+                black_box(&output);
+            });
+        });
+        group.bench_function(
+            format!("point batch_normalize_vartime mixed/{n}"),
+            |bencher| {
+                bencher.iter(|| {
+                    C::batch_normalize_vartime(
+                        black_box(input.as_slice()),
+                        black_box(output.as_mut_slice()),
+                    );
+                    black_box(&output);
+                });
+            },
+        );
     }
 }
 
