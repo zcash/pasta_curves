@@ -30,6 +30,23 @@ use crate::arithmetic::{Coordinates, CurveAffine, CurveExt, CurveExtUnchecked, V
 macro_rules! impl_batch_mul_same_scalar_vartime {
     (glv, $name:ident) => {
         #[cfg(feature = "glv")]
+        fn try_multiexp_vartime(
+            scalars: &[Self::ScalarExt],
+            bases: &[Self::AffineExt],
+        ) -> Option<Self> {
+            crate::glv::msm::try_multiexp::<$name>(scalars, bases)
+        }
+
+        #[cfg(feature = "glv")]
+        fn try_prepare_fixed_base_sum(
+            bases: &[Self::AffineExt],
+        ) -> Option<alloc::boxed::Box<dyn crate::arithmetic::PreparedFixedBaseSum<Self>>> {
+            Some(crate::glv::fixed_base::prepare_fixed_base_sum::<$name>(
+                bases,
+            ))
+        }
+
+        #[cfg(feature = "glv")]
         fn batch_mul_same_scalar_vartime(
             points: &[Self::AffineExt],
             scalar: &Self::ScalarExt,
@@ -756,12 +773,18 @@ macro_rules! new_curve_impl {
                     Self::decode_chunk::<8>(chunk, &mut out);
                 }
                 let rest = chunks.remainder();
+                #[cfg(all(feature = "asm", target_arch = "x86_64", not(pasta_curves_noasm)))]
+                let vectorized = crate::arithmetic::avx2_sqrt::available();
+                #[cfg(not(all(feature = "asm", target_arch = "x86_64", not(pasta_curves_noasm))))]
+                let vectorized = false;
                 match rest.len() {
                     0 => {}
                     1 => out.push(Self::from_bytes(&rest[0]).into()),
                     2 => Self::decode_chunk::<2>(rest, &mut out),
+                    3 if vectorized => Self::decode_chunk::<4>(rest, &mut out),
                     3 => Self::decode_chunk::<3>(rest, &mut out),
                     4 => Self::decode_chunk::<4>(rest, &mut out),
+                    5..=7 if vectorized => Self::decode_chunk::<8>(rest, &mut out),
                     5 => Self::decode_chunk::<5>(rest, &mut out),
                     6 => Self::decode_chunk::<6>(rest, &mut out),
                     _ => Self::decode_chunk::<7>(rest, &mut out),
@@ -788,7 +811,7 @@ macro_rules! new_curve_impl {
                 let rhs: [$base; K] = core::array::from_fn(|k| {
                     xs[k].sqr_n_mul_runtime(1, &xs[k]) + $name::curve_constant_b()
                 });
-                let roots = $base::sqrt_alt_lanes(&rhs);
+                let roots = Self::square_roots(&rhs);
                 for k in 0..chunk.len() {
                     let (is_square, y) = roots[k];
                     let (x, ysign) = (xs[k], ysigns[k]);
@@ -803,7 +826,22 @@ macro_rules! new_curve_impl {
                 }
             }
 
-
+            fn square_roots<const K: usize>(rhs: &[$base; K]) -> [(Choice, $base); K] {
+                #[cfg(all(feature = "asm", target_arch = "x86_64", not(pasta_curves_noasm)))]
+                if crate::arithmetic::avx2_sqrt::available() {
+                    if K == 4 {
+                        let rhs: &[$base; 4] = rhs[..].try_into().unwrap();
+                        let roots = $base::sqrt_alt_avx2::<1, 4>(rhs);
+                        return core::array::from_fn(|k| roots[k]);
+                    }
+                    if K == 8 {
+                        let rhs: &[$base; 8] = rhs[..].try_into().unwrap();
+                        let roots = $base::sqrt_alt_avx2::<2, 8>(rhs);
+                        return core::array::from_fn(|k| roots[k]);
+                    }
+                }
+                $base::sqrt_alt_lanes(rhs)
+            }
         }
 
         impl GroupEncoding for $name_affine {
@@ -860,6 +898,10 @@ macro_rules! new_curve_impl {
             type Base = $base;
             type CurveExt = $name;
 
+            /// Decodes public compressed points with interleaved square-root chains; see
+            /// [`CurveAffine::batch_decode_vartime`]. With `asm` on x86-64, decoding also uses
+            /// AVX2 when the CPU and operating system support it; other targets, unsupported CPUs
+            /// and `--cfg pasta_curves_noasm` keep scalar chains.
             #[cfg(feature = "sqrt-table")]
             fn batch_decode_vartime(bytes: &[Self::Repr]) -> alloc::vec::Vec<Option<Self>> {
                 Self::batch_from_bytes_vartime(bytes)

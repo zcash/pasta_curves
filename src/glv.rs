@@ -43,6 +43,10 @@ use group::CurveAffine as _;
 use crate::arithmetic::{CurveExt, mac, sbb};
 use crate::{pallas, vesta};
 
+pub(crate) mod fixed_base;
+
+pub(crate) mod msm;
+
 mod private {
     /// Seals [`super::GlvParams`]: the lattice constants are curve-specific
     /// and verified in-crate; external implementations are not supported.

@@ -7,6 +7,23 @@
 mod curves;
 mod fields;
 
+#[cfg(all(
+    feature = "asm",
+    feature = "sqrt-table",
+    target_arch = "x86_64",
+    not(pasta_curves_noasm)
+))]
+pub(crate) mod avx2_sqrt;
+
+#[cfg(all(
+    feature = "glv",
+    feature = "asm",
+    feature = "sqrt-table",
+    target_arch = "x86_64",
+    not(pasta_curves_noasm)
+))]
+pub(crate) mod avx2_chord;
+
 #[cfg(feature = "alloc")]
 pub use curves::*;
 pub use fields::*;
