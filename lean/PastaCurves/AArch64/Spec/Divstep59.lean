@@ -116,16 +116,19 @@ theorem decode19 (w : ℕ) (W φ u v : ℤ) (hw : (w : ℤ) = W % 2^64)
 /-! ## Iterating the step -/
 
 /-- The AArch64 packed step, for the shared batch iteration: `divstepRound` and `divstepLast` on
-`DivstepState`, whose `Z` flag is the parity flag. -/
+`DivstepState`, whose words carry the packed state and whose `Z` flag is the parity of `g`. -/
 def packedStep : PackedStep :=
-  ⟨DivstepState, DivstepState.Bounded, (·.two_delta), (·.f), (·.g), (·.fl.z), divstepRound, divstepLast⟩
+  ⟨DivstepState, DivstepState.Bounded, (·.two_delta), (·.f), (·.g),
+    fun st s => (st.two_delta : ℤ) = s.two_delta % 2^64 ∧ (st.f : ℤ) = s.f % 2^64 ∧
+      (st.g : ℤ) = s.g % 2^64 ∧ st.fl.z = if s.g % 2 = 0 then 1 else 0,
+    divstepRound, divstepLast⟩
 
 /-- The two step theorems, as the batch iteration takes them. -/
 theorem packedStep_spec : packedStep.Spec where
-  round := fun st hst s hf hd hD hG hG' ed ef eg hz =>
-    divstepRound_spec st hst s hf hd hD hG hG' ed ef eg hz _ rfl
-  last := fun st hst s hf hd hD hG hG' ed ef eg hz =>
-    divstepLast_spec st hst s hf hd hD hG hG' ed ef eg hz _ rfl
+  round := fun st hst s hf hd hD hG hG' hc =>
+    divstepRound_spec st hst s hf hd hD hG hG' hc.1 hc.2.1 hc.2.2.1 hc.2.2.2 _ rfl
+  last := fun st hst s hf hd hD hG hG' hc =>
+    divstepLast_spec st hst s hf hd hD hG hG' hc.1 hc.2.1 hc.2.2.1 hc.2.2.2 _ rfl
 
 /-- A batch of `n + 1` steps: `n` rounds and the last step, the shared `batch_words` at the AArch64
 step. -/
@@ -139,7 +142,7 @@ theorem batch_words (n : ℕ) (P : State) (hf : P.f % 2 = 1) (hd : P.two_delta %
       ((divstepLast (divstepRound^[n] st)).two_delta : ℤ) = (divsteps (n + 1) P).two_delta % 2^64 ∧
       ((divstepLast (divstepRound^[n] st)).f : ℤ) = (divsteps (n + 1) P).f % 2^64 ∧
       ((divstepLast (divstepRound^[n] st)).g : ℤ) = (divsteps (n + 1) P).g % 2^64 :=
-  packedStep_spec.batch_words n P hf hd hD hg0 hg st hst ed ef eg hz
+  packedStep_spec.batch_words n P hf hd hD hg0 hg st hst ⟨ed, ef, eg, hz⟩
 
 -- END divstep59Block_spec lemmas
 

@@ -632,7 +632,7 @@ theorem squareHi_spec (product : WideLimbs) (modulus : Limbs) (inv : Nat)
   have sh_a_1 : a_1 + 2^64 * (a / 2^2) = a * 2^62 := by
     rw [e_a_1]; exact lsl62_lsr2_split _
   -- n: neg {z0}
-  word_step n, z0_1 := (neg z0).1 using sbb_value_lt 0 z0 0, cf := (neg z0).2
+  word_step n, z0_1 := (neg z0).1 using neg_value_lt z0, cf := (neg z0).2
   have b_cf : cf ≤ 1 := by
     rw [e_cf]; simp only [neg]; split <;> omega
   -- z1_1: adc {z1}, {t1}
@@ -741,7 +741,7 @@ theorem squareHi_spec (product : WideLimbs) (modulus : Limbs) (inv : Nat)
   have sh_z0_6 : z0_6 + 2^64 * (z0_5 / 2^2) = z0_5 * 2^62 := by
     rw [e_z0_6]; exact lsl62_lsr2_split _
   -- n_1: neg {z1}
-  word_step n_1, z1_3 := (neg z1_2).1 using sbb_value_lt 0 z1_2 0, cf_9 := (neg z1_2).2
+  word_step n_1, z1_3 := (neg z1_2).1 using neg_value_lt z1_2, cf_9 := (neg z1_2).2
   have b_cf_9 : cf_9 ≤ 1 := by
     rw [e_cf_9]; simp only [neg]; split <;> omega
   -- z2_3: adc {z2}, {t1}
@@ -851,7 +851,7 @@ theorem squareHi_spec (product : WideLimbs) (modulus : Limbs) (inv : Nat)
   have sh_z1_8 : z1_8 + 2^64 * (z1_7 / 2^2) = z1_7 * 2^62 := by
     rw [e_z1_8]; exact lsl62_lsr2_split _
   -- n_2: neg {z2}
-  word_step n_2, z2_5 := (neg z2_4).1 using sbb_value_lt 0 z2_4 0, cf_18 := (neg z2_4).2
+  word_step n_2, z2_5 := (neg z2_4).1 using neg_value_lt z2_4, cf_18 := (neg z2_4).2
   have b_cf_18 : cf_18 ≤ 1 := by
     rw [e_cf_18]; simp only [neg]; split <;> omega
   -- z3_5: adc {z3}, {t1}
@@ -961,7 +961,7 @@ theorem squareHi_spec (product : WideLimbs) (modulus : Limbs) (inv : Nat)
   have sh_z2_10 : z2_10 + 2^64 * (z2_9 / 2^2) = z2_9 * 2^62 := by
     rw [e_z2_10]; exact lsl62_lsr2_split _
   -- n_3: neg {z3}
-  word_step n_3, z3_7 := (neg z3_6).1 using sbb_value_lt 0 z3_6 0, cf_27 := (neg z3_6).2
+  word_step n_3, z3_7 := (neg z3_6).1 using neg_value_lt z3_6, cf_27 := (neg z3_6).2
   have b_cf_27 : cf_27 ≤ 1 := by
     rw [e_cf_27]; simp only [neg]; split <;> omega
   -- a_9: adc {a}, {t1}

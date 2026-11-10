@@ -189,47 +189,69 @@ theorem divstep_words_add (s : State) (hf : s.f % 2 = 1) (hd : s.two_delta % 2 =
   · split_ifs <;> omega
   · omega
 
+/-- Testing bit 1 of a word finds it clear exactly when `x / 2` is even. A step tests the
+unhalved `g` this way for the parity of the halved one. -/
+theorem andw_two_eq_zero_iff (x : ℕ) : andw x 2 = 0 ↔ x / 2 % 2 = 0 := by
+  have h2 : ∀ i, Nat.testBit 2 i = decide (i = 1) := by
+    intro i
+    rw [show (2 : ℕ) = 2^1 by norm_num, Nat.testBit_two_pow]
+    simp [eq_comm]
+  have hx : x.testBit 1 = decide (x / 2 % 2 = 1) := by
+    simp only [Nat.testBit_eq_decide_div_mod_eq, pow_one]
+  unfold andw
+  constructor
+  · intro h
+    have h1 := congrArg (fun y => Nat.testBit y 1) h
+    simp only [Nat.testBit_and, h2, Nat.zero_testBit, hx] at h1
+    simp at h1
+    omega
+  · intro h
+    apply Nat.eq_of_testBit_eq
+    intro i
+    rw [Nat.testBit_and, h2, Nat.zero_testBit]
+    by_cases hi : i = 1
+    · subst hi; simp [hx, h]
+    · simp [hi]
+
+/-- Testing bit 0 of a word finds it clear exactly when the word is even. -/
+theorem andw_one_eq_zero_iff (x : ℕ) : andw x 1 = 0 ↔ x % 2 = 0 := by
+  unfold andw; rw [Nat.and_one_is_mod]
+
 /-! ## Iterating the step -/
 
-/-- A packed divstep on words, as an implementation computes it: the implementation's state,
-its bounds, the abstraction functions that read the packed state's words and the parity flag
-out of it, and the step and the last step of a batch, which need not set the flag. For an
-implementation without flags, the parity is computed from the `g` word rather than read. -/
+/-- A packed divstep on words, as an implementation computes it: the implementation's state, its
+bounds, the relation `Carries` by which the state between two steps carries a packed state, the
+step, and the last step of a batch, with the functions that read the words the last step leaves.
+For AArch64 the state carries the packed state's words and a flag with the parity of `g`; on
+x86-64, where a step ends by deciding the next one, it carries the words with that decision
+already applied. -/
 structure PackedStep where
   /-- the implementation's state: the words that a step carries, with any flags -/
   Words : Type
   /-- every word of the state is below `2^64` -/
   Bounded : Words → Prop
-  /-- reads `two_delta = 2δ` from the state, as a two's-complement word -/
+  /-- reads `two_delta = 2δ` from the state that a batch's last step leaves -/
   two_delta : Words → ℕ
-  /-- reads the packed `f` word from the state -/
+  /-- reads the packed `f` word from the state that a batch's last step leaves -/
   f : Words → ℕ
-  /-- reads the packed `g` word from the state -/
+  /-- reads the packed `g` word from the state that a batch's last step leaves -/
   g : Words → ℕ
-  /-- reads the parity flag from the state: `1` when the packed `g` is even, else `0` -/
-  z : Words → ℕ
-  /-- one packed divstep, which also sets the parity flag for the next step -/
+  /-- the state between two steps carries the packed state -/
+  Carries : Words → State → Prop
+  /-- one packed divstep, which also prepares the next -/
   round : Words → Words
-  /-- the last step of a batch, which need not set the flag -/
+  /-- the last step of a batch, which need not prepare another -/
   last : Words → Words
 
 /-- What the batch iteration needs of a packed step: on bounded words carrying a packed state `s`
-with odd `f` and `two_delta`, `two_delta` and `g` small, the no-wrap bound on the sum, and the
-parity flag of `g`, the step's words are bounded and carry `divstep s`, and its flag is the parity
-of the new `g`; the last step is the same without the flag. -/
+with odd `f` and `two_delta`, `two_delta` and `g` small, and the no-wrap bound on the sum, the
+step's words are bounded and carry `divstep s`; the last step's words are `divstep s`'s. -/
 structure PackedStep.Spec (S : PackedStep) : Prop where
   round : ∀ (st : S.Words), S.Bounded st → ∀ (s : State), s.f % 2 = 1 → s.two_delta % 2 = 1 →
-    |s.two_delta| < 2^62 → |s.g| < 2^63 → |(divstep s).g| < 2^62 →
-    (S.two_delta st : ℤ) = s.two_delta % 2^64 → (S.f st : ℤ) = s.f % 2^64 → (S.g st : ℤ) = s.g % 2^64 →
-    S.z st = (if s.g % 2 = 0 then 1 else 0) →
-    S.Bounded (S.round st) ∧ (S.two_delta (S.round st) : ℤ) = (divstep s).two_delta % 2^64 ∧
-      (S.f (S.round st) : ℤ) = (divstep s).f % 2^64 ∧
-      (S.g (S.round st) : ℤ) = (divstep s).g % 2^64 ∧
-      S.z (S.round st) = if (divstep s).g % 2 = 0 then 1 else 0
+    |s.two_delta| < 2^62 → |s.g| < 2^63 → |(divstep s).g| < 2^62 → S.Carries st s →
+    S.Bounded (S.round st) ∧ S.Carries (S.round st) (divstep s)
   last : ∀ (st : S.Words), S.Bounded st → ∀ (s : State), s.f % 2 = 1 → s.two_delta % 2 = 1 →
-    |s.two_delta| < 2^62 → |s.g| < 2^63 → |(divstep s).g| < 2^62 →
-    (S.two_delta st : ℤ) = s.two_delta % 2^64 → (S.f st : ℤ) = s.f % 2^64 → (S.g st : ℤ) = s.g % 2^64 →
-    S.z st = (if s.g % 2 = 0 then 1 else 0) →
+    |s.two_delta| < 2^62 → |s.g| < 2^63 → |(divstep s).g| < 2^62 → S.Carries st s →
     S.Bounded (S.last st) ∧ (S.two_delta (S.last st) : ℤ) = (divstep s).two_delta % 2^64 ∧
       (S.f (S.last st) : ℤ) = (divstep s).f % 2^64 ∧
       (S.g (S.last st) : ℤ) = (divstep s).g % 2^64
@@ -239,18 +261,12 @@ every step: the size of `two_delta`, and Lemma 6′'s no-wrap bound. -/
 theorem PackedStep.Spec.rounds_words {S : PackedStep} (hS : S.Spec) (n : ℕ) (P : State)
     (hf : P.f % 2 = 1) (hd : P.two_delta % 2 = 1) (hD : |P.two_delta| + 2 * n < 2^62) (hg0 : |P.g| < 2^63)
     (hg : ∀ j, j < n → |(divsteps (j + 1) P).g| < 2^62)
-    (st : S.Words) (hst : S.Bounded st)
-    (ed : (S.two_delta st : ℤ) = P.two_delta % 2^64) (ef : (S.f st : ℤ) = P.f % 2^64)
-    (eg : (S.g st : ℤ) = P.g % 2^64) (hz : S.z st = if P.g % 2 = 0 then 1 else 0) :
-    S.Bounded (S.round^[n] st) ∧
-      (S.two_delta (S.round^[n] st) : ℤ) = (divsteps n P).two_delta % 2^64 ∧
-      (S.f (S.round^[n] st) : ℤ) = (divsteps n P).f % 2^64 ∧
-      (S.g (S.round^[n] st) : ℤ) = (divsteps n P).g % 2^64 ∧
-      S.z (S.round^[n] st) = if (divsteps n P).g % 2 = 0 then 1 else 0 := by
+    (st : S.Words) (hst : S.Bounded st) (hc : S.Carries st P) :
+    S.Bounded (S.round^[n] st) ∧ S.Carries (S.round^[n] st) (divsteps n P) := by
   induction n with
-  | zero => exact ⟨hst, ed, ef, eg, hz⟩
+  | zero => exact ⟨hst, hc⟩
   | succ n ih =>
-    obtain ⟨ihb, ihd, ihf, ihg, ihz⟩ := ih (by omega) (fun j hj => hg j (by omega))
+    obtain ⟨ihb, ihc⟩ := ih (by omega) (fun j hj => hg j (by omega))
     rw [Function.iterate_succ_apply', divsteps_succ']
     have hsd : |(divsteps n P).two_delta| < 2^62 := by
       have := divsteps_two_delta_abs_le n P; omega
@@ -260,21 +276,19 @@ theorem PackedStep.Spec.rounds_words {S : PackedStep} (hS : S.Spec) (n : ℕ) (P
       · exact lt_trans (hg n (by omega)) (by norm_num)
     exact hS.round _ ihb (divsteps n P) (divsteps_f_odd n P hf)
       (by rw [divsteps_two_delta_emod_two]; exact hd) hsd hsg
-      (by rw [← divsteps_succ']; exact hg n (by omega)) ihd ihf ihg ihz
+      (by rw [← divsteps_succ']; exact hg n (by omega)) ihc
 
 /-- A batch of `n + 1` steps: `n` rounds and the last step. -/
 theorem PackedStep.Spec.batch_words {S : PackedStep} (hS : S.Spec) (n : ℕ) (P : State)
     (hf : P.f % 2 = 1) (hd : P.two_delta % 2 = 1) (hD : |P.two_delta| + 2 * (n + 1) < 2^62) (hg0 : |P.g| < 2^63)
     (hg : ∀ j, j < n + 1 → |(divsteps (j + 1) P).g| < 2^62)
-    (st : S.Words) (hst : S.Bounded st)
-    (ed : (S.two_delta st : ℤ) = P.two_delta % 2^64) (ef : (S.f st : ℤ) = P.f % 2^64)
-    (eg : (S.g st : ℤ) = P.g % 2^64) (hz : S.z st = if P.g % 2 = 0 then 1 else 0) :
+    (st : S.Words) (hst : S.Bounded st) (hc : S.Carries st P) :
     S.Bounded (S.last (S.round^[n] st)) ∧
       (S.two_delta (S.last (S.round^[n] st)) : ℤ) = (divsteps (n + 1) P).two_delta % 2^64 ∧
       (S.f (S.last (S.round^[n] st)) : ℤ) = (divsteps (n + 1) P).f % 2^64 ∧
       (S.g (S.last (S.round^[n] st)) : ℤ) = (divsteps (n + 1) P).g % 2^64 := by
-  obtain ⟨ihb, ihd, ihf, ihg, ihz⟩ := hS.rounds_words n P hf hd (by omega) hg0
-    (fun j hj => hg j (by omega)) st hst ed ef eg hz
+  obtain ⟨ihb, ihc⟩ := hS.rounds_words n P hf hd (by omega) hg0
+    (fun j hj => hg j (by omega)) st hst hc
   rw [divsteps_succ']
   have hsd : |(divsteps n P).two_delta| < 2^62 := by
     have := divsteps_two_delta_abs_le n P; omega
@@ -284,6 +298,6 @@ theorem PackedStep.Spec.batch_words {S : PackedStep} (hS : S.Spec) (n : ℕ) (P 
     · exact lt_trans (hg m (by omega)) (by norm_num)
   exact hS.last _ ihb (divsteps n P) (divsteps_f_odd _ P hf)
     (by rw [divsteps_two_delta_emod_two]; exact hd) hsd hsg
-    (by rw [← divsteps_succ']; exact hg n (by omega)) ihd ihf ihg ihz
+    (by rw [← divsteps_succ']; exact hg n (by omega)) ihc
 
 end PastaCurves.Inversion

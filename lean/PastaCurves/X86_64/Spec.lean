@@ -4,6 +4,14 @@ import PastaCurves.X86_64.Spec.Sub
 import PastaCurves.X86_64.Spec.Mul
 import PastaCurves.X86_64.Spec.Square
 import PastaCurves.X86_64.Spec.FromMont
+import PastaCurves.X86_64.Spec.CondSub
+import PastaCurves.X86_64.Spec.Amontred
+import PastaCurves.X86_64.Spec.SignMag
+import PastaCurves.X86_64.Spec.DeRow
+import PastaCurves.X86_64.Spec.FgRow
+import PastaCurves.X86_64.Spec.Divstep
+import PastaCurves.X86_64.Spec.Divstep59
+import PastaCurves.X86_64.Spec.Invert
 
 /-!
 # Correctness proofs for the x86-64 blocks

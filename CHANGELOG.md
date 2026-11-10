@@ -12,6 +12,11 @@ and this project adheres to Rust's notion of
   decodes public compressed points with one ordered `Option` result per input.
   It is further accelerated when `sqrt-table` is enabled.
 
+### Changed
+- With the `asm` feature, `Fp::invert` and `Fq::invert` are faster on x86-64,
+  while remaining constant-time: the inversion runs its blocks in assembly
+  there, as it does on AArch64.
+
 ## [0.6.1] - 2026-10-09
 ### Added
 - `asm` feature flag, which enables assembly field arithmetic on supported

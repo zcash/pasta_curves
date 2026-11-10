@@ -94,16 +94,15 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ## The assembly backends (`src/asm`)
 
-The `asm` module provides assembly backends for the Pasta field arithmetic, one for AArch64 and one
-for x86-64. Each contains:
+The `asm` module provides assembly backends for the Pasta field arithmetic, one per supported
+architecture: at present AArch64 and x86-64. Each contains:
 
 - Montgomery multiplication and squaring, and modular addition and subtraction, as inline `asm!`
   blocks;
 - a repeated-squaring chain, and the conversion out of Montgomery form, composed from those blocks.
 
-The AArch64 backend also contains the six blocks of a constant-time inversion. Their driver,
-`src/inversion.rs`, runs the same six blocks in portable Rust wherever the AArch64 backend is not
-compiled. The module is the one part of the crate that allows unsafe code. Its priorities are those
+Each backend also contains the six blocks of a constant-time inversion. Their driver,
+`src/inversion.rs`, runs the same six blocks in portable Rust wherever no backend is compiled. The module is the one part of the crate that allows unsafe code. Its priorities are those
 of the crate: **correctness, constant-time behaviour, and performance**, in that order.
 
 The Montgomery routines are transcriptions of Supranational's Semolina v0.1.4, and the
@@ -201,13 +200,17 @@ describes the tools in more detail.
   or proof scripts are not a substitute for this synchronization check.
 - **Architecture modules have consistent roles.** `Semantics` defines instruction behavior;
   `Transcription` contains generated block models; `Compositions` models Rust around those
-  blocks; `Vectors` checks the backend's routines against the shared generated vectors by kernel
-  evaluation; `Spec` proves block and composition correctness; `Backend` builds the backend's
-  record of Montgomery blocks, with `Glue.blocksOf`, that the Aeneas-translated glue runs over;
-  `Entry` contains correctness **theorems** specializing those results to `PastaField` and the
-  actual asserted operand contracts, not redundant value wrappers. Split per-block proof files
-  belong under `<Architecture>/Spec/`, imported by its `Spec.lean`. Shared arithmetic, constants,
-  and architecture-independent lemmas stay outside ISA modules.
+  blocks; `Vectors` checks the backend's routines against the shared generated vectors and its
+  inversion blocks against the shared known answers, by kernel evaluation through
+  `VectorCheck.lean` and `Inversion/VectorCheck.lean`; `Spec` proves block and composition
+  correctness; `Backend` builds the backend's record of Montgomery blocks, with `Glue.blocksOf`,
+  that the Aeneas-translated glue runs over; `Entry` proves the records' contracts at a
+  `PastaField` and instantiates the shared `EntrySpecs` (`PastaCurves/Entry.lean`), which states the
+  entry points' correctness under the actual asserted operand contracts. Checks and statements
+  that are the same for every backend are written once over the backend's records, not copied
+  per architecture. Split per-block proof files belong under `<Architecture>/Spec/`, imported by
+  its `Spec.lean`. Shared arithmetic, constants, and architecture-independent lemmas stay outside
+  ISA modules.
 - **Extend the shared generator pipeline.** `gen.py` owns CLI orchestration, binding storage,
   liveness, formatting, vector emission, SSA naming, and proof skeleton generation/checking.
   `asm_source.py` owns the self-contained Rust source parser and operand/output validation.
@@ -313,6 +316,15 @@ cargo build --target wasm32-wasi           --no-default-features
 # Benchmarks (Criterion). Some require specific features:
 cargo bench --all-features                 # all benches
 cargo bench --features glv --bench glv     # glv bench requires the glv feature
+
+# The inversion bench measures a backend's inversion blocks against the portable
+# ones. Which blocks the inversion runs is fixed at compile time, so this is two
+# runs of the same bench, the second with the assembly compiled out; it reports
+# the change against the first. Both must run from the same directory, so that
+# they share target/criterion.
+cargo bench --features asm --bench inversion -- --save-baseline asm
+RUSTFLAGS="--cfg pasta_curves_noasm" \
+    cargo bench --features asm --bench inversion -- --baseline asm
 
 # CI builds the benches to prevent bitrot:
 cargo build --benches --all-features

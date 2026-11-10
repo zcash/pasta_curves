@@ -6,9 +6,10 @@ Reads the inline `asm!` blocks in `src/asm/aarch64.rs` and `src/asm/x86_64.rs`, 
 - `lean/PastaCurves/<Architecture>/Transcription.lean`: each block as a Lean definition over
   its instruction semantics, one `let` per instruction result, in the block's order,
   with the instruction as a trailing comment;
-- `lean/PastaCurves/<Architecture>/Vectors.lean`: one kernel-checked example per line of
-  `test-vectors/pasta_mul-armv8-vectors.txt` whose operands are inside the backend's
-  contracts, the outputs of the real routines on an Apple M-series machine.
+- `lean/PastaCurves/Vectors.lean`: the vectors of `test-vectors/pasta_mul-armv8-vectors.txt`
+  whose operands are inside the backends' contracts, the outputs of the real routines on an
+  Apple M-series machine, which each architecture's `Vectors.lean` checks through
+  `VectorCheck.lean`.
 
 The transcription is deliberately mechanical. A block is read from its template lines, with
 the operand placeholders as register names, rebound by each instruction that writes them:
@@ -25,7 +26,7 @@ A template line may invoke a `macro_rules!` macro of the source file for a repea
 instruction sequence (`asm_source.parse_macros`). A backend transcribes a sequence listed in
 its round table once and calls it per invocation; the AArch64 table is `MACRO_ROUNDS`.
 
-For both architectures, the proof skeletons lift and extract the `let`s with merging off, so
+For every architecture, the proof skeletons lift and extract the `let`s with merging off, so
 every binding is its own `let`, equal values or not.
 
 Run from the repository root:
@@ -46,6 +47,7 @@ import re
 import sys
 import textwrap
 from pathlib import Path
+from typing import NamedTuple
 
 import asm_source
 
@@ -539,6 +541,36 @@ class SkeletonBackend:
     def fact(self, kind, ops, context):
         return False
 
+    def word_fact(self, kind, ops, context):
+        """The fact of an instruction modelled by one of the shared word operations of
+        `PastaCurves/Semantics.lean`, whose bound lemmas are in `PastaCurves/Spec.lean`: its
+        defining equation, kept for the annotations, and its bound below `2^64`. `True` when
+        recorded, `False` when the shared skeleton handles it (`lsl` by 62, which it pairs with
+        the matching `lsr`), and `None` for any other instruction."""
+        nm = context.name
+
+        def bounded(expr, proof):
+            context.eq(nm, expr)
+            context.bound(nm, proof)
+            return True
+
+        if kind == "lsl":
+            a, k = ops
+            if k == 62:
+                return False  # the shared skeleton pairs it with the matching `lsr`
+            return bounded(f"{a} * 2^{k} % 2^64", "Nat.mod_lt _ (Nat.two_pow_pos _)")
+        if kind in ("addw", "subw", "negw", "extr"):
+            args = " ".join(str(o) for o in ops)
+            return bounded(f"{kind} {args}", f"{kind}_lt {args}")
+        if kind in ("and", "orr", "eor"):
+            a, b = ops
+            fn = f"{kind}w"
+            return bounded(f"{fn} {a} {b}", f"{fn}_lt {a} {b} {context.lt64(a)} {context.lt64(b)}")
+        if kind == "asr":
+            a, k = ops
+            return bounded(f"asr {a} {k}", f"asr_lt {a} {k} {context.lt64(a)}")
+        return None
+
 
 class SkeletonPreparation:
     """The entries and backend-selected grouping metadata consumed by the shared traversal."""
@@ -941,11 +973,334 @@ SPEC_MANIFEST = {
     "lean/PastaCurves/X86_64/Spec/FromMont.lean": ("X86_64", ("fromMont",)),
     "lean/PastaCurves/X86_64/Spec/Mul.lean": ("X86_64", ("mulMont", "mulMontRound")),
     "lean/PastaCurves/X86_64/Spec/Square.lean": ("X86_64", ("squareLo", "squareHi")),
+    "lean/PastaCurves/X86_64/Spec/CondSub.lean": ("X86_64", ("condSubBlock",)),
+    "lean/PastaCurves/X86_64/Spec/SignMag.lean": ("X86_64", ("signMagBlock",)),
+    "lean/PastaCurves/X86_64/Spec/Divstep59.lean": ("X86_64", ("divstep59Block",)),
+    "lean/PastaCurves/X86_64/Spec/Divstep.lean": ("X86_64", ("divstepRound",)),
+    "lean/PastaCurves/X86_64/Spec/DeRow.lean": ("X86_64", ("deRowBlock",)),
+    "lean/PastaCurves/X86_64/Spec/FgRow.lean": ("X86_64", ("fgRowBlock",)),
+    "lean/PastaCurves/X86_64/Spec/Amontred.lean": ("X86_64", ("amontredBlock",)),
 }
 
+
+def state_struct(cfg, field_type=lambda field: "Nat"):
+    """The declaration of a round's carried-register structure (see a backend's
+    `MACRO_ROUNDS`). `field_type` gives each field's Lean type; the `Nat` fields are the words,
+    which `Bounded` bounds."""
+    lines = [
+        f"/-- The registers that `{cfg['round']}` carries in and out. -/",
+        f"structure {cfg['state']} where",
+    ]
+    for _, f, desc in cfg["roles"]:
+        lines += [f"  /-- {desc} -/", f"  {f} : {field_type(f)}"]
+    words = [f for _, f, _ in cfg["roles"] if field_type(f) == "Nat"]
+    lines += [
+        "  deriving DecidableEq, Repr",
+        "",
+        f"namespace {cfg['state']}",
+        "",
+        "/-- Every word is below `2^64`. -/",
+        f"def Bounded (s : {cfg['state']}) : Prop :=",
+    ]
+    lines += wrap_tactic(
+        "",
+        [f"s.{f} < 2^64" + (" ∧" if i < len(words) - 1 else "") for i, f in enumerate(words)],
+        "",
+        indent="  ",
+    )
+    lines += ["", f"end {cfg['state']}", ""]
+    return "\n".join(lines)
+
+
+def signature(name, args, result):
+    """`def name (a b : K) (c : K') : result :=`, grouping consecutive arguments of one kind."""
+    groups = []
+    for arg, kind in args:
+        if groups and groups[-1][1] == kind:
+            groups[-1][0].append(arg)
+        else:
+            groups.append(([arg], kind))
+    params = " ".join(f"({' '.join(names)} : {kind})" for names, kind in groups)
+    return f"def {name} {params} : {result} :="
+
+
+def macro_routines(
+    e,
+    origins,
+    name,
+    doc,
+    signature_line,
+    result,
+    arg_fields,
+    macro_rounds,
+    *,
+    make_emitter,
+    routine_class,
+    field_type=lambda field: "Nat",
+    load_kind=lambda field: "load",
+    prepare_round=lambda emitter, bound, live_in: None,
+    read_result=lambda emitter, registers: list(registers),
+):
+    """Split the transcription of a routine whose template invokes macros: each arm listed in
+    `macro_rounds` becomes a definition over the registers it carries (`roles`), and each run of
+    consecutive invocations of it a call of the definition iterated over the run; other arms
+    stay expanded in place.
+
+    The emitter `e` holds the routine's validated flat transcription. The keyword arguments are
+    the architecture's: `make_emitter` returns a fresh emitter, `routine_class` builds a routine,
+    `field_type` gives a carried field's Lean type and `load_kind` its load fact, `prepare_round`
+    sets up a round's emitter from the registers its body binds and reads, and `read_result`
+    reads the round's results."""
+    origin_of = {pc: origin for pc, origin in enumerate(origins)}
+
+    def origin(en):
+        return origin_of.get(en["pc"]) if en["pc"] is not None else None
+
+    def cfg_of(o):
+        return macro_rounds.get((o.macro, o.arm)) if o is not None else None
+
+    # The entries in segments: consecutive entries of one round invocation form a segment.
+    segments, current, current_site = [], [], object()
+    for en in e.entries:
+        o = origin(en)
+        site = o.site if cfg_of(o) else None
+        if site != current_site:
+            if current:
+                segments.append((current_site, current))
+            current, current_site = [], site
+        current.append(en)
+    if current:
+        segments.append((current_site, current))
+
+    # The round definitions, one per arm, from each arm's first invocation.
+    rounds = {}  # (macro, arm) -> Routine
+    round_of_site = {}
+    for site, entries in segments:
+        if site is None:
+            continue
+        o = origin(entries[0])
+        key = (o.macro, o.arm)
+        cfg = macro_rounds[key]
+        round_of_site[site] = cfg
+        regs = [r for r, _, _ in cfg["roles"]]
+        fields = [f for _, f, _ in cfg["roles"]]
+        # The body's inputs: registers read before the body writes them.
+        bound, live_in = set(), []
+        for en in entries:
+            for r in sorted(en["reads"]):
+                if r not in bound and r not in live_in:
+                    live_in.append(r)
+            bound.add(en["name"])
+        if key in rounds:
+            continue
+        stray = sorted(set(live_in) - set(regs))
+        if stray:
+            raise ValueError(f"{name}: {cfg['round']} reads {stray}, which `roles` does not carry")
+        unused = sorted(set(regs) - set(live_in) - bound)
+        if unused:
+            raise ValueError(f"{name}: {cfg['round']} neither reads nor writes {unused}")
+        re_ = make_emitter()
+        sarg = cfg["arg"]
+        for r, f in zip(regs, fields):
+            re_.bind(
+                r, f"{sarg}.{f}", "argument", reads=(), load=True, fact=(load_kind(f), sarg, f)
+            )
+        re_.entries += [dict(en) for en in entries]
+        prepare_round(re_, bound, live_in)
+        round_result = read_result(re_, regs)
+        rounds[key] = routine_class(
+            f"`{o.macro}!({o.arm})`, {cfg['doc']}",
+            f"def {cfg['round']} ({sarg} : {cfg['state']}) : {cfg['state']} :=",
+            re_.render(round_result),
+            f"  ⟨{', '.join(round_result)}⟩",
+            cfg["round"],
+            re_,
+            round_result,
+            struct=state_struct(cfg, field_type) if cfg["emit_struct"] else None,
+            arg_fields={sarg: [f for f in fields if field_type(f) == "Nat"]},
+        )
+    # The block: a run of consecutive invocations of one arm becomes one call, the round iterated
+    # over the run, and the outputs it carries; a proof about the run is then the step theorem
+    # iterated, without one binding per invocation. A run is (cfg, (macro, arm), first site,
+    # last site); a stretch of instructions is (None, None, None, entries).
+    runs = []
+    for site, entries in segments:
+        if site is None:
+            runs.append((None, None, None, entries))
+            continue
+        o = origin(entries[0])
+        key = (o.macro, o.arm)
+        if runs and runs[-1][1] == key:
+            runs[-1] = (runs[-1][0], key, runs[-1][2], site)
+        else:
+            runs.append((round_of_site[site], key, site, site))
+    me = make_emitter()
+    for cfg, key, first, last in runs:
+        if cfg is None:
+            me.entries += [dict(en) for en in last]
+            continue
+        regs = [r for r, _, _ in cfg["roles"]]
+        fields = [f for _, f, _ in cfg["roles"]]
+        rname = f"{cfg['call']}{last + 1}"
+        arm = f"{key[0]}!({key[1]})"
+        count = last - first + 1
+        call = cfg["round"] if count == 1 else f"{cfg['round']}^[{count}]"
+        which = (
+            f"invocation {first + 1}" if count == 1 else f"invocations {first + 1} to {last + 1}"
+        )
+        fmt = f"{call} ⟨" + ", ".join(f"{{{i}}}" for i in range(len(regs))) + "⟩"
+        me.entries.append(
+            {
+                "name": rname,
+                "expr": fmt.format(*regs),
+                "comment": f"{arm}, {which}",
+                "reads": set(regs),
+                "load": False,
+                "fact": ("call", fmt, regs),
+                "pc": None,
+            }
+        )
+        for r, f in zip(regs, fields):
+            me.entries.append(
+                {
+                    "name": r,
+                    "expr": f"{rname}.{f}",
+                    "comment": f"{arm}, {which} output",
+                    "reads": {rname},
+                    "load": False,
+                    "optional": True,
+                    "fact": ("callout", rname, f),
+                    "pc": None,
+                }
+            )
+    main = routine_class(
+        doc,
+        signature_line,
+        me.render(result),
+        f"  ⟨{', '.join(result)}⟩",
+        name,
+        me,
+        result,
+        arg_fields=arg_fields,
+    )
+    return list(rounds.values()) + [main]
+
+
+class InversionBlock(NamedTuple):
+    """One of the constant-time inversion's six blocks, which are the same functions on every
+    architecture: the Rust function whose `asm!` block to read, the Lean name, the docstring, the
+    arguments as (name, kind) in signature order, and the result's kind."""
+
+    rust_name: str
+    lean_name: str
+    doc: str
+    args: tuple
+    result: str = "Limbs"
+
+
+# The fields of each argument and result kind, in order: the words of a multi-word value, or
+# `None` for a single word.
+KIND_FIELDS = {
+    "Limbs": ["l0", "l1", "l2", "l3"],
+    "Signed5": ["l0", "l1", "l2", "l3", "l4"],
+    "Divstep59Result": ["two_delta", "u", "v", "q", "r"],
+    "SignMag": ["u", "v", "q", "r", "su", "sv", "sq", "sr"],
+    "Nat": None,
+}
+
+# The number of words in each multi-word kind, for backends that size a block's result by it.
+RESULT_WORDS = {kind: len(fields) for kind, fields in KIND_FIELDS.items() if fields}
+
+# The inversion's blocks, which every backend that implements the inversion transcribes under
+# these names and signatures, so that one record of the blocks (`InvertBlocks`) and one proof of
+# the composition serve every architecture.
+INVERSION_BLOCKS = (
+    InversionBlock(
+        "divstep59",
+        "divstep59Block",
+        (
+            "The inline `asm!` block of `divstep59`: 59 half-delta divsteps on the low words `f0` and "
+            "`g0` of `f` and `g` at `two_delta`, as three packed batches of 20, 20, and 19 steps in which "
+            "the matrix coefficients ride in the upper bits of the two words, with the two matrix "
+            "products between and after the batches. It is s2n-bignum's `divstep59` macro on named "
+            "registers. The result is the new `two_delta` and the 59-step matrix, as two's-complement words."
+        ),
+        (("two_delta", "Nat"), ("f0", "Nat"), ("g0", "Nat")),
+        result="Divstep59Result",
+    ),
+    InversionBlock(
+        "sign_mag",
+        "signMagBlock",
+        (
+            "The inline `asm!` block of `sign_mag`: the sign-magnitude form of the four entries of a "
+            "transition matrix, each entry's magnitude and its sign as a mask (all ones when negative, "
+            "else zero), which the row blocks take."
+        ),
+        (("u", "Nat"), ("v", "Nat"), ("q", "Nat"), ("r", "Nat")),
+        result="SignMag",
+    ),
+    InversionBlock(
+        "fg_row",
+        "fgRowBlock",
+        (
+            "The inline `asm!` block of `fg_row`: one row of the update of `f` and `g`, "
+            "`(m0 f + m1 g) / 2^59` on five-word signed values, from the row's magnitudes `m0`, `m1` "
+            "and sign masks `s0`, `s1`, as a 320-bit accumulation shifted right by 59."
+        ),
+        (
+            ("f", "Signed5"),
+            ("g", "Signed5"),
+            ("m0", "Nat"),
+            ("m1", "Nat"),
+            ("s0", "Nat"),
+            ("s1", "Nat"),
+        ),
+        result="Signed5",
+    ),
+    InversionBlock(
+        "de_row",
+        "deRowBlock",
+        (
+            "The inline `asm!` block of `de_row`: one row of the combination of `d` and `e`, "
+            "`m0 d + m1 e` as a five-word signed value, from the row's magnitudes `m0`, `m1` and "
+            "sign masks `s0`, `s1`. It is the accumulation of `fgRowBlock` without the shift."
+        ),
+        (
+            ("d", "Limbs"),
+            ("e", "Limbs"),
+            ("m0", "Nat"),
+            ("m1", "Nat"),
+            ("s0", "Nat"),
+            ("s1", "Nat"),
+        ),
+        result="Signed5",
+    ),
+    InversionBlock(
+        "amontred",
+        "amontredBlock",
+        (
+            "The inline `asm!` block of `amontred`: the almost-Montgomery reduction of a five-word "
+            "signed value by one word, `(s + w p) / 2^64` for `s = t + 2^61 p` and "
+            "`w = s inv mod 2^64`, as four words. For the Pasta shape no top carry is captured and "
+            "no conditional subtraction follows."
+        ),
+        (("t", "Signed5"), ("modulus", "Limbs"), ("inv", "Nat")),
+    ),
+    InversionBlock(
+        "cond_sub",
+        "condSubBlock",
+        (
+            "The inline `asm!` block of `cond_sub`: the subtraction of the modulus from `value`, kept "
+            "unless it borrows. For `value < 2p` the result is `value mod p`."
+        ),
+        (("value", "Limbs"), ("modulus", "Limbs")),
+    ),
+)
+
+
 # Missing proofs are tracked by routine, not by hypothetical files; a block transcribed ahead of
-# its proof is listed here under its architecture. None at present.
-UNPROVED_ROUTINES = {}
+# its proof is listed here under its architecture.
+UNPROVED_ROUTINES: dict[str, tuple[str, ...]] = {}
 
 
 def architecture_routines():
