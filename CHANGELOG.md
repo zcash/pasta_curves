@@ -11,6 +11,16 @@ and this project adheres to Rust's notion of
 - `CurveAffine::batch_decode_vartime`, an `alloc`-gated default method that
   decodes public compressed points with one ordered `Option` result per input.
   It is further accelerated when `sqrt-table` is enabled.
+- `CurveExt::try_multiexp_vartime`, an optional variable-time multiscalar
+  multiplication hook for public inputs. The `glv` feature enables optimized
+  Pallas and Vesta backends; callers must retain a generic fallback when the
+  hook returns `None`.
+- `multicore` feature flag, which enables `glv` and parallel MSM evaluation
+  using Rayon.
+
+### Changed
+- The public-input GLV MSM planner weights affine and projective bucket costs
+  separately and considers up to two wider windows when selecting a backend.
 
 ## [0.6.1] - 2026-10-09
 ### Added
