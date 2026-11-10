@@ -110,8 +110,9 @@ pub(crate) const MODULUS: Fp = Fp([
     0x4000000000000000,
 ]);
 
-/// The modulus as u32 limbs.
-#[cfg(not(target_pointer_width = "64"))]
+/// The modulus as u32 limbs, for `PrimeFieldBits::char_le_bits` on 32-bit targets and the test
+/// that checks them against `MODULUS`.
+#[cfg(all(not(target_pointer_width = "64"), any(feature = "bits", test)))]
 const MODULUS_LIMBS_32: [u32; 8] = [
     0x0000_0001,
     0x992d_30ed,
