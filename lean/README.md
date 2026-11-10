@@ -14,13 +14,14 @@ and `from_mont` is a block of its own, proved for every four-limb input. The vec
 architecture. Each architecture's `Checks.lean` runs the shared boundary-input checks of
 `ArithmeticChecks.lean` on its routines.
 
-Every architecture uses `scripts/gen.py`, with shared Rust `asm!` parsing and
-architecture-specific instruction emitters; `--check` compares generated output without
-rewriting it. The x86-64 emitter checks operand bindings and output order, read-only input-limb addresses,
-register initialization, and CF/OF availability. Ordinary arithmetic models CF but invalidates
-unmodeled OF; `imul` and shifts invalidate unmodeled flags. Any subsequent read of an invalid
-flag is rejected. `adcx` and `adox` carry chains are tracked independently. The instruction
-rules follow Intel's SDM (see the readable entries for
+Every architecture uses `scripts/gen.py`, the command line of the compiler in `scripts/asm2lean/` (a
+shared Rust `asm!` front end, a lifter per architecture, one IR, and the transcription and skeleton
+back ends) on the crate's configuration in `scripts/pasta/`; `--check` compares generated output
+without rewriting it. The x86-64 lifter checks operand bindings and output order, read-only
+input-limb addresses, register initialization, and CF/OF availability. Ordinary arithmetic models CF
+but invalidates unmodeled OF; `imul` and shifts invalidate unmodeled flags. Any subsequent read of
+an invalid flag is rejected. `adcx` and `adox` carry chains are tracked independently. The
+instruction rules follow Intel's SDM (see the readable entries for
 [ADCX](https://www.felixcloutier.com/x86/adcx),
 [ADOX](https://www.felixcloutier.com/x86/adox),
 [MULX](https://www.felixcloutier.com/x86/mulx), and
@@ -111,7 +112,8 @@ What is trusted, beyond Lean's kernel and standard axioms:
    strict mode rejects any declared axiom it is not told of.
 
 Not modelled formally: the compiler's handling of the blocks' operands, that is, the allocation of
-registers to the placeholders and the `options(pure, nomem, nostack)` declaration, read-only pointer
+registers to the placeholders and the `asm!` options (which the generator checks against the
+operands, as described below), read-only pointer
 loads, pointer validity, the compiler's `readonly` handling, and the Rust mirrored by hand (item 3).
 The model treats the operands as limb inputs and outputs. Those aspects were reviewed by hand.
 
@@ -190,10 +192,18 @@ PastaCurves/Glue/FunsExternal.lean       the one external function that they cal
 PastaCurves/Glue/Vectors.lean            the compositions on the vectors and known answers, as tests
 PastaCurves/Glue/Blocks.lean             `blocksOf`: a backend's record, from its block models
 PastaCurves/Glue/Spec.lean               the compositions meet the entry points' contracts
-scripts/gen.py                           shared bindings, vectors, skeletons, checks, and CLI
-scripts/asm_source.py                    shared Rust inline-assembly parser and validation
-scripts/gen_aarch64.py                   AArch64 decoding, round factoring, and proof-fact hooks
-scripts/gen_x86_64.py                    x86-64 decoding, flag validation, and proof-fact hooks
+scripts/gen.py                           the generator's command line
+scripts/asm2lean/rust.py                 the Rust inline-assembly front end and validation
+scripts/asm2lean/block.py                the block driver, shared by every instruction set
+scripts/asm2lean/isa/__init__.py         what an instruction set provides, and the lifter base
+scripts/asm2lean/isa/aarch64.py          AArch64 lifting, its checks, and its IR nodes
+scripts/asm2lean/isa/x86_64.py           x86-64 lifting, flag validation, and its IR nodes
+scripts/asm2lean/ir.py                   the IR: nodes, programs, liveness
+scripts/asm2lean/reroll.py               folding unrolled rounds, matched up to renaming
+scripts/asm2lean/validate.py             checking a rerolled block computes the flat block's results
+scripts/asm2lean/lean.py, skeleton.py    the transcription and the proof skeletons
+scripts/asm2lean/specs.py                the skeleton and Spec-coverage checks
+scripts/pasta/                           the crate's blocks, data modules, and Spec manifest
 scripts/test_*.py                        the generator's tests, run by check.sh
 scripts/check.sh                         regenerate and diff, skeleton check, generator tests (CI)
 scripts/build.sh                         lake build, failing on warnings outside Aeneas' library (CI)
@@ -240,8 +250,11 @@ operand placeholders (`{r0}`, `{inv}`) as register names, so the transcription r
 block does; the `in` and `inout` operands bind the argument limbs and `inv`, and the named
 `out` and the `inout` operands are the result limbs. The Rust compiler allocates a register
 for every operand and substitutes it for the placeholder, so every register a block uses is a
-declared input, output, or scratch, and `options(pure, nomem, nostack)` declare that the block
-touches no memory and no stack (the inline assembly RFC,
+declared input, output, or scratch. A register-only block declares `options(pure, nomem,
+nostack)`: it touches no memory and no stack. The x86-64 blocks that read an argument through a
+pointer operand declare `readonly` instead of `nomem`, and read only the argument's words through
+it. The generator requires the options to match the operands, and every pointer to be read
+(the inline assembly RFC,
 <https://rust-lang.github.io/rfcs/2873-inline-asm.html>, and the Reference's chapter,
 <https://doc.rust-lang.org/reference/inline-assembly.html>, define the operand forms).
 
