@@ -317,6 +317,15 @@ cargo build --target wasm32-wasi           --no-default-features
 cargo bench --all-features                 # all benches
 cargo bench --features glv --bench glv     # glv bench requires the glv feature
 
+# The inversion bench measures a backend's inversion blocks against the portable
+# ones. Which blocks the inversion runs is fixed at compile time, so this is two
+# runs of the same bench, the second with the assembly compiled out; it reports
+# the change against the first. Both must run from the same directory, so that
+# they share target/criterion.
+cargo bench --features asm --bench inversion -- --save-baseline asm
+RUSTFLAGS="--cfg pasta_curves_noasm" \
+    cargo bench --features asm --bench inversion -- --baseline asm
+
 # CI builds the benches to prevent bitrot:
 cargo build --benches --all-features
 
