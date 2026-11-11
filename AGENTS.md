@@ -349,6 +349,9 @@ Defined in `Cargo.toml`; `default = ["bits", "sqrt-table"]`.
 - `sqrt-table` — large precomputed tables (on the heap) that speed up square roots;
   implies `alloc`, pulls in `lazy_static`. *(default)*
 - `glv` — variable-time GLV scalar multiplication for non-secret scalars (implies `alloc`).
+- `multicore`: evaluates the variable-time MSM behind `CurveExt::try_multiexp_vartime` in
+  parallel through Rayon (implies `glv`); pulls in `maybe-rayon` with its `threads` feature.
+  WebAssembly without atomics stays serial.
 - `deferred` — the `deferred` module: `DeferredField` and a wide `Product` accumulator
   for batching many field multiplications behind a single Montgomery reduction.
 - `gpu` — exposes `ec-gpu`'s `GpuField` for `Fp`/`Fq` (implies `alloc`).
