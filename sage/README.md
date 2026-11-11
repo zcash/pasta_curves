@@ -10,6 +10,10 @@ them in the exact shape of the Rust code so the two can be diffed:
 - `glv_boundary_scalars.sage` — the `*_BOUNDARY_SCALAR` witnesses used
   by the `babai_boundary_*` and `native_vs_glv_boundary_*` regression
   tests in `src/glv.rs`.
+- `msm_window_thresholds.sage`: the `DEFAULT_MULTIEXP_WINDOW_THRESHOLDS`
+  table in `src/glv/msm.rs`, the floors of `e^k` that encode the generic
+  MSM's `ceil(ln(terms))` window schedule. It computes them with interval
+  arithmetic and checks each floor is exact.
 
 The scripts use exact integer/rational arithmetic and hand-rolled
 lattice reduction only, so their output is deterministic and does not
@@ -25,6 +29,7 @@ pip-installable distribution of SageMath (see `pyproject.toml` /
 ```console
 $ uv run sage glv_constants.sage
 $ uv run sage glv_boundary_scalars.sage
+$ uv run sage msm_window_thresholds.sage
 ```
 
 Any reasonably recent standalone SageMath installation works too:

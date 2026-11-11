@@ -140,7 +140,8 @@ fn estimated_signed_booth_work(
 ///
 /// These preserve the established `ceil(ln(terms))` window schedule without
 /// requiring floating-point transcendental functions, which are unavailable
-/// in `no_std` builds.
+/// in `no_std` builds. They are computed by `sage/msm_window_thresholds.sage`,
+/// which prints this table so the two can be diffed.
 const DEFAULT_MULTIEXP_WINDOW_THRESHOLDS: [u32; 19] = [
     54,
     148,
