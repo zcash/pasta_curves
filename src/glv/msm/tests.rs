@@ -297,8 +297,15 @@ fn all_window_widths() {
 
 #[test]
 fn planner_boundaries() {
-    assert_eq!(glv_multiexp_window_bits::<pallas::Point>(255, 1), None);
+    // Serial: Strauss up to SERIAL_STRAUSS_MAX_TERMS, then measured bucket widths.
+    assert_eq!(glv_multiexp_window_bits::<pallas::Point>(24, 1), None);
+    assert_eq!(glv_multiexp_window_bits::<pallas::Point>(25, 1), Some(5));
+    assert_eq!(glv_multiexp_window_bits::<pallas::Point>(127, 1), Some(5));
+    assert_eq!(glv_multiexp_window_bits::<pallas::Point>(128, 1), Some(6));
+    assert_eq!(glv_multiexp_window_bits::<pallas::Point>(255, 1), Some(6));
     assert!(glv_multiexp_window_bits::<pallas::Point>(2048, 1).is_some());
+    // Parallel: below MIN_GLV_MULTIEXP_TERMS the planner still declines.
+    assert_eq!(glv_multiexp_window_bits::<pallas::Point>(255, 2), None);
     assert_eq!(default_multiexp_window_bits(31), Some(3));
     assert_eq!(default_multiexp_window_bits(32), Some(4));
     assert_eq!(default_multiexp_window_bits(54), Some(4));
