@@ -12,6 +12,7 @@
 //! The small-MSM ladder reuses the existing split-wNAF tables unchanged.
 
 use alloc::vec::Vec;
+use core::ops::Range;
 use ff::{Field, PrimeField, WithSmallOrderMulGroup};
 use group::CurveAffine as _;
 #[cfg(feature = "multicore")]
@@ -418,16 +419,80 @@ struct BoothDigit {
 
 #[derive(Clone, Copy)]
 struct WindowAssignment {
-    component: usize,
+    term: usize,
     signed_bucket: isize,
 }
 
+/// The MSM the bucket method evaluates: the sum over terms of
+/// `scalar * point`, each scalar an integer of magnitude below
+/// `2^GLV_COMPONENT_BITS`. It knows nothing about GLV; [`GlvTerms`] is the
+/// implementation that [`execute`] uses.
+trait SmallScalarTerms<F>: Sync {
+    /// The number of terms.
+    fn len(&self) -> usize;
+    /// The scalar of term `term`.
+    fn scalar(&self, term: usize) -> SignedMagnitude;
+    /// The point of term `term`, or `None` for the identity.
+    fn point(&self, term: usize) -> Option<AffinePoint<F>>;
+}
+
+/// One base with its endomorphism image, `phi(x, y) = (zeta * x, y)`, which
+/// shares `y`.
 #[derive(Clone, Copy)]
 struct MultiexpBase<F> {
     x: F,
     endo_x: F,
     y: F,
     identity: bool,
+}
+
+/// The GLV lift of an MSM over the scalar field to one over the integers.
+///
+/// The curve is a module over the Eisenstein integers `Z[omega]`, with `omega`
+/// acting as `phi = lambda`, and `Z[omega]` is free over `Z` with basis
+/// `{1, omega}`. Restricting scalars along `Z -> Z[omega]` turns each term
+/// `k * P` into the two integer terms `k1 * P` and `k2 * phi(P)`, where
+/// `k = k1 + k2 * lambda` with `|k1|, |k2| < 2^127` ([`decompose`]). Term
+/// `2 i` is `(k1_i, P_i)` and term `2 i + 1` is `(k2_i, phi(P_i))`.
+struct GlvTerms<F> {
+    components: Vec<(SignedMagnitude, SignedMagnitude)>,
+    bases: Vec<MultiexpBase<F>>,
+}
+
+impl<F: Copy + Sync> SmallScalarTerms<F> for GlvTerms<F> {
+    fn len(&self) -> usize {
+        2 * self.bases.len()
+    }
+
+    fn scalar(&self, term: usize) -> SignedMagnitude {
+        let (first, second) = self.components[term / 2];
+        if term % 2 == 0 { first } else { second }
+    }
+
+    fn point(&self, term: usize) -> Option<AffinePoint<F>> {
+        let base = self.bases[term / 2];
+        (!base.identity).then_some(AffinePoint {
+            x: if term % 2 == 0 { base.x } else { base.endo_x },
+            y: base.y,
+        })
+    }
+}
+
+/// Lifts an MSM to [`GlvTerms`], or declines when a decomposition half is
+/// out of bounds.
+fn glv_lift<C: MsmCurve>(
+    scalars: &[C::ScalarExt],
+    bases: &[C::AffineExt],
+) -> Option<GlvTerms<C::Base>> {
+    let components = scalars
+        .iter()
+        .map(decompose::<C>)
+        .map(checked_signed_magnitudes)
+        .collect::<Option<Vec<_>>>()?;
+    Some(GlvTerms {
+        components,
+        bases: multiexp_bases::<C>(bases),
+    })
 }
 
 impl WindowAssignment {
@@ -607,40 +672,37 @@ fn batch_invert_and_add<F: VartimeField>(
     Some(())
 }
 
-/// Collects the nonzero signed points assigned to one Booth window.
-fn window_assignments<C>(
-    components: &[(SignedMagnitude, SignedMagnitude)],
-    bases: &[MultiexpBase<C::Base>],
+/// Collects the terms in `range` with a nonzero digit in one Booth window,
+/// each with its signed bucket, and counts the terms per bucket. This is the
+/// pushforward of the window's terms along their digits.
+fn window_assignments<F, T: SmallScalarTerms<F>>(
+    terms: &T,
+    range: Range<usize>,
     window_bits: usize,
     window: usize,
-) -> (Vec<WindowAssignment>, Vec<usize>)
-where
-    C: MsmCurve,
-{
+) -> (Vec<WindowAssignment>, Vec<usize>) {
     let bucket_count = 1 << (window_bits - 1);
-    let mut assignments = Vec::with_capacity(bases.len().saturating_mul(2));
+    let mut assignments = Vec::with_capacity(range.len());
     let mut counts = alloc::vec![0usize; bucket_count];
 
-    for (base_index, ((first, second), base)) in components.iter().zip(bases).enumerate() {
-        if base.identity {
+    for term in range {
+        if terms.point(term).is_none() {
             continue;
         }
-        for (component_offset, component) in [*first, *second].into_iter().enumerate() {
-            let digit = booth_digit(component, window_bits, window);
-            if digit.magnitude != 0 {
-                let bucket = digit.magnitude - 1;
-                let magnitude =
-                    isize::try_from(digit.magnitude).expect("Booth digit magnitude fits in isize");
-                assignments.push(WindowAssignment {
-                    component: base_index * 2 + component_offset,
-                    signed_bucket: if digit.negative {
-                        -magnitude
-                    } else {
-                        magnitude
-                    },
-                });
-                counts[bucket] += 1;
-            }
+        let digit = booth_digit(terms.scalar(term), window_bits, window);
+        if digit.magnitude != 0 {
+            let bucket = digit.magnitude - 1;
+            let magnitude =
+                isize::try_from(digit.magnitude).expect("Booth digit magnitude fits in isize");
+            assignments.push(WindowAssignment {
+                term,
+                signed_bucket: if digit.negative {
+                    -magnitude
+                } else {
+                    magnitude
+                },
+            });
+            counts[bucket] += 1;
         }
     }
 
@@ -753,12 +815,12 @@ fn sum_buckets<C: MsmCurve>(buckets: &[Option<AffinePoint<C::Base>>]) -> C {
 }
 
 /// Smallest number of terms a window reduces at a time.
-const MIN_WINDOW_BLOCK_TERMS: usize = 1 << 14;
+const MIN_WINDOW_BLOCK_TERMS: usize = 1 << 15;
 
 /// Terms per bucket in a window block. Each block after the first carries one
 /// point per nonempty bucket, so this bounds the extra additions to about
-/// `1 / (2 * WINDOW_BLOCK_TERMS_PER_BUCKET)` of the block's points.
-const WINDOW_BLOCK_TERMS_PER_BUCKET: usize = 8;
+/// `1 / WINDOW_BLOCK_TERMS_PER_BUCKET` of the block's points.
+const WINDOW_BLOCK_TERMS_PER_BUCKET: usize = 16;
 
 /// Fills and reduces one window's buckets.
 ///
@@ -766,37 +828,34 @@ const WINDOW_BLOCK_TERMS_PER_BUCKET: usize = 8;
 /// pending additions and assignments) is bounded by the block size instead of
 /// growing with the number of terms. With parallel windows this bound is what
 /// keeps memory from scaling with the number of windows in flight.
-fn fill_window<C: MsmCurve>(
-    components: &[(SignedMagnitude, SignedMagnitude)],
-    bases: &[MultiexpBase<C::Base>],
+fn fill_window<F: VartimeField, T: SmallScalarTerms<F>>(
+    terms: &T,
     window_bits: usize,
     window: usize,
-) -> Option<Vec<Option<AffinePoint<C::Base>>>> {
+) -> Option<Vec<Option<AffinePoint<F>>>> {
     let bucket_count = 1usize << (window_bits - 1);
     let block_terms =
         MIN_WINDOW_BLOCK_TERMS.max(bucket_count.saturating_mul(WINDOW_BLOCK_TERMS_PER_BUCKET));
-    fill_window_in_blocks::<C>(components, bases, window_bits, window, block_terms)
+    fill_window_in_blocks(terms, window_bits, window, block_terms)
 }
 
 /// Reduces a window block by block. Each block's bucket results enter the next
 /// block as the first point of the same buckets, so the batched affine reducer
 /// also merges the blocks, including when a carried point doubles or cancels.
-fn fill_window_in_blocks<C: MsmCurve>(
-    components: &[(SignedMagnitude, SignedMagnitude)],
-    bases: &[MultiexpBase<C::Base>],
+/// This is the monoid law `sum(A + B) = sum({sum(A)} + B)` for multisets.
+fn fill_window_in_blocks<F: VartimeField, T: SmallScalarTerms<F>>(
+    terms: &T,
     window_bits: usize,
     window: usize,
     block_terms: usize,
-) -> Option<Vec<Option<AffinePoint<C::Base>>>> {
+) -> Option<Vec<Option<AffinePoint<F>>>> {
     debug_assert!(block_terms > 0);
-    let mut buckets: Option<Vec<Option<AffinePoint<C::Base>>>> = None;
-    for (components, bases) in components
-        .chunks(block_terms)
-        .zip(bases.chunks(block_terms))
-    {
-        buckets = Some(fill_block::<C>(
-            components,
-            bases,
+    let mut buckets: Option<Vec<Option<AffinePoint<F>>>> = None;
+    for start in (0..terms.len()).step_by(block_terms) {
+        let end = terms.len().min(start + block_terms);
+        buckets = Some(fill_block(
+            terms,
+            start..end,
             window_bits,
             window,
             buckets.as_deref(),
@@ -807,15 +866,15 @@ fn fill_window_in_blocks<C: MsmCurve>(
 
 /// Fills one block's buckets, each led by its carried point from the previous
 /// block, and reduces them.
-fn fill_block<C: MsmCurve>(
-    components: &[(SignedMagnitude, SignedMagnitude)],
-    bases: &[MultiexpBase<C::Base>],
+fn fill_block<F: VartimeField, T: SmallScalarTerms<F>>(
+    terms: &T,
+    range: Range<usize>,
     window_bits: usize,
     window: usize,
-    carry: Option<&[Option<AffinePoint<C::Base>>]>,
-) -> Option<Vec<Option<AffinePoint<C::Base>>>> {
+    carry: Option<&[Option<AffinePoint<F>>]>,
+) -> Option<Vec<Option<AffinePoint<F>>>> {
     let bucket_count = 1 << (window_bits - 1);
-    let (assignments, mut counts) = window_assignments::<C>(components, bases, window_bits, window);
+    let (assignments, mut counts) = window_assignments(terms, range, window_bits, window);
     if let Some(carry) = carry {
         for (count, point) in counts.iter_mut().zip(carry) {
             *count += usize::from(point.is_some());
@@ -831,8 +890,8 @@ fn fill_block<C: MsmCurve>(
     let mut positions = offsets[..bucket_count].to_vec();
     let mut points = alloc::vec![
         AffinePoint {
-            x: C::Base::ZERO,
-            y: C::Base::ZERO,
+            x: F::ZERO,
+            y: F::ZERO,
         };
         *offsets.last().unwrap()
     ];
@@ -845,21 +904,17 @@ fn fill_block<C: MsmCurve>(
         }
     }
     for assignment in assignments {
-        let base_index = assignment.component / 2;
-        let base = bases[base_index];
-        let x = if assignment.component & 1 == 0 {
-            base.x
-        } else {
-            base.endo_x
-        };
+        let point = terms
+            .point(assignment.term)
+            .expect("only terms with a point are assigned");
         let bucket = assignment.bucket();
         let position = positions[bucket];
         points[position] = AffinePoint {
-            x,
+            x: point.x,
             y: if assignment.negative() {
-                -base.y
+                -point.y
             } else {
-                base.y
+                point.y
             },
         };
         positions[bucket] += 1;
@@ -868,66 +923,65 @@ fn fill_block<C: MsmCurve>(
     reduce_affine_buckets(points, offsets)
 }
 
-fn multiexp_serial<C: MsmCurve>(
-    components: &[(SignedMagnitude, SignedMagnitude)],
-    bases: &[MultiexpBase<C::Base>],
+/// One window's share of the MSM: the sum over terms of `digit * point`,
+/// computed as `sum_b b * S_b` over the window's buckets.
+fn window_sum<C: MsmCurve, T: SmallScalarTerms<C::Base>>(
+    terms: &T,
     window_bits: usize,
+    window: usize,
 ) -> Option<C> {
-    let window_count = GLV_COMPONENT_BITS / window_bits + 1;
-    let mut acc = C::identity();
-
-    for window in (0..window_count).rev() {
-        if window + 1 != window_count {
-            for _ in 0..window_bits {
-                acc = acc.double();
-            }
-        }
-
-        let buckets = fill_window::<C>(components, bases, window_bits, window)?;
-        acc += sum_buckets::<C>(&buckets);
-    }
-    Some(acc)
+    let buckets = fill_window(terms, window_bits, window)?;
+    Some(sum_buckets::<C>(&buckets))
 }
 
-/// Evaluates each Signed-Booth window independently through Rayon, then
-/// combines the ordered sums with one Horner fold. This keeps the expensive
-/// window reductions parallel without duplicating the shift chain.
-fn parallel_windows_sum<C: MsmCurve>(
-    windows: usize,
-    window_bits: usize,
-    window_sum: impl Fn(usize) -> Option<C> + Sync,
-) -> Option<C> {
-    #[cfg(feature = "multicore")]
-    let window_sums: Option<Vec<C>> = (0..windows).into_par_iter().map(&window_sum).collect();
-    #[cfg(not(feature = "multicore"))]
-    let window_sums: Option<Vec<C>> = (0..windows).map(&window_sum).collect();
-    let window_sums = window_sums?;
-    let mut acc = C::identity();
-    for (window, sum) in window_sums.into_iter().enumerate().rev() {
-        if window + 1 != windows {
-            for _ in 0..window_bits {
-                acc = acc.double();
+/// Horner's rule at `X = 2^window_bits`: given the window sums from the top
+/// window down, returns `sum_j W_j * 2^(window_bits * j)`. The top window is
+/// not shifted, so the fold starts from it rather than from the identity.
+fn horner<C: MsmCurve>(top_down: impl Iterator<Item = Option<C>>, window_bits: usize) -> Option<C> {
+    let mut acc: Option<C> = None;
+    for sum in top_down {
+        let sum = sum?;
+        acc = Some(match acc {
+            None => sum,
+            Some(mut acc) => {
+                for _ in 0..window_bits {
+                    acc = acc.double();
+                }
+                acc + sum
             }
-        }
-        acc += sum;
+        });
     }
-    Some(acc)
+    Some(acc.unwrap_or_else(C::identity))
 }
 
-/// The bucket MSM with one job per window: on worker threads with
-/// `multicore`, one after another without it.
-fn multiexp_parallel<C: MsmCurve>(
-    components: &[(SignedMagnitude, SignedMagnitude)],
-    bases: &[MultiexpBase<C::Base>],
+/// The bucket method over `terms` with `window_bits`-bit signed-Booth
+/// windows. With `parallel`, the windows' sums are independent jobs (on
+/// worker threads with `multicore`, one after another without it), combined
+/// by one Horner fold; otherwise each window is computed as the fold reaches
+/// it, so only one window's buckets exist at a time.
+fn bucket_multiexp<C: MsmCurve, T: SmallScalarTerms<C::Base>>(
+    terms: &T,
     window_bits: usize,
+    parallel: bool,
     on_job: &(impl Fn() + Sync),
 ) -> Option<C> {
-    let window_count = GLV_COMPONENT_BITS / window_bits + 1;
-    parallel_windows_sum::<C>(window_count, window_bits, |window| {
+    let windows = GLV_COMPONENT_BITS / window_bits + 1;
+    if !parallel {
+        let top_down = (0..windows)
+            .rev()
+            .map(|window| window_sum::<C, T>(terms, window_bits, window));
+        return horner(top_down, window_bits);
+    }
+
+    let job = |window| {
         on_job();
-        let buckets = fill_window::<C>(components, bases, window_bits, window)?;
-        Some(sum_buckets::<C>(&buckets))
-    })
+        window_sum::<C, T>(terms, window_bits, window)
+    };
+    #[cfg(feature = "multicore")]
+    let sums: Vec<Option<C>> = (0..windows).into_par_iter().map(job).collect();
+    #[cfg(not(feature = "multicore"))]
+    let sums: Vec<Option<C>> = (0..windows).map(job).collect();
+    horner(sums.into_iter().rev(), window_bits)
 }
 
 /// Carries out `plan`. Declines (`None`) for [`Plan::Decline`] and when an
@@ -955,17 +1009,8 @@ fn execute_observed<C: MsmCurve>(
             window_bits,
             parallel,
         } => {
-            let components = scalars
-                .iter()
-                .map(decompose::<C>)
-                .map(checked_signed_magnitudes)
-                .collect::<Option<Vec<_>>>()?;
-            let bases = multiexp_bases::<C>(bases);
-            if parallel {
-                multiexp_parallel::<C>(&components, &bases, window_bits, on_job)
-            } else {
-                multiexp_serial::<C>(&components, &bases, window_bits)
-            }
+            let terms = glv_lift::<C>(scalars, bases)?;
+            bucket_multiexp::<C, _>(&terms, window_bits, parallel, on_job)
         }
     }
 }

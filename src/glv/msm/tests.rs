@@ -269,22 +269,15 @@ fn forced_windows<C: MsmCurve>() {
         .iter()
         .zip(&bases)
         .fold(C::identity(), |sum, (scalar, base)| sum + *base * scalar);
-    let components = scalars
-        .iter()
-        .map(decompose::<C>)
-        .map(checked_signed_magnitudes)
-        .collect::<Option<Vec<_>>>()
-        .unwrap();
-    let bases = multiexp_bases::<C>(&bases);
+    let terms = glv_lift::<C>(&scalars, &bases).unwrap();
     for width in [1, 3, 6, 8, 9, 10] {
-        assert_eq!(
-            multiexp_serial::<C>(&components, &bases, width),
-            Some(expected)
-        );
-        assert_eq!(
-            multiexp_parallel::<C>(&components, &bases, width, &|| ()),
-            Some(expected)
-        );
+        for parallel in [false, true] {
+            assert_eq!(
+                bucket_multiexp::<C, _>(&terms, width, parallel, &|| ()),
+                Some(expected),
+                "width {width}, parallel {parallel}"
+            );
+        }
     }
 }
 
@@ -315,13 +308,7 @@ fn blocks_match_single_block<C: MsmCurve>() {
             .to_affine_vartime()
         })
         .collect::<Vec<_>>();
-    let components = scalars
-        .iter()
-        .map(decompose::<C>)
-        .map(checked_signed_magnitudes)
-        .collect::<Option<Vec<_>>>()
-        .unwrap();
-    let bases = multiexp_bases::<C>(&bases);
+    let terms = glv_lift::<C>(&scalars, &bases).unwrap();
     let as_points = |buckets: Vec<Option<AffinePoint<C::Base>>>| {
         buckets
             .into_iter()
@@ -334,15 +321,11 @@ fn blocks_match_single_block<C: MsmCurve>() {
 
     for width in [1, 3, 6] {
         for window in 0..GLV_COMPONENT_BITS / width + 1 {
-            let whole = as_points(
-                fill_window_in_blocks::<C>(&components, &bases, width, window, components.len())
-                    .unwrap(),
-            );
+            let whole =
+                as_points(fill_window_in_blocks(&terms, width, window, terms.len()).unwrap());
             for block_terms in [1, 2, 3, 5, 16, 63] {
-                let blocked = as_points(
-                    fill_window_in_blocks::<C>(&components, &bases, width, window, block_terms)
-                        .unwrap(),
-                );
+                let blocked =
+                    as_points(fill_window_in_blocks(&terms, width, window, block_terms).unwrap());
                 assert_eq!(
                     blocked, whole,
                     "width {width}, window {window}, blocks of {block_terms} terms"
