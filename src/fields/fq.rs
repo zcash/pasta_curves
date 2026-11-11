@@ -286,8 +286,12 @@ impl Fq {
     /// Doubles this field element.
     #[inline]
     pub const fn double(&self) -> Fq {
-        // TODO: This can be achieved more efficiently with a bitshift.
-        self.add(self)
+        let d0 = self.0[0] << 1;
+        let d1 = self.0[1] << 1 | self.0[0] >> 63;
+        let d2 = self.0[2] << 1 | self.0[1] >> 63;
+        let d3 = self.0[3] << 1 | self.0[2] >> 63;
+
+        (&Fq([d0, d1, d2, d3])).sub(&MODULUS)
     }
 
     pub(crate) fn from_u512(limbs: [u64; 8]) -> Fq {
