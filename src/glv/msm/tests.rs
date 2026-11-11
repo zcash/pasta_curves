@@ -1,6 +1,23 @@
 //! Differential checks for Booth recoding and the failure-atomic affine reducer.
 use super::*;
 
+#[cfg(debug_assertions)]
+#[test]
+fn reconstructed_points_must_be_on_curve() {
+    assert!(
+        std::panic::catch_unwind(|| {
+            affine_from_xy_unchecked::<pallas::Point>(crate::Fp::ONE, crate::Fp::ONE)
+        })
+        .is_err()
+    );
+    assert!(
+        std::panic::catch_unwind(|| {
+            affine_from_xy_unchecked::<vesta::Point>(crate::Fq::ONE, crate::Fq::ONE)
+        })
+        .is_err()
+    );
+}
+
 fn batch_invert_and_add_two_lanes_matches_individual<F>()
 where
     F: VartimeField + From<u64>,
@@ -65,15 +82,15 @@ fn multiexp_component_guard_returns_none_out_of_bounds() {
     assert!(checked_signed_magnitudes(((false, 0), (true, out_of_bounds))).is_none());
 }
 
-fn assert_affine_bucket_results_match_native<C: MsmCurve>(
+fn assert_affine_bucket_results_match_native<C: GlvParams>(
     case: &str,
-    reduced: Vec<Option<AffinePoint<C::Base>>>,
+    reduced: Vec<Option<AffinePoint<AffineBase<C>>>>,
     source: &[Vec<C>],
 ) {
     assert_eq!(reduced.len(), source.len());
     for (actual, bucket) in reduced.into_iter().zip(source) {
         let actual = match actual {
-            Some(point) => C::from(C::affine_unchecked(point.x, point.y)),
+            Some(point) => C::from(affine_from_xy_unchecked::<C>(point.x, point.y)),
             None => C::identity(),
         };
         let expected = bucket.iter().copied().sum::<C>();
@@ -81,14 +98,14 @@ fn assert_affine_bucket_results_match_native<C: MsmCurve>(
     }
 }
 
-fn assert_batch_affine_buckets_match_native<C: MsmCurve>(case: &str, source: &[Vec<C>]) {
+fn assert_batch_affine_buckets_match_native<C: GlvParams>(case: &str, source: &[Vec<C>]) {
     let mut points = Vec::new();
     let mut offsets = Vec::with_capacity(source.len() + 1);
     offsets.push(0);
     for bucket in source {
         for point in bucket {
             let affine = C::AffineExt::from(*point);
-            let (x, y) = C::affine_xy(&affine);
+            let (x, y) = affine_xy::<C>(&affine);
             points.push(AffinePoint { x, y });
         }
         offsets.push(points.len());
@@ -99,7 +116,7 @@ fn assert_batch_affine_buckets_match_native<C: MsmCurve>(case: &str, source: &[V
     assert_affine_bucket_results_match_native::<C>(case, reduced, source);
 }
 
-fn batch_affine_buckets_match_native<C: MsmCurve>() {
+fn batch_affine_buckets_match_native<C: GlvParams>() {
     let generator = C::generator();
     let two = generator.double();
     let three = two + generator;
@@ -166,7 +183,7 @@ fn batch_affine_buckets_match_native<C: MsmCurve>() {
     for bucket in &clean_source {
         for point in bucket {
             let affine = C::AffineExt::from(*point);
-            let (x, y) = C::affine_xy(&affine);
+            let (x, y) = affine_xy::<C>(&affine);
             clean_points.push(AffinePoint { x, y });
         }
         clean_offsets.push(clean_points.len());
@@ -245,7 +262,7 @@ fn booth_digits_reconstruct_components() {
     }
 }
 
-fn forced_windows<C: MsmCurve>() {
+fn forced_windows<C: GlvParams>() {
     let scalars = (0..64)
         .map(|i| {
             (C::ScalarExt::from(i + 0x9e3779b97f4a7c15).square() + C::ScalarExt::from(i)).square()
@@ -298,7 +315,7 @@ fn all_window_widths() {
 /// Reducing a window in blocks, with each block's buckets carried into the
 /// next, gives the same buckets as one block. Equal and opposite bases make
 /// carried points double and cancel.
-fn blocks_match_single_block<C: MsmCurve>() {
+fn blocks_match_single_block<C: GlvParams>() {
     let generator = C::generator();
     let scalars = (0..64u64)
         .map(|i| {
@@ -323,11 +340,11 @@ fn blocks_match_single_block<C: MsmCurve>() {
         .collect::<Option<Vec<_>>>()
         .unwrap();
     let bases = multiexp_bases::<C>(&bases);
-    let as_points = |buckets: Vec<Option<AffinePoint<C::Base>>>| {
+    let as_points = |buckets: Vec<Option<AffinePoint<AffineBase<C>>>>| {
         buckets
             .into_iter()
             .map(|bucket| match bucket {
-                Some(point) => C::from(C::affine_unchecked(point.x, point.y)),
+                Some(point) => C::from(affine_from_xy_unchecked::<C>(point.x, point.y)),
                 None => C::identity(),
             })
             .collect::<Vec<_>>()
@@ -367,6 +384,8 @@ fn planner_boundaries() {
     assert_eq!(glv_multiexp_window_bits::<pallas::Point>(127, 1), Some(5));
     assert_eq!(glv_multiexp_window_bits::<pallas::Point>(128, 1), Some(6));
     assert_eq!(glv_multiexp_window_bits::<pallas::Point>(255, 1), Some(6));
+    assert_eq!(glv_multiexp_window_bits::<pallas::Point>(256, 1), Some(6));
+    assert_eq!(glv_multiexp_window_bits::<vesta::Point>(256, 1), Some(6));
     assert!(glv_multiexp_window_bits::<pallas::Point>(2048, 1).is_some());
     // Parallel: below MIN_GLV_MULTIEXP_TERMS the planner still declines.
     assert_eq!(glv_multiexp_window_bits::<pallas::Point>(255, 2), None);

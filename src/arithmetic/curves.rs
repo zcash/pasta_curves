@@ -101,14 +101,45 @@ pub trait CurveExt:
         }
     }
 
-    /// Attempts a multiscalar multiplication, returning `None` when this curve
-    /// has no suitable optimized backend. Callers must retain a generic MSM
-    /// fallback. Different-length slices return `None`.
+    /// Attempts an optimized multiscalar multiplication, declining with `None`.
+    ///
+    /// This is an accelerator in front of a generic MSM, not a replacement:
+    /// always call it first and fall back with
+    /// `C::try_multiexp_vartime(s, b).unwrap_or_else(|| generic_msm(s, b))`.
+    /// Callers must not select between them by input size; the hook's planner
+    /// already does that. Every `Some` equals any correct MSM on the same inputs.
+    /// Different-length slices return `None`.
+    ///
+    /// With `glv`, Pallas and Vesta use their GLV endomorphism to turn N
+    /// full-width terms into 2N half-width terms, add bucket points in affine
+    /// form with one inversion per batch, and share one Strauss doubling chain
+    /// for small sums. With `multicore`, large sums split independent windows
+    /// across threads and small sums split their terms into Strauss leaves.
+    /// Without `glv`, and for other curves, the default implementation always
+    /// declines.
     ///
     /// # Security
     ///
     /// This method is variable-time in both scalars and bases. All inputs must
     /// be public; do not use it with secret scalar or point material.
+    ///
+    /// Its running time and memory accesses depend on the scalars' digits
+    /// (which buckets are filled, and which digits are zero) and on relations
+    /// between the bases (equal or opposite points take a slower path).
+    /// Whether it returns `None` also depends on the input length and the
+    /// thread count. An attacker who can time the call, or observe the cache,
+    /// can learn about the scalars.
+    ///
+    /// Choose this method at a call site whose inputs are known to be public.
+    /// Do not route a general-purpose MSM through it: in a proof system the
+    /// same MSM routine typically serves the verifier, whose inputs are
+    /// public, and the prover, whose commitments use secret witness values and
+    /// blinding factors. Calling this method from such a shared routine leaks
+    /// the prover's secrets.
+    ///
+    /// Generic bucket MSMs also commonly skip zero digits and index buckets by
+    /// digit. Neither belongs on secret inputs; use a constant-time MSM instead
+    /// when secrecy is required.
     fn try_multiexp_vartime(
         _scalars: &[Self::ScalarExt],
         _bases: &[Self::AffineExt],

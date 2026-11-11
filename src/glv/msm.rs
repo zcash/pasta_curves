@@ -1,15 +1,21 @@
 //! Variable-time GLV MSMs for public scalars and bases.
 //!
-//! With `glv`, `CurveExt::try_multiexp_vartime` offers a variable-time MSM backend
-//! for public scalars and bases. It uses a shared-doubling GLV-Strauss ladder for
-//! small inputs and signed-Booth GLV buckets with batched affine additions for
-//! large inputs. It returns `None` when its cost model prefers the caller's
-//! generic MSM; callers must keep that fallback. Enable `multicore` to evaluate
-//! independent windows through the Rayon pool; WebAssembly without atomics uses
-//! the serial implementation. Neither feature changes ordinary constant-time
-//! scalar multiplication.
+//! This is an accelerator in front of a generic MSM, not a replacement for it:
+//! call `C::try_multiexp_vartime(s, b).unwrap_or_else(|| generic_msm(s, b))`.
+//! Always try the hook first; its planner chooses by input shape, so callers
+//! need no size threshold. Every `Some` equals any correct MSM on the same inputs.
 //!
-//! The small-MSM ladder reuses the existing split-wNAF tables unchanged.
+//! With `glv`, the Pallas and Vesta endomorphisms lift N full-width terms to
+//! 2N half-width terms. Large sums use signed-Booth buckets with affine additions
+//! sharing one inversion per batch. Small sums share a Strauss doubling chain
+//! using the existing split-wNAF tables. With `multicore`, large sums split
+//! independent windows across threads and small sums split their terms into
+//! Strauss leaves. WebAssembly without atomics stays serial. Without `glv`,
+//! and for other curves, the default implementation always declines.
+//!
+//! Both scalars and bases must be public. Generic bucket MSMs also commonly
+//! skip zero digits and index buckets by digit; neither is suitable for secret
+//! inputs or a constant-time MSM. Ordinary constant-time multiplication is unchanged.
 
 use alloc::vec::Vec;
 use ff::{Field, PrimeField, WithSmallOrderMulGroup};
@@ -17,40 +23,25 @@ use group::CurveAffine as _;
 #[cfg(feature = "multicore")]
 use maybe_rayon::prelude::*;
 
-use super::{Decomposed, GlvParams, Table, decompose};
+use super::{
+    Decomposed, GlvParams, Table, affine_from_xy_unchecked, decompose, private::AffineBase,
+};
 use crate::arithmetic::{CurveAffine, VartimeField};
+#[cfg(test)]
 use crate::{pallas, vesta};
 
 #[cfg(test)]
 mod tests;
 
-// Keep raw-coordinate plumbing private rather than strengthening the public
-// CurveExt associated-type bounds or exposing a generic unchecked constructor.
-pub(crate) trait MsmCurve: GlvParams {
-    fn affine_unchecked(x: Self::Base, y: Self::Base) -> Self::AffineExt;
-    fn affine_xy(point: &Self::AffineExt) -> (Self::Base, Self::Base);
+/// Reads affine coordinates, using the identity's zero representation.
+fn affine_xy<C: GlvParams>(point: &C::AffineExt) -> (AffineBase<C>, AffineBase<C>) {
+    Option::<crate::arithmetic::Coordinates<C::AffineExt>>::from(point.coordinates())
+        .map(|p| (*p.x(), *p.y()))
+        .unwrap_or((AffineBase::<C>::ZERO, AffineBase::<C>::ZERO))
 }
 
-macro_rules! impl_msm_curve {
-    ($curve:ident) => {
-        impl MsmCurve for $curve::Point {
-            fn affine_unchecked(x: Self::Base, y: Self::Base) -> Self::AffineExt {
-                $curve::Affine::from_xy_unchecked(x, y)
-            }
-
-            fn affine_xy(point: &Self::AffineExt) -> (Self::Base, Self::Base) {
-                Option::<crate::arithmetic::Coordinates<$curve::Affine>>::from(point.coordinates())
-                    .map(|p| (*p.x(), *p.y()))
-                    .unwrap_or((Self::Base::ZERO, Self::Base::ZERO))
-            }
-        }
-    };
-}
-impl_msm_curve!(pallas);
-impl_msm_curve!(vesta);
-
-/// Below this, the cost model is not consulted. With several worker threads
-/// the hook then declines; serial MSMs use the measured choices below instead.
+/// The cost model starts here for parallel MSMs and above this for serial MSMs.
+/// Serial MSMs through 256 terms use measured Strauss and bucket choices.
 const MIN_GLV_MULTIEXP_TERMS: usize = 256;
 
 /// Largest GLV-Strauss leaf when MSMs are split across worker threads.
@@ -63,7 +54,7 @@ const SERIAL_STRAUSS_MAX_TERMS: usize = 24;
 
 /// Bucket-backend window width for serial MSMs between
 /// `SERIAL_STRAUSS_MAX_TERMS` and `MIN_GLV_MULTIEXP_TERMS`, the fastest width
-/// measured on Pallas: 5 from 32 to 96 terms, 6 from 128 to 255 terms. The cost
+/// measured on Pallas: 5 from 32 to 96 terms, 6 from 128 to 256 terms. The cost
 /// model counts a batched affine addition as a projective one, so it would
 /// decline these sizes although they are 28% to 50% faster than the generic MSM.
 fn serial_small_window_bits(terms: usize) -> usize {
@@ -178,7 +169,7 @@ fn default_multiexp_window_bits(terms: usize) -> Option<usize> {
     }
 }
 
-fn scalar_repr_bits<C: MsmCurve>() -> Option<usize> {
+fn scalar_repr_bits<C: GlvParams>() -> Option<usize> {
     <C::ScalarExt as PrimeField>::Repr::default()
         .as_ref()
         .len()
@@ -189,7 +180,7 @@ fn scalar_repr_bits<C: MsmCurve>() -> Option<usize> {
 ///
 /// Compare the nine-bit schedule with its wider successor in serial mode.
 /// Keep the comparison narrow because this model omits cache behavior.
-fn multiexp_window_bits<C: MsmCurve>(terms: usize, num_threads: usize) -> Option<usize> {
+fn multiexp_window_bits<C: GlvParams>(terms: usize, num_threads: usize) -> Option<usize> {
     let window_bits = default_multiexp_window_bits(terms)?;
     if num_threads != 1 || window_bits != 9 {
         return Some(window_bits);
@@ -210,8 +201,8 @@ fn multiexp_window_bits<C: MsmCurve>(terms: usize, num_threads: usize) -> Option
 
 /// Choose a GLV window only when its estimated work beats the generic MSM.
 /// Compare both the default width and its successor to account for worker waves.
-fn glv_multiexp_window_bits<C: MsmCurve>(terms: usize, num_threads: usize) -> Option<usize> {
-    if terms < MIN_GLV_MULTIEXP_TERMS {
+fn glv_multiexp_window_bits<C: GlvParams>(terms: usize, num_threads: usize) -> Option<usize> {
+    if terms < MIN_GLV_MULTIEXP_TERMS || (terms == MIN_GLV_MULTIEXP_TERMS && num_threads <= 1) {
         return (num_threads <= 1 && terms > SERIAL_STRAUSS_MAX_TERMS)
             .then(|| serial_small_window_bits(terms));
     }
@@ -222,7 +213,7 @@ fn glv_multiexp_window_bits<C: MsmCurve>(terms: usize, num_threads: usize) -> Op
 
 /// The generic Signed-Booth MSM's estimated work at its default width (see
 /// [`estimated_signed_booth_work`]).
-fn estimated_generic_work<C: MsmCurve>(terms: usize, num_threads: usize) -> Option<BoothWork> {
+fn estimated_generic_work<C: GlvParams>(terms: usize, num_threads: usize) -> Option<BoothWork> {
     let window_bits = multiexp_window_bits::<C>(terms, num_threads)?;
     let scalar_bits = scalar_repr_bits::<C>()?;
     estimated_signed_booth_work(terms, scalar_bits, window_bits, num_threads)
@@ -230,7 +221,7 @@ fn estimated_generic_work<C: MsmCurve>(terms: usize, num_threads: usize) -> Opti
 
 /// The Signed-Booth GLV backend's cheapest `(work, window width)` over the
 /// candidate widths `w` and `w + 1` (see [`glv_multiexp_window_bits`]).
-fn booth_multiexp_estimate<C: MsmCurve>(
+fn booth_multiexp_estimate<C: GlvParams>(
     terms: usize,
     num_threads: usize,
 ) -> Option<(BoothWork, usize)> {
@@ -268,7 +259,7 @@ fn current_num_threads() -> usize {
 
 /// Share the doubling ladder across all scalar/base pairs, reusing the
 /// upstream GLV decomposition and width-four split-wNAF tables unchanged.
-fn strauss_multiexp<C: MsmCurve>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C {
+fn strauss_multiexp<C: GlvParams>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C {
     debug_assert_eq!(scalars.len(), bases.len());
 
     let mut decomposed = Vec::with_capacity(scalars.len());
@@ -305,7 +296,7 @@ fn strauss_multiexp<C: MsmCurve>(scalars: &[C::ScalarExt], bases: &[C::AffineExt
 }
 
 #[cfg(feature = "multicore")]
-fn strauss_multiexp_leaves<C: MsmCurve>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C {
+fn strauss_multiexp_leaves<C: GlvParams>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C {
     scalars
         .chunks(STRAUSS_LEAF_TERMS)
         .zip(bases.chunks(STRAUSS_LEAF_TERMS))
@@ -313,7 +304,7 @@ fn strauss_multiexp_leaves<C: MsmCurve>(scalars: &[C::ScalarExt], bases: &[C::Af
         .fold(C::identity(), |left, right| left + right)
 }
 
-fn planned_strauss_multiexp<C: MsmCurve>(
+fn planned_strauss_multiexp<C: GlvParams>(
     scalars: &[C::ScalarExt],
     bases: &[C::AffineExt],
     num_threads: usize,
@@ -582,12 +573,12 @@ fn batch_invert_and_add<F: VartimeField>(
 /// Collects the nonzero signed points assigned to one Booth window.
 fn window_assignments<C>(
     components: &[(SignedMagnitude, SignedMagnitude)],
-    bases: &[MultiexpBase<C::Base>],
+    bases: &[MultiexpBase<AffineBase<C>>],
     window_bits: usize,
     window: usize,
 ) -> (Vec<WindowAssignment>, Vec<usize>)
 where
-    C: MsmCurve,
+    C: GlvParams,
 {
     let bucket_count = 1 << (window_bits - 1);
     let mut assignments = Vec::with_capacity(bases.len().saturating_mul(2));
@@ -712,12 +703,12 @@ fn reduce_affine_buckets_inner<F: VartimeField, const COMPLETE: bool>(
     )
 }
 
-fn sum_buckets<C: MsmCurve>(buckets: &[Option<AffinePoint<C::Base>>]) -> C {
+fn sum_buckets<C: GlvParams>(buckets: &[Option<AffinePoint<AffineBase<C>>>]) -> C {
     let mut running = C::identity();
     let mut sum = C::identity();
     for bucket in buckets.iter().rev() {
         if let Some(point) = bucket {
-            running += C::affine_unchecked(point.x, point.y);
+            running += affine_from_xy_unchecked::<C>(point.x, point.y);
         }
         sum += running;
     }
@@ -734,16 +725,15 @@ const WINDOW_BLOCK_TERMS_PER_BUCKET: usize = 8;
 
 /// Fills and reduces one window's buckets.
 ///
-/// The terms are processed in blocks, so the window's scratch memory (points,
-/// pending additions and assignments) is bounded by the block size instead of
-/// growing with the number of terms. With parallel windows this bound is what
-/// keeps memory from scaling with the number of windows in flight.
-fn fill_window<C: MsmCurve>(
+/// Scratch is bounded by `max(2^14, 8 * buckets)` terms for each window, rather
+/// than by the whole input. Wider windows increase the bucket count and thus
+/// the block bound; parallel windows multiply this bound by the jobs in flight.
+fn fill_window<C: GlvParams>(
     components: &[(SignedMagnitude, SignedMagnitude)],
-    bases: &[MultiexpBase<C::Base>],
+    bases: &[MultiexpBase<AffineBase<C>>],
     window_bits: usize,
     window: usize,
-) -> Option<Vec<Option<AffinePoint<C::Base>>>> {
+) -> Option<Vec<Option<AffinePoint<AffineBase<C>>>>> {
     let bucket_count = 1usize << (window_bits - 1);
     let block_terms =
         MIN_WINDOW_BLOCK_TERMS.max(bucket_count.saturating_mul(WINDOW_BLOCK_TERMS_PER_BUCKET));
@@ -753,15 +743,15 @@ fn fill_window<C: MsmCurve>(
 /// Reduces a window block by block. Each block's bucket results enter the next
 /// block as the first point of the same buckets, so the batched affine reducer
 /// also merges the blocks, including when a carried point doubles or cancels.
-fn fill_window_in_blocks<C: MsmCurve>(
+fn fill_window_in_blocks<C: GlvParams>(
     components: &[(SignedMagnitude, SignedMagnitude)],
-    bases: &[MultiexpBase<C::Base>],
+    bases: &[MultiexpBase<AffineBase<C>>],
     window_bits: usize,
     window: usize,
     block_terms: usize,
-) -> Option<Vec<Option<AffinePoint<C::Base>>>> {
+) -> Option<Vec<Option<AffinePoint<AffineBase<C>>>>> {
     debug_assert!(block_terms > 0);
-    let mut buckets: Option<Vec<Option<AffinePoint<C::Base>>>> = None;
+    let mut buckets: Option<Vec<Option<AffinePoint<AffineBase<C>>>>> = None;
     for (components, bases) in components
         .chunks(block_terms)
         .zip(bases.chunks(block_terms))
@@ -779,13 +769,13 @@ fn fill_window_in_blocks<C: MsmCurve>(
 
 /// Fills one block's buckets, each led by its carried point from the previous
 /// block, and reduces them.
-fn fill_block<C: MsmCurve>(
+fn fill_block<C: GlvParams>(
     components: &[(SignedMagnitude, SignedMagnitude)],
-    bases: &[MultiexpBase<C::Base>],
+    bases: &[MultiexpBase<AffineBase<C>>],
     window_bits: usize,
     window: usize,
-    carry: Option<&[Option<AffinePoint<C::Base>>]>,
-) -> Option<Vec<Option<AffinePoint<C::Base>>>> {
+    carry: Option<&[Option<AffinePoint<AffineBase<C>>>]>,
+) -> Option<Vec<Option<AffinePoint<AffineBase<C>>>>> {
     let bucket_count = 1 << (window_bits - 1);
     let (assignments, mut counts) = window_assignments::<C>(components, bases, window_bits, window);
     if let Some(carry) = carry {
@@ -803,8 +793,8 @@ fn fill_block<C: MsmCurve>(
     let mut positions = offsets[..bucket_count].to_vec();
     let mut points = alloc::vec![
         AffinePoint {
-            x: C::Base::ZERO,
-            y: C::Base::ZERO,
+            x: AffineBase::<C>::ZERO,
+            y: AffineBase::<C>::ZERO,
         };
         *offsets.last().unwrap()
     ];
@@ -840,9 +830,9 @@ fn fill_block<C: MsmCurve>(
     reduce_affine_buckets(points, offsets)
 }
 
-fn multiexp_serial<C: MsmCurve>(
+fn multiexp_serial<C: GlvParams>(
     components: &[(SignedMagnitude, SignedMagnitude)],
-    bases: &[MultiexpBase<C::Base>],
+    bases: &[MultiexpBase<AffineBase<C>>],
     window_bits: usize,
 ) -> Option<C> {
     let window_count = GLV_COMPONENT_BITS / window_bits + 1;
@@ -865,7 +855,7 @@ fn multiexp_serial<C: MsmCurve>(
 /// combines the ordered sums with one Horner fold. This keeps the expensive
 /// window reductions parallel without duplicating the shift chain.
 #[cfg(feature = "multicore")]
-fn parallel_windows_sum<C: MsmCurve>(
+fn parallel_windows_sum<C: GlvParams>(
     windows: usize,
     window_bits: usize,
     window_sum: impl Fn(usize) -> Option<C> + Sync,
@@ -885,9 +875,9 @@ fn parallel_windows_sum<C: MsmCurve>(
 }
 
 #[cfg(feature = "multicore")]
-fn multiexp_parallel<C: MsmCurve>(
+fn multiexp_parallel<C: GlvParams>(
     components: &[(SignedMagnitude, SignedMagnitude)],
-    bases: &[MultiexpBase<C::Base>],
+    bases: &[MultiexpBase<AffineBase<C>>],
     window_bits: usize,
 ) -> Option<C> {
     let window_count = GLV_COMPONENT_BITS / window_bits + 1;
@@ -897,9 +887,9 @@ fn multiexp_parallel<C: MsmCurve>(
     })
 }
 
-fn multiexp<C: MsmCurve>(
+fn multiexp<C: GlvParams>(
     components: &[(SignedMagnitude, SignedMagnitude)],
-    bases: &[MultiexpBase<C::Base>],
+    bases: &[MultiexpBase<AffineBase<C>>],
     window_bits: usize,
     num_threads: usize,
 ) -> Option<C> {
@@ -918,14 +908,14 @@ fn multiexp<C: MsmCurve>(
     acc
 }
 
-fn multiexp_bases<C: MsmCurve>(bases: &[C::AffineExt]) -> Vec<MultiexpBase<C::Base>> {
+fn multiexp_bases<C: GlvParams>(bases: &[C::AffineExt]) -> Vec<MultiexpBase<AffineBase<C>>> {
     bases
         .iter()
         .map(|base| {
-            let (x, y) = C::affine_xy(base);
+            let (x, y) = affine_xy::<C>(base);
             MultiexpBase {
                 x,
-                endo_x: x * C::Base::ZETA,
+                endo_x: x * AffineBase::<C>::ZETA,
                 y,
                 identity: bool::from(base.is_identity()),
             }
@@ -935,7 +925,7 @@ fn multiexp_bases<C: MsmCurve>(bases: &[C::AffineExt]) -> Vec<MultiexpBase<C::Ba
 
 /// Declines unprofitable input shapes and failed arithmetic guards so callers
 /// can retain their generic MSM. Mismatched lengths also decline.
-pub(crate) fn try_multiexp<C: MsmCurve>(
+pub(crate) fn try_multiexp<C: GlvParams>(
     scalars: &[C::ScalarExt],
     bases: &[C::AffineExt],
 ) -> Option<C> {

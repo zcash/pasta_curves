@@ -87,7 +87,7 @@ use ff::PrimeField;
 use ff::WithSmallOrderMulGroup;
 use group::CurveAffine as _;
 
-use crate::arithmetic::{CurveExt, VartimeField, mac, sbb};
+use crate::arithmetic::{CurveAffine, CurveExt, VartimeField, mac, sbb};
 use crate::{pallas, vesta};
 
 pub(crate) mod msm;
@@ -131,12 +131,16 @@ mod private {
 /// The affine point $(x, y)$ of `C`, without checking that it is on the
 /// curve; $(0, 0)$ yields the identity. The caller must pass coordinates that
 /// its own curve arithmetic produced.
-#[cfg(any(test, feature = "glv-eisenstein"))]
 pub(crate) fn affine_from_xy_unchecked<C: GlvParams>(
     x: private::AffineBase<C>,
     y: private::AffineBase<C>,
 ) -> C::AffineExt {
-    <C as private::Sealed>::affine_from_xy_unchecked(x, y)
+    let point = <C as private::Sealed>::affine_from_xy_unchecked(x, y);
+    debug_assert!(
+        bool::from(point.is_on_curve()),
+        "reconstructed point is on curve"
+    );
+    point
 }
 
 /// How a GLV-split scalar is expanded into digit columns, together with the
