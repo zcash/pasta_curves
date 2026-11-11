@@ -109,6 +109,20 @@ pub trait CurveExt:
     ///
     /// This method is variable-time in both scalars and bases. All inputs must
     /// be public; do not use it with secret scalar or point material.
+    ///
+    /// Its running time and memory accesses depend on the scalars' digits
+    /// (which buckets are filled, and which digits are zero) and on relations
+    /// between the bases (equal or opposite points take a slower path).
+    /// Whether it returns `None` also depends on the input length and the
+    /// thread count. An attacker who can time the call, or observe the cache,
+    /// can learn about the scalars.
+    ///
+    /// Choose this method at a call site whose inputs are known to be public.
+    /// Do not route a general-purpose MSM through it: in a proof system the
+    /// same MSM routine typically serves the verifier, whose inputs are
+    /// public, and the prover, whose commitments use secret witness values and
+    /// blinding factors. Calling this method from such a shared routine leaks
+    /// the prover's secrets.
     fn try_multiexp_vartime(
         _scalars: &[Self::ScalarExt],
         _bases: &[Self::AffineExt],
