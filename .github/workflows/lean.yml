@@ -49,6 +49,8 @@ jobs:
               - '!{book/**,lean/**,sage/**,.github/**,scripts/**,*.md,LICENSE-*,ruff.toml,katex-header.html}'
               - 'lean/PastaCurves/Portable/**'
               - 'lean/PastaCurves/Glue/**'
+              - 'lean/PastaCurves/Glv/Types.lean'
+              - 'lean/PastaCurves/Glv/Funs.lean'
               - 'lean/lakefile.toml'
               - 'lean/scripts/fetch_aeneas.sh'
               - 'lean/scripts/gen_aeneas.sh'

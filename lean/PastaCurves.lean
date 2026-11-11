@@ -40,6 +40,14 @@ import PastaCurves.Glue.Funs
 import PastaCurves.Glue.Blocks
 import PastaCurves.Glue.Spec
 import PastaCurves.Glue.Vectors
+import PastaCurves.Glv.Funs
+import PastaCurves.Glv.Model
+import PastaCurves.Glv.Spec
+import PastaCurves.Glv.Wnaf
+import PastaCurves.Glv.Ladder
+import PastaCurves.Glv.Table
+import PastaCurves.Glv.Entry
+import PastaCurves.Glv.WnafRefines
 
 /-!
 # The assembly routines, formalized

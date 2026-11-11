@@ -63,6 +63,21 @@ The multiplication and squaring blocks are transcriptions of Semolina v0.1.4's
 and subtraction blocks were imported from zakura-pasta-curves (see the crate README for the
 history).
 
+With the `glv` feature, the crate also has a variable-time GLV scalar multiplication
+(`src/glv.rs`). Its core is the width-4 wNAF recoding of a scalar's two halves, `wnaf_digits`, and
+the Straus ladder over the two tables of odd multiples of a point and of its image under the
+endomorphism, `Table::mul_decomposed`. On top of them sit `Decomposed::new`, the table builders
+`Table::new` and `Table::batch`, `Table::mul`, `GlvParams::mul_glv`, and
+`batch_mul_same_scalar_vartime` (`src/curves.rs`). These are mirrored by hand in
+`PastaCurves/Glv/Model.lean`, and the proofs are about that model: below `2^127` the recoding does
+not panic and returns at most 128 digits that encode its input, the ladder computes the halves'
+combination in any abelian group, and the entry points return a point standing for `[k]P`, under the
+conditions that the trust story lists. `wnaf_digits` alone is also translated by Aeneas, and the
+translation is proved to refine the model (`Glv/WnafRefines.lean`), so below `2^127` its results
+hold of the translated code too, which has a debug build's semantics; from `2^127` on that code
+fails at the assertion. `decompose` itself, the lattice reduction that produces the halves, is not
+proved; its contract is one of the conditions.
+
 ## Trust story
 
 What is trusted, beyond Lean's kernel and standard axioms:
@@ -96,23 +111,68 @@ What is trusted, beyond Lean's kernel and standard axioms:
    and `R3` are the powers of `R` that they name. It also checks that their `E0`, the inversion's
    starting `e`, is `2^562 mod p`. The moduli are prime: the kernel checks a Pratt certificate for
    each (`Primality.lean`, with the checker in `Pratt.lean`).
-6. The Aeneas translations (`PastaCurves/Portable/` and `PastaCurves/Glue/`): Charon and Aeneas
-   at the pinned revision, and the model of Rust's operations in Aeneas' Lean library. CI
-   regenerates and diffs them. The one external function that the glue calls, `black_box`, is
-   defined in `Glue/FunsExternal.lean` as the identity, which is its value. Each backend's record
-   of the trait's blocks (`AArch64/Backend.lean` and `X86_64/Backend.lean`) names the block
-   models that its methods run, as the Rust impl does, and `blocksOf` (`Glue/Blocks.lean`) builds
-   the record from them. The records are checked against the impls by inspection.
+6. The Aeneas translations (`PastaCurves/Portable/`, `PastaCurves/Glue/`, and `Glv/Types.lean`
+   and `Glv/Funs.lean`): Charon and Aeneas at the pinned revision, and the model of Rust's
+   operations in Aeneas' Lean library. CI regenerates and diffs them. The one external function
+   that the glue calls, `black_box`, is defined in `Glue/FunsExternal.lean` as the identity, which
+   is its value. Each backend's record of the trait's blocks (`AArch64/Backend.lean` and
+   `X86_64/Backend.lean`) names the block models that its methods run, as the Rust impl does, and
+   `blocksOf` (`Glue/Blocks.lean`) builds the record from them. The records are checked against
+   the impls by inspection.
+
+   The GLV translation is of `wnaf_digits` alone, as the crate compiles it with the `glv` feature.
+   It has the semantics of a debug build: the `debug_assert!`, the overflow checks, and the bounds
+   check are all kept, so it fails at the first operation that would panic. The rest of the
+   GLV path is generic over the curve traits, which the pinned Charon does not translate (it fails
+   on an associated type of `group::CurveAffine`). So the ladder, the table builders, and the
+   entry points are proved about the model of item 7 only.
 
    Aeneas' library declares axioms of its own, for opaque Rust items, and two of its tests cite
    `sorryAx`. The axiom census (`scripts/check_export_axioms.py`) checks that no declaration
    outside Aeneas' library depends on any of them, directly or through Aeneas' declarations, so
    the package's theorems rest on the standard axioms alone. nanoda is told of them, since its
    strict mode rejects any declared axiom it is not told of.
+7. The GLV path mirrored in `PastaCurves/Glv/Model.lean`: `wnaf_digits`, `Decomposed::new`,
+   `Table::add_digit` and `Table::mul_decomposed`, the table builders (`window_proj`,
+   `from_window`, `Table::new`, `Table::batch`), `Table::mul`, `GlvParams::mul_glv`, and
+   `batch_mul_same_scalar_vartime` as Pallas and Vesta implement it with the `glv` feature. Rust's
+   integers are Lean's. In `wnaf_digits`, every operation that a debug build checks computes the
+   wrapped result, as a release build does, and records in a flag whether the check failed, and a
+   write past `digits` writes nothing and sets a flag, so one run of the model gives the outcome
+   in every build profile (`Wnaf.State.panicsIn`). In the other functions a panic is a `none`
+   result. The model is checked against the Rust by inspection. For `wnaf_digits` it was also
+   checked by a differential test that is not part of this repository: a verbatim copy of the
+   Rust function and the model had the same outcome (the digits and length, or a panic) on
+   75,223 magnitudes, each with both signs, in all four profiles of debug assertions and overflow
+   checks. The magnitudes were every value below `2^16`, the neighbours of every power of two,
+   repeated nibbles, edge cases, and 10,000 random draws. For debug builds, the refinement of item
+   6 proves the same agreement on every input for Aeneas' translation, resting on Charon and Aeneas
+   rather than on testing.
+8. The curve arithmetic. The model takes the primitives the path calls (`identity`, `double`,
+   addition, mixed addition, affine negation, `endo`, `is_identity`, `batch_normalize`,
+   `to_curve`) as a record of total functions (`CurveOps`), so it assumes that each returns.
+   `CurveOps.Spec` (`Glv/Spec.lean`) states what else is trusted of them, under an abstraction
+   `CurveAbs`: validity predicates on projective and affine points and maps into a group. `endo` is
+   covered by `EndoSpec` (item 9); each of the others keeps points valid and is the corresponding
+   group operation, `is_identity` in one direction (a point it accepts stands for the identity).
+   `batch_normalize`'s `assert_eq!` on its two lengths is not modelled, since both callers pass
+   equal lengths. `CurveAbs`, and `ScalarAbs` for the scalars, are data that a use of the theorems
+   names, not assumptions. This package defines no instance; the theorems hold for every instance
+   meeting the conditions, and the intended one (on-curve points, Jacobian points mapped into the
+   curve group) is the one `CurveOps.Spec` is trusted for.
+9. Three conditions of the end-to-end theorems, assumed until they are formalized: `OrderSpec`
+   (`n` kills every valid point), `EndoSpec` (`endo` keeps points valid and is multiplication by
+   `λ`), and `DecomposeSpec` (on a valid scalar, `decompose` returns halves below `2^127` that
+   recombine to the scalar modulo `n`). They are hypotheses of the theorems, never axioms.
+10. Allocation, which the model leaves out and so assumes succeeds. In Rust,
+    `Table::batch`'s `Vec::with_capacity(n * 8)` of 96-byte projective points would panic on a
+    capacity overflow from 2,796,203 points on a 32-bit target, never on a 64-bit one;
+    `Table.batch`'s docstring says so.
 
 Not modelled formally: the compiler's handling of the blocks' operands, that is, the allocation of
 registers to the placeholders and the `options(pure, nomem, nostack)` declaration, read-only pointer
-loads, pointer validity, the compiler's `readonly` handling, and the Rust mirrored by hand (item 3).
+loads, pointer validity, the compiler's `readonly` handling, and the Rust mirrored by hand (items 3
+and 7).
 The model treats the operands as limb inputs and outputs. Those aspects were reviewed by hand.
 
 For x86-64, CF/OF availability is checked by the generator as described above.
@@ -188,6 +248,15 @@ PastaCurves/Glue/FunsExternal.lean       the one external function that they cal
 PastaCurves/Glue/Vectors.lean            the compositions on the vectors and known answers, as tests
 PastaCurves/Glue/Blocks.lean             `blocksOf`: a backend's record, from its block models
 PastaCurves/Glue/Spec.lean               the compositions meet the entry points' contracts
+PastaCurves/Glv/Types.lean               GENERATED by Aeneas: empty, `wnaf_digits` declares no types
+PastaCurves/Glv/Funs.lean                GENERATED by Aeneas: `wnaf_digits`
+PastaCurves/Glv/Model.lean               the GLV path mirrored from `src/glv.rs` and `src/curves.rs`
+PastaCurves/Glv/Spec.lean                wNAF digits, tables, `CurveAbs`, `ScalarAbs`, and the conditions
+PastaCurves/Glv/Wnaf.lean                `wnaf_digits` and `Decomposed::new` on two halves; the remarks
+PastaCurves/Glv/Ladder.lean              `mul_decomposed` in a group, and over the curve operations
+PastaCurves/Glv/Table.lean               `window_proj`, `Table::new`, and `Table::batch` build the tables
+PastaCurves/Glv/Entry.lean               `Decomposed::new` and the entry points compute `[k]P`
+PastaCurves/Glv/WnafRefines.lean         the translated `wnaf_digits` refines the model
 scripts/gen.py                           shared bindings, vectors, skeletons, checks, and CLI
 scripts/asm_source.py                    shared Rust inline-assembly parser and validation
 scripts/gen_aarch64.py                   AArch64 decoding, round factoring, and proof-fact hooks
@@ -204,13 +273,13 @@ scripts/check_export_axioms.py           the axiom census of the export, run by 
 ```
 
 Shared declarations use namespace `PastaCurves`; architecture declarations use `PastaCurves.AArch64`
-and `PastaCurves.X86_64`; the Aeneas translations use `pasta_curves`, the crate's name, as Aeneas
-names it. Shared modules do not import architecture-specific modules, so both models reuse them
-without depending on one another. The exception is `Glue/Vectors.lean`, which runs the translated
-glue over both backends' records, and which nothing imports but the root module. The package is
-built with Lake from this directory (`scripts/build.sh`), with Mathlib and Aeneas' Lean library
-pinned in `lake-manifest.json`. `scripts/ci.sh` at the repository root runs these checks together
-with the crate's.
+and `PastaCurves.X86_64`, and the GLV modules `PastaCurves.Glv`; the Aeneas translations use
+`pasta_curves`, the crate's name, as Aeneas names it. Shared modules do not import
+architecture-specific modules, so both models reuse them without depending on one another. The
+exception is `Glue/Vectors.lean`, which runs the translated glue over both backends' records, and
+which nothing imports but the root module. The package is built with Lake from this directory
+(`scripts/build.sh`), with Mathlib and Aeneas' Lean library pinned in `lake-manifest.json`.
+`scripts/ci.sh` at the repository root runs these checks together with the crate's.
 
 `scripts/gen_aeneas.sh` regenerates or checks the Aeneas translations. It runs the Charon and
 Aeneas binaries from the release that Aeneas' CI built at the pinned revision.
@@ -387,6 +456,73 @@ contract requires. The result is canonical. For `x = 0` it is `0`, and otherwise
 Montgomery inverse, with `x · result ≡ R^2 (mod p)`. The primality of the modulus is the field's
 `prime`, and the termination bound is `terminationBound_256`.
 
+The GLV path's theorems, in `PastaCurves/Glv/`, are about the model of `Glv/Model.lean`, except
+the three of the last item, which are about Aeneas' translation of `wnaf_digits`. For a magnitude
+`a` and the sign `negate`:
+
+* `wnaf_digits_no_panic` (proved, `wnaf_digits`): for `a < 2^127` no build panics. The
+  `debug_assert!` holds, no write is past `digits`, and no `u128` or `i8` operation overflows.
+* `wnaf_digits_length_le_log2` and `wnaf_digits_length_le_128` (proved, `wnaf_digits`): on any
+  `u128` the loop makes at most `⌊log₂ a⌋ + 2` passes (the model's `n`), and for `a < 2^127` that
+  is at most 128, the `MAX_WNAF_DIGITS` the arrays hold. The model runs on through a failed
+  check, so the bound also covers a build that panics.
+* `wnaf_digits_shape` (proved, `wnaf_digits`): on every magnitude, each digit is `0` or odd in
+  `[-7, 7]` (`IsWnafDigit`), so `|d| / 2` indexes a table of four entries.
+* `wnaf_digits_value` (proved, `wnaf_digits`): for `a < 2^127`, `Σ dᵢ 2ⁱ` is `a`, or `-a` when
+  `negate`, and `dᵢ = 0` for `i ≥ n`.
+* `decomposed_of_halves_spec` (proved, `Decomposed::new` after its call to `decompose`): on two
+  halves below `2^127` it does not panic; its arrays are the halves' digits, and `len`, the larger
+  of their lengths, is at most 128, with both arrays zero from `len` on.
+* `mul_decomposed_spec` (proved, `Table::mul_decomposed`): in any abelian group, over the tables
+  `{1, 3, 5, 7}·p` and `{1, 3, 5, 7}·q`, on digits of that shape that are zero from `len ≤ 128` on,
+  the ladder returns `(Σ d1ᵢ 2ⁱ)·p + (Σ d2ᵢ 2ⁱ)·q` without a panic. `addDigit_transport` and
+  `ladderLoop_transport` carry the ladder to curve operations that meet `CurveOps.Spec`, through
+  valid points.
+* `window_proj_spec`, `table_new_spec`, and `table_batch_spec` (proved, `Table::window_proj`,
+  `Table::new`, `Table::batch`): under `CurveOps.Spec`, the window of a valid point `p` holds valid
+  points standing for `p, 3p, 5p, 7p`, followed by their images under `endo`; with `EndoSpec` as
+  well, `Table::new(p)` builds the table of `p` (`TableOf`: valid entries standing for
+  `(2j + 1)·p` and `(2j + 1)·λp`), and `Table::batch(ps)` one table per point, in order. The
+  identity is a valid point here.
+* `decomposed_new_spec` (proved, `Decomposed::new`): under `DecomposeSpec`, on a valid scalar `k`
+  it does not panic, its digits have the shape above and are zero from `len ≤ 128` on, and
+  `Σ d1ᵢ 2ⁱ + (Σ d2ᵢ 2ⁱ)·λ ≡ val k (mod n)`.
+* The entry points (proved), under `CurveOps.Spec`, `OrderSpec`, and `DecomposeSpec`: on a valid
+  scalar `k` and valid points, each does not panic and returns valid points standing for
+  `val k · P`. `decomposed_new_mul_decomposed_spec` is `Decomposed::new(k)` followed by
+  `mul_decomposed` on the table of any valid point; `mul_glv_spec` is `GlvParams::mul_glv`,
+  `table_mul_spec` is `Table::new(p).mul(k)`, `table_batch_mul_spec` is
+  `Table::batch(ps)[i].mul(k)`, and `batch_mul_same_scalar_spec` is
+  `batch_mul_same_scalar_vartime` (`src/curves.rs`) on slices of equal length. All but the first
+  also take `EndoSpec`, since they build the tables.
+* `wnaf_digits_refines` (proved, the translated `wnaf_digits`): on every `u128` magnitude and
+  sign, where the model says a debug build panics, the translation fails with an assertion
+  failure, and elsewhere it returns the model's `(digits, n)` (read by `readOut`); so it never
+  diverges. `wnaf_digits_refines_ofResult` is the same with the outcome read as an `Option`, and
+  `wnaf_digits_refines_of_lt` the form for `a < 2^127`, where the translation returns. With the
+  theorems above, the translation returns at most 128 digits of that shape and value below
+  `2^127`, and fails at the assertion from `2^127` on.
+
+Two remarks about the model, both proved; the facts about single magnitudes are proved by kernel
+evaluation. A build that lacks debug assertions or overflow checks is outside the translation's
+semantics, so for such a build the remarks rest on the model's faithfulness (item 7 of the trust
+story):
+
+* Remark: `leastFailing`, `0x88888888888888888888888888888889`, is the least magnitude whose
+  recoding needs a 129th digit (`wnaf_digits_below_least_failing`, and
+  `wnaf_digits_least_failing`). The length is not monotone: that value plus one needs 128 digits
+  (`wnaf_digits_least_failing_succ`). From `2^127` on a debug build panics at the `debug_assert!`
+  (`wnaf_digits_checks`); a build that lacks debug assertions panics at the write to
+  `digits[128]`, at `leastFailing` and at some magnitudes above it, `leastFailing + 2` for one
+  (`wnaf_digits_out_of_bounds_above`).
+* Remark: on every `u128`, a `u128` operation overflows exactly at `2^128 − 7`, `2^128 − 5`,
+  `2^128 − 3`, and `2^128 − 1`, in the first pass's `k += (-d) as u128` (`wnaf_digits_checks`). A
+  build without debug assertions or overflow checks wraps there and returns the digits of
+  `a − 2^128`, negated when `negate` (`wnaf_digits_wrap_value`); the differential test shows that
+  it does not panic there. With debug assertions the assertion fails first. These magnitudes are
+  outside the function's contract, which is below `2^127`, and `DecomposeSpec` keeps the path
+  below it.
+
 ## Status
 
 Present: the semantics, the generator, the generated transcription of the inline blocks, the
@@ -409,8 +545,17 @@ against a step-by-step trace of one batch. The proofs cover:
   backend whose blocks meet their contracts, including the repeated squaring of `sqr_n_mul`;
 * from those, the six Montgomery entry points on both backends at either field under the
   conditions they assert, and `invert` over the AArch64 blocks at either field;
-* the Aeneas translation of the portable `cond_sub` against its contract.
+* the Aeneas translation of the portable `cond_sub` against its contract;
+* the GLV path's model: `wnaf_digits` and `Decomposed::new` on two halves; the ladder in any
+  abelian group; and, under the trusted `CurveOps.Spec` and, as each theorem takes them,
+  `OrderSpec`, `EndoSpec`, and `DecomposeSpec`, the ladder over the curve operations,
+  `Decomposed::new` on a scalar, the table builders, and the entry points;
+* Aeneas' translation of `wnaf_digits`, which refines that model.
 
 This covers the crate's current code except the other five portable inversion blocks and the
 driver over them (`src/inversion/portable.rs`, `src/inversion.rs`), up to the aspects that the
-trust story lists as reviewed by hand.
+trust story lists as reviewed by hand. On the GLV path only `wnaf_digits` is covered through a
+translation; the rest is covered through the hand-mirrored model, and `decompose` is not covered.
+Open there: formalizing the three conditions, and translating the curve-generic code, which needs
+a refactor of `src/glv.rs` behind private traits; the newest Charon and Aeneas do not translate the
+current code either. The nanoda re-check covers the GLV modules through the root module.
