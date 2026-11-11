@@ -103,7 +103,12 @@ pub trait CurveExt:
 
     /// Attempts a multiscalar multiplication, returning `None` when this curve
     /// has no suitable optimized backend. Callers must retain a generic MSM
-    /// fallback. Different-length slices return `None`.
+    /// fallback.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `scalars` and `bases` have different lengths, whether or not
+    /// an optimized backend is enabled.
     ///
     /// # Security
     ///
@@ -124,9 +129,14 @@ pub trait CurveExt:
     /// blinding factors. Calling this method from such a shared routine leaks
     /// the prover's secrets.
     fn try_multiexp_vartime(
-        _scalars: &[Self::ScalarExt],
-        _bases: &[Self::AffineExt],
+        scalars: &[Self::ScalarExt],
+        bases: &[Self::AffineExt],
     ) -> Option<Self> {
+        assert_eq!(
+            scalars.len(),
+            bases.len(),
+            "try_multiexp_vartime: scalars and bases differ in length"
+        );
         None
     }
 

@@ -135,9 +135,13 @@ fn random_prefixes<C: CurveExt>() {
         (MAX_SIZE - 1, MAX_SIZE),
         (MAX_SIZE, MAX_SIZE - 1),
     ] {
+        // The slices are only read, so nothing is left half-updated by the panic.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            C::try_multiexp_vartime(&scalars[..scalar_len], &bases[..base_len])
+        }));
         assert!(
-            C::try_multiexp_vartime(&scalars[..scalar_len], &bases[..base_len]).is_none(),
-            "{}: mismatched lengths {scalar_len}/{base_len} must be declined",
+            result.is_err(),
+            "{}: mismatched lengths {scalar_len}/{base_len} must panic",
             C::CURVE_ID
         );
     }

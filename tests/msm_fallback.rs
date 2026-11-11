@@ -9,6 +9,11 @@ fn check_default<C: CurveExt>() {
         C::try_multiexp_vartime(&[C::ScalarExt::from(1)], &[C::generator().into()]),
         None,
     );
+    // Mismatched lengths panic without the backend too, so the contract does
+    // not depend on which features are enabled.
+    let mismatched =
+        std::panic::catch_unwind(|| C::try_multiexp_vartime(&[C::ScalarExt::from(1)], &[]));
+    assert!(mismatched.is_err());
 }
 
 #[test]

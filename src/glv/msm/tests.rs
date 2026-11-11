@@ -281,9 +281,8 @@ fn forced_windows<C: MsmCurve>() {
             multiexp_serial::<C>(&components, &bases, width),
             Some(expected)
         );
-        #[cfg(feature = "multicore")]
         assert_eq!(
-            multiexp_parallel::<C>(&components, &bases, width),
+            multiexp_parallel::<C>(&components, &bases, width, &|| ()),
             Some(expected)
         );
     }
@@ -390,4 +389,213 @@ fn planner_boundaries() {
             9 * (2048 + 2 * 128) + 8 * (32 + 28 + 24 + 20 + 16 + 12 + 8 + 4)
         ))
     );
+}
+
+/// The planner's choices, pinned. Below 256 terms the serial rows are the
+/// measured choices; the other bucket widths and declines are the cost
+/// model's, checked against an independent reimplementation of it.
+#[test]
+fn plan_table() {
+    use Plan::*;
+    let buckets = |window_bits, parallel| Buckets {
+        window_bits,
+        parallel,
+    };
+    let table = [
+        // (terms, threads, plan)
+        (0, 1, Strauss),
+        (24, 1, Strauss),
+        (25, 1, buckets(5, false)),
+        (127, 1, buckets(5, false)),
+        (128, 1, buckets(6, false)),
+        (255, 1, buckets(6, false)),
+        (256, 1, buckets(7, false)),
+        (2048, 1, buckets(9, false)),
+        (1 << 16, 1, buckets(13, false)),
+        (1 << 20, 1, buckets(15, false)),
+        (2, 2, Strauss),
+        (3, 2, ParallelStrauss { jobs: 1 }),
+        (66, 2, ParallelStrauss { jobs: 1 }),
+        (67, 2, Decline),
+        (255, 2, Decline),
+        (256, 2, buckets(7, true)),
+        (2048, 2, buckets(8, true)),
+        (1 << 20, 2, buckets(14, true)),
+        (2, 4, Strauss),
+        (3, 4, ParallelStrauss { jobs: 2 }),
+        (66, 4, ParallelStrauss { jobs: 2 }),
+        (256, 4, buckets(7, true)),
+        (1 << 20, 4, Decline),
+        (3, 8, ParallelStrauss { jobs: 3 }),
+        (10, 8, ParallelStrauss { jobs: 4 }),
+        (256, 8, buckets(6, true)),
+        (1 << 16, 8, Decline),
+        (1 << 16, 16, buckets(12, true)),
+        (1 << 20, 16, buckets(14, true)),
+        (1 << 16, 32, Decline),
+        (256, 64, Decline),
+        (2048, 64, Decline),
+    ];
+    for (terms, threads, expected) in table {
+        assert_eq!(
+            plan::<pallas::Point>(terms, threads),
+            expected,
+            "{terms} terms on {threads} threads"
+        );
+    }
+}
+
+/// The thread count the planner sees is the pool it runs in, so a parallel
+/// plan is chosen whenever the caller's pool has more than one thread.
+#[cfg(all(
+    feature = "multicore",
+    not(all(target_arch = "wasm32", not(target_feature = "atomics")))
+))]
+#[test]
+fn planner_sees_the_pool() {
+    for threads in [1, 2, 4] {
+        let pool = maybe_rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .unwrap();
+        assert_eq!(pool.install(current_num_threads), threads);
+    }
+}
+
+/// Runs `plan` on a two-thread pool, holding the first two jobs until both
+/// have started. Jobs that ran one after another would never both start, so
+/// the wait times out and the test fails.
+#[cfg(all(
+    feature = "multicore",
+    not(all(target_arch = "wasm32", not(target_feature = "atomics")))
+))]
+fn assert_jobs_overlap<C: MsmCurve>(plan: Plan, terms: usize) {
+    use core::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+    use std::time::{Duration, Instant};
+
+    let scalars = (0..terms as u64)
+        .map(|i| C::ScalarExt::from(i + 0x9e3779b97f4a7c15).square())
+        .collect::<Vec<_>>();
+    let bases = (1..=terms as u64)
+        .map(|i| (C::generator() * C::ScalarExt::from(i)).to_affine_vartime())
+        .collect::<Vec<_>>();
+    let expected = scalars
+        .iter()
+        .zip(&bases)
+        .fold(C::identity(), |sum, (scalar, base)| sum + *base * scalar);
+
+    let started = AtomicUsize::new(0);
+    let on_job = || {
+        if started.fetch_add(1, SeqCst) < 2 {
+            let deadline = Instant::now() + Duration::from_secs(30);
+            while started.load(SeqCst) < 2 {
+                assert!(Instant::now() < deadline, "{plan:?}: jobs did not overlap");
+                std::thread::yield_now();
+            }
+        }
+    };
+    let pool = maybe_rayon::ThreadPoolBuilder::new()
+        .num_threads(2)
+        .build()
+        .unwrap();
+    let actual = pool.install(|| execute_observed::<C>(plan, &scalars, &bases, &on_job));
+    assert_eq!(actual, Some(expected), "{plan:?}");
+}
+
+#[cfg(all(
+    feature = "multicore",
+    not(all(target_arch = "wasm32", not(target_feature = "atomics")))
+))]
+#[test]
+fn parallel_plans_run_concurrently() {
+    assert_jobs_overlap::<pallas::Point>(Plan::ParallelStrauss { jobs: 2 }, 32);
+    assert_jobs_overlap::<pallas::Point>(
+        Plan::Buckets {
+            window_bits: 6,
+            parallel: true,
+        },
+        64,
+    );
+}
+
+mod every_plan {
+    use super::*;
+    use ff::FromUniformBytes;
+    use proptest::prelude::*;
+
+    fn plan_strategy() -> impl Strategy<Value = Plan> {
+        prop_oneof![
+            Just(Plan::Strauss),
+            (1usize..=5).prop_map(|jobs| Plan::ParallelStrauss { jobs }),
+            (1usize..=12, any::<bool>()).prop_map(|(window_bits, parallel)| Plan::Buckets {
+                window_bits,
+                parallel
+            }),
+        ]
+    }
+
+    /// One term: a scalar kind (zero, one, minus one, shared, random) and a
+    /// base kind (identity, shared, negated shared, random), with the bytes
+    /// that a random scalar or base is drawn from.
+    fn term_strategy() -> impl Strategy<Value = (u8, u8, [u64; 8])> {
+        (0u8..8, 0u8..6, proptest::array::uniform8(any::<u64>()))
+    }
+
+    fn scalar<F: FromUniformBytes<64>>(limbs: &[u64; 8]) -> F {
+        let mut bytes = [0u8; 64];
+        for (chunk, limb) in bytes.chunks_mut(8).zip(limbs) {
+            chunk.copy_from_slice(&limb.to_le_bytes());
+        }
+        F::from_uniform_bytes(&bytes)
+    }
+
+    /// The law every strategy obeys: the plan evaluates to the sum of the
+    /// products, computed here by native scalar multiplication.
+    fn check<C: MsmCurve>(plan: Plan, terms: &[(u8, u8, [u64; 8])]) -> Result<(), TestCaseError>
+    where
+        C::ScalarExt: FromUniformBytes<64>,
+    {
+        let shared_scalar = C::ScalarExt::from(0x1234_5678_9abc_def0);
+        let shared_base = C::generator() * C::ScalarExt::from(7);
+        let mut scalars = Vec::with_capacity(terms.len());
+        let mut bases = Vec::with_capacity(terms.len());
+        for (scalar_kind, base_kind, limbs) in terms {
+            scalars.push(match scalar_kind {
+                0 => C::ScalarExt::ZERO,
+                1 => C::ScalarExt::ONE,
+                2 => -C::ScalarExt::ONE,
+                3 => shared_scalar,
+                _ => scalar::<C::ScalarExt>(limbs),
+            });
+            bases.push(
+                match base_kind {
+                    0 => C::identity(),
+                    1 => shared_base,
+                    2 => -shared_base,
+                    _ => C::generator() * scalar::<C::ScalarExt>(limbs).square(),
+                }
+                .to_affine_vartime(),
+            );
+        }
+        let expected = scalars
+            .iter()
+            .zip(&bases)
+            .fold(C::identity(), |sum, (scalar, base)| sum + *base * scalar);
+        prop_assert_eq!(execute::<C>(plan, &scalars, &bases), Some(expected));
+        Ok(())
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(64))]
+
+        #[test]
+        fn pallas(plan in plan_strategy(), terms in proptest::collection::vec(term_strategy(), 0..48)) {
+            check::<pallas::Point>(plan, &terms)?;
+        }
+
+        #[test]
+        fn vesta(plan in plan_strategy(), terms in proptest::collection::vec(term_strategy(), 0..48)) {
+            check::<vesta::Point>(plan, &terms)?;
+        }
+    }
 }

@@ -71,13 +71,11 @@ fn serial_small_window_bits(terms: usize) -> usize {
 }
 
 /// Smallest MSM worth splitting across worker jobs.
-#[cfg(feature = "multicore")]
 const MIN_PARALLEL_STRAUSS_TERMS: usize = 3;
 
 /// Largest parallel MSM split into [`STRAUSS_LEAF_TERMS`]-or-smaller Strauss
 /// leaves. Above this conservative crossover, the generic or GLV bucket
 /// backends amortize their bucket setup more effectively.
-#[cfg(feature = "multicore")]
 const MAX_PARALLEL_STRAUSS_TERMS: usize = 66;
 
 /// Each GLV decomposition component has magnitude strictly below `2^127`.
@@ -305,7 +303,6 @@ fn strauss_multiexp<C: MsmCurve>(scalars: &[C::ScalarExt], bases: &[C::AffineExt
     acc
 }
 
-#[cfg(feature = "multicore")]
 fn strauss_multiexp_leaves<C: MsmCurve>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C {
     scalars
         .chunks(STRAUSS_LEAF_TERMS)
@@ -314,43 +311,73 @@ fn strauss_multiexp_leaves<C: MsmCurve>(scalars: &[C::ScalarExt], bases: &[C::Af
         .fold(C::identity(), |left, right| left + right)
 }
 
-fn planned_strauss_multiexp<C: MsmCurve>(
+/// Splits the terms into `jobs` contiguous shares of Strauss leaves, run on
+/// worker threads with `multicore` and one after another without it.
+fn parallel_strauss_multiexp<C: MsmCurve>(
     scalars: &[C::ScalarExt],
     bases: &[C::AffineExt],
-    num_threads: usize,
-) -> Option<C> {
+    jobs: usize,
+    on_job: &(impl Fn() + Sync),
+) -> C {
+    let job = |job: usize| {
+        on_job();
+        let start = scalars.len() * job / jobs;
+        let end = scalars.len() * (job + 1) / jobs;
+        strauss_multiexp_leaves::<C>(&scalars[start..end], &bases[start..end])
+    };
     #[cfg(feature = "multicore")]
-    if (MIN_PARALLEL_STRAUSS_TERMS..=MAX_PARALLEL_STRAUSS_TERMS).contains(&scalars.len())
-        && num_threads > 1
+    if jobs > 1 {
+        return (0..jobs).into_par_iter().map(job).sum();
+    }
+    (0..jobs).map(job).sum()
+}
+
+/// How [`try_multiexp`] evaluates an MSM.
+///
+/// Every strategy except [`Plan::Decline`] computes the same sum, so the
+/// choice affects only speed; [`plan`] makes it and [`execute`] carries it out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Plan {
+    /// Leave the MSM to the caller's generic implementation.
+    Decline,
+    /// One GLV-Strauss table over all terms.
+    Strauss,
+    /// `jobs` worker jobs, each running [`STRAUSS_LEAF_TERMS`]-term Strauss
+    /// leaves over a contiguous share of the terms.
+    ParallelStrauss { jobs: usize },
+    /// GLV signed-Booth buckets with `window_bits`-bit windows, evaluated one
+    /// window per worker job when `parallel`, serially otherwise.
+    Buckets { window_bits: usize, parallel: bool },
+}
+
+/// Chooses how to evaluate an MSM of `terms` terms with `num_threads` worker
+/// threads. A pure function, so its choices can be checked directly.
+fn plan<C: MsmCurve>(terms: usize, num_threads: usize) -> Plan {
+    if num_threads > 1 && (MIN_PARALLEL_STRAUSS_TERMS..=MAX_PARALLEL_STRAUSS_TERMS).contains(&terms)
     {
         // Bound small-MSM jobs to half the pool, rounded up, leaving room for
         // concurrent caller work. Keep each leaf small instead of building
         // one wide table for an entire worker's share.
-        let worker_jobs = num_threads.div_ceil(2).min(scalars.len());
-        if worker_jobs == 1 {
-            return Some(strauss_multiexp_leaves::<C>(scalars, bases));
-        }
-        return Some(
-            (0..worker_jobs)
-                .into_par_iter()
-                .map(|job| {
-                    let start = scalars.len() * job / worker_jobs;
-                    let end = scalars.len() * (job + 1) / worker_jobs;
-                    strauss_multiexp_leaves::<C>(&scalars[start..end], &bases[start..end])
-                })
-                .sum(),
-        );
+        return Plan::ParallelStrauss {
+            jobs: num_threads.div_ceil(2).min(terms),
+        };
     }
 
-    let max_terms = if num_threads <= 1 {
+    let strauss_max_terms = if num_threads <= 1 {
         SERIAL_STRAUSS_MAX_TERMS
     } else {
         STRAUSS_LEAF_TERMS
     };
-    if scalars.len() <= max_terms {
-        return Some(strauss_multiexp::<C>(scalars, bases));
+    if terms <= strauss_max_terms {
+        return Plan::Strauss;
     }
-    None
+    match glv_multiexp_window_bits::<C>(terms, num_threads) {
+        Some(window_bits) => Plan::Buckets {
+            window_bits,
+            parallel: num_threads > 1,
+        },
+        None => Plan::Decline,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -865,13 +892,15 @@ fn multiexp_serial<C: MsmCurve>(
 /// Evaluates each Signed-Booth window independently through Rayon, then
 /// combines the ordered sums with one Horner fold. This keeps the expensive
 /// window reductions parallel without duplicating the shift chain.
-#[cfg(feature = "multicore")]
 fn parallel_windows_sum<C: MsmCurve>(
     windows: usize,
     window_bits: usize,
     window_sum: impl Fn(usize) -> Option<C> + Sync,
 ) -> Option<C> {
+    #[cfg(feature = "multicore")]
     let window_sums: Option<Vec<C>> = (0..windows).into_par_iter().map(&window_sum).collect();
+    #[cfg(not(feature = "multicore"))]
+    let window_sums: Option<Vec<C>> = (0..windows).map(&window_sum).collect();
     let window_sums = window_sums?;
     let mut acc = C::identity();
     for (window, sum) in window_sums.into_iter().enumerate().rev() {
@@ -885,38 +914,60 @@ fn parallel_windows_sum<C: MsmCurve>(
     Some(acc)
 }
 
-#[cfg(feature = "multicore")]
+/// The bucket MSM with one job per window: on worker threads with
+/// `multicore`, one after another without it.
 fn multiexp_parallel<C: MsmCurve>(
     components: &[(SignedMagnitude, SignedMagnitude)],
     bases: &[MultiexpBase<C::Base>],
     window_bits: usize,
+    on_job: &(impl Fn() + Sync),
 ) -> Option<C> {
     let window_count = GLV_COMPONENT_BITS / window_bits + 1;
     parallel_windows_sum::<C>(window_count, window_bits, |window| {
+        on_job();
         let buckets = fill_window::<C>(components, bases, window_bits, window)?;
         Some(sum_buckets::<C>(&buckets))
     })
 }
 
-fn multiexp<C: MsmCurve>(
-    components: &[(SignedMagnitude, SignedMagnitude)],
-    bases: &[MultiexpBase<C::Base>],
-    window_bits: usize,
-    num_threads: usize,
-) -> Option<C> {
-    debug_assert_eq!(components.len(), bases.len());
+/// Carries out `plan`. Declines (`None`) for [`Plan::Decline`] and when an
+/// arithmetic guard fails, so the caller's generic MSM runs instead.
+fn execute<C: MsmCurve>(plan: Plan, scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> Option<C> {
+    execute_observed(plan, scalars, bases, &|| ())
+}
 
-    #[cfg(not(feature = "multicore"))]
-    let _ = num_threads;
-    #[cfg(feature = "multicore")]
-    let acc = if num_threads > 1 {
-        multiexp_parallel::<C>(components, bases, window_bits)
-    } else {
-        multiexp_serial::<C>(components, bases, window_bits)
-    };
-    #[cfg(not(feature = "multicore"))]
-    let acc = multiexp_serial::<C>(components, bases, window_bits);
-    acc
+/// [`execute`], calling `on_job` at the start of every parallel job. Tests use
+/// it to check that parallel plans really run their jobs concurrently.
+fn execute_observed<C: MsmCurve>(
+    plan: Plan,
+    scalars: &[C::ScalarExt],
+    bases: &[C::AffineExt],
+    on_job: &(impl Fn() + Sync),
+) -> Option<C> {
+    debug_assert_eq!(scalars.len(), bases.len());
+    match plan {
+        Plan::Decline => None,
+        Plan::Strauss => Some(strauss_multiexp::<C>(scalars, bases)),
+        Plan::ParallelStrauss { jobs } => {
+            Some(parallel_strauss_multiexp::<C>(scalars, bases, jobs, on_job))
+        }
+        Plan::Buckets {
+            window_bits,
+            parallel,
+        } => {
+            let components = scalars
+                .iter()
+                .map(decompose::<C>)
+                .map(checked_signed_magnitudes)
+                .collect::<Option<Vec<_>>>()?;
+            let bases = multiexp_bases::<C>(bases);
+            if parallel {
+                multiexp_parallel::<C>(&components, &bases, window_bits, on_job)
+            } else {
+                multiexp_serial::<C>(&components, &bases, window_bits)
+            }
+        }
+    }
 }
 
 fn multiexp_bases<C: MsmCurve>(bases: &[C::AffineExt]) -> Vec<MultiexpBase<C::Base>> {
@@ -935,24 +986,23 @@ fn multiexp_bases<C: MsmCurve>(bases: &[C::AffineExt]) -> Vec<MultiexpBase<C::Ba
 }
 
 /// Declines unprofitable input shapes and failed arithmetic guards so callers
-/// can retain their generic MSM. Mismatched lengths also decline.
+/// can retain their generic MSM.
+///
+/// # Panics
+///
+/// Panics if `scalars` and `bases` have different lengths.
 pub(crate) fn try_multiexp<C: MsmCurve>(
     scalars: &[C::ScalarExt],
     bases: &[C::AffineExt],
 ) -> Option<C> {
-    if scalars.len() != bases.len() {
-        return None;
-    }
-    let num_threads = current_num_threads();
-    if let Some(result) = planned_strauss_multiexp::<C>(scalars, bases, num_threads) {
-        return Some(result);
-    }
-    let window_bits = glv_multiexp_window_bits::<C>(scalars.len(), num_threads)?;
-    let components = scalars
-        .iter()
-        .map(decompose::<C>)
-        .map(checked_signed_magnitudes)
-        .collect::<Option<Vec<_>>>()?;
-    let bases = multiexp_bases::<C>(bases);
-    multiexp(&components, &bases, window_bits, num_threads)
+    assert_eq!(
+        scalars.len(),
+        bases.len(),
+        "try_multiexp_vartime: scalars and bases differ in length"
+    );
+    execute(
+        plan::<C>(scalars.len(), current_num_threads()),
+        scalars,
+        bases,
+    )
 }

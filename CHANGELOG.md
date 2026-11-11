@@ -14,7 +14,8 @@ and this project adheres to Rust's notion of
 - `CurveExt::try_multiexp_vartime`, an optional variable-time multiscalar
   multiplication hook for public inputs. The `glv` feature enables optimized
   Pallas and Vesta backends; callers must retain a generic fallback when the
-  hook returns `None`.
+  hook returns `None`. It panics if the scalar and base slices differ in
+  length.
 - `multicore` feature flag, which enables `glv` and parallel MSM evaluation
   using Rayon.
 
