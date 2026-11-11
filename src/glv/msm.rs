@@ -721,14 +721,75 @@ fn sum_buckets<C: MsmCurve>(buckets: &[Option<AffinePoint<C::Base>>]) -> C {
     sum
 }
 
+/// Smallest number of terms a window reduces at a time.
+const MIN_WINDOW_BLOCK_TERMS: usize = 1 << 14;
+
+/// Terms per bucket in a window block. Each block after the first carries one
+/// point per nonempty bucket, so this bounds the extra additions to about
+/// `1 / (2 * WINDOW_BLOCK_TERMS_PER_BUCKET)` of the block's points.
+const WINDOW_BLOCK_TERMS_PER_BUCKET: usize = 8;
+
+/// Fills and reduces one window's buckets.
+///
+/// The terms are processed in blocks, so the window's scratch memory (points,
+/// pending additions and assignments) is bounded by the block size instead of
+/// growing with the number of terms. With parallel windows this bound is what
+/// keeps memory from scaling with the number of windows in flight.
 fn fill_window<C: MsmCurve>(
     components: &[(SignedMagnitude, SignedMagnitude)],
     bases: &[MultiexpBase<C::Base>],
     window_bits: usize,
     window: usize,
 ) -> Option<Vec<Option<AffinePoint<C::Base>>>> {
+    let bucket_count = 1usize << (window_bits - 1);
+    let block_terms =
+        MIN_WINDOW_BLOCK_TERMS.max(bucket_count.saturating_mul(WINDOW_BLOCK_TERMS_PER_BUCKET));
+    fill_window_in_blocks::<C>(components, bases, window_bits, window, block_terms)
+}
+
+/// Reduces a window block by block. Each block's bucket results enter the next
+/// block as the first point of the same buckets, so the batched affine reducer
+/// also merges the blocks, including when a carried point doubles or cancels.
+fn fill_window_in_blocks<C: MsmCurve>(
+    components: &[(SignedMagnitude, SignedMagnitude)],
+    bases: &[MultiexpBase<C::Base>],
+    window_bits: usize,
+    window: usize,
+    block_terms: usize,
+) -> Option<Vec<Option<AffinePoint<C::Base>>>> {
+    debug_assert!(block_terms > 0);
+    let mut buckets: Option<Vec<Option<AffinePoint<C::Base>>>> = None;
+    for (components, bases) in components
+        .chunks(block_terms)
+        .zip(bases.chunks(block_terms))
+    {
+        buckets = Some(fill_block::<C>(
+            components,
+            bases,
+            window_bits,
+            window,
+            buckets.as_deref(),
+        )?);
+    }
+    Some(buckets.unwrap_or_else(|| alloc::vec![None; 1 << (window_bits - 1)]))
+}
+
+/// Fills one block's buckets, each led by its carried point from the previous
+/// block, and reduces them.
+fn fill_block<C: MsmCurve>(
+    components: &[(SignedMagnitude, SignedMagnitude)],
+    bases: &[MultiexpBase<C::Base>],
+    window_bits: usize,
+    window: usize,
+    carry: Option<&[Option<AffinePoint<C::Base>>]>,
+) -> Option<Vec<Option<AffinePoint<C::Base>>>> {
     let bucket_count = 1 << (window_bits - 1);
-    let (assignments, counts) = window_assignments::<C>(components, bases, window_bits, window);
+    let (assignments, mut counts) = window_assignments::<C>(components, bases, window_bits, window);
+    if let Some(carry) = carry {
+        for (count, point) in counts.iter_mut().zip(carry) {
+            *count += usize::from(point.is_some());
+        }
+    }
 
     let mut offsets = Vec::with_capacity(bucket_count + 1);
     offsets.push(0);
@@ -744,6 +805,14 @@ fn fill_window<C: MsmCurve>(
         };
         *offsets.last().unwrap()
     ];
+    if let Some(carry) = carry {
+        for (bucket, point) in carry.iter().enumerate() {
+            if let Some(point) = point {
+                points[positions[bucket]] = *point;
+                positions[bucket] += 1;
+            }
+        }
+    }
     for assignment in assignments {
         let base_index = assignment.component / 2;
         let base = bases[base_index];

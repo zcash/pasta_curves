@@ -295,6 +295,70 @@ fn all_window_widths() {
     forced_windows::<vesta::Point>();
 }
 
+/// Reducing a window in blocks, with each block's buckets carried into the
+/// next, gives the same buckets as one block. Equal and opposite bases make
+/// carried points double and cancel.
+fn blocks_match_single_block<C: MsmCurve>() {
+    let generator = C::generator();
+    let scalars = (0..64u64)
+        .map(|i| {
+            (C::ScalarExt::from(i + 0x9e3779b97f4a7c15).square() + C::ScalarExt::from(i)).square()
+        })
+        .collect::<Vec<_>>();
+    let bases = (0..64)
+        .map(|i| {
+            match i % 4 {
+                0 => C::identity(),
+                1 => generator,
+                2 => -generator,
+                _ => generator.double(),
+            }
+            .to_affine_vartime()
+        })
+        .collect::<Vec<_>>();
+    let components = scalars
+        .iter()
+        .map(decompose::<C>)
+        .map(checked_signed_magnitudes)
+        .collect::<Option<Vec<_>>>()
+        .unwrap();
+    let bases = multiexp_bases::<C>(&bases);
+    let as_points = |buckets: Vec<Option<AffinePoint<C::Base>>>| {
+        buckets
+            .into_iter()
+            .map(|bucket| match bucket {
+                Some(point) => C::from(C::affine_unchecked(point.x, point.y)),
+                None => C::identity(),
+            })
+            .collect::<Vec<_>>()
+    };
+
+    for width in [1, 3, 6] {
+        for window in 0..GLV_COMPONENT_BITS / width + 1 {
+            let whole = as_points(
+                fill_window_in_blocks::<C>(&components, &bases, width, window, components.len())
+                    .unwrap(),
+            );
+            for block_terms in [1, 2, 3, 5, 16, 63] {
+                let blocked = as_points(
+                    fill_window_in_blocks::<C>(&components, &bases, width, window, block_terms)
+                        .unwrap(),
+                );
+                assert_eq!(
+                    blocked, whole,
+                    "width {width}, window {window}, blocks of {block_terms} terms"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn window_blocks() {
+    blocks_match_single_block::<pallas::Point>();
+    blocks_match_single_block::<vesta::Point>();
+}
+
 #[test]
 fn planner_boundaries() {
     // Serial: Strauss up to SERIAL_STRAUSS_MAX_TERMS, then measured bucket widths.
