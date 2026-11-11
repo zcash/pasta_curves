@@ -49,12 +49,26 @@ macro_rules! impl_msm_curve {
 impl_msm_curve!(pallas);
 impl_msm_curve!(vesta);
 
-/// Small MSMs do not amortize GLV decomposition, affine endomorphism mapping,
-/// and the two temporary vectors.
+/// Below this, the cost model is not consulted. With several worker threads
+/// the hook then declines; serial MSMs use the measured choices below instead.
 const MIN_GLV_MULTIEXP_TERMS: usize = 256;
 
-/// Largest serial GLV-Strauss leaf; larger tables have higher setup costs.
+/// Largest GLV-Strauss leaf when MSMs are split across worker threads.
 const STRAUSS_LEAF_TERMS: usize = 16;
+
+/// Largest serial MSM evaluated as one GLV-Strauss table. Measured on Pallas
+/// with `benches/msm.rs`: one table beats both the generic MSM and the bucket
+/// backend at 17 and 24 terms, and the bucket backend wins from 32 terms on.
+const SERIAL_STRAUSS_MAX_TERMS: usize = 24;
+
+/// Bucket-backend window width for serial MSMs between
+/// `SERIAL_STRAUSS_MAX_TERMS` and `MIN_GLV_MULTIEXP_TERMS`, the fastest width
+/// measured on Pallas: 5 from 32 to 96 terms, 6 from 128 to 255 terms. The cost
+/// model counts a batched affine addition as a projective one, so it would
+/// decline these sizes although they are 28% to 50% faster than the generic MSM.
+fn serial_small_window_bits(terms: usize) -> usize {
+    if terms < 128 { 5 } else { 6 }
+}
 
 /// Smallest MSM worth splitting across worker jobs.
 #[cfg(feature = "multicore")]
@@ -192,7 +206,8 @@ fn multiexp_window_bits<C: MsmCurve>(terms: usize, num_threads: usize) -> Option
 /// Compare both the default width and its successor to account for worker waves.
 fn glv_multiexp_window_bits<C: MsmCurve>(terms: usize, num_threads: usize) -> Option<usize> {
     if terms < MIN_GLV_MULTIEXP_TERMS {
-        return None;
+        return (num_threads <= 1 && terms > SERIAL_STRAUSS_MAX_TERMS)
+            .then(|| serial_small_window_bits(terms));
     }
     let (generic, _) = estimated_generic_costs::<C>(terms, num_threads)?;
     let (glv, glv_window_bits) = booth_multiexp_estimate::<C>(terms, num_threads)?;
@@ -323,12 +338,14 @@ fn planned_strauss_multiexp<C: MsmCurve>(
         );
     }
 
-    if scalars.len() <= STRAUSS_LEAF_TERMS {
+    let max_terms = if num_threads <= 1 {
+        SERIAL_STRAUSS_MAX_TERMS
+    } else {
+        STRAUSS_LEAF_TERMS
+    };
+    if scalars.len() <= max_terms {
         return Some(strauss_multiexp::<C>(scalars, bases));
     }
-
-    #[cfg(not(feature = "multicore"))]
-    let _ = num_threads;
     None
 }
 
