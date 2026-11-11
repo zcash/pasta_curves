@@ -1,5 +1,13 @@
 //! Differential checks for Booth recoding and the failure-atomic affine reducer.
+use super::affine::*;
+use super::buckets::*;
+use super::lift::*;
+use super::plan::*;
+use super::recode::*;
 use super::*;
+use crate::arithmetic::VartimeField;
+use alloc::vec::Vec;
+use ff::PrimeField;
 
 fn batch_invert_and_add_two_lanes_matches_individual<F>()
 where
