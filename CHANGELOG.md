@@ -6,6 +6,12 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `pasta_curves::{EpAffine, EqAffine}` now implement
+  `group::UncompressedEncoding`, with the new `EpUncompressed` and
+  `EqUncompressed` byte types.
+- The `serde` feature now provides `Serialize` and `Deserialize` for
+  `EpUncompressed` and `EqUncompressed`.
 
 ### Added
 - `CurveAffine::batch_decode_vartime`, an `alloc`-gated default method that
