@@ -87,6 +87,17 @@ jobs:
           --target ${{ matrix.target }}
           --no-default-features
           --features zeroize
+      # These WebAssembly targets have no atomics, so the MSM evaluates
+      # serially there; this checks that `multicore` still builds for them.
+      # thumbv6m-none-eabi has no std, which Rayon needs.
+      - name: Build with multicore
+        if: startsWith(matrix.target, 'wasm32')
+        run: >
+          cargo build
+          --verbose
+          --target ${{ matrix.target }}
+          --no-default-features
+          --features multicore
 
   bitrot:
     name: Bitrot check
