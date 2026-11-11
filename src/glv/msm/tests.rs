@@ -374,6 +374,20 @@ fn planner_boundaries() {
     assert_eq!(default_multiexp_window_bits(32), Some(4));
     assert_eq!(default_multiexp_window_bits(54), Some(4));
     assert_eq!(default_multiexp_window_bits(55), Some(5));
-    assert_eq!(estimated_signed_booth_costs(usize::MAX, 256, 8, 1), None);
-    assert_eq!(estimated_signed_booth_costs(2048, 256, 0, 1), None);
+    assert_eq!(estimated_signed_booth_work(usize::MAX, 256, 8, 1), None);
+    assert_eq!(estimated_signed_booth_work(2048, 256, 0, 1), None);
+    // Serial: 33 windows of 2048 visits, 2 * 128 bucket additions per window,
+    // and 32 shifts of 8 doublings.
+    assert_eq!(
+        estimated_signed_booth_work(2048, 256, 8, 1),
+        Some(BoothWork(33 * 2048 + 33 * 2 * 128 + 32 * 8))
+    );
+    // Four workers: 9 waves of (2048 + 2 * 128), plus the highest window's
+    // shift in each wave, 8 * (32 + 28 + ... + 0).
+    assert_eq!(
+        estimated_signed_booth_work(2048, 256, 8, 4),
+        Some(BoothWork(
+            9 * (2048 + 2 * 128) + 8 * (32 + 28 + 24 + 20 + 16 + 12 + 8 + 4)
+        ))
+    );
 }
