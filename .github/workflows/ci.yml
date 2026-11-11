@@ -129,6 +129,8 @@ jobs:
         run: uv run --locked sage glv_eisenstein.sage
       - name: Regenerate the GLV known-answer vectors
         run: uv run --locked sage glv_test_vectors.sage
+      - name: Verify the MSM window thresholds
+        run: uv run --locked sage msm_window_thresholds.sage
 
   book:
     name: Book tests
