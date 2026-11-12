@@ -1412,12 +1412,12 @@ pub(crate) mod tests {
              [0x8c46eb2100000000, 0x224698fc0994a8dd, 0, 0x4000000000000000],
              [0x8c46eb20ffffffff, 0x224698fc0994a8dd, 0, 0x4000000000000000]),
             // zeta
-            ([0x7b7fd22f0201b547, 0x5270d29d19fc7d2, 0xd3552a23a8554e50, 0x2d33357cb532458e],
-             [0x2aa9d2e050aa0e50, 0xfed467d47c033af, 0x511db4d81cf70f5a, 0x6819a58283e528e],
-             [0x2, 0, 0, 0]),
-            // zeta squared
             ([0x1dad5ebdfdfe4ab9, 0x1d1f8bd237ad3149, 0x2caad5dc57aab1b0, 0x12ccca834acdba71],
              [0x619d1840af55f1b2, 0x1259527ec1d4752e, 0xaee24b27e308f0a6, 0x397e65a7d7c1ad71],
+             [0x2, 0, 0, 0]),
+            // zeta squared
+            ([0x7b7fd22f0201b547, 0x5270d29d19fc7d2, 0xd3552a23a8554e50, 0x2d33357cb532458e],
+             [0x2aa9d2e050aa0e50, 0xfed467d47c033af, 0x511db4d81cf70f5a, 0x6819a58283e528e],
              [0x2, 0, 0, 0]),
             // half the order
             ([0xcc96987680000000, 0x11234c7e04a67c8d, 0, 0x2000000000000000],

@@ -29,9 +29,19 @@ assert Pallas.order() == q and Vesta.order() == p
 Gp = Pallas(-1, 2)
 Gv = Vesta(-1, 2)
 
-# The scalar-field cube root of unity, as `src/fields/{fq,fp}.rs` define it.
-zeta_q = int(Fq(5) ^ ((q - 1) // 3))
-zeta_p = int(Fp(5) ^ ((p - 1) // 3))
+# The scalar-field cube roots of unity, as `src/fields/{fq,fp}.rs` define
+# them, by the same derivation as `glv_constants.sage`: Fq::ZETA is
+# 5^((q-1)/3), and Fp::ZETA is the root paired with it by the Pallas
+# endomorphism, phi(x, y) = (Fp::ZETA * x, y) = [Fq::ZETA](x, y). That is the
+# inverse of 5^((p-1)/3), not 5^((p-1)/3) itself.
+zeta_q = Fq(5) ^ ((q - 1) // 3)
+assert zeta_q != 1 and zeta_q ^ 3 == 1
+zeta_p = Fp((int(zeta_q) * Gp)[0]) / Fp(Gp[0])
+assert zeta_p != 1 and zeta_p ^ 3 == 1
+assert int(zeta_q) * Gp == Pallas(zeta_p * Gp[0], Gp[1])
+assert int(zeta_p) * Gv == Vesta(zeta_q * Gv[0], Gv[1])
+zeta_q = int(zeta_q)
+zeta_p = int(zeta_p)
 
 
 def limbs(v):

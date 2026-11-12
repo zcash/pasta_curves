@@ -45,14 +45,19 @@ assert Pallas.order() == q and Vesta.order() == p
 Gp = Pallas(-1, 2)
 Gv = Vesta(-1, 2)
 
-# Fq::ZETA / Fp::ZETA exactly as `src/fields/{fq,fp}.rs` define them: the
-# element 5^((n-1)/3) of multiplicative order three. The base-field zeta is
-# the one `CurveExt::endo` multiplies x by, pinned to the scalar-field zeta by
-# the requirement phi(P) = lambda * P.
+# Fq::ZETA and Fp::ZETA exactly as `src/fields/{fq,fp}.rs` define them, by
+# the same derivation as `glv_constants.sage`. Fq::ZETA is g^((q-1)/3) for the
+# generator g = 5. Fp::ZETA is not 5^((p-1)/3), which is its inverse, but the
+# root paired with Fq::ZETA by the Pallas endomorphism: phi(x, y) =
+# (Fp::ZETA * x, y) equals [Fq::ZETA](x, y). The same pair, with the roles of
+# the fields swapped, is Vesta's: Fp::ZETA acts on its scalars and Fq::ZETA,
+# the base-field zeta `CurveExt::endo` multiplies x by, on its coordinates.
 zeta_q = Fq(5) ^ ((q - 1) // 3)
-zeta_p = Fp(5) ^ ((p - 1) // 3)
-zeta_p_base = Fp((int(zeta_q) * Gp)[0]) / Fp(Gp[0])
-zeta_q_base = Fq((int(zeta_p) * Gv)[0]) / Fq(Gv[0])
+assert zeta_q != 1 and zeta_q ^ 3 == 1
+zeta_p = Fp((int(zeta_q) * Gp)[0]) / Fp(Gp[0])
+assert zeta_p != 1 and zeta_p ^ 3 == 1
+assert int(zeta_q) * Gp == Pallas(zeta_p * Gp[0], Gp[1])
+assert int(zeta_p) * Gv == Vesta(zeta_q * Gv[0], Gv[1])
 
 
 # ---------------------------------------------------------------------------
@@ -241,8 +246,8 @@ def check_curve(name, E, G, n, lam, zeta_base):
 
 lam_pallas = int(zeta_q)   # Pallas scalars live in Fq
 lam_vesta = int(zeta_p)    # Vesta scalars live in Fp
-phi_pallas = check_curve("Pallas", Pallas, Gp, q, lam_pallas, zeta_p_base)
-phi_vesta = check_curve("Vesta", Vesta, Gv, p, lam_vesta, zeta_q_base)
+phi_pallas = check_curve("Pallas", Pallas, Gp, q, lam_pallas, zeta_p)
+phi_vesta = check_curve("Vesta", Vesta, Gv, p, lam_vesta, zeta_q)
 print("[4b] the same chain reaches the same multiples on Pallas and Vesta,")
 print("     with phi(P) = lambda*P for lambda = ZETA and the base-field zeta")
 
