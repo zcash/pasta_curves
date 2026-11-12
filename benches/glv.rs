@@ -1,8 +1,15 @@
 //! Benchmarks for GLV scalar multiplication.
+//!
+//! To compare with the Eisenstein recoding, run
+//! `cargo bench --features glv --bench glv` and
+//! `cargo bench --features glv-eisenstein --bench glv_eisenstein`: each
+//! benchmark there has the same id as its counterpart here, in a group
+//! named with `Eisenstein` after the curve.
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 
 use ff::Field;
+use group::CurveAffine as _;
 use pasta_curves::glv::{self, Decomposed, GlvParams, Table};
 use pasta_curves::{pallas, vesta};
 use rand::SeedableRng;
@@ -88,6 +95,36 @@ fn glv_bench<C: GlvParams>(c: &mut Criterion, name: &str) {
                 }
             });
         });
+    }
+    group.finish();
+
+    // One shared scalar against N points end to end, with N affine results
+    // out: decompose the scalar, build a table per point, ladder, and
+    // normalize. Every point is fresh, so the table build belongs inside the
+    // timed region.
+    let mut group = c.benchmark_group(format!("{name} batch shared scalar"));
+    for size in [16usize, 64, 96, 128, 256, 512] {
+        let batch: Vec<C> = (1..=size as u64)
+            .map(|i| C::generator() * (k + C::ScalarExt::from(i)))
+            .collect();
+
+        group.bench_with_input(
+            BenchmarkId::new("projective ladder", size),
+            &size,
+            |b, _| {
+                b.iter(|| {
+                    let decomposed = Decomposed::<C>::new(&k);
+                    let tables = Table::batch(&batch);
+                    let proj: Vec<C> = tables
+                        .iter()
+                        .map(|t| t.mul_decomposed(&decomposed))
+                        .collect();
+                    let mut aff = vec![C::AffineExt::identity(); proj.len()];
+                    C::batch_normalize_vartime(&proj, &mut aff);
+                    aff
+                })
+            },
+        );
     }
     group.finish();
 
