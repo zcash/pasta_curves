@@ -101,6 +101,45 @@ pub trait CurveExt:
         }
     }
 
+    /// Attempts a multiscalar multiplication, returning `None` when this curve
+    /// has no suitable optimized backend. Callers must retain a generic MSM
+    /// fallback.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `scalars` and `bases` have different lengths, whether or not
+    /// an optimized backend is enabled.
+    ///
+    /// # Security
+    ///
+    /// This method is variable-time in both scalars and bases. All inputs must
+    /// be public; do not use it with secret scalar or point material.
+    ///
+    /// Its running time and memory accesses depend on the scalars' digits
+    /// (which buckets are filled, and which digits are zero) and on relations
+    /// between the bases (equal or opposite points take a slower path).
+    /// Whether it returns `None` also depends on the input length and the
+    /// thread count. An attacker who can time the call, or observe the cache,
+    /// can learn about the scalars.
+    ///
+    /// Choose this method at a call site whose inputs are known to be public.
+    /// Do not route a general-purpose MSM through it: in a proof system the
+    /// same MSM routine typically serves the verifier, whose inputs are
+    /// public, and the prover, whose commitments use secret witness values and
+    /// blinding factors. Calling this method from such a shared routine leaks
+    /// the prover's secrets.
+    fn try_multiexp_vartime(
+        scalars: &[Self::ScalarExt],
+        bases: &[Self::AffineExt],
+    ) -> Option<Self> {
+        assert_eq!(
+            scalars.len(),
+            bases.len(),
+            "try_multiexp_vartime: scalars and bases differ in length"
+        );
+        None
+    }
+
     /// Multiplies every point in `points` by the same `scalar`, writing the
     /// corresponding products to `output`.
     ///

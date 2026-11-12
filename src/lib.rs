@@ -33,6 +33,11 @@ mod inversion;
 #[cfg(test)]
 mod test_fields;
 
+// Scalars for the unit tests. Every caller needs `alloc`, so the module is
+// gated on it to stay used in every build that compiles it.
+#[cfg(all(test, feature = "alloc"))]
+mod test_scalars;
+
 #[macro_use]
 mod macros;
 mod curves;

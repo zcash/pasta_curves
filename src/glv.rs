@@ -43,6 +43,8 @@ use group::CurveAffine as _;
 use crate::arithmetic::{CurveExt, mac, sbb};
 use crate::{pallas, vesta};
 
+pub(crate) mod msm;
+
 mod private {
     /// Seals [`super::GlvParams`]: the lattice constants are curve-specific
     /// and verified in-crate; external implementations are not supported.
@@ -870,7 +872,7 @@ mod tests {
         native_vs_glv_boundary::<vesta::Point>(VESTA_BOUNDARY_SCALAR);
     }
 
-    /// Property-based tests: scalars are drawn as four uniform u64 limbs
+    /// Property-based tests: scalars are drawn as eight uniform u64 limbs
     /// widened through `from_uniform_bytes` (so the whole field is reachable
     /// without modular bias), and points as `G*(s+1)`.
     mod pbt {
@@ -878,15 +880,10 @@ mod tests {
         use proptest::prelude::*;
 
         use super::*;
+        use crate::test_scalars::from_uniform_limbs;
 
         fn scalar_strategy<F: PrimeField + ff::FromUniformBytes<64>>() -> impl Strategy<Value = F> {
-            proptest::array::uniform4(any::<u64>()).prop_map(|limbs| {
-                let mut bytes = [0u8; 64];
-                for (i, l) in limbs.iter().enumerate() {
-                    bytes[i * 8..(i + 1) * 8].copy_from_slice(&l.to_le_bytes());
-                }
-                F::from_uniform_bytes(&bytes)
-            })
+            proptest::array::uniform8(any::<u64>()).prop_map(from_uniform_limbs)
         }
 
         macro_rules! glv_pbt {
