@@ -110,9 +110,9 @@ pub trait CurveExt:
     ///
     /// # Security
     ///
-    /// This method may run in variable time with respect to `scalar`. **The
-    /// scalar must be public.** Do not use this method with secret scalar
-    /// material.
+    /// This method may run in variable time with respect to both `scalar` and
+    /// `points`. **The scalar and the points must all be public.** Do not use
+    /// this method with secret scalar material or secret points.
     ///
     /// # Panics
     ///
