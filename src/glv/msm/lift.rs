@@ -18,6 +18,9 @@ use crate::glv::decompose;
 /// Each GLV decomposition component has magnitude strictly below `2^127`.
 pub(super) const GLV_COMPONENT_BITS: usize = 127;
 
+/// Integer terms per MSM term after the lift: `k1 * P` and `k2 * phi(P)`.
+pub(super) const GLV_TERMS_PER_TERM: usize = 2;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct SignedMagnitude {
     pub(super) negative: bool,
@@ -76,7 +79,7 @@ where
     F: Copy + Sync,
 {
     fn len(&self) -> usize {
-        2 * self.bases.len()
+        GLV_TERMS_PER_TERM * self.bases.len()
     }
 
     fn scalar(&self, term: usize) -> SignedMagnitude {

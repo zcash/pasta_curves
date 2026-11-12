@@ -8,7 +8,7 @@
 use ff::PrimeField;
 
 use super::MsmCurve;
-use super::lift::GLV_COMPONENT_BITS;
+use super::lift::{GLV_COMPONENT_BITS, GLV_TERMS_PER_TERM};
 
 /// Below this, the cost model is not consulted. With several worker threads
 /// the hook then declines; serial MSMs use the measured choices below instead.
@@ -22,17 +22,37 @@ pub(super) const STRAUSS_LEAF_TERMS: usize = 16;
 /// backend at 17 and 24 terms, and the bucket backend wins from 32 terms on.
 pub(super) const SERIAL_STRAUSS_MAX_TERMS: usize = 24;
 
+/// Fastest bucket-backend width measured on Pallas for serial MSMs above
+/// [`SERIAL_STRAUSS_MAX_TERMS`] and below [`SERIAL_WIDE_WINDOW_TERMS`].
+pub(super) const SERIAL_NARROW_WINDOW_BITS: usize = 5;
+
+/// Fastest width measured on Pallas from [`SERIAL_WIDE_WINDOW_TERMS`] up to
+/// [`MIN_GLV_MULTIEXP_TERMS`].
+pub(super) const SERIAL_WIDE_WINDOW_BITS: usize = 6;
+
+/// Smallest serial MSM that uses [`SERIAL_WIDE_WINDOW_BITS`]: 5 bits measured
+/// fastest up to 96 terms, 6 bits from 128.
+pub(super) const SERIAL_WIDE_WINDOW_TERMS: usize = 128;
+
 /// Bucket-backend window width for serial MSMs between
-/// `SERIAL_STRAUSS_MAX_TERMS` and `MIN_GLV_MULTIEXP_TERMS`, the fastest width
-/// measured on Pallas: 5 from 32 to 96 terms, 6 from 128 to 255 terms. The cost
-/// model counts a batched affine addition as a projective one, so it would
-/// decline these sizes although they are 28% to 50% faster than the generic MSM.
+/// [`SERIAL_STRAUSS_MAX_TERMS`] and [`MIN_GLV_MULTIEXP_TERMS`]. The cost model
+/// counts a batched affine addition as a projective one, so it would decline
+/// these sizes although they are 28% to 50% faster than the generic MSM.
 pub(super) fn serial_small_window_bits(terms: usize) -> usize {
-    if terms < 128 { 5 } else { 6 }
+    if terms < SERIAL_WIDE_WINDOW_TERMS {
+        SERIAL_NARROW_WINDOW_BITS
+    } else {
+        SERIAL_WIDE_WINDOW_BITS
+    }
 }
 
 /// Smallest MSM worth splitting across worker jobs.
 pub(super) const MIN_PARALLEL_STRAUSS_TERMS: usize = 3;
+
+/// A parallel Strauss MSM runs at most `1 / PARALLEL_STRAUSS_POOL_DIVISOR` of
+/// the pool's threads as jobs, rounded up, leaving the rest to concurrent
+/// caller work.
+pub(super) const PARALLEL_STRAUSS_POOL_DIVISOR: usize = 2;
 
 /// Largest parallel MSM split into [`STRAUSS_LEAF_TERMS`]-or-smaller Strauss
 /// leaves. Above this conservative crossover, the generic or GLV bucket
@@ -45,6 +65,11 @@ pub(super) const MAX_PARALLEL_STRAUSS_TERMS: usize = 66;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct BoothWork(pub(super) usize);
 
+/// Additions per bucket to combine a window's buckets as `sum_b b * S_b` by
+/// suffix sums: one into the running sum, one of the running sum into the
+/// total.
+pub(super) const ADDITIONS_PER_BUCKET: usize = 2;
+
 /// The serial work model counts total point/window visits, bucket additions,
 /// and accumulator doublings. The parallel model estimates the corresponding
 /// critical-worker cost when windows have independent accumulators. Both omit
@@ -56,13 +81,19 @@ pub(super) fn estimated_signed_booth_work(
     window_bits: usize,
     num_threads: usize,
 ) -> Option<BoothWork> {
+    // Signed-Booth digits need one window more than `scalar_bits / window_bits`
+    // for the final carry.
     let windows = scalar_bits.checked_div(window_bits)?.checked_add(1)?;
+    // Signed digits have magnitude at most `2^(window_bits - 1)`, one bucket
+    // per nonzero magnitude.
     let bucket_shift = u32::try_from(window_bits.checked_sub(1)?).ok()?;
     let buckets = 1usize.checked_shl(bucket_shift)?;
 
     if num_threads <= 1 {
         let point_visits = terms.checked_mul(windows)?;
-        let bucket_additions = buckets.checked_mul(windows)?.checked_mul(2)?;
+        let bucket_additions = buckets
+            .checked_mul(windows)?
+            .checked_mul(ADDITIONS_PER_BUCKET)?;
         let doublings = window_bits.checked_mul(windows.checked_sub(1)?)?;
         return Some(BoothWork(
             point_visits
@@ -75,7 +106,7 @@ pub(super) fn estimated_signed_booth_work(
     // worker's full-window work and the shifts of its highest-cost windows.
     let workers = num_threads.min(windows);
     let waves = windows.div_ceil(workers);
-    let per_window = terms.checked_add(buckets.checked_mul(2)?)?;
+    let per_window = terms.checked_add(buckets.checked_mul(ADDITIONS_PER_BUCKET)?)?;
     let mut shift_doublings = 0usize;
     let mut window = windows.checked_sub(1)?;
     for _ in 0..waves {
@@ -120,21 +151,43 @@ pub(super) const DEFAULT_MULTIEXP_WINDOW_THRESHOLDS: [u32; 19] = [
     3_584_912_846,
 ];
 
+/// Below this many terms, the default schedule uses [`TINY_MSM_WINDOW_BITS`].
+pub(super) const SMALL_MSM_MIN_TERMS: usize = 4;
+
+/// Window width of the default schedule below [`SMALL_MSM_MIN_TERMS`].
+pub(super) const TINY_MSM_WINDOW_BITS: usize = 1;
+
+/// From this many terms, the default schedule is `ceil(ln(terms))`; below it,
+/// [`SMALL_MSM_WINDOW_BITS`].
+pub(super) const LARGE_MSM_MIN_TERMS: usize = 32;
+
+/// Window width of the default schedule from [`SMALL_MSM_MIN_TERMS`] to
+/// [`LARGE_MSM_MIN_TERMS`].
+pub(super) const SMALL_MSM_WINDOW_BITS: usize = 3;
+
+/// The width `ceil(ln(terms))` up to the first threshold, `floor(e^4)`: entry
+/// `i` of [`DEFAULT_MULTIEXP_WINDOW_THRESHOLDS`] bounds width
+/// `FIRST_THRESHOLD_WINDOW_BITS + i`.
+pub(super) const FIRST_THRESHOLD_WINDOW_BITS: usize = 4;
+
+/// The generic MSM's window schedule, that of halo2's `best_multiexp`: one bit
+/// for tiny MSMs, three for small ones, then `ceil(ln(terms))`.
 pub(super) fn default_multiexp_window_bits(terms: usize) -> Option<usize> {
-    if terms < 4 {
-        Some(1)
-    } else if terms < 32 {
-        Some(3)
+    if terms < SMALL_MSM_MIN_TERMS {
+        Some(TINY_MSM_WINDOW_BITS)
+    } else if terms < LARGE_MSM_MIN_TERMS {
+        Some(SMALL_MSM_WINDOW_BITS)
     } else {
         let terms = u32::try_from(terms).ok()?;
         let threshold = DEFAULT_MULTIEXP_WINDOW_THRESHOLDS
             .iter()
             .position(|upper| terms <= *upper)
             .unwrap_or(DEFAULT_MULTIEXP_WINDOW_THRESHOLDS.len());
-        Some(4 + threshold)
+        FIRST_THRESHOLD_WINDOW_BITS.checked_add(threshold)
     }
 }
 
+/// Bit length of the scalar field's byte representation.
 pub(super) fn scalar_repr_bits<C>() -> Option<usize>
 where
     C: MsmCurve,
@@ -142,19 +195,22 @@ where
     <C::ScalarExt as PrimeField>::Repr::default()
         .as_ref()
         .len()
-        .checked_mul(8)
+        .checked_mul(u8::BITS as usize)
 }
 
-/// Selects the backend's signed-window width.
-///
-/// Compare the nine-bit schedule with its wider successor in serial mode.
-/// Keep the comparison narrow because this model omits cache behavior.
+/// The one default width at which a serial MSM also estimates its successor
+/// and takes the cheaper. Only one width is compared because the cost model
+/// omits cache behaviour, which favours narrower windows.
+pub(super) const SERIAL_SUCCESSOR_CHECK_WINDOW_BITS: usize = 9;
+
+/// Selects the backend's signed-window width: the default schedule, widened by
+/// one bit at [`SERIAL_SUCCESSOR_CHECK_WINDOW_BITS`] when the model says so.
 pub(super) fn multiexp_window_bits<C>(terms: usize, num_threads: usize) -> Option<usize>
 where
     C: MsmCurve,
 {
     let window_bits = default_multiexp_window_bits(terms)?;
-    if num_threads != 1 || window_bits != 9 {
+    if num_threads != 1 || window_bits != SERIAL_SUCCESSOR_CHECK_WINDOW_BITS {
         return Some(window_bits);
     }
 
@@ -207,7 +263,7 @@ where
     C: MsmCurve,
 {
     let window_bits = multiexp_window_bits::<C>(terms, num_threads)?;
-    let glv_terms = terms.checked_mul(2)?;
+    let glv_terms = terms.checked_mul(GLV_TERMS_PER_TERM)?;
     let mut best: Option<(BoothWork, usize)> = None;
     for candidate in window_bits..=window_bits.checked_add(1)? {
         if let Some(work) =
@@ -247,11 +303,12 @@ where
 {
     if num_threads > 1 && (MIN_PARALLEL_STRAUSS_TERMS..=MAX_PARALLEL_STRAUSS_TERMS).contains(&terms)
     {
-        // Bound small-MSM jobs to half the pool, rounded up, leaving room for
-        // concurrent caller work. Keep each leaf small instead of building
-        // one wide table for an entire worker's share.
+        // Keep each leaf small instead of building one wide table for an
+        // entire worker's share.
         return Plan::ParallelStrauss {
-            jobs: num_threads.div_ceil(2).min(terms),
+            jobs: num_threads
+                .div_ceil(PARALLEL_STRAUSS_POOL_DIVISOR)
+                .min(terms),
         };
     }
 
