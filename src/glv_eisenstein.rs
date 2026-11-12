@@ -133,9 +133,9 @@
 //! - R. P. Gallant, R. J. Lambert, S. A. Vanstone, "Faster Point Multiplication
 //!   on Elliptic Curves with Efficient Endomorphisms", CRYPTO 2001.
 //!   <https://www.iacr.org/archive/crypto2001/21390189.pdf>
-//! - The construction is being proven in Lean 4 in
-//!   <https://github.com/daira/CompElliptic/pull/33>, which mechanically
-//!   checks the inertness of 2, the unit group $\mu_6$, the freeness of the
+//! - A Lean 4 formalization of the construction, a draft at the time of
+//!   writing, is at <https://github.com/daira/CompElliptic/pull/33>. It
+//!   covers the inertness of 2, the unit group $\mu_6$, the freeness of the
 //!   action on the 48 odd classes, and the identification of $\mu_6$ with the
 //!   six automorphisms of a $j = 0$ curve.
 //! - `sage/glv_eisenstein.sage`
@@ -357,11 +357,11 @@ const MAX_DIGITS: usize = 130;
 /// [`Table::batch_mul`] for the cost model.
 ///
 /// The value tracks the cost of [`VartimeField::invert_vartime`], the safegcd
-/// inversion, at about 63 multiplications on the Pasta fields. The two ladders
-/// measure level at a batch of 64, and at 96, the value taken here, the affine
-/// one is already 7.5 to 15% ahead on an Apple M4 Pro, depending on the curve
-/// and on whether the assembly backend is in use. Against the constant-time Fermat inversion,
-/// at about 417 multiplications, the crossover would instead be near 420.
+/// inversion, at about 63 multiplications on the Pasta fields, and sits above
+/// the measured crossover, which the `glv_eisenstein` benchmarks show by
+/// timing `batch_mul` against the projective ladder at and around it. Against
+/// the constant-time Fermat inversion, at about 417 multiplications, the
+/// crossover would instead be near 420.
 pub(crate) const BATCH_AFFINE_THRESHOLD: usize = 96;
 
 /// The Eisenstein window for one base point: the eight orbit representatives
@@ -718,13 +718,6 @@ where
     /// is worth having: against the constant-time Fermat inversion, at
     /// $I \approx 417$, the same code does not break even until a batch of
     /// about 420.
-    ///
-    /// Measured end to end against the split-wNAF GLV ladder on Pallas, on an
-    /// Apple M4 Pro (recode, one table per point, ladder, affine out), taking
-    /// whichever ladder this function picks: with the portable field
-    /// arithmetic, 10% faster at a batch of 16 and of 64, 22% at 96, 23% at
-    /// 128, 24% at 256 and 25% at 512; with the assembly backend, 9 to 24%
-    /// over the same sizes. The affine ladder is the one picked from 96 up.
     ///
     /// [`BATCH_AFFINE_THRESHOLD`] records the measured crossover, and
     /// [`Table::batch_mul_affine`] forces the affine ladder regardless.
@@ -1254,8 +1247,9 @@ mod tests {
 
     /// The mu_6 action on the 48 odd classes is FREE: every orbit has the full
     /// six elements, so `48 / 6 = 8` orbits exist and eight stored points
-    /// suffice. This is the fact that makes the table small, and it is what
-    /// the Lean development (`Rings/Eisenstein/Orbits.lean`) proves.
+    /// suffice. This is the fact that makes the table small. The draft Lean
+    /// formalization cited in the module docs states it in
+    /// `Rings/Eisenstein/Orbits.lean`.
     #[test]
     fn orbit_action_is_free() {
         for c in odd_classes() {
