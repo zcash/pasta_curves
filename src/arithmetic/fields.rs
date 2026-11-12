@@ -438,10 +438,11 @@ pub(crate) const fn mac(a: u64, b: u64, c: u64, carry: u64) -> (u64, u64) {
 mod batch_invert_tests {
     use std::vec::Vec;
 
-    use group::ff::{BatchInvert, Field, FromUniformBytes};
+    use group::ff::{BatchInvert, Field};
     use proptest::prelude::*;
 
     use super::{VartimeBatchInvert, VartimeField};
+    use crate::test_scalars::from_uniform_limbs;
 
     fn check_batch<F: VartimeField + core::fmt::Debug + Eq>(inputs: &[F]) {
         let expected: Vec<F> = inputs
@@ -488,14 +489,6 @@ mod batch_invert_tests {
         }
     }
 
-    fn from_limbs<F: FromUniformBytes<64>>(limbs: [u64; 4]) -> F {
-        let mut bytes = [0u8; 64];
-        for (chunk, limb) in bytes.chunks_exact_mut(8).zip(limbs) {
-            chunk.copy_from_slice(&limb.to_le_bytes());
-        }
-        F::from_uniform_bytes(&bytes)
-    }
-
     proptest! {
         #[test]
         fn batch_invert_matches_individual_inversion(
@@ -504,11 +497,11 @@ mod batch_invert_tests {
             )
         ) {
             let fp: Vec<_> = values.iter().map(|value| match value {
-                Some(limbs) => from_limbs::<crate::Fp>(*limbs),
+                Some(limbs) => from_uniform_limbs::<crate::Fp, 4>(*limbs),
                 None => crate::Fp::ZERO,
             }).collect();
             let fq: Vec<_> = values.iter().map(|value| match value {
-                Some(limbs) => from_limbs::<crate::Fq>(*limbs),
+                Some(limbs) => from_uniform_limbs::<crate::Fq, 4>(*limbs),
                 None => crate::Fq::ZERO,
             }).collect();
             check_batch(&fp);

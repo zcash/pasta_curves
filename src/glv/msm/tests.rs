@@ -511,6 +511,7 @@ fn parallel_plans_run_concurrently() {
 
 mod every_plan {
     use super::*;
+    use crate::test_scalars::from_uniform_limbs;
     use ff::FromUniformBytes;
     use proptest::prelude::*;
 
@@ -532,14 +533,6 @@ mod every_plan {
         (0u8..8, 0u8..6, proptest::array::uniform8(any::<u64>()))
     }
 
-    fn scalar<F: FromUniformBytes<64>>(limbs: &[u64; 8]) -> F {
-        let mut bytes = [0u8; 64];
-        for (chunk, limb) in bytes.chunks_mut(8).zip(limbs) {
-            chunk.copy_from_slice(&limb.to_le_bytes());
-        }
-        F::from_uniform_bytes(&bytes)
-    }
-
     /// The law every strategy obeys: the plan evaluates to the sum of the
     /// products, computed here by native scalar multiplication.
     fn check<C: MsmCurve>(plan: Plan, terms: &[(u8, u8, [u64; 8])]) -> Result<(), TestCaseError>
@@ -556,14 +549,14 @@ mod every_plan {
                 1 => C::ScalarExt::ONE,
                 2 => -C::ScalarExt::ONE,
                 3 => shared_scalar,
-                _ => scalar::<C::ScalarExt>(limbs),
+                _ => from_uniform_limbs::<C::ScalarExt, 8>(*limbs),
             });
             bases.push(
                 match base_kind {
                     0 => C::identity(),
                     1 => shared_base,
                     2 => -shared_base,
-                    _ => C::generator() * scalar::<C::ScalarExt>(limbs).square(),
+                    _ => C::generator() * from_uniform_limbs::<C::ScalarExt, 8>(*limbs).square(),
                 }
                 .to_affine_vartime(),
             );
