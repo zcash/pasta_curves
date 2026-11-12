@@ -765,14 +765,27 @@ where
     ///
     /// An affine column divides by zero in exactly three situations, $A$
     /// being the lane's accumulator and $D$ the column's digit point: a
-    /// doubling's $2y_A$ vanishes when $A$ has order two; a fused column's
-    /// first slope, over $x_D - x_A$, when $A = \pm D$; and its second, over
-    /// $x_{A+D} - x_A$, when $A + D = -A$, that is $D = -2A$.
+    /// doubling's $2y_A$ vanishes when $A$ is the identity (no point has order
+    /// two, the group order being odd); a fused column's first slope, over
+    /// $x_D - x_A$, when $A = \pm D$; and its second, over $x_{A+D} - x_A$,
+    /// when $A + D = -A$, that is $D = -2A$.
     ///
     /// A lane that meets any of them leaves the affine path, and is
     /// recomputed with [`Table::mul_recoded`] on the projective ladder, which
     /// has no exceptional cases. The result is therefore correct whichever of
-    /// them occurs, and nothing here relies on an argument that they cannot.
+    /// them occurs.
+    ///
+    /// For a point other than the identity, none of them occurs. Each would
+    /// need a nonzero Eisenstein integer built from the recoder's residuals and
+    /// a digit, the accumulator's value, that value plus or minus the digit, or
+    /// the next value, to map to zero modulo the group order $n$. Any nonzero
+    /// element of that kernel has norm at least $n$, while the Babai bound
+    /// keeps all three inside a box whose norms stay below $0.4\,n$ on both
+    /// curves. Parity alone would not settle it, since 2 is a unit modulo $n$.
+    ///
+    /// Verified in `sage/glv_eisenstein.sage` by step `[6b]`
+    /// (`check_affine_ladder_safety`), which states the argument in full and
+    /// checks the bound against both curves' constants.
     ///
     /// The case that does occur is an identity input. Its table holds $(0, 0)$,
     /// the affine encoding of the identity, in every entry, and so does its

@@ -20,8 +20,10 @@ them in the exact shape of the Rust code so the two can be diffed:
   residue classes of `Z[w]/8` that reduces the table to 8 orbit
   representatives, the `REPS` constant, the seven-addition chain that
   builds them and the proof that it has no exceptional case in affine
-  coordinates, the `MAX_DIGITS` bound, and the recoder itself, checked
-  end to end by running the resulting ladder on Pallas and Vesta.
+  coordinates, the `MAX_DIGITS` bound, the recoder itself, checked
+  end to end by running the resulting ladder on Pallas and Vesta, and the
+  norm bound showing that the batch-affine ladder has no exceptional case
+  but the identity.
 
 The scripts use exact integer/rational arithmetic and hand-rolled
 lattice reduction only, so their output is deterministic and does not

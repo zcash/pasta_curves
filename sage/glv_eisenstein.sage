@@ -496,6 +496,60 @@ adds_p, cols_p, wadds_p, wcols_p = check_recoder(
 adds_v, cols_v, wadds_v, wcols_v = check_recoder(
     "Vesta", Vesta, Gv, p, lam_vesta)
 
+
+# --- 6b. why the batch-affine LADDER is safe in affine coordinates ------------
+#
+# Table::batch_mul_affine runs the ladder these digits drive with affine
+# formulas, and divides by zero in three situations, A being the accumulator
+# and D the column's digit point: a doubling's 2y vanishes when A = O (no point
+# has order two, the order being odd); a fused column's first slope when
+# A = +-D; and its second when D = -2A. In scalars, with r_c the recoder's
+# residual on entering column c, the accumulator at a fused column c holds
+# r_(c+1) and leaves holding r_c = 2 r_(c+1) + d_c. So the three cases need
+#
+#     r_(c+1),   r_(c+1) -+ d_c,   r_c   (c >= 1)
+#
+# to lie in the kernel p of a + b*w -> a + b*lambda (mod n). (At c = 0, r_0 is
+# the decomposed k itself, which lies in p only for k = 0, whose recoding is
+# empty.) None of them is zero: r_(c+1) is a prefix of a nonzero digit string,
+# r_(c+1) is divisible by 4 while d_c is odd, and r_c is odd. A nonzero element
+# of p has norm at least n, since p is an ideal of index n. And the residuals
+# stay small: |r_0| is within the Babai bound B, and a column maps a
+# coordinate x to (x - d)/2 with |d| <= D, so from c = 1 on |r_c| <= R =
+# floor((B + D)/2). All three quantities then lie in the box |.| <= R + D, and
+# it suffices that every element of that box has norm below n.
+#
+# Parity alone would not do: 2 is a unit mod n, so "even" and "odd" do not
+# survive the map into Z/n. It is the norm bound that rules a collision out.
+
+def check_affine_ladder_safety(name, n, lam):
+    assert (lam * lam + lam + 1) % n == 0, "lambda must satisfy x^2+x+1"
+    v1, v2 = short_basis(n, lam)
+    # The short basis spans the kernel p: both vectors lie in it, and they
+    # span a sublattice of index n, which is all of p.
+    for v in (v1, v2):
+        assert (v[0] + v[1] * lam) % n == 0, "%s: basis vector not in p" % name
+    assert abs(v1[0] * v2[1] - v1[1] * v2[0]) == n, "%s: p has index n" % name
+
+    # The Babai bound on each half, with the slack `decompose` documents for
+    # G1 and G2 being 384-bit approximations of the rounding coefficients.
+    B = [(abs(v1[0]) + abs(v2[0])) // 2 + 1, (abs(v1[1]) + abs(v2[1])) // 2 + 1]
+    R = [(b + D) // 2 for b in B]
+    assert all(r >= D for r in R), "the bound must be absorbing from c = 1"
+    a, b = R[0] + D, R[1] + D
+    # max over the box of a^2 - ab + b^2, reached with opposite signs.
+    worst = a ^ 2 + a * b + b ^ 2
+    assert worst < n, "%s: a box element could reach norm n" % name
+    return worst / n
+
+
+ratio_p = check_affine_ladder_safety("Pallas", q, lam_pallas)
+ratio_v = check_affine_ladder_safety("Vesta", p, lam_vesta)
+print("[6b] the batch-affine ladder has no exceptional case but P = O: every")
+print("     quantity that would have to vanish mod n is a nonzero Eisenstein")
+print("     integer of norm at most %.3f n (Pallas) and %.3f n (Vesta)"
+      % (float(ratio_p), float(ratio_v)))
+
 # ---------------------------------------------------------------------------
 # 7. Every column of the cost table in the module docs
 # ---------------------------------------------------------------------------
