@@ -19,5 +19,6 @@ export PYTHONDONTWRITEBYTECODE=1
 "$PYTHON" lean/scripts/test_vectors.py
 "$PYTHON" lean/scripts/test_asm_source.py
 echo "Lean transcription: current."
+"$PYTHON" lean/scripts/check_eisenstein_constants.py
 "$PYTHON" lean/scripts/gen_hull.py --check
 "$PYTHON" lean/scripts/verify_hull_certificate.py

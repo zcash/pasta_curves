@@ -217,6 +217,12 @@ describes the tools in more detail.
   self-contained responsibility. Extend shared components rather than duplicating them.
   Reject unsupported syntax, uninitialized register/flag reads, and unmodeled memory accesses;
   test those rejection paths. For x86, CF and OF are independent and must not be conflated.
+- **The Eisenstein modules state the recoding's constants by hand** (`PastaCurves/Eisenstein/`:
+  `REPS` in `Classes.lean`, each curve's `ZETA` and `GlvParams` short-basis constants in
+  `Ladder.lean`), and mirror `build_lut`, `Table::window_proj`, and the recoder's column by
+  hand. `lean/scripts/check_eisenstein_constants.py`, run by `check.sh`, checks the constants
+  against `src/glv_eisenstein.rs`, `src/glv.rs`, and the fields' `ZETA`; a change to any of them
+  changes the Lean statement with it.
 - **The Aeneas translations are generated** (`Types.lean` and `Funs.lean` under `Portable/`
   and `Glue/`, by `lean/scripts/gen_aeneas.sh`); never edit them by hand. `Glue/FunsExternal.lean`
   is written by hand: it defines the one external function that the glue calls. Proofs about the

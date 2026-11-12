@@ -17,7 +17,9 @@ constants:
   exceptional case on Pallas or Vesta but the identity, given the Babai bound on `decompose`.
 
 These are statements about the integers and the residue classes the Rust code computes with, not
-about its instruction streams: the code's transcription of `REPS`, the look-up table, the chain, and
-the curve constants into these modules is checked by inspection, and `sage/glv_eisenstein.sage`
-re-derives the same facts independently.
+about its instruction streams. The look-up table, the chain, and the recoder's column are mirrored
+from the Rust by hand and checked by inspection; the constants, `REPS` and each curve's `ZETA` and
+`GlvParams` short basis, are checked against the Rust sources by
+`scripts/check_eisenstein_constants.py`. `sage/glv_eisenstein.sage` re-derives the same facts
+independently.
 -/
