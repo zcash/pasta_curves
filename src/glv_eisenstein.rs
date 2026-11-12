@@ -10,10 +10,13 @@
 //! # Security
 //!
 //! Like [`crate::glv`], everything in this module runs in variable time with
-//! respect to the scalar: the decomposition, the recoding, and which additions
-//! the ladder performs all depend on it. **The scalar must be public.** Do not
-//! use this module with a secret scalar, such as a signing key or a viewing
-//! key; use the native, constant-time `Mul` implementations for that.
+//! respect to both the scalar and the point. The decomposition, the recoding,
+//! and which additions the ladder performs all depend on the scalar; the point
+//! additions, the field inversions of the affine table build and ladder, and
+//! their fallbacks on exceptional inputs all depend on the points.
+//! **The scalar and the point must both be public.** Do not use this module
+//! with a secret scalar, such as a signing key or a viewing key, nor with a
+//! secret point; use the native, constant-time `Mul` implementations for that.
 //!
 //! # The structure
 //!
@@ -1055,8 +1058,8 @@ where
     }
 }
 
-/// One-shot `k * p` through the Eisenstein recoding: variable-time in `k`,
-/// identical in value to `p * k` (including `p` = identity).
+/// One-shot `k * p` through the Eisenstein recoding: variable-time in `k` and
+/// `p`, identical in value to `p * k` (including `p` = identity).
 ///
 /// For repeated multiplications against the same point or the same scalar,
 /// use [`Table`] / [`Recoded`] directly to reuse the precomputation.

@@ -46,13 +46,15 @@
 //!
 //! # Security
 //!
-//! Everything in this module runs in variable time with respect to the
-//! scalar: the decomposition, the recoding, and which additions the ladder
-//! performs all depend on it. **The scalar must be public**, as in signature
-//! or proof verification. Do not use this module with a secret scalar, such
-//! as a signing key or a viewing key; the native `Mul` implementations, which
-//! are unchanged and constant-time, are the ones for that. The `_glv` naming
-//! distinguishes the two.
+//! Everything in this module runs in variable time with respect to both the
+//! scalar and the point. The decomposition, the recoding, and which additions
+//! the ladder performs all depend on the scalar; the point additions branch
+//! on the points they add, for the identity and for equal coordinates.
+//! **The scalar and the point must both be public**, as in signature or proof
+//! verification. Do not use this module with a secret scalar, such as a
+//! signing key or a viewing key, nor with a secret point; the native `Mul`
+//! implementations, which are unchanged and constant-time, are the ones for
+//! that. The `_glv` naming distinguishes the two.
 //!
 //! [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
 //!
@@ -561,9 +563,9 @@ pub trait GlvParams: CurveExt<Base: VartimeField> + private::Sealed {
     /// Babai coefficient `round(2^384 * V1B_NEG / n)`, little-endian limbs.
     const G2: [u64; 5];
 
-    /// One-shot `k * self` via the GLV split — variable-time in `k` (see the
-    /// module docs), identical in value to `self * k` (including `self` =
-    /// identity).
+    /// One-shot `k * self` via the GLV split — variable-time in `k` and
+    /// `self` (see the module docs), identical in value to `self * k`
+    /// (including `self` = identity).
     ///
     /// For repeated multiplications against the same point or the same
     /// scalar, use [`Table`] / [`Decomposed`] directly to reuse the
@@ -919,8 +921,8 @@ fn wnaf_digits(a: u128, negate: bool) -> ([i8; MAX_WNAF_DIGITS], usize) {
     (digits, n)
 }
 
-/// One-shot `k * p` through the split wNAF recoding: variable-time in `k`,
-/// identical in value to `p * k` (including `p` = identity).
+/// One-shot `k * p` through the split wNAF recoding: variable-time in `k` and
+/// `p`, identical in value to `p * k` (including `p` = identity).
 ///
 /// The same call shape as `crate::glv_eisenstein::mul`, so the two
 /// recodings are interchangeable at the call site.
