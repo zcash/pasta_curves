@@ -135,7 +135,10 @@ pub(super) fn default_multiexp_window_bits(terms: usize) -> Option<usize> {
     }
 }
 
-pub(super) fn scalar_repr_bits<C: MsmCurve>() -> Option<usize> {
+pub(super) fn scalar_repr_bits<C>() -> Option<usize>
+where
+    C: MsmCurve,
+{
     <C::ScalarExt as PrimeField>::Repr::default()
         .as_ref()
         .len()
@@ -146,7 +149,10 @@ pub(super) fn scalar_repr_bits<C: MsmCurve>() -> Option<usize> {
 ///
 /// Compare the nine-bit schedule with its wider successor in serial mode.
 /// Keep the comparison narrow because this model omits cache behavior.
-pub(super) fn multiexp_window_bits<C: MsmCurve>(terms: usize, num_threads: usize) -> Option<usize> {
+pub(super) fn multiexp_window_bits<C>(terms: usize, num_threads: usize) -> Option<usize>
+where
+    C: MsmCurve,
+{
     let window_bits = default_multiexp_window_bits(terms)?;
     if num_threads != 1 || window_bits != 9 {
         return Some(window_bits);
@@ -167,10 +173,10 @@ pub(super) fn multiexp_window_bits<C: MsmCurve>(terms: usize, num_threads: usize
 
 /// Choose a GLV window only when its estimated work beats the generic MSM.
 /// Compare both the default width and its successor to account for worker waves.
-pub(super) fn glv_multiexp_window_bits<C: MsmCurve>(
-    terms: usize,
-    num_threads: usize,
-) -> Option<usize> {
+pub(super) fn glv_multiexp_window_bits<C>(terms: usize, num_threads: usize) -> Option<usize>
+where
+    C: MsmCurve,
+{
     if terms < MIN_GLV_MULTIEXP_TERMS {
         return (num_threads <= 1 && terms > SERIAL_STRAUSS_MAX_TERMS)
             .then(|| serial_small_window_bits(terms));
@@ -182,10 +188,10 @@ pub(super) fn glv_multiexp_window_bits<C: MsmCurve>(
 
 /// The generic Signed-Booth MSM's estimated work at its default width (see
 /// [`estimated_signed_booth_work`]).
-pub(super) fn estimated_generic_work<C: MsmCurve>(
-    terms: usize,
-    num_threads: usize,
-) -> Option<BoothWork> {
+pub(super) fn estimated_generic_work<C>(terms: usize, num_threads: usize) -> Option<BoothWork>
+where
+    C: MsmCurve,
+{
     let window_bits = multiexp_window_bits::<C>(terms, num_threads)?;
     let scalar_bits = scalar_repr_bits::<C>()?;
     estimated_signed_booth_work(terms, scalar_bits, window_bits, num_threads)
@@ -193,10 +199,13 @@ pub(super) fn estimated_generic_work<C: MsmCurve>(
 
 /// The Signed-Booth GLV backend's cheapest `(work, window width)` over the
 /// candidate widths `w` and `w + 1` (see [`glv_multiexp_window_bits`]).
-pub(super) fn booth_multiexp_estimate<C: MsmCurve>(
+pub(super) fn booth_multiexp_estimate<C>(
     terms: usize,
     num_threads: usize,
-) -> Option<(BoothWork, usize)> {
+) -> Option<(BoothWork, usize)>
+where
+    C: MsmCurve,
+{
     let window_bits = multiexp_window_bits::<C>(terms, num_threads)?;
     let glv_terms = terms.checked_mul(2)?;
     let mut best: Option<(BoothWork, usize)> = None;
@@ -232,7 +241,10 @@ pub(super) enum Plan {
 
 /// Chooses how to evaluate an MSM of `terms` terms with `num_threads` worker
 /// threads. A pure function, so its choices can be checked directly.
-pub(super) fn plan<C: MsmCurve>(terms: usize, num_threads: usize) -> Plan {
+pub(super) fn plan<C>(terms: usize, num_threads: usize) -> Plan
+where
+    C: MsmCurve,
+{
     if num_threads > 1 && (MIN_PARALLEL_STRAUSS_TERMS..=MAX_PARALLEL_STRAUSS_TERMS).contains(&terms)
     {
         // Bound small-MSM jobs to half the pool, rounded up, leaving room for

@@ -73,11 +73,13 @@ fn multiexp_component_guard_returns_none_out_of_bounds() {
     assert!(checked_signed_magnitudes(((false, 0), (true, out_of_bounds))).is_none());
 }
 
-fn assert_affine_bucket_results_match_native<C: MsmCurve>(
+fn assert_affine_bucket_results_match_native<C>(
     case: &str,
     reduced: Vec<Option<AffinePoint<C::Base>>>,
     source: &[Vec<C>],
-) {
+) where
+    C: MsmCurve,
+{
     assert_eq!(reduced.len(), source.len());
     for (actual, bucket) in reduced.into_iter().zip(source) {
         let actual = match actual {
@@ -89,7 +91,10 @@ fn assert_affine_bucket_results_match_native<C: MsmCurve>(
     }
 }
 
-fn assert_batch_affine_buckets_match_native<C: MsmCurve>(case: &str, source: &[Vec<C>]) {
+fn assert_batch_affine_buckets_match_native<C>(case: &str, source: &[Vec<C>])
+where
+    C: MsmCurve,
+{
     let mut points = Vec::new();
     let mut offsets = Vec::with_capacity(source.len() + 1);
     offsets.push(0);
@@ -107,7 +112,10 @@ fn assert_batch_affine_buckets_match_native<C: MsmCurve>(case: &str, source: &[V
     assert_affine_bucket_results_match_native::<C>(case, reduced, source);
 }
 
-fn batch_affine_buckets_match_native<C: MsmCurve>() {
+fn batch_affine_buckets_match_native<C>()
+where
+    C: MsmCurve,
+{
     let generator = C::generator();
     let two = generator.double();
     let three = two + generator;
@@ -253,7 +261,10 @@ fn booth_digits_reconstruct_components() {
     }
 }
 
-fn forced_windows<C: MsmCurve>() {
+fn forced_windows<C>()
+where
+    C: MsmCurve,
+{
     let scalars = (0..64)
         .map(|i| {
             (C::ScalarExt::from(i + 0x9e3779b97f4a7c15).square() + C::ScalarExt::from(i)).square()
@@ -281,7 +292,7 @@ fn forced_windows<C: MsmCurve>() {
     for width in [1, 3, 6, 8, 9, 10] {
         for parallel in [false, true] {
             assert_eq!(
-                bucket_multiexp::<C, _>(&terms, width, parallel, &|| ()),
+                bucket_multiexp::<C, _, _>(&terms, width, parallel, &|| ()),
                 Some(expected),
                 "width {width}, parallel {parallel}"
             );
@@ -298,7 +309,10 @@ fn all_window_widths() {
 /// Reducing a window in blocks, with each block's buckets carried into the
 /// next, gives the same buckets as one block. Equal and opposite bases make
 /// carried points double and cancel.
-fn blocks_match_single_block<C: MsmCurve>() {
+fn blocks_match_single_block<C>()
+where
+    C: MsmCurve,
+{
     let generator = C::generator();
     let scalars = (0..64u64)
         .map(|i| {
@@ -460,7 +474,10 @@ fn planner_sees_the_pool() {
     feature = "multicore",
     not(all(target_arch = "wasm32", not(target_feature = "atomics")))
 ))]
-fn assert_jobs_overlap<C: MsmCurve>(plan: Plan, terms: usize) {
+fn assert_jobs_overlap<C>(plan: Plan, terms: usize)
+where
+    C: MsmCurve,
+{
     use core::sync::atomic::{AtomicUsize, Ordering::SeqCst};
     use std::time::{Duration, Instant};
 
@@ -489,7 +506,7 @@ fn assert_jobs_overlap<C: MsmCurve>(plan: Plan, terms: usize) {
         .num_threads(2)
         .build()
         .unwrap();
-    let actual = pool.install(|| execute_observed::<C>(plan, &scalars, &bases, &on_job));
+    let actual = pool.install(|| execute_observed::<C, _>(plan, &scalars, &bases, &on_job));
     assert_eq!(actual, Some(expected), "{plan:?}");
 }
 
@@ -535,8 +552,9 @@ mod every_plan {
 
     /// The law every strategy obeys: the plan evaluates to the sum of the
     /// products, computed here by native scalar multiplication.
-    fn check<C: MsmCurve>(plan: Plan, terms: &[(u8, u8, [u64; 8])]) -> Result<(), TestCaseError>
+    fn check<C>(plan: Plan, terms: &[(u8, u8, [u64; 8])]) -> Result<(), TestCaseError>
     where
+        C: MsmCurve,
         C::ScalarExt: FromUniformBytes<64>,
     {
         let shared_scalar = C::ScalarExt::from(0x1234_5678_9abc_def0);

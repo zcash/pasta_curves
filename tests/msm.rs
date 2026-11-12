@@ -40,7 +40,11 @@ fn sizes() -> impl Iterator<Item = usize> {
     (0..=128).chain(BOUNDARY_SIZES)
 }
 
-fn prefix_sums<C: CurveExt>(products: impl Iterator<Item = C>) -> Vec<C> {
+fn prefix_sums<C, I>(products: I) -> Vec<C>
+where
+    C: CurveExt,
+    I: Iterator<Item = C>,
+{
     let mut sums = Vec::with_capacity(products.size_hint().0 + 1);
     let mut sum = C::identity();
     sums.push(sum);
@@ -51,13 +55,17 @@ fn prefix_sums<C: CurveExt>(products: impl Iterator<Item = C>) -> Vec<C> {
     sums
 }
 
-fn check_prefixes<C: CurveExt>(
+fn check_prefixes<C, S>(
     case: &str,
     scalars: &[C::ScalarExt],
     bases: &[C::AffineExt],
     expected: &[C],
-    sizes: impl IntoIterator<Item = usize>,
-) -> Vec<usize> {
+    sizes: S,
+) -> Vec<usize>
+where
+    C: CurveExt,
+    S: IntoIterator<Item = usize>,
+{
     let mut accepted = Vec::new();
     let mut declined = Vec::new();
     for size in sizes {
@@ -90,7 +98,10 @@ fn check_prefixes<C: CurveExt>(
     accepted
 }
 
-fn require_small_and_large<C: CurveExt>(case: &str, accepted: &[usize]) {
+fn require_small_and_large<C>(case: &str, accepted: &[usize])
+where
+    C: CurveExt,
+{
     assert!(
         accepted.iter().any(|size| (1..=16).contains(size)),
         "{}/{case}: no nonempty small MSM was accepted",
@@ -103,7 +114,10 @@ fn require_small_and_large<C: CurveExt>(case: &str, accepted: &[usize]) {
     );
 }
 
-fn random_prefixes<C: CurveExt>() {
+fn random_prefixes<C>()
+where
+    C: CurveExt,
+{
     let mut rng = XorShiftRng::from_seed(seed(&format!("{}/random_prefixes", C::CURVE_ID)));
     let scalars: Vec<_> = (0..MAX_SIZE)
         .map(|_| C::ScalarExt::random(&mut rng))
@@ -113,7 +127,7 @@ fn random_prefixes<C: CurveExt>() {
         .collect();
     // Native multiplication is the oracle, not GLV. Compute each product only once,
     // then reuse its prefix sum for every size and every custom thread pool.
-    let expected = prefix_sums::<C>(
+    let expected = prefix_sums::<C, _>(
         scalars
             .iter()
             .zip(&bases)
@@ -146,7 +160,7 @@ fn random_prefixes<C: CurveExt>() {
         );
     }
 
-    let accepted = check_prefixes::<C>("random", &scalars, &bases, &expected, sizes());
+    let accepted = check_prefixes::<C, _>("random", &scalars, &bases, &expected, sizes());
     require_small_and_large::<C>("random", &accepted);
 
     #[cfg(feature = "multicore")]
@@ -159,7 +173,7 @@ fn random_prefixes<C: CurveExt>() {
                 .expect("the test environment must support a custom worker pool");
             let case = format!("random/{workers} workers");
             let accepted = pool.install(|| {
-                check_prefixes::<C>(
+                check_prefixes::<C, _>(
                     &case,
                     &scalars,
                     &bases,
@@ -184,7 +198,10 @@ fn random_prefixes<C: CurveExt>() {
     }
 }
 
-fn check_pattern<C: CurveExt>(case: &str, pattern: &[(C::ScalarExt, C::AffineExt)], block_sum: C) {
+fn check_pattern<C>(case: &str, pattern: &[(C::ScalarExt, C::AffineExt)], block_sum: C)
+where
+    C: CurveExt,
+{
     let products: Vec<_> = pattern
         .iter()
         .map(|(scalar, base)| *base * scalar)
@@ -210,12 +227,15 @@ fn check_pattern<C: CurveExt>(case: &str, pattern: &[(C::ScalarExt, C::AffineExt
         .map(|(_, b)| *b)
         .collect();
     // These fixtures repeat, so the native products can be reused too.
-    let expected = prefix_sums::<C>(products.iter().copied().cycle().take(MAX_SIZE));
-    let accepted = check_prefixes::<C>(case, &scalars, &bases, &expected, sizes());
+    let expected = prefix_sums::<C, _>(products.iter().copied().cycle().take(MAX_SIZE));
+    let accepted = check_prefixes::<C, _>(case, &scalars, &bases, &expected, sizes());
     require_small_and_large::<C>(case, &accepted);
 }
 
-fn special_cases<C: CurveExt>() {
+fn special_cases<C>()
+where
+    C: CurveExt,
+{
     let mut rng = XorShiftRng::from_seed(seed(&format!("{}/special_cases", C::CURVE_ID)));
     let p = C::random(&mut rng);
     let q = C::random(&mut rng);
@@ -259,7 +279,10 @@ fn special_cases<C: CurveExt>() {
     );
 }
 
-fn single_worker(test: impl FnOnce() + Send) {
+fn single_worker<T>(test: T)
+where
+    T: FnOnce() + Send,
+{
     // A machine-wide pool can legitimately decline every large test size.
     // Pin the baseline corpus; random_prefixes separately checks other counts.
     #[cfg(feature = "multicore")]
@@ -339,10 +362,10 @@ fn term_strategy() -> impl Strategy<Value = (TermScalar, TermBase)> {
 
 /// The law: a serial `try_multiexp_vartime` accepts every shape and returns
 /// the sum of the products, computed here by native scalar multiplication.
-fn check_terms<C: CurveExt>(
-    seed: [u8; 16],
-    terms: &[(TermScalar, TermBase)],
-) -> Result<(), TestCaseError> {
+fn check_terms<C>(seed: [u8; 16], terms: &[(TermScalar, TermBase)]) -> Result<(), TestCaseError>
+where
+    C: CurveExt,
+{
     let mut rng = XorShiftRng::from_seed(seed);
     let shared_scalars: Vec<C::ScalarExt> = (0..SHARED)
         .map(|_| C::ScalarExt::random(&mut rng))
@@ -385,7 +408,10 @@ fn check_terms<C: CurveExt>(
 
 /// Runs the property on one worker, so every size takes the serial planner.
 /// Proptest draws a fresh RNG seed per run and reports a shrunk failing case.
-fn matches_native<C: CurveExt>() {
+fn matches_native<C>()
+where
+    C: CurveExt,
+{
     single_worker(|| {
         let mut runner = TestRunner::new(Config::with_cases(64));
         let strategy = (

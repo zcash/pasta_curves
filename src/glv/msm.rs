@@ -95,31 +95,38 @@ fn current_num_threads() -> usize {
 
 /// Carries out `plan`. Declines (`None`) for [`Plan::Decline`] and when an
 /// arithmetic guard fails, so the caller's generic MSM runs instead.
-fn execute<C: MsmCurve>(plan: Plan, scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> Option<C> {
+fn execute<C>(plan: Plan, scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> Option<C>
+where
+    C: MsmCurve,
+{
     execute_observed(plan, scalars, bases, &|| ())
 }
 
 /// [`execute`], calling `on_job` at the start of every parallel job. Tests use
 /// it to check that parallel plans really run their jobs concurrently.
-fn execute_observed<C: MsmCurve>(
+fn execute_observed<C, J>(
     plan: Plan,
     scalars: &[C::ScalarExt],
     bases: &[C::AffineExt],
-    on_job: &(impl Fn() + Sync),
-) -> Option<C> {
+    on_job: &J,
+) -> Option<C>
+where
+    C: MsmCurve,
+    J: Fn() + Sync,
+{
     debug_assert_eq!(scalars.len(), bases.len());
     match plan {
         Plan::Decline => None,
         Plan::Strauss => Some(strauss_multiexp::<C>(scalars, bases)),
-        Plan::ParallelStrauss { jobs } => {
-            Some(parallel_strauss_multiexp::<C>(scalars, bases, jobs, on_job))
-        }
+        Plan::ParallelStrauss { jobs } => Some(parallel_strauss_multiexp::<C, _>(
+            scalars, bases, jobs, on_job,
+        )),
         Plan::Buckets {
             window_bits,
             parallel,
         } => {
             let terms = glv_lift::<C>(scalars, bases)?;
-            bucket_multiexp::<C, _>(&terms, window_bits, parallel, on_job)
+            bucket_multiexp::<C, _, _>(&terms, window_bits, parallel, on_job)
         }
     }
 }
@@ -130,10 +137,10 @@ fn execute_observed<C: MsmCurve>(
 /// # Panics
 ///
 /// Panics if `scalars` and `bases` have different lengths.
-pub(crate) fn try_multiexp<C: MsmCurve>(
-    scalars: &[C::ScalarExt],
-    bases: &[C::AffineExt],
-) -> Option<C> {
+pub(crate) fn try_multiexp<C>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> Option<C>
+where
+    C: MsmCurve,
+{
     assert_eq!(
         scalars.len(),
         bases.len(),

@@ -33,13 +33,19 @@ mod generic {
     use super::*;
 
     #[derive(Clone, Copy)]
-    enum Bucket<C: CurveAffine> {
+    enum Bucket<C>
+    where
+        C: CurveAffine,
+    {
         None,
         Affine(C),
         Projective(C::CurveExt),
     }
 
-    impl<C: CurveAffine> Bucket<C> {
+    impl<C> Bucket<C>
+    where
+        C: CurveAffine,
+    {
         fn add_assign(&mut self, other: C) {
             *self = match *self {
                 Bucket::None => Bucket::Affine(other),
@@ -104,7 +110,10 @@ mod generic {
         }
     }
 
-    fn booth_window_count<R: AsRef<[u8]>>(reprs: &[R], window_bits: usize) -> usize {
+    fn booth_window_count<R>(reprs: &[R], window_bits: usize) -> usize
+    where
+        R: AsRef<[u8]>,
+    {
         let repr_bytes = reprs
             .iter()
             .map(|repr| repr.as_ref().len())
@@ -114,12 +123,18 @@ mod generic {
     }
 
     #[derive(Clone)]
-    struct BoothBuckets<C: CurveAffine> {
+    struct BoothBuckets<C>
+    where
+        C: CurveAffine,
+    {
         c: usize,
         coeffs: Vec<Bucket<C>>,
     }
 
-    impl<C: CurveAffine> BoothBuckets<C> {
+    impl<C> BoothBuckets<C>
+    where
+        C: CurveAffine,
+    {
         fn new(c: usize) -> Self {
             Self {
                 c,
@@ -151,10 +166,10 @@ mod generic {
     }
 
     /// The serial branch of halo2_proofs 0.4.1 `best_multiexp`.
-    pub(super) fn best_multiexp<C: CurveAffine>(
-        coeffs: &[C::ScalarExt],
-        bases: &[C],
-    ) -> C::CurveExt {
+    pub(super) fn best_multiexp<C>(coeffs: &[C::ScalarExt], bases: &[C]) -> C::CurveExt
+    where
+        C: CurveAffine,
+    {
         assert_eq!(coeffs.len(), bases.len());
         let coeffs = coeffs.iter().map(PrimeField::to_repr).collect::<Vec<_>>();
         let c = if bases.len() < 4 {
@@ -178,14 +193,20 @@ mod generic {
     }
 }
 
-fn naive<C: CurveExt>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C {
+fn naive<C>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C
+where
+    C: CurveExt,
+{
     scalars
         .iter()
         .zip(bases)
         .fold(C::identity(), |acc, (scalar, base)| acc + *base * scalar)
 }
 
-fn hook_or_generic<C: CurveExt>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C {
+fn hook_or_generic<C>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C
+where
+    C: CurveExt,
+{
     C::try_multiexp_vartime(scalars, bases)
         .unwrap_or_else(|| generic::best_multiexp::<C::AffineExt>(scalars, bases))
 }
@@ -211,7 +232,10 @@ fn seed() -> [u8; 16] {
     ((u128::from(half(0)) << 64) | u128::from(half(1))).to_be_bytes()
 }
 
-fn msm_bench<C: CurveExt>(c: &mut Criterion, name: &str) {
+fn msm_bench<C>(c: &mut Criterion, name: &str)
+where
+    C: CurveExt,
+{
     let max = *SIZES.iter().max().unwrap();
     let seed = seed();
     eprintln!(

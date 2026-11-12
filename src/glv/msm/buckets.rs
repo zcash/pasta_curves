@@ -49,12 +49,15 @@ impl WindowAssignment {
 /// Collects the terms in `range` with a nonzero digit in one Booth window,
 /// each with its signed bucket, and counts the terms per bucket. This is the
 /// pushforward of the window's terms along their digits.
-pub(super) fn window_assignments<F, T: SmallScalarTerms<F>>(
+pub(super) fn window_assignments<F, T>(
     terms: &T,
     range: Range<usize>,
     window_bits: usize,
     window: usize,
-) -> (Vec<WindowAssignment>, Vec<usize>) {
+) -> (Vec<WindowAssignment>, Vec<usize>)
+where
+    T: SmallScalarTerms<F>,
+{
     let bucket_count = 1 << (window_bits - 1);
     let mut assignments = Vec::with_capacity(range.len());
     let mut counts = alloc::vec![0usize; bucket_count];
@@ -83,7 +86,10 @@ pub(super) fn window_assignments<F, T: SmallScalarTerms<F>>(
     (assignments, counts)
 }
 
-pub(super) fn sum_buckets<C: MsmCurve>(buckets: &[Option<AffinePoint<C::Base>>]) -> C {
+pub(super) fn sum_buckets<C>(buckets: &[Option<AffinePoint<C::Base>>]) -> C
+where
+    C: MsmCurve,
+{
     let mut running = C::identity();
     let mut sum = C::identity();
     for bucket in buckets.iter().rev() {
@@ -109,11 +115,15 @@ pub(super) const WINDOW_BLOCK_TERMS_PER_BUCKET: usize = 16;
 /// pending additions and assignments) is bounded by the block size instead of
 /// growing with the number of terms. With parallel windows this bound is what
 /// keeps memory from scaling with the number of windows in flight.
-pub(super) fn fill_window<F: VartimeField, T: SmallScalarTerms<F>>(
+pub(super) fn fill_window<F, T>(
     terms: &T,
     window_bits: usize,
     window: usize,
-) -> Option<Vec<Option<AffinePoint<F>>>> {
+) -> Option<Vec<Option<AffinePoint<F>>>>
+where
+    F: VartimeField,
+    T: SmallScalarTerms<F>,
+{
     let bucket_count = 1usize << (window_bits - 1);
     let block_terms =
         MIN_WINDOW_BLOCK_TERMS.max(bucket_count.saturating_mul(WINDOW_BLOCK_TERMS_PER_BUCKET));
@@ -124,12 +134,16 @@ pub(super) fn fill_window<F: VartimeField, T: SmallScalarTerms<F>>(
 /// block as the first point of the same buckets, so the batched affine reducer
 /// also merges the blocks, including when a carried point doubles or cancels.
 /// This is the monoid law `sum(A + B) = sum({sum(A)} + B)` for multisets.
-pub(super) fn fill_window_in_blocks<F: VartimeField, T: SmallScalarTerms<F>>(
+pub(super) fn fill_window_in_blocks<F, T>(
     terms: &T,
     window_bits: usize,
     window: usize,
     block_terms: usize,
-) -> Option<Vec<Option<AffinePoint<F>>>> {
+) -> Option<Vec<Option<AffinePoint<F>>>>
+where
+    F: VartimeField,
+    T: SmallScalarTerms<F>,
+{
     debug_assert!(block_terms > 0);
     let mut buckets: Option<Vec<Option<AffinePoint<F>>>> = None;
     for start in (0..terms.len()).step_by(block_terms) {
@@ -147,13 +161,17 @@ pub(super) fn fill_window_in_blocks<F: VartimeField, T: SmallScalarTerms<F>>(
 
 /// Fills one block's buckets, each led by its carried point from the previous
 /// block, and reduces them.
-pub(super) fn fill_block<F: VartimeField, T: SmallScalarTerms<F>>(
+pub(super) fn fill_block<F, T>(
     terms: &T,
     range: Range<usize>,
     window_bits: usize,
     window: usize,
     carry: Option<&[Option<AffinePoint<F>>]>,
-) -> Option<Vec<Option<AffinePoint<F>>>> {
+) -> Option<Vec<Option<AffinePoint<F>>>>
+where
+    F: VartimeField,
+    T: SmallScalarTerms<F>,
+{
     let bucket_count = 1 << (window_bits - 1);
     let (assignments, mut counts) = window_assignments(terms, range, window_bits, window);
     if let Some(carry) = carry {
@@ -206,11 +224,11 @@ pub(super) fn fill_block<F: VartimeField, T: SmallScalarTerms<F>>(
 
 /// One window's share of the MSM: the sum over terms of `digit * point`,
 /// computed as `sum_b b * S_b` over the window's buckets.
-pub(super) fn window_sum<C: MsmCurve, T: SmallScalarTerms<C::Base>>(
-    terms: &T,
-    window_bits: usize,
-    window: usize,
-) -> Option<C> {
+pub(super) fn window_sum<C, T>(terms: &T, window_bits: usize, window: usize) -> Option<C>
+where
+    C: MsmCurve,
+    T: SmallScalarTerms<C::Base>,
+{
     let buckets = fill_window(terms, window_bits, window)?;
     Some(sum_buckets::<C>(&buckets))
 }
@@ -218,10 +236,11 @@ pub(super) fn window_sum<C: MsmCurve, T: SmallScalarTerms<C::Base>>(
 /// Horner's rule at `X = 2^window_bits`: given the window sums from the top
 /// window down, returns `sum_j W_j * 2^(window_bits * j)`. The top window is
 /// not shifted, so the fold starts from it rather than from the identity.
-pub(super) fn horner<C: MsmCurve>(
-    top_down: impl Iterator<Item = Option<C>>,
-    window_bits: usize,
-) -> Option<C> {
+pub(super) fn horner<C, I>(top_down: I, window_bits: usize) -> Option<C>
+where
+    C: MsmCurve,
+    I: Iterator<Item = Option<C>>,
+{
     let mut acc: Option<C> = None;
     for sum in top_down {
         let sum = sum?;
@@ -243,12 +262,17 @@ pub(super) fn horner<C: MsmCurve>(
 /// worker threads with `multicore`, one after another without it), combined
 /// by one Horner fold; otherwise each window is computed as the fold reaches
 /// it, so only one window's buckets exist at a time.
-pub(super) fn bucket_multiexp<C: MsmCurve, T: SmallScalarTerms<C::Base>>(
+pub(super) fn bucket_multiexp<C, T, J>(
     terms: &T,
     window_bits: usize,
     parallel: bool,
-    on_job: &(impl Fn() + Sync),
-) -> Option<C> {
+    on_job: &J,
+) -> Option<C>
+where
+    C: MsmCurve,
+    T: SmallScalarTerms<C::Base>,
+    J: Fn() + Sync,
+{
     let windows = GLV_COMPONENT_BITS / window_bits + 1;
     if !parallel {
         let top_down = (0..windows)

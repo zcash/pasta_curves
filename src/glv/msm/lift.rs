@@ -71,7 +71,10 @@ pub(super) struct GlvTerms<F> {
     pub(super) bases: Vec<MultiexpBase<F>>,
 }
 
-impl<F: Copy + Sync> SmallScalarTerms<F> for GlvTerms<F> {
+impl<F> SmallScalarTerms<F> for GlvTerms<F>
+where
+    F: Copy + Sync,
+{
     fn len(&self) -> usize {
         2 * self.bases.len()
     }
@@ -92,10 +95,13 @@ impl<F: Copy + Sync> SmallScalarTerms<F> for GlvTerms<F> {
 
 /// Lifts an MSM to [`GlvTerms`], or declines when a decomposition half is
 /// out of bounds.
-pub(super) fn glv_lift<C: MsmCurve>(
+pub(super) fn glv_lift<C>(
     scalars: &[C::ScalarExt],
     bases: &[C::AffineExt],
-) -> Option<GlvTerms<C::Base>> {
+) -> Option<GlvTerms<C::Base>>
+where
+    C: MsmCurve,
+{
     let components = scalars
         .iter()
         .map(decompose::<C>)
@@ -107,7 +113,10 @@ pub(super) fn glv_lift<C: MsmCurve>(
     })
 }
 
-pub(super) fn multiexp_bases<C: MsmCurve>(bases: &[C::AffineExt]) -> Vec<MultiexpBase<C::Base>> {
+pub(super) fn multiexp_bases<C>(bases: &[C::AffineExt]) -> Vec<MultiexpBase<C::Base>>
+where
+    C: MsmCurve,
+{
     bases
         .iter()
         .map(|base| {

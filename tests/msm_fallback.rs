@@ -3,7 +3,10 @@
 
 use pasta_curves::{arithmetic::CurveExt, pallas, vesta};
 
-fn check_default<C: CurveExt>() {
+fn check_default<C>()
+where
+    C: CurveExt,
+{
     assert_eq!(C::try_multiexp_vartime(&[], &[]), None);
     assert_eq!(
         C::try_multiexp_vartime(&[C::ScalarExt::from(1)], &[C::generator().into()]),

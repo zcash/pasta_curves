@@ -37,10 +37,13 @@ pub(super) const BATCH_INVERSION_LANES: usize = 2;
 /// `points`: the prefix pass changes only disposable pending numerators, and
 /// the output pass starts only after the product is successfully inverted.
 /// The reducer relies on this failure-atomic behavior to retry the level.
-pub(super) fn batch_invert_and_add<F: VartimeField>(
+pub(super) fn batch_invert_and_add<F>(
     additions: &mut [PendingAffineAddition<F>],
     points: &mut [AffinePoint<F>],
-) -> Option<()> {
+) -> Option<()>
+where
+    F: VartimeField,
+{
     let Some((first, additions)) = additions.split_first_mut() else {
         return Some(());
     };
@@ -153,17 +156,23 @@ pub(super) fn batch_invert_and_add<F: VartimeField>(
 /// The incomplete pass writes nothing until inversion succeeds. On a zero
 /// denominator, retry the unchanged level with complete formulas. Successful
 /// results are then compacted in place, retaining the input allocation.
-pub(super) fn reduce_affine_buckets<F: VartimeField>(
+pub(super) fn reduce_affine_buckets<F>(
     points: Vec<AffinePoint<F>>,
     offsets: Vec<usize>,
-) -> Option<Vec<Option<AffinePoint<F>>>> {
+) -> Option<Vec<Option<AffinePoint<F>>>>
+where
+    F: VartimeField,
+{
     reduce_affine_buckets_inner::<F, false>(points, offsets)
 }
 
-pub(super) fn reduce_affine_buckets_inner<F: VartimeField, const COMPLETE: bool>(
+pub(super) fn reduce_affine_buckets_inner<F, const COMPLETE: bool>(
     mut points: Vec<AffinePoint<F>>,
     mut offsets: Vec<usize>,
-) -> Option<Vec<Option<AffinePoint<F>>>> {
+) -> Option<Vec<Option<AffinePoint<F>>>>
+where
+    F: VartimeField,
+{
     debug_assert!(!offsets.is_empty());
     let mut next_offsets = Vec::with_capacity(offsets.len());
     let mut pending = Vec::with_capacity(points.len() / 2);

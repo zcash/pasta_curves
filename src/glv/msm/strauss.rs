@@ -15,7 +15,10 @@ use crate::glv::{Decomposed, Table};
 
 /// Share the doubling ladder across all scalar/base pairs, reusing the
 /// upstream GLV decomposition and width-four split-wNAF tables unchanged.
-pub(super) fn strauss_multiexp<C: MsmCurve>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C {
+pub(super) fn strauss_multiexp<C>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C
+where
+    C: MsmCurve,
+{
     debug_assert_eq!(scalars.len(), bases.len());
 
     let mut decomposed = Vec::with_capacity(scalars.len());
@@ -51,10 +54,10 @@ pub(super) fn strauss_multiexp<C: MsmCurve>(scalars: &[C::ScalarExt], bases: &[C
     acc
 }
 
-pub(super) fn strauss_multiexp_leaves<C: MsmCurve>(
-    scalars: &[C::ScalarExt],
-    bases: &[C::AffineExt],
-) -> C {
+pub(super) fn strauss_multiexp_leaves<C>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C
+where
+    C: MsmCurve,
+{
     scalars
         .chunks(STRAUSS_LEAF_TERMS)
         .zip(bases.chunks(STRAUSS_LEAF_TERMS))
@@ -64,12 +67,16 @@ pub(super) fn strauss_multiexp_leaves<C: MsmCurve>(
 
 /// Splits the terms into `jobs` contiguous shares of Strauss leaves, run on
 /// worker threads with `multicore` and one after another without it.
-pub(super) fn parallel_strauss_multiexp<C: MsmCurve>(
+pub(super) fn parallel_strauss_multiexp<C, J>(
     scalars: &[C::ScalarExt],
     bases: &[C::AffineExt],
     jobs: usize,
-    on_job: &(impl Fn() + Sync),
-) -> C {
+    on_job: &J,
+) -> C
+where
+    C: MsmCurve,
+    J: Fn() + Sync,
+{
     let job = |job: usize| {
         on_job();
         let start = scalars.len() * job / jobs;
