@@ -58,6 +58,14 @@ contracts over any backend whose blocks meet theirs, and both backends' blocks a
 them. So `sqr_n_mul`, which composes blocks, is covered through the translation rather than mirrored
 by hand.
 
+The library also covers the scalar recoding of `src/glv_eisenstein.rs` (`PastaCurves/Eisenstein/`),
+at the level of the integers and residue classes that the Rust code computes with rather than its
+compiled code: that 2 is inert in `ℤ[ω]` and its units are the six of `μ₆`; that the 48 unit
+multiples of `REPS` are exactly the odd classes mod 8, each once, with `μ₆` acting freely; that
+`Table::window_proj`'s seven-addition chain reaches `REPS` for every base point; and that the
+batch-affine ladder of `Table::batch_mul_affine` has no exceptional case on Pallas or Vesta but the
+identity, given the Babai bound on `decompose`'s halves.
+
 The multiplication and squaring blocks are transcriptions of Semolina v0.1.4's
 `mul_mont_pasta` and of the squaring loop body of its `sqr_n_mul_mont_pasta`, and the addition
 and subtraction blocks were imported from zakura-pasta-curves (see the crate README for the
@@ -109,6 +117,13 @@ What is trusted, beyond Lean's kernel and standard axioms:
    outside Aeneas' library depends on any of them, directly or through Aeneas' declarations, so
    the package's theorems rest on the standard axioms alone. nanoda is told of them, since its
    strict mode rejects any declared axiom it is not told of.
+7. The Rust mirrored in `PastaCurves/Eisenstein/`: the digits that `build_lut` writes (`digits`),
+   the chain of `Table::window_proj` (`window`), and the recoder's column as `r = 2 r' + d`
+   (`Column`), checked against the Rust by inspection. Their constants, `REPS`, each curve's
+   scalar-field `ZETA`, and the short-basis constants of `GlvParams`, are stated by hand, and
+   `scripts/check_eisenstein_constants.py`, run by `check.sh`, checks them against the Rust
+   sources. The Babai bound on `decompose`'s halves is a hypothesis of the ladder theorem, the
+   bound that `decompose` documents, not proved from its limb arithmetic.
 
 Not modelled formally: the compiler's handling of the blocks' operands, that is, the allocation of
 registers to the placeholders and the `options(pure, nomem, nostack)` declaration, read-only pointer
@@ -188,6 +203,11 @@ PastaCurves/Glue/FunsExternal.lean       the one external function that they cal
 PastaCurves/Glue/Vectors.lean            the compositions on the vectors and known answers, as tests
 PastaCurves/Glue/Blocks.lean             `blocksOf`: a backend's record, from its block models
 PastaCurves/Glue/Spec.lean               the compositions meet the entry points' contracts
+PastaCurves/Eisenstein.lean              the Eisenstein recoding's modules, imported together
+PastaCurves/Eisenstein/Ring.lean         ℤ[ω]: its norm, its units μ₆, and 2 inert
+PastaCurves/Eisenstein/Classes.lean      REPS and the 48 odd classes mod 8, under a free μ₆ action
+PastaCurves/Eisenstein/Chain.lean        the seven-addition chain of `window_proj` reaches REPS
+PastaCurves/Eisenstein/Ladder.lean       the batch-affine ladder's only exceptional case is O
 scripts/gen.py                           shared bindings, vectors, skeletons, checks, and CLI
 scripts/asm_source.py                    shared Rust inline-assembly parser and validation
 scripts/gen_aarch64.py                   AArch64 decoding, round factoring, and proof-fact hooks
@@ -201,11 +221,12 @@ scripts/fetch_aeneas.sh                  fetch the Charon and Aeneas that gen_ae
 scripts/check_nanoda.sh                  re-check the build with an independent kernel (CI)
 scripts/check_export_coverage.py         the export roots reach every module, run by check_nanoda.sh
 scripts/check_export_axioms.py           the axiom census of the export, run by check_nanoda.sh
+scripts/check_eisenstein_constants.py    the Eisenstein modules' constants are the crate's (check.sh)
 ```
 
 Shared declarations use namespace `PastaCurves`; architecture declarations use `PastaCurves.AArch64`
-and `PastaCurves.X86_64`; the Aeneas translations use `pasta_curves`, the crate's name, as Aeneas
-names it. Shared modules do not import architecture-specific modules, so both models reuse them
+and `PastaCurves.X86_64`; the Eisenstein recoding uses `PastaCurves.Eisenstein`; the Aeneas
+translations use `pasta_curves`, the crate's name, as Aeneas names it. Shared modules do not import architecture-specific modules, so both models reuse them
 without depending on one another. The exception is `Glue/Vectors.lean`, which runs the translated
 glue over both backends' records, and which nothing imports but the root module. The package is
 built with Lake from this directory (`scripts/build.sh`), with Mathlib and Aeneas' Lean library
@@ -409,7 +430,9 @@ against a step-by-step trace of one batch. The proofs cover:
   backend whose blocks meet their contracts, including the repeated squaring of `sqr_n_mul`;
 * from those, the six Montgomery entry points on both backends at either field under the
   conditions they assert, and `invert` over the AArch64 blocks at either field;
-* the Aeneas translation of the portable `cond_sub` against its contract.
+* the Aeneas translation of the portable `cond_sub` against its contract;
+* for `glv_eisenstein`, the ring facts, the table's residue classes and its chain, and the
+  batch-affine ladder's exceptional cases, on both curves' constants (`PastaCurves/Eisenstein/`).
 
 This covers the crate's current code except the other five portable inversion blocks and the
 driver over them (`src/inversion/portable.rs`, `src/inversion.rs`), up to the aspects that the

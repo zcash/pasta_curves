@@ -28,7 +28,8 @@ jobs:
       # change is Lean-relevant iff some changed file is outside the set that cannot affect
       # the formalization, or is one of the crate's sources that the generator reads (the
       # backend's blocks and tests, the field types' constants, and the known answers in
-      # `src/test_fields.rs`), or is this workflow.
+      # `src/test_fields.rs`) or that `check_eisenstein_constants.py` checks the Eisenstein
+      # modules against (`src/glv.rs` and `src/glv_eisenstein.rs`), or is this workflow.
       # Note this is NOT the sequential-negation semantics of GitHub's own `on.paths` engine.
       # A change is relevant to the Aeneas translation iff some changed file:
       # - is outside the set that cannot affect the crate's build;
@@ -44,6 +45,8 @@ jobs:
               - 'src/asm/**'
               - 'src/fields/**'
               - 'src/test_fields.rs'
+              - 'src/glv.rs'
+              - 'src/glv_eisenstein.rs'
               - '.github/workflows/lean.yml'
             translation:
               - '!{book/**,lean/**,sage/**,.github/**,scripts/**,*.md,LICENSE-*,ruff.toml,katex-header.html}'

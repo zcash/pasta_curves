@@ -133,11 +133,13 @@
 //! - R. P. Gallant, R. J. Lambert, S. A. Vanstone, "Faster Point Multiplication
 //!   on Elliptic Curves with Efficient Endomorphisms", CRYPTO 2001.
 //!   <https://www.iacr.org/archive/crypto2001/21390189.pdf>
-//! - A Lean 4 formalization of the construction, a draft at the time of
-//!   writing, is at <https://github.com/daira/CompElliptic/pull/33>. It
-//!   covers the inertness of 2, the unit group $\mu_6$, the freeness of the
-//!   action on the 48 odd classes, and the identification of $\mu_6$ with the
-//!   six automorphisms of a $j = 0$ curve.
+//! - `lean/PastaCurves/Eisenstein/`, in this repository, proves in Lean 4 the
+//!   inertness of 2 and the unit group $\mu_6$, that `REPS` reaches each of
+//!   the 48 odd classes exactly once under a free action of $\mu_6$, that the
+//!   seven-addition chain reaches `REPS`, and that the batch-affine ladder has
+//!   no exceptional case but the identity on either curve (see
+//!   `lean/README.md`). The identification of $\mu_6$ with the six
+//!   automorphisms of a $j = 0$ curve is checked by Sage, not Lean.
 //! - `sage/glv_eisenstein.sage`
 //!   (<https://github.com/zcash/pasta_curves/blob/main/sage/glv_eisenstein.sage>)
 //!   regenerates and re-verifies every constant in this module against the
@@ -785,7 +787,9 @@ where
     ///
     /// Verified in `sage/glv_eisenstein.sage` by step `[6b]`
     /// (`check_affine_ladder_safety`), which states the argument in full and
-    /// checks the bound against both curves' constants.
+    /// checks the bound against both curves' constants, and proved in Lean by
+    /// `PastaCurves.Eisenstein.LadderParams.column_safe` with
+    /// `pallas_valid` and `vesta_valid` (`lean/PastaCurves/Eisenstein/Ladder.lean`).
     ///
     /// The case that does occur is an identity input. Its table holds $(0, 0)$,
     /// the affine encoding of the identity, in every entry, and so does its
@@ -1260,9 +1264,8 @@ mod tests {
 
     /// The mu_6 action on the 48 odd classes is FREE: every orbit has the full
     /// six elements, so `48 / 6 = 8` orbits exist and eight stored points
-    /// suffice. This is the fact that makes the table small. The draft Lean
-    /// formalization cited in the module docs states it in
-    /// `Rings/Eisenstein/Orbits.lean`.
+    /// suffice. This is the fact that makes the table small, proved in Lean by
+    /// `unit_action_free` in `lean/PastaCurves/Eisenstein/Classes.lean`.
     #[test]
     fn orbit_action_is_free() {
         for c in odd_classes() {
