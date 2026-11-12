@@ -764,6 +764,26 @@ where
     /// already paid for.
     ///
     /// Identity inputs are handled, and mix freely with ordinary points.
+    ///
+    /// # Exceptional cases
+    ///
+    /// An affine column divides by zero in exactly three situations, $A$
+    /// being the lane's accumulator and $D$ the column's digit point: a
+    /// doubling's $2y_A$ vanishes when $A$ has order two; a fused column's
+    /// first slope, over $x_D - x_A$, when $A = \pm D$; and its second, over
+    /// $x_{A+D} - x_A$, when $A + D = -A$, that is $D = -2A$.
+    ///
+    /// A lane that meets any of them leaves the affine path, and is
+    /// recomputed with [`Table::mul_recoded`] on the projective ladder, which
+    /// has no exceptional cases. The result is therefore correct whichever of
+    /// them occurs, and nothing here relies on an argument that they cannot.
+    ///
+    /// The case that does occur is an identity input. Its table holds $(0, 0)$,
+    /// the affine encoding of the identity, in every entry, and so does its
+    /// accumulator, so any column it reaches divides by zero; a one-column
+    /// scalar reaches none and returns $(0, 0)$ directly, which is also
+    /// right. The `batch_mul` tests run identities alone and mixed into a
+    /// batch, at its start and in its middle.
     pub(crate) fn batch_mul_affine(tables: &[Self], k: &Recoded<C>) -> Vec<C::AffineExt> {
         let n = tables.len();
         let mut out = alloc::vec![C::AffineExt::identity(); n];
@@ -776,9 +796,8 @@ where
         let (mut x2s, mut y2s) = (alloc::vec![zero; n], alloc::vec![zero; n]);
         let (mut x3s, mut lam) = (alloc::vec![zero; n], alloc::vec![zero; n]);
         let (mut den, mut scratch) = (alloc::vec![zero; n], alloc::vec![zero; n]);
-        // A lane leaves the affine path when a denominator vanishes, which
-        // means its accumulator is the identity (see `batch_mul` in the tests
-        // and the exception analysis in the module docs).
+        // A lane leaves the affine path when a denominator vanishes, and is
+        // recomputed on the projective ladder (see "Exceptional cases" above).
         let mut live = alloc::vec![true; n];
 
         // The top column always carries a nonzero digit, so the accumulator
