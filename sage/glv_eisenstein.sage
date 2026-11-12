@@ -64,6 +64,8 @@ assert int(zeta_p) * Gv == Vesta(zeta_q * Gv[0], Gv[1])
 # 1. The ring Z[w], its inert 2, and its unit group mu_6
 # ---------------------------------------------------------------------------
 
+# Not every SageMath predefines the symbolic variable x, so make it here.
+x = polygen(QQ, 'x')
 K.<w> = NumberField(x ^ 2 + x + 1)
 OK = K.ring_of_integers()
 assert w ^ 3 == 1 and w != 1, "w must be a primitive cube root of unity"
