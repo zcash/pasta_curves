@@ -372,7 +372,10 @@ pub(crate) const BATCH_AFFINE_THRESHOLD: usize = 96;
 ///
 /// Build one with [`Table::new`], or many sharing a single field inversion
 /// with [`Table::batch`].
-#[derive(Clone, Copy, Debug)]
+///
+/// It is [`Clone`] but deliberately not `Copy`: at 1 KiB, an implicit copy is
+/// a cost worth writing out.
+#[derive(Clone, Debug)]
 pub struct Table<C>
 where
     C: GlvParams,
