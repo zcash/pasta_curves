@@ -942,13 +942,17 @@ where
 
 /// Reassembles a [`decompose`] half into a signed integer.
 ///
-/// `decompose` bounds the magnitude below `2^127`, so the cast is exact; the
-/// tighter Babai bound `(V1A + V2A) / 2 < 2^126.6` (checked for both curves by
-/// the
-/// `half_bounds` tests) is what leaves room for the digit
-/// subtraction in [`recode`] to stay inside `i128`.
+/// A magnitude below `2^127` would make the cast exact, but [`recode`] needs
+/// more: it subtracts a digit, whose coordinates are at most 5 in absolute
+/// value, before it halves, so a half must stay at least 5 below `i128`'s
+/// range. What provides that is the Babai bound [`decompose`] documents, below
+/// `2^126.8` on both curves, which the `half_bounds` tests check against
+/// `i128::MAX - 5`.
 fn signed(negative: bool, magnitude: u128) -> i128 {
-    debug_assert!(magnitude >> 127 == 0, "GLV half exceeds 127 bits");
+    debug_assert!(
+        magnitude < i128::MAX as u128 - 5,
+        "GLV half leaves no room in i128 for a digit"
+    );
     let m = magnitude as i128;
     if negative { -m } else { m }
 }

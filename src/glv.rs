@@ -728,8 +728,15 @@ where
     limbs
 }
 
-/// GLV split: `k = k1 + k2 * lambda (mod n)` with `|k1|`, `|k2|` strictly
-/// below `2^127`, each half returned as `(is_negative, magnitude)`.
+/// GLV split: `k = k1 + k2 * lambda (mod n)`, each half returned as
+/// `(is_negative, magnitude)`.
+///
+/// Babai rounding bounds the halves by `|k1| <= (V1A + V2A) / 2 + 1` and
+/// `|k2| <= (V1B_NEG + V2B) / 2 + 1`, where the `+ 1` covers `G1` and `G2`
+/// being 384-bit approximations of the exact rounding coefficients. On both
+/// curves that is below `2^126.3` for `k1` and `2^126.8` for `k2`, so strictly
+/// below `2^127`, the bound [`signed_halves`] and [`wnaf_digits`] rely on;
+/// `crate::glv_eisenstein` relies on the tighter one.
 pub(crate) fn decompose<C>(k: &C::ScalarExt) -> ((bool, u128), (bool, u128))
 where
     C: GlvParams,
