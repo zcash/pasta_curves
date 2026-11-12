@@ -233,7 +233,7 @@ fn failed_inversion_does_not_change_points() {
 }
 
 #[test]
-fn booth_digits_reconstruct_components() {
+fn signed_booth_digits_reconstruct_components() {
     for width in 1..=16 {
         let mut magnitudes = alloc::vec![0, 1, (1u128 << 127) - 1];
         for bit in 1..127 {
@@ -247,12 +247,17 @@ fn booth_digits_reconstruct_components() {
                 };
                 let mut reconstructed = crate::Fq::ZERO;
                 let radix = crate::Fq::from(1u64 << width);
-                for window in (0..GLV_COMPONENT_BITS / width + 1).rev() {
-                    let digit = booth_digit(component, width, window);
-                    assert!(digit.magnitude <= 1 << (width - 1));
-                    let value = crate::Fq::from(u64::try_from(digit.magnitude).unwrap());
-                    reconstructed =
-                        reconstructed * radix + if digit.negative { -value } else { value };
+                for window in (0..SignedBooth::window_count(GLV_COMPONENT_BITS, width)).rev() {
+                    let digit = SignedBooth::digit(component, width, window);
+                    let value = match digit {
+                        None => crate::Fq::ZERO,
+                        Some(digit) => {
+                            assert!(digit.bucket < SignedBooth::bucket_count(width));
+                            let value = crate::Fq::from(u64::try_from(digit.bucket + 1).unwrap());
+                            if digit.negate { -value } else { value }
+                        }
+                    };
+                    reconstructed = reconstructed * radix + value;
                 }
                 let value = crate::Fq::from_u128(magnitude);
                 assert_eq!(reconstructed, if negative { -value } else { value });
@@ -342,7 +347,7 @@ where
     };
 
     for width in [1, 3, 6] {
-        for window in 0..GLV_COMPONENT_BITS / width + 1 {
+        for window in 0..SignedBooth::window_count(GLV_COMPONENT_BITS, width) {
             let whole =
                 as_points(fill_window_in_blocks(&terms, width, window, terms.len()).unwrap());
             for block_terms in [1, 2, 3, 5, 16, 63] {

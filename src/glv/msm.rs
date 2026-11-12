@@ -22,7 +22,7 @@
 //!
 //! - [`lift`]: the GLV decomposition, restricting scalars from the Eisenstein
 //!   integers to the integers, so `N` terms become `2N` with half-width scalars;
-//! - [`recode`]: signed-Booth digits of each integer scalar;
+//! - [`recode`]: the digit system the bucket method reads, signed Booth today;
 //! - [`buckets`] and [`affine`]: the bucket method and its batched additions,
 //!   combined across windows by Horner's rule;
 //! - [`strauss`]: the alternative for small MSMs, one shared doubling chain;

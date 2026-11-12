@@ -1,7 +1,7 @@
 //! The bucket method over small-scalar terms.
 //!
-//! For one window, `sum_i d_i Q_i = sum_b b * S_b`, where `S_b` sums the terms
-//! whose digit is `+-b`: the terms are pushed forward along their digits into
+//! For one window, `sum_i d_i Q_i = sum_b w_b * S_b`, where `S_b` sums the
+//! terms whose digit falls in bucket `b` and `w_b` is its weight: the terms are pushed forward along their digits into
 //! buckets, each bucket is reduced by batched affine additions, and the
 //! weighted sum is taken by summation by parts. Horner's rule at
 //! `2^window_bits` combines the windows.
@@ -13,8 +13,7 @@ use maybe_rayon::prelude::*;
 
 use super::MsmCurve;
 use super::affine::{AffinePoint, reduce_affine_buckets};
-use super::lift::{GLV_COMPONENT_BITS, SignedMagnitude};
-use super::recode::booth_digit;
+use super::recode::Recoding;
 use crate::arithmetic::VartimeField;
 
 #[derive(Clone, Copy)]
@@ -24,14 +23,19 @@ pub(super) struct WindowAssignment {
 }
 
 /// The MSM the bucket method evaluates: the sum over terms of
-/// `scalar * point`, each scalar an integer of magnitude below
-/// `2^GLV_COMPONENT_BITS`. It knows nothing about GLV; [`GlvTerms`](super::lift::GlvTerms) is the
-/// implementation that [`execute`](super::execute) uses.
+/// `scalar * point`, each scalar below `2^SCALAR_BITS` and recoded into
+/// digits by [`Self::Recoding`]. It knows nothing about GLV;
+/// [`GlvTerms`](super::lift::GlvTerms) is the implementation that
+/// [`execute`](super::execute) uses.
 pub(super) trait SmallScalarTerms<F>: Sync {
+    /// The digit system the scalars are recoded with.
+    type Recoding: Recoding;
+    /// Every scalar is below `2^SCALAR_BITS` in magnitude.
+    const SCALAR_BITS: usize;
     /// The number of terms.
     fn len(&self) -> usize;
     /// The scalar of term `term`.
-    fn scalar(&self, term: usize) -> SignedMagnitude;
+    fn scalar(&self, term: usize) -> <Self::Recoding as Recoding>::Scalar;
     /// The point of term `term`, or `None` for the identity.
     fn point(&self, term: usize) -> Option<AffinePoint<F>>;
 }
@@ -58,7 +62,7 @@ pub(super) fn window_assignments<F, T>(
 where
     T: SmallScalarTerms<F>,
 {
-    let bucket_count = 1 << (window_bits - 1);
+    let bucket_count = T::Recoding::bucket_count(window_bits);
     let mut assignments = Vec::with_capacity(range.len());
     let mut counts = alloc::vec![0usize; bucket_count];
 
@@ -66,39 +70,17 @@ where
         if terms.point(term).is_none() {
             continue;
         }
-        let digit = booth_digit(terms.scalar(term), window_bits, window);
-        if digit.magnitude != 0 {
-            let bucket = digit.magnitude - 1;
-            let magnitude =
-                isize::try_from(digit.magnitude).expect("Booth digit magnitude fits in isize");
+        if let Some(digit) = T::Recoding::digit(terms.scalar(term), window_bits, window) {
+            let magnitude = isize::try_from(digit.bucket + 1).expect("bucket index fits in isize");
             assignments.push(WindowAssignment {
                 term,
-                signed_bucket: if digit.negative {
-                    -magnitude
-                } else {
-                    magnitude
-                },
+                signed_bucket: if digit.negate { -magnitude } else { magnitude },
             });
-            counts[bucket] += 1;
+            counts[digit.bucket] += 1;
         }
     }
 
     (assignments, counts)
-}
-
-pub(super) fn sum_buckets<C>(buckets: &[Option<AffinePoint<C::Base>>]) -> C
-where
-    C: MsmCurve,
-{
-    let mut running = C::identity();
-    let mut sum = C::identity();
-    for bucket in buckets.iter().rev() {
-        if let Some(point) = bucket {
-            running += C::affine_unchecked(point.x, point.y);
-        }
-        sum += running;
-    }
-    sum
 }
 
 /// Smallest number of terms a window reduces at a time.
@@ -124,7 +106,7 @@ where
     F: VartimeField,
     T: SmallScalarTerms<F>,
 {
-    let bucket_count = 1usize << (window_bits - 1);
+    let bucket_count = T::Recoding::bucket_count(window_bits);
     let block_terms =
         MIN_WINDOW_BLOCK_TERMS.max(bucket_count.saturating_mul(WINDOW_BLOCK_TERMS_PER_BUCKET));
     fill_window_in_blocks(terms, window_bits, window, block_terms)
@@ -156,7 +138,7 @@ where
             buckets.as_deref(),
         )?);
     }
-    Some(buckets.unwrap_or_else(|| alloc::vec![None; 1 << (window_bits - 1)]))
+    Some(buckets.unwrap_or_else(|| alloc::vec![None; T::Recoding::bucket_count(window_bits)]))
 }
 
 /// Fills one block's buckets, each led by its carried point from the previous
@@ -172,7 +154,7 @@ where
     F: VartimeField,
     T: SmallScalarTerms<F>,
 {
-    let bucket_count = 1 << (window_bits - 1);
+    let bucket_count = T::Recoding::bucket_count(window_bits);
     let (assignments, mut counts) = window_assignments(terms, range, window_bits, window);
     if let Some(carry) = carry {
         for (count, point) in counts.iter_mut().zip(carry) {
@@ -223,14 +205,14 @@ where
 }
 
 /// One window's share of the MSM: the sum over terms of `digit * point`,
-/// computed as `sum_b b * S_b` over the window's buckets.
+/// computed from the window's buckets by [`Recoding::sum_buckets`].
 pub(super) fn window_sum<C, T>(terms: &T, window_bits: usize, window: usize) -> Option<C>
 where
     C: MsmCurve,
     T: SmallScalarTerms<C::Base>,
 {
     let buckets = fill_window(terms, window_bits, window)?;
-    Some(sum_buckets::<C>(&buckets))
+    Some(T::Recoding::sum_buckets::<C>(&buckets))
 }
 
 /// Horner's rule at `X = 2^window_bits`: given the window sums from the top
@@ -257,8 +239,8 @@ where
     Some(acc.unwrap_or_else(C::identity))
 }
 
-/// The bucket method over `terms` with `window_bits`-bit signed-Booth
-/// windows. With `parallel`, the windows' sums are independent jobs (on
+/// The bucket method over `terms` with `window_bits`-bit windows of their
+/// recoding. With `parallel`, the windows' sums are independent jobs (on
 /// worker threads with `multicore`, one after another without it), combined
 /// by one Horner fold; otherwise each window is computed as the fold reaches
 /// it, so only one window's buckets exist at a time.
@@ -273,7 +255,7 @@ where
     T: SmallScalarTerms<C::Base>,
     J: Fn() + Sync,
 {
-    let windows = GLV_COMPONENT_BITS / window_bits + 1;
+    let windows = T::Recoding::window_count(T::SCALAR_BITS, window_bits);
     if !parallel {
         let top_down = (0..windows)
             .rev()

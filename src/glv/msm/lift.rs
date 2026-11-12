@@ -13,6 +13,7 @@ use group::CurveAffine as _;
 use super::MsmCurve;
 use super::affine::AffinePoint;
 use super::buckets::SmallScalarTerms;
+use super::recode::{SignedBooth, SignedMagnitude};
 use crate::glv::decompose;
 
 /// Each GLV decomposition component has magnitude strictly below `2^127`.
@@ -20,21 +21,6 @@ pub(super) const GLV_COMPONENT_BITS: usize = 127;
 
 /// Integer terms per MSM term after the lift: `k1 * P` and `k2 * phi(P)`.
 pub(super) const GLV_TERMS_PER_TERM: usize = 2;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct SignedMagnitude {
-    pub(super) negative: bool,
-    pub(super) magnitude: u128,
-}
-
-impl From<(bool, u128)> for SignedMagnitude {
-    fn from((negative, magnitude): (bool, u128)) -> Self {
-        Self {
-            negative,
-            magnitude,
-        }
-    }
-}
 
 /// Converts decomposed halves into the representation used by the
 /// Signed-Booth MSM, rejecting values outside the decomposition bound.
@@ -78,6 +64,9 @@ impl<F> SmallScalarTerms<F> for GlvTerms<F>
 where
     F: Copy + Sync,
 {
+    type Recoding = SignedBooth;
+    const SCALAR_BITS: usize = GLV_COMPONENT_BITS;
+
     fn len(&self) -> usize {
         GLV_TERMS_PER_TERM * self.bases.len()
     }

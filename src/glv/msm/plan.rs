@@ -9,13 +9,11 @@ use ff::PrimeField;
 
 use super::MsmCurve;
 use super::lift::{GLV_COMPONENT_BITS, GLV_TERMS_PER_TERM};
+use super::strauss::STRAUSS_LEAF_TERMS;
 
 /// Below this, the cost model is not consulted. With several worker threads
 /// the hook then declines; serial MSMs use the measured choices below instead.
 pub(super) const MIN_GLV_MULTIEXP_TERMS: usize = 256;
-
-/// Largest GLV-Strauss leaf when MSMs are split across worker threads.
-pub(super) const STRAUSS_LEAF_TERMS: usize = 16;
 
 /// Largest serial MSM evaluated as one GLV-Strauss table. Measured on Pallas
 /// with `benches/msm.rs`: one table beats both the generic MSM and the bucket

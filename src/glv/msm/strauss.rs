@@ -10,8 +10,11 @@ use group::CurveAffine as _;
 use maybe_rayon::prelude::*;
 
 use super::MsmCurve;
-use super::plan::STRAUSS_LEAF_TERMS;
 use crate::glv::{Decomposed, Table};
+
+/// Largest GLV-Strauss leaf when MSMs are split across worker threads: each
+/// leaf builds one table per point and shares one doubling chain.
+pub(super) const STRAUSS_LEAF_TERMS: usize = 16;
 
 /// Share the doubling ladder across all scalar/base pairs, reusing the
 /// upstream GLV decomposition and width-four split-wNAF tables unchanged.
