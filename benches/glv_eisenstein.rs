@@ -86,7 +86,7 @@ fn bench<C: GlvParams>(c: &mut Criterion, name: &str) {
                     .map(|t| t.mul_decomposed(&decomposed))
                     .collect();
                 let mut aff = vec![C::AffineExt::identity(); proj.len()];
-                C::batch_normalize(&proj, &mut aff);
+                C::batch_normalize_vartime(&proj, &mut aff);
                 aff
             })
         });
@@ -107,7 +107,7 @@ fn bench<C: GlvParams>(c: &mut Criterion, name: &str) {
                     let tables = glv_eisenstein::Table::batch(&batch);
                     let proj: Vec<C> = tables.iter().map(|t| t.mul_recoded(&recoded)).collect();
                     let mut aff = vec![C::AffineExt::identity(); proj.len()];
-                    C::batch_normalize(&proj, &mut aff);
+                    C::batch_normalize_vartime(&proj, &mut aff);
                     aff
                 })
             },

@@ -392,7 +392,7 @@ where
     pub fn new(p: &C) -> Self {
         let proj = Self::window_proj(p);
         let mut affine = [C::AffineExt::identity(); REP_COUNT];
-        C::batch_normalize(&proj, &mut affine);
+        C::batch_normalize_vartime(&proj, &mut affine);
         Self::from_window(&affine)
     }
 
@@ -441,7 +441,7 @@ where
         // One inversion brings the base points affine; the chain then stays
         // there.
         let mut base = alloc::vec![C::AffineExt::identity(); n];
-        C::batch_normalize(points, &mut base);
+        C::batch_normalize_vartime(points, &mut base);
 
         let zero = AffineBase::<C>::ZERO;
         let buf = || alloc::vec![zero; n];
@@ -557,7 +557,7 @@ where
             proj.extend_from_slice(&Self::window_proj(p));
         }
         let mut affine = alloc::vec![C::AffineExt::identity(); n * REP_COUNT];
-        C::batch_normalize(&proj, &mut affine);
+        C::batch_normalize_vartime(&proj, &mut affine);
         affine
             .chunks_exact(REP_COUNT)
             .map(Self::from_window)
@@ -728,7 +728,7 @@ where
         }
         let proj: Vec<C> = tables.iter().map(|t| t.mul_recoded(k)).collect();
         let mut aff = alloc::vec![C::AffineExt::identity(); proj.len()];
-        C::batch_normalize(&proj, &mut aff);
+        C::batch_normalize_vartime(&proj, &mut aff);
         aff
     }
 
@@ -860,7 +860,7 @@ where
                 .map(|&i| tables[i].mul_recoded(k))
                 .collect();
             let mut aff = alloc::vec![C::AffineExt::identity(); proj.len()];
-            C::batch_normalize(&proj, &mut aff);
+            C::batch_normalize_vartime(&proj, &mut aff);
             for (&i, a) in exceptional.iter().zip(aff.iter()) {
                 out[i] = *a;
             }
@@ -1131,7 +1131,7 @@ where
     C: GlvParams,
 {
     let mut affine = alloc::vec![C::AffineExt::identity(); proj.len()];
-    C::batch_normalize(proj, &mut affine);
+    C::batch_normalize_vartime(proj, &mut affine);
     affine
 }
 
