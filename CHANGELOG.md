@@ -6,6 +6,7 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
 ### Added
 - `pasta_curves::glv_eisenstein` module, behind the new `glv-eisenstein`
   feature flag: variable-time GLV scalar multiplication for Pallas and Vesta
