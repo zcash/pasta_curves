@@ -10,6 +10,7 @@ set_option linter.unusedVariables false
 set_option linter.style.whitespace false
 set_option linter.style.setOption false
 set_option linter.style.longLine false
+set_option linter.internalConstructors false
 
 /- You can set the `maxHeartbeats` value with the `-max-heartbeats` CLI option -/
 set_option maxHeartbeats 1000000
@@ -21,7 +22,7 @@ namespace pasta_curves
 
 /-- Trait declaration: [pasta_curves::asm::entry::MontgomeryBlocks]
     Source: 'src/asm/entry.rs', lines 26:0-41:1 -/
-structure asm.entry.MontgomeryBlocks (Self : Type) where
+structure asm.entry.MontgomeryBlocks (Self : Type _) where
   add : Array Std.U64 4#usize → Array Std.U64 4#usize → Array Std.U64
     4#usize → Result (Array Std.U64 4#usize)
   sub : Array Std.U64 4#usize → Array Std.U64 4#usize → Array Std.U64

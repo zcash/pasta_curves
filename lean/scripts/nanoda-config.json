@@ -5,10 +5,7 @@
         "propext",
         "Classical.choice",
         "Quot.sound",
-        "sorryAx",
-        "Lean.trustCompiler",
-        "Lean.ofReduceBool",
-        "Lean.ofReduceNat"
+        "sorryAx"
     ],
     "unpermitted_axiom_hard_error": true,
     "num_threads": 4,

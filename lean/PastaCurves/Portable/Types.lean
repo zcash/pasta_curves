@@ -10,6 +10,7 @@ set_option linter.unusedVariables false
 set_option linter.style.whitespace false
 set_option linter.style.setOption false
 set_option linter.style.longLine false
+set_option linter.internalConstructors false
 
 /- You can set the `maxHeartbeats` value with the `-max-heartbeats` CLI option -/
 set_option maxHeartbeats 1000000
@@ -26,7 +27,7 @@ def inversion.portable.Backend := Unit
 
 /-- Trait declaration: [pasta_curves::inversion::InvertBlocks]
     Source: 'src/inversion.rs', lines 28:0-57:1 -/
-structure inversion.InvertBlocks (Self : Type) where
+structure inversion.InvertBlocks (Self : Type _) where
   divstep59 : Std.U64 → Std.U64 → Std.U64 → Result (Array Std.U64
     5#usize)
   sign_mag : Std.U64 → Std.U64 → Std.U64 → Std.U64 → Result (Array

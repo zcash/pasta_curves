@@ -144,13 +144,13 @@ theorem subMod_spec (lhs rhs modulus : Limbs) (hlhs : lhs.Bounded) (hrhs : rhs.B
       r0_2 + 2^64 * r1_2 + 2^128 * r2_2 + 2^192 * r3_2 + rhs.toNat = lhs.toNat + modulus.toNat)
   obtain hc | hc : c_3 = 0 ∨ c_3 = 1 := by clear * - b_c_3; omega
   · -- Borrow: `lhs < rhs`, the selected limbs are `p`, and the dropped carry undoes the wrap.
-    rw [if_pos hc] at e_t0 e_t1 e_t3
+    rw [ite_eq_left hc] at e_t0 e_t1 e_t3
     right
     clear * - hD hA hP hc hle e_t0 e_t1 e_t3 b_k_r3_2 b_r0_2 b_r1_2 b_r2_2 b_r3_2
       b_r0_1 b_r1_1 b_r2_1 b_r3_1
     omega
   · -- No borrow: the difference is exact, and the selected limbs are `0`.
-    rw [if_neg (by clear * - hc; omega)] at e_t0 e_t1 e_t3
+    rw [ite_eq_right (by clear * - hc; omega)] at e_t0 e_t1 e_t3
     left
     clear * - hD hA hc e_t0 e_t1 e_t3 b_k_r3_2 b_r0_1 b_r1_1 b_r2_1 b_r3_1
     omega

@@ -103,9 +103,9 @@ theorem divstep_eq (s : State) (hf : s.f % 2 = 1) :
     2 * (divstep s).f = (T s).u * s.f + (T s).v * s.g ∧
       2 * (divstep s).g = (T s).q * s.f + (T s).r * s.g := by
   by_cases h : 0 < s.two_delta ∧ s.g % 2 = 1
-  · simp only [divstep, T, if_pos h]
+  · simp only [divstep, T, ite_eq_left h]
     constructor <;> omega
-  · simp only [divstep, T, if_neg h]
+  · simp only [divstep, T, ite_eq_right h]
     rcases Int.emod_two_eq_zero_or_one s.g with h2 | h2 <;>
       simp only [h2, zero_mul, one_mul, add_zero] <;> constructor <;> first | trivial | omega
 
@@ -135,9 +135,9 @@ theorem divstep_abs_le (s : State) (B : ℤ) (hf : |s.f| ≤ B) (hg : |s.g| ≤ 
     |(divstep s).f| ≤ B ∧ |(divstep s).g| ≤ B := by
   rw [abs_le] at hf hg
   by_cases h : 0 < s.two_delta ∧ s.g % 2 = 1
-  · simp only [divstep, if_pos h]
+  · simp only [divstep, ite_eq_left h]
     constructor <;> rw [abs_le] <;> constructor <;> omega
-  · simp only [divstep, if_neg h]
+  · simp only [divstep, ite_eq_right h]
     rcases Int.emod_two_eq_zero_or_one s.g with h2 | h2 <;>
       simp only [h2, zero_mul, one_mul, add_zero] <;> constructor <;> rw [abs_le] <;>
       constructor <;> omega
@@ -184,12 +184,12 @@ theorem M_rowSum_le (n : ℕ) (s : State) :
     have hq := abs_nonneg N.q
     have hr := abs_nonneg N.r
     by_cases h : 0 < s.two_delta ∧ s.g % 2 = 1
-    · simp only [T, if_pos h, Mat2.mul, mul_zero, zero_add, mul_neg, mul_one, abs_neg, pow_succ]
+    · simp only [T, ite_eq_left h, Mat2.mul, mul_zero, zero_add, mul_neg, mul_one, abs_neg, pow_succ]
       have h1 := abs_add_le (N.u * 2) N.v
       have h2 := abs_add_le (N.q * 2) N.r
       rw [abs_mul, abs_two] at h1 h2
       constructor <;> linarith
-    · simp only [T, if_neg h, Mat2.mul, mul_zero, zero_add, mul_one, pow_succ]
+    · simp only [T, ite_eq_right h, Mat2.mul, mul_zero, zero_add, mul_one, pow_succ]
       have hbit : |s.g % 2| ≤ 1 := by rw [abs_le]; omega
       have h1 := abs_add_le (N.u * 2) (N.v * (s.g % 2))
       have h2 := abs_add_le (N.q * 2) (N.r * (s.g % 2))
@@ -233,15 +233,15 @@ theorem divstep_local (n : ℕ) (s s' : State) (hf0 : s.f % 2 = 1) (hd : s.two_d
     rw [← Int.emod_emod_of_dvd s.g h2, hg, Int.emod_emod_of_dvd s'.g h2]
   by_cases h : 0 < s.two_delta ∧ s.g % 2 = 1
   · have h' : 0 < s'.two_delta ∧ s'.g % 2 = 1 := by rw [← hd, ← hg2]; exact h
-    have hT : T s = T s' := by simp only [T, if_pos h, if_pos h']
-    refine ⟨hT, ?_, ?_, ?_⟩ <;> simp only [divstep, if_pos h, if_pos h']
+    have hT : T s = T s' := by simp only [T, ite_eq_left h, ite_eq_left h']
+    refine ⟨hT, ?_, ?_, ?_⟩ <;> simp only [divstep, ite_eq_left h, ite_eq_left h']
     · rw [hd]
     · exact hgn
     have hsub : (s.g - s.f) % (2 * 2^n) = (s'.g - s'.f) % (2 * 2^n) := Int.ModEq.sub hg hf
     exact half_emod (Int.dvd_of_emod_eq_zero (by omega)) (Int.dvd_of_emod_eq_zero (by omega)) hsub
   · have h' : ¬ (0 < s'.two_delta ∧ s'.g % 2 = 1) := by rw [← hd, ← hg2]; exact h
-    have hT : T s = T s' := by simp only [T, if_neg h, if_neg h']; rw [hg2]
-    refine ⟨hT, ?_, ?_, ?_⟩ <;> simp only [divstep, if_neg h, if_neg h']
+    have hT : T s = T s' := by simp only [T, ite_eq_right h, ite_eq_right h']; rw [hg2]
+    refine ⟨hT, ?_, ?_, ?_⟩ <;> simp only [divstep, ite_eq_right h, ite_eq_right h']
     · rw [hd]
     · exact hfn
     rw [← hg2]
@@ -394,9 +394,9 @@ theorem M_entry_range (n : ℕ) (s : State) :
     have hpow : (2 : ℤ)^(n + 1) = 2^n * 2 := pow_succ 2 n
     rw [hpow]
     by_cases h : 0 < t.two_delta ∧ t.g % 2 = 1
-    · simp only [T, if_pos h, Mat2.mul]
+    · simp only [T, ite_eq_left h, Mat2.mul]
       refine ⟨⟨?_, ?_⟩, ⟨?_, ?_⟩, ⟨?_, ?_⟩, ⟨?_, ?_⟩⟩ <;> omega
-    · simp only [T, if_neg h, Mat2.mul]
+    · simp only [T, ite_eq_right h, Mat2.mul]
       have hb : 0 ≤ t.g % 2 ∧ t.g % 2 ≤ 1 := by omega
       refine ⟨⟨?_, ?_⟩, ⟨?_, ?_⟩, ⟨?_, ?_⟩, ⟨?_, ?_⟩⟩ <;> nlinarith
 

@@ -12,6 +12,7 @@ set_option linter.unusedVariables false
 set_option linter.style.whitespace false
 set_option linter.style.setOption false
 set_option linter.style.longLine false
+set_option linter.internalConstructors false
 
 /- You can set the `maxHeartbeats` value with the `-max-heartbeats` CLI option -/
 set_option maxHeartbeats 1000000
@@ -97,7 +98,7 @@ def limbs.is_canonical
 /-- [pasta_curves::asm::entry::add_with]:
     Source: 'src/asm/entry.rs', lines 52:0-62:1 -/
 def asm.entry.add_with
-  {B : Type} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
+  {B : Type _} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
   (lhs : Array Std.U64 4#usize) (rhs : Array Std.U64 4#usize)
   (modulus : Array Std.U64 4#usize) :
   Result (Array Std.U64 4#usize)
@@ -111,7 +112,7 @@ def asm.entry.add_with
 /-- [pasta_curves::asm::entry::sub_with]:
     Source: 'src/asm/entry.rs', lines 66:0-76:1 -/
 def asm.entry.sub_with
-  {B : Type} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
+  {B : Type _} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
   (lhs : Array Std.U64 4#usize) (rhs : Array Std.U64 4#usize)
   (modulus : Array Std.U64 4#usize) :
   Result (Array Std.U64 4#usize)
@@ -125,7 +126,7 @@ def asm.entry.sub_with
 /-- [pasta_curves::asm::entry::mul_with]:
     Source: 'src/asm/entry.rs', lines 80:0-92:1 -/
 def asm.entry.mul_with
-  {B : Type} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
+  {B : Type _} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
   (lhs : Array Std.U64 4#usize) (rhs : Array Std.U64 4#usize)
   (modulus : Array Std.U64 4#usize) (inv : Std.U64) :
   Result (Array Std.U64 4#usize)
@@ -137,7 +138,7 @@ def asm.entry.mul_with
 /-- [pasta_curves::asm::entry::square_with]:
     Source: 'src/asm/entry.rs', lines 96:0-102:1 -/
 def asm.entry.square_with
-  {B : Type} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
+  {B : Type _} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
   (value : Array Std.U64 4#usize) (modulus : Array Std.U64 4#usize)
   (inv : Std.U64) :
   Result (Array Std.U64 4#usize)
@@ -150,7 +151,7 @@ def asm.entry.square_with
     Source: 'src/asm/entry.rs', lines 119:4-121:5 -/
 @[rust_loop_body]
 def asm.entry.sqr_n_mul_with_loop.body
-  {B : Type} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
+  {B : Type _} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
   (modulus : Array Std.U64 4#usize) (inv : Std.U64)
   (iter : core.ops.range.Range Std.Usize) (acc : Array Std.U64 4#usize) :
   Result (ControlFlow ((core.ops.range.Range Std.Usize) × (Array Std.U64
@@ -168,7 +169,7 @@ def asm.entry.sqr_n_mul_with_loop.body
     Source: 'src/asm/entry.rs', lines 119:4-121:5 -/
 @[rust_loop]
 def asm.entry.sqr_n_mul_with_loop
-  {B : Type} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
+  {B : Type _} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
   (iter : core.ops.range.Range Std.Usize) (modulus : Array Std.U64 4#usize)
   (inv : Std.U64) (acc : Array Std.U64 4#usize) :
   Result (Array Std.U64 4#usize)
@@ -181,7 +182,7 @@ def asm.entry.sqr_n_mul_with_loop
 /-- [pasta_curves::asm::entry::sqr_n_mul_with]:
     Source: 'src/asm/entry.rs', lines 107:0-123:1 -/
 def asm.entry.sqr_n_mul_with
-  {B : Type} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
+  {B : Type _} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
   (value : Array Std.U64 4#usize) (count : Std.Usize)
   (rhs : Array Std.U64 4#usize) (modulus : Array Std.U64 4#usize)
   (inv : Std.U64) :
@@ -197,7 +198,7 @@ def asm.entry.sqr_n_mul_with
 /-- [pasta_curves::asm::entry::from_mont_with]:
     Source: 'src/asm/entry.rs', lines 127:0-133:1 -/
 def asm.entry.from_mont_with
-  {B : Type} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
+  {B : Type _} (MontgomeryBlocksInst : asm.entry.MontgomeryBlocks B)
   (value : Array Std.U64 4#usize) (modulus : Array Std.U64 4#usize)
   (inv : Std.U64) :
   Result (Array Std.U64 4#usize)

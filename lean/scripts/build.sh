@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Build the Lean package, failing on any warning except those in Aeneas' library. The package
-# requires that library but does not maintain it, and `lake build --wfail` would fail on its
-# warnings too, since Lake has no per-package setting for them. A warning names its file first,
-# relative to its package, so those of Aeneas' modules begin `Aeneas/`.
+# Build the Lean package, failing on any warning, as `lake build --wfail` would. That includes
+# warnings in Aeneas' library, which Lake normally fetches prebuilt from the pinned release but
+# compiles when it cannot.
 #
 # Mathlib's prebuilt oleans are fetched first if they are missing for the pinned revision and
 # toolchain (`lake exe cache get` is a no-op when they are present). Run from anywhere; LAKE
@@ -11,15 +10,14 @@
 # is how `test_build.sh` tests the check.
 set -euo pipefail
 
-# check_log LOG: fail if LOG has a warning outside Aeneas' library. Lake may colour its output and
-# overwrite progress lines, so ANSI escape sequences are removed and carriage returns read as line
-# breaks before the matching.
+# check_log LOG: fail if LOG has a warning. Lake may colour its output and overwrite progress
+# lines, so ANSI escape sequences are removed and carriage returns read as line breaks before the
+# matching.
 check_log() {
   local esc
   esc=$(printf '\033')
-  if tr '\r' '\n' < "$1" | sed "s/${esc}\[[0-9;?]*[A-Za-z]//g" | grep -E '^warning: ' |
-    grep -v -E '^warning: Aeneas/'; then
-    echo "error: the warnings above are outside Aeneas' library" >&2
+  if tr '\r' '\n' < "$1" | sed "s/${esc}\[[0-9;?]*[A-Za-z]//g" | grep -E '^warning: '; then
+    echo "error: the build printed the warnings above" >&2
     exit 1
   fi
 }

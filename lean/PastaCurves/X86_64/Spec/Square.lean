@@ -562,14 +562,14 @@ private theorem squareHi_conclude
     2^256 * (r0 + 2^64 * r1 + 2^128 * r2 + 2^192 * r3) ≡
       productNat [MOD modulus.toNat]
   obtain hb | hb : b3 = 0 ∨ b3 = 1 := by omega
-  · rw [if_pos hb] at er0 er1 er2 er3
+  · rw [ite_eq_left hb] at er0 er1 er2 er3
     constructor
     · clear * - hA hk hD hb er0 er1 er2 er3
       omega
     · exact modEq_of_add_mul _ _ (2^256) Q _ (by
         clear * - hmain hk hD hb er0 er1 er2 er3
         omega)
-  · rw [if_neg (by omega)] at er0 er1 er2 er3
+  · rw [ite_eq_right (by omega)] at er0 er1 er2 er3
     constructor
     · clear * - hD hb bd0 bd1 bd2 bd3 er0 er1 er2 er3
       omega

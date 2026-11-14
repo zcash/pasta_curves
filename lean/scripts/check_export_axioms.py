@@ -3,13 +3,12 @@
 
 The export format is lean4export's ndjson format, described in its `format_ndjson.md`;
 the link is to the tag that CI builds lean4export from, matching `lean-toolchain`:
-https://github.com/leanprover/lean4export/blob/v4.31.0/format_ndjson.md
+https://github.com/leanprover/lean4export/blob/v4.35.0/format_ndjson.md
 
 nanoda's strict mode (`unpermitted_axiom_hard_error: true`) rejects any axiom *declared*
 outside the permitted list, but must permit axioms Lean core declares whether or not
-anything uses them (`sorryAx` and the legacy compiler-trust axioms). Permitting a
-declaration says nothing about use, so this script closes that gap from the export
-itself:
+anything uses them (`sorryAx`). Permitting a declaration says nothing about use, so this
+script closes that gap from the export itself:
 
   * the axioms declared in the export are exactly the config's `permitted_axioms`;
   * `sorryAx`, `Lean.ofReduceBool`, and `Lean.ofReduceNat` are cited by no expression
@@ -18,6 +17,14 @@ itself:
     the opaque evaluation functions of the deprecated compiler-trust route, distinct
     from their propositional bridge axioms `Lean.ofReduceBool`/`Lean.ofReduceNat`
     above — and nothing in this repository consumes them.
+
+Those three compiler-trust axioms were how Lean before v4.35 admitted native evaluation. From
+v4.35, `native_decide` and `bv_decide` declare instead one axiom per use, named after the
+declaration that uses it (`<declaration>._native.native_decide.ax_1_1`), and the three no longer
+appear in the export, so the config does not permit them; should they appear, they are axioms
+outside the permitted list. A per-use axiom is an axiom like any other: in the package, it is
+outside the permitted list, so no `native_decide` is admitted; in Aeneas' library, it is accepted
+under the rule below, so only while nothing outside Aeneas depends on it.
 
 Aeneas' Lean library, which the translation of the portable inversion blocks imports,
 declares axioms of its own for opaque Rust items, and two of its tests leave `sorryAx` citations

@@ -111,15 +111,15 @@ theorem cf_le_one (i : ℤ) : cf i ≤ 1 := by unfold cf; split_ifs <;> norm_num
 
 /-- The scale factor is `1` on the central levels. -/
 theorem cf_small {i : ℤ} (h1 : -2 ≤ i) (h2 : i ≤ 2) : cf i = 1 := by
-  unfold cf; rw [if_pos ⟨h1, h2⟩]
+  unfold cf; rw [ite_eq_left ⟨h1, h2⟩]
 
 /-- The scale factor is `32/33` below the central levels. -/
 theorem cf_neg {i : ℤ} (h : i < -2) : cf i = 32 / 33 := by
-  unfold cf; rw [if_neg (by omega)]
+  unfold cf; rw [ite_eq_right (by omega)]
 
 /-- The scale factor is `32/33` above the central levels. -/
 theorem cf_big {i : ℤ} (h : 2 < i) : cf i = 32 / 33 := by
-  unfold cf; rw [if_neg (by omega)]
+  unfold cf; rw [ite_eq_right (by omega)]
 
 /-- `W` at level `-1` is `H0`. -/
 theorem W_neg_one (x y : ℚ) : W H0 H1 (-1) x y ↔ H0.mem x y := by
@@ -130,14 +130,14 @@ theorem W_neg (k : ℕ) (hk : 2 ≤ k) (x y : ℚ) :
     W H0 H1 (-(k : ℤ)) x y ↔
       H1.mem (cf (-(k : ℤ)) * (x - 2 * y) * s ^ (k + 1)) (cf (-(k : ℤ)) * x * s ^ (k + 1) * 2 ^ k) := by
   unfold W
-  rw [if_neg (by omega), if_pos (by omega)]
+  rw [ite_eq_right (by omega), ite_eq_left (by omega)]
   simp
 
 /-- `W` at a nonnegative level, unfolded to its image of `H1`. -/
 theorem W_nonneg (k : ℕ) (x y : ℚ) :
     W H0 H1 (k : ℤ) x y ↔ H1.mem (cf k * x * s ^ k) (cf k * y * (2 * s) ^ k) := by
   unfold W
-  rw [if_neg (by omega), if_neg (by omega)]
+  rw [ite_eq_right (by omega), ite_eq_right (by omega)]
   simp
 
 /-- Convexity, in the form the transitions need: the average of two points of `H1` is in `H1`. -/
@@ -352,7 +352,7 @@ theorem W_step (hc : Certified H0 H1) (t : State) (hd : t.two_delta % 2 = 1) (hf
   · by_cases hpos : 0 < t.two_delta
     · -- the swap
       have hstep : divstep t = ⟨2 - t.two_delta, t.g, (t.g - t.f) / 2⟩ := by
-        simp only [divstep, if_pos (And.intro hpos hg)]
+        simp only [divstep, ite_eq_left (And.intro hpos hg)]
       have hidx : idx (divstep t) = -(idx t) := by rw [hstep]; unfold idx; simp only; omega
       have hcast : (((t.g - t.f) / 2 : ℤ) : ℚ) = ((t.g : ℚ) - t.f) / 2 := by
         rw [Int.cast_div (by omega) (by norm_num)]; push_cast; ring
@@ -363,7 +363,7 @@ theorem W_step (hc : Certified H0 H1) (t : State) (hd : t.two_delta % 2 = 1) (hf
     · -- odd `g`, `i < 0`
       have hstep : divstep t = ⟨2 + t.two_delta, t.f, (t.g + t.f) / 2⟩ := by
         unfold divstep
-        rw [if_neg (show ¬ (0 < t.two_delta ∧ t.g % 2 = 1) from fun h' => hpos h'.1), hg, one_mul]
+        rw [ite_eq_right (show ¬ (0 < t.two_delta ∧ t.g % 2 = 1) from fun h' => hpos h'.1), hg, one_mul]
       have hidx : idx (divstep t) = 1 + idx t := by rw [hstep]; unfold idx; simp only; omega
       have hcast : (((t.g + t.f) / 2 : ℤ) : ℚ) = ((t.g : ℚ) + t.f) / 2 := by
         rw [Int.cast_div (by omega) (by norm_num)]; push_cast; ring
@@ -375,7 +375,7 @@ theorem W_step (hc : Certified H0 H1) (t : State) (hd : t.two_delta % 2 = 1) (hf
     have hg0 : t.g % 2 = 0 := by omega
     have hstep : divstep t = ⟨2 + t.two_delta, t.f, t.g / 2⟩ := by
       unfold divstep
-      rw [if_neg (show ¬ (0 < t.two_delta ∧ t.g % 2 = 1) from fun h' => hg h'.2), hg0, zero_mul, add_zero]
+      rw [ite_eq_right (show ¬ (0 < t.two_delta ∧ t.g % 2 = 1) from fun h' => hg h'.2), hg0, zero_mul, add_zero]
     have hidx : idx (divstep t) = 1 + idx t := by rw [hstep]; unfold idx; simp only; omega
     have hcast : ((t.g / 2 : ℤ) : ℚ) = (t.g : ℚ) / 2 := by
       rw [Int.cast_div (by omega) (by norm_num)]; push_cast; ring
@@ -515,8 +515,8 @@ theorem iteration_sizebound (hc : Certified H0 H1) (t₀ : State) (hd0 : t₀.tw
       have hex : m + ex t = m + 1 + ex (divstep t) := by
         unfold ex
         rcases idx_divstep t hd with h1 | ⟨h2, h3⟩
-        · rw [if_pos (by omega), if_pos hneg]; omega
-        · rw [if_neg (by omega), if_pos hneg]; omega
+        · rw [ite_eq_left (by omega), ite_eq_left hneg]; omega
+        · rw [ite_eq_right (by omega), ite_eq_left hneg]; omega
       rw [← hex]; exact ih'
     · -- the lattice bound at the new level
       have hW := iteration_W hc t₀ hd0 hf0 u hu h0 (m + 1)

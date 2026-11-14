@@ -79,8 +79,8 @@ theorem Signed5.ofLimbs_bounded (x : Limbs) (hx : x.Bounded) : (Signed5.ofLimbs 
 
 /-- Four limbs as five words keep their value. -/
 theorem Signed5.toInt_ofLimbs (x : Limbs) : (Signed5.ofLimbs x).toInt = x.toNat := by
-  simp only [Signed5.toInt, Signed5.ofLimbs, Limbs.toNat]
-  rw [if_pos (by norm_num)]
+  unfold Signed5.toInt Signed5.ofLimbs Limbs.toNat
+  rw [ite_eq_left (by norm_num)]
   push_cast
   ring
 
@@ -343,10 +343,10 @@ theorem montInv_spec (F : PastaField) (hbound : TerminationBound 256) (x : Limbs
       rcases hpm with h | h
       · rw [h] at hsw'
         have : sw < 2^63 := by omega
-        rw [hσ, if_pos this, h]
+        rw [hσ, ite_eq_left this, h]
       · rw [h] at hsw'
         have : ¬ sw < 2^63 := by omega
-        rw [hσ, if_neg this, h]
+        rw [hσ, ite_eq_right this, h]
     have hff : t10.f * t10.f = 1 := by rcases hpm with h | h <;> rw [h] <;> norm_num
     have hσσ : σ * σ = 1 := by rw [hσ']; exact hff
     rw [hf] at hcf

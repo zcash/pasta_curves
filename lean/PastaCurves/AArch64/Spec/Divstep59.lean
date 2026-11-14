@@ -71,8 +71,8 @@ theorem tst_one_z (w : ℕ) (W : ℤ) (hw : (w : ℤ) = W % 2^64) :
   show (if andw w 1 = 0 then 1 else 0) = _
   rw [h]
   by_cases hp : W % 2 = 0
-  · rw [if_pos hp, if_pos (by omega)]
-  · rw [if_neg hp, if_neg (by omega)]
+  · rw [ite_eq_left hp, ite_eq_left (by omega)]
+  · rw [ite_eq_right hp, ite_eq_right (by omega)]
 
 /-! ## The decoder -/
 

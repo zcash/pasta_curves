@@ -12,10 +12,11 @@
 #
 # scripts/nanoda-config.json is the machine-checked axiom census: nanoda's strict mode
 # fails on any axiom declared outside its `permitted_axioms` (the three standard axioms,
-# and the ones Lean core declares unconditionally). scripts/check_export_axioms.py closes
+# and `sorryAx`, which Lean core declares unconditionally). scripts/check_export_axioms.py closes
 # the remaining gap: the axioms that must be permitted because core declares them, but
 # must remain unused (`sorryAx` in particular), are checked to be cited by nothing, so a
-# `sorry` anywhere in the development fails here, and no `native_decide` is admitted. The
+# `sorry` anywhere in the development fails here. A `native_decide` declares an axiom of its own,
+# which is outside the permitted list, so none is admitted either. The
 # exceptions are Aeneas' library's: only its own declarations may depend on the axioms it
 # declares, and only its tests on `sorryAx`, whether directly or through other declarations. The
 # census then writes the config nanoda runs with, which permits those axioms too.

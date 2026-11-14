@@ -99,12 +99,12 @@ theorem condSubBlock_spec (value modulus : Limbs) (hv : value.Bounded) (hm : mod
       r0_1 + 2^64 * r1_1 + 2^128 * r2_1 + 2^192 * r3_1 + modulus.toNat = value.toNat)
   obtain hc | hc : c_3 = 0 ∨ c_3 = 1 := by clear * - b_c_3; omega
   · -- Carry clear: the input is below `p`, and the block keeps it.
-    rw [if_pos hc] at e_r0_1 e_r1_1 e_r2_1 e_r3_1
+    rw [ite_eq_left hc] at e_r0_1 e_r1_1 e_r2_1 e_r3_1
     left
     clear * - hV hD hc e_r0_1 e_r1_1 e_r2_1 e_r3_1 b_t0 b_t1 b_t2 b_t3
     omega
   · -- Carry set: the input is at least `p`, and the block keeps the difference.
-    rw [if_neg (by clear * - hc; omega)] at e_r0_1 e_r1_1 e_r2_1 e_r3_1
+    rw [ite_eq_right (by clear * - hc; omega)] at e_r0_1 e_r1_1 e_r2_1 e_r3_1
     right
     clear * - hV hD hc e_r0_1 e_r1_1 e_r2_1 e_r3_1
     omega

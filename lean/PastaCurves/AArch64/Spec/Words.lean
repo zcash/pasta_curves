@@ -27,8 +27,8 @@ theorem sbfx_lt (a lsb w : Nat) (ha : a < 2^64) : sbfx a lsb w < 2^64 := by
   have hw : a / 2^lsb % 2^w < 2^w := Nat.mod_lt _ (Nat.two_pow_pos _)
   unfold sbfx
   by_cases hs : a / 2^lsb % 2^w < 2^(w - 1)
-  · rw [if_pos hs]; exact hfield
-  · rw [if_neg hs]
+  · rw [ite_eq_left hs]; exact hfield
+  · rw [ite_eq_right hs]
     rcases Nat.lt_or_ge 64 w with hk | hk
     · have hle : (2 : Nat)^64 ≤ 2^w := Nat.pow_le_pow_right (by decide) hk.le
       rw [Nat.sub_eq_zero_of_le hle, Nat.add_zero]

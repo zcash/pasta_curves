@@ -36,7 +36,7 @@ theorem subc_zero_eq_neg (a : Nat) :
   by_cases h : a = 0
   · subst h
     decide
-  · simp only [AArch64.subc, X86_64.neg, X86_64.sbb, regMod, Prod.mk.injEq, h, if_false,
+  · simp only [AArch64.subc, X86_64.neg, X86_64.sbb, regMod, Prod.mk.injEq, h, ite_false,
       Nat.zero_add, Nat.sub_self, Nat.sub_zero, true_and]
     exact Nat.div_eq_of_lt (Nat.sub_lt (by decide) (Nat.pos_of_ne_zero h))
 
@@ -46,7 +46,7 @@ theorem subc_one_carry_eq_neg {r : Nat} (hr : r < 2^64) :
   by_cases h : r = 0
   · subst h
     decide
-  · simp only [AArch64.subc, X86_64.neg, regMod, h, if_false]
+  · simp only [AArch64.subc, X86_64.neg, regMod, h, ite_false]
     omega
 
 /-- `csel d, s, d, cs` is `cmovnc d, s` under the complemented flag. -/

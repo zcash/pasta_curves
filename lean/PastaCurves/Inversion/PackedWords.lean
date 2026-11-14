@@ -134,7 +134,7 @@ theorem divstep_words_even (s : State) (hd : s.two_delta % 2 = 1) (hG : |s.g| < 
       (pg2 : ℤ) = (divstep s).g % 2^64 ∧ (pg1 / 2 % 2 = 0 ↔ (divstep s).g % 2 = 0) := by
   rw [abs_lt] at hG
   have hne : ¬ (0 < s.two_delta ∧ s.g % 2 = 1) := by omega
-  simp only [divstep, if_neg hne]
+  simp only [divstep, ite_eq_right hne]
   simp only [hg0, zero_mul, add_zero]
   have hpg1 : pg1 = (pg + t1) % 2^64 := e_pg1
   have hd2 : two_delta2 = (two_delta1 + 2) % 2^64 := e_two_delta2
@@ -155,7 +155,7 @@ theorem divstep_words_swap (s : State) (hf : s.f % 2 = 1) (hd : s.two_delta % 2 
     (two_delta2 : ℤ) = (divstep s).two_delta % 2^64 ∧ (pf1 : ℤ) = (divstep s).f % 2^64 ∧
       (pg2 : ℤ) = (divstep s).g % 2^64 ∧ (pg1 / 2 % 2 = 0 ↔ (divstep s).g % 2 = 0) := by
   rw [abs_lt] at hG'
-  simp only [divstep, if_pos hsw] at hG' ⊢
+  simp only [divstep, ite_eq_left hsw] at hG' ⊢
   have hpg1 : pg1 = (pg + t1) % 2^64 := e_pg1
   have hd2 : two_delta2 = (two_delta1 + 2) % 2^64 := e_two_delta2
   have hpg2 : pg2 = if pg1 < 2^63 then pg1 / 2 else pg1 / 2 + 2^63 := by
@@ -178,7 +178,7 @@ theorem divstep_words_add (s : State) (hf : s.f % 2 = 1) (hd : s.two_delta % 2 =
       (pg2 : ℤ) = (divstep s).g % 2^64 ∧ (pg1 / 2 % 2 = 0 ↔ (divstep s).g % 2 = 0) := by
   rw [abs_lt] at hD hG'
   have hne : ¬ (0 < s.two_delta ∧ s.g % 2 = 1) := by omega
-  simp only [divstep, if_neg hne] at hG' ⊢
+  simp only [divstep, ite_eq_right hne] at hG' ⊢
   simp only [hg1, one_mul] at hG' ⊢
   have hpg1 : pg1 = (pg + t1) % 2^64 := e_pg1
   have hd2 : two_delta2 = (two_delta1 + 2) % 2^64 := e_two_delta2

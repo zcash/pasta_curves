@@ -81,13 +81,7 @@ theorem mac_spec (a b c carry : Std.U64) :
     mac a b c carry ⦃ (lo : Std.U64) (hi : Std.U64) =>
       lo.val + 2^64 * hi.val = a.val + b.val * c.val + carry.val ⦄ := by
   unfold mac
-  have hbc : b.val * c.val ≤ (2^64 - 1) * (2^64 - 1) :=
-    Nat.mul_le_mul (by scalar_tac) (by scalar_tac)
   step*
-  have hsum : sum.val / 2^64 < 2^64 := Nat.div_lt_of_lt_mul (by scalar_tac)
-  rw [i6_post, i8_post, UScalar.cast_val_eq, UScalar.cast_val_eq, UScalarTy.U64_numBits_eq, i7_post,
-    Nat.shiftRight_eq_div_pow, Nat.mod_eq_of_lt hsum, Nat.mod_add_div, sum_post, i4_post, i3_post,
-    i_post, i1_post, i2_post, i5_post]
 
 open pasta_curves.inversion.portable in
 /-- The masked select: for a mask of all zeros or all ones, `select` returns `b` under the zero
@@ -100,10 +94,10 @@ theorem select_spec (mask a b : Std.U64) (h : mask.val = 0 ∨ mask.val = 2^64 -
   subst i1_post
   rcases h with h | h
   · have hm : mask.bv = 0#64 := by apply BitVec.eq_of_toNat_eq; simpa using h
-    rw [if_pos h, UScalar.eq_equiv_bv_eq, UScalar.bv_or, i_post1, i2_post1, UScalar.bv_not]
+    rw [ite_eq_left h, UScalar.eq_equiv_bv_eq, UScalar.bv_or, i_post1, i2_post1, UScalar.bv_not]
     simp [hm]
   · have hm : mask.bv = BitVec.allOnes 64 := by apply BitVec.eq_of_toNat_eq; simpa using h
-    rw [if_neg (by agrind), UScalar.eq_equiv_bv_eq, UScalar.bv_or, i_post1, i2_post1,
+    rw [ite_eq_right (by agrind), UScalar.eq_equiv_bv_eq, UScalar.bv_or, i_post1, i2_post1,
       UScalar.bv_not]
     simp [hm]
 
@@ -178,12 +172,12 @@ theorem cond_sub_spec (v m : Limbs) (hv : v.Bounded) (hm : m.Bounded) :
   -- Each output word is the difference's when the subtraction does not borrow, the input's
   -- otherwise.
   rcases keep_post with ⟨hb, hk⟩ | ⟨hb, hk⟩
-  · simp only [hk, if_true] at i13_post i15_post i17_post i19_post
+  · simp only [hk, ite_true] at i13_post i15_post i17_post i19_post
     subst i13_post i15_post i17_post i19_post
     rw [hb] at i11_post
     grind
   · have hk' : keep.val ≠ 0 := by agrind
-    simp only [hk', if_false] at i13_post i15_post i17_post i19_post
+    simp only [hk', ite_false] at i13_post i15_post i17_post i19_post
     rw [i13_post, i15_post, i17_post, i19_post, word_val hv0, word_val hv1, word_val hv2,
       word_val hv3]
     rw [hb] at i11_post

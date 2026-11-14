@@ -45,8 +45,8 @@ def SignMagRep (m s : ℕ) (a : ℤ) : Prop := (s = 0 ∧ (m : ℤ) = a) ∨ (s 
 theorem SignMagRep.of_natAbs (a : ℤ) : SignMagRep a.natAbs (signMask a) a := by
   unfold SignMagRep signMask
   rcases lt_or_ge a 0 with h | h
-  · right; rw [if_pos h, Int.natCast_natAbs, abs_of_neg h]; exact ⟨rfl, rfl⟩
-  · left; rw [if_neg (not_lt.mpr h), Int.natCast_natAbs, abs_of_nonneg h]; exact ⟨rfl, rfl⟩
+  · right; rw [ite_eq_left h, Int.natCast_natAbs, abs_of_neg h]; exact ⟨rfl, rfl⟩
+  · left; rw [ite_eq_right (not_lt.mpr h), Int.natCast_natAbs, abs_of_nonneg h]; exact ⟨rfl, rfl⟩
 
 /-- Flipping the mask by the all-ones word negates the represented integer. -/
 theorem SignMagRep.xor_ones (m s : ℕ) (a : ℤ) (h : SignMagRep m s a) :
@@ -141,11 +141,11 @@ theorem row_side5 (z : ℤ) (hz : |z| < 2^64) (x : Signed5) (hx : x.Bounded)
     simp only [eorw, Nat.xor_zero]
     rw [a0]
     rcases hx4 with h4' | h4'
-    · rw [h4', a3, if_pos (by omega)]
+    · rw [h4', a3, ite_eq_left (by omega)]
       push_cast
       rw [hm]
       ring
-    · rw [h4', a2, if_neg (by omega)]
+    · rw [h4', a2, ite_eq_right (by omega)]
       push_cast
       rw [hm]
       ring
@@ -156,11 +156,11 @@ theorem row_side5 (z : ℤ) (hz : |z| < 2^64) (x : Signed5) (hx : x.Bounded)
       rw [eorw_ones _ h0, eorw_ones _ h1, eorw_ones _ h2, eorw_ones _ h3]; omega
     rw [hsum, a1]
     rcases hx4 with h4' | h4'
-    · rw [h4', eorw_ones 0 (by norm_num), Nat.sub_zero, a2, if_pos (by omega)]
+    · rw [h4', eorw_ones 0 (by norm_num), Nat.sub_zero, a2, ite_eq_left (by omega)]
       push_cast
       rw [hm]
       ring
-    · rw [h4', eorw_ones _ hones, Nat.sub_self, a3, if_neg (by omega)]
+    · rw [h4', eorw_ones _ hones, Nat.sub_self, a3, ite_eq_right (by omega)]
       push_cast
       rw [hm]
       ring

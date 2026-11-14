@@ -80,35 +80,35 @@ theorem divstep_words (s : State) (hf : s.f % 2 = 1) (hd : s.two_delta % 2 = 1) 
   obtain ⟨hcn, hcv⟩ := cmpFlags_zero two_delta b_two_delta
   rcases Int.emod_two_eq_zero_or_one s.g with hg0 | hg1
   · -- `g` even: no swap, `two_delta + 2`, and `g / 2`.
-    have hz1 : fl.z = 1 := by rw [hfz, if_pos hg0]
+    have hz1 : fl.z = 1 := by rw [hfz, ite_eq_left hg0]
     have ht : t = 0 := by rw [e_t, cselNe, hz1]; simp
     have hfl1 : fl_1 = immFlags 8 := by rw [e_fl_1, ccmpNe, hz1]; simp
     have hge : ¬ fl_1.n = fl_1.v := by rw [hfl1, immFlags_eight]; decide
-    have hd1 : two_delta_1 = two_delta := by rw [e_two_delta_1, cnegGe, if_neg hge]
-    have ht1 : t_1 = 0 := by rw [e_t_1, cnegGe, if_neg hge, ht]
-    have hpf1 : pf_1 = pf := by rw [e_pf_1, cselGe, if_neg hge]
+    have hd1 : two_delta_1 = two_delta := by rw [e_two_delta_1, cnegGe, ite_eq_right hge]
+    have ht1 : t_1 = 0 := by rw [e_t_1, cnegGe, ite_eq_right hge, ht]
+    have hpf1 : pf_1 = pf := by rw [e_pf_1, cselGe, ite_eq_right hge]
     exact divstep_words_even s hd hG two_delta pf pg hd' hf' hg' hg0 t_1 two_delta_1 pf_1 pg_1 two_delta_2 pg_2 ht1 hd1
       hpf1 e_pg_1 e_two_delta_2 e_pg_2
   · rcases lt_or_ge 0 s.two_delta with hdpos | hdnp
     · -- The swap: `2 - two_delta`, `f := g`, and `(g - f) / 2`.
       have hsw : 0 < s.two_delta ∧ s.g % 2 = 1 := ⟨hdpos, hg1⟩
-      have hz0 : fl.z = 0 := by rw [hfz, if_neg (by omega)]
+      have hz0 : fl.z = 0 := by rw [hfz, ite_eq_right (by omega)]
       have ht : t = pf := by rw [e_t, cselNe, hz0]; simp
       have hfl1 : fl_1 = cmpFlags two_delta 0 := by rw [e_fl_1, ccmpNe, hz0]; simp
       have hge : fl_1.n = fl_1.v := by rw [hfl1, hcn, hcv]; omega
-      have hd1 : two_delta_1 = negw two_delta := by rw [e_two_delta_1, cnegGe, if_pos hge]
-      have ht1 : t_1 = negw pf := by rw [e_t_1, cnegGe, if_pos hge, ht]
-      have hpf1 : pf_1 = pg := by rw [e_pf_1, cselGe, if_pos hge]
+      have hd1 : two_delta_1 = negw two_delta := by rw [e_two_delta_1, cnegGe, ite_eq_left hge]
+      have ht1 : t_1 = negw pf := by rw [e_t_1, cnegGe, ite_eq_left hge, ht]
+      have hpf1 : pf_1 = pg := by rw [e_pf_1, cselGe, ite_eq_left hge]
       exact divstep_words_swap s hf hd hG' two_delta pf pg b_two_delta b_pf hd' hf' hg' hsw t_1 two_delta_1 pf_1 pg_1
         two_delta_2 pg_2 ht1 hd1 hpf1 e_pg_1 e_two_delta_2 e_pg_2
     · -- The addition: `two_delta + 2`, `f`, and `(g + f) / 2`.
-      have hz0 : fl.z = 0 := by rw [hfz, if_neg (by omega)]
+      have hz0 : fl.z = 0 := by rw [hfz, ite_eq_right (by omega)]
       have ht : t = pf := by rw [e_t, cselNe, hz0]; simp
       have hfl1 : fl_1 = cmpFlags two_delta 0 := by rw [e_fl_1, ccmpNe, hz0]; simp
       have hge : ¬ fl_1.n = fl_1.v := by rw [hfl1, hcn, hcv]; omega
-      have hd1 : two_delta_1 = two_delta := by rw [e_two_delta_1, cnegGe, if_neg hge]
-      have ht1 : t_1 = pf := by rw [e_t_1, cnegGe, if_neg hge, ht]
-      have hpf1 : pf_1 = pf := by rw [e_pf_1, cselGe, if_neg hge]
+      have hd1 : two_delta_1 = two_delta := by rw [e_two_delta_1, cnegGe, ite_eq_right hge]
+      have ht1 : t_1 = pf := by rw [e_t_1, cnegGe, ite_eq_right hge, ht]
+      have hpf1 : pf_1 = pf := by rw [e_pf_1, cselGe, ite_eq_right hge]
       exact divstep_words_add s hf hd hD hG' two_delta pf pg hd' hf' hg' hg1 hdnp t_1 two_delta_1 pf_1 pg_1 two_delta_2
         pg_2 ht1 hd1 hpf1 e_pg_1 e_two_delta_2 e_pg_2
 -- END divstep lemmas
