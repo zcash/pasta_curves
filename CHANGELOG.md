@@ -7,6 +7,7 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-14
 ### Added
 - `pasta_curves::glv_eisenstein` module, behind the new `glv-eisenstein`
   feature flag: variable-time GLV scalar multiplication for Pallas and Vesta
