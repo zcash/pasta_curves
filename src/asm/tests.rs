@@ -14,6 +14,72 @@ use super::{Limbs, add, from_mont, sub};
 use super::{mul, sqr_n_mul, square};
 use crate::test_fields::{FIELDS, FP, FQ, Field, ONE, ZERO, p_minus_1};
 
+std::thread_local! {
+    pub(super) static FORCE_PORTABLE: core::cell::Cell<bool> = const { core::cell::Cell::new(false) };
+}
+
+#[test]
+fn runtime_dispatch_matches_forced_portable() {
+    use group::ff::PrimeField;
+    use rand::{Rng, SeedableRng};
+
+    #[cfg(all(target_arch = "x86_64", not(target_env = "sgx")))]
+    if std::is_x86_feature_detected!("bmi2") && std::is_x86_feature_detected!("adx") {
+        // The standard detector can hide BMI2 when AVX is unavailable, so only check positives.
+        assert!(super::available());
+    }
+    assert_eq!(
+        crate::selected_backend(),
+        if super::available() {
+            super::BACKEND
+        } else {
+            "portable"
+        }
+    );
+    if !super::available() {
+        return;
+    }
+
+    struct Portable;
+    impl Drop for Portable {
+        fn drop(&mut self) {
+            FORCE_PORTABLE.set(false);
+        }
+    }
+
+    macro_rules! check {
+        ($field:ident) => {{
+            use crate::fields::$field;
+            let mut rng = rand_xorshift::XorShiftRng::from_seed([0x5a; 16]);
+            for _ in 0..256 {
+                let lhs = $field::from_raw(core::array::from_fn(|_| rng.next_u64()));
+                let rhs = $field::from_raw(core::array::from_fn(|_| rng.next_u64()));
+                let operations = || {
+                    (
+                        &lhs + &rhs,
+                        &lhs - &rhs,
+                        &lhs * &rhs,
+                        <$field as group::ff::Field>::square(&lhs),
+                        lhs.sqr_n_mul_runtime(7, &rhs),
+                        lhs.to_repr(),
+                    )
+                };
+                assert!(super::available());
+                let assembly = operations();
+                FORCE_PORTABLE.set(true);
+                let portable = Portable;
+                assert!(!super::available());
+                assert_eq!(crate::selected_backend(), "portable");
+                assert_eq!(assembly, operations());
+                drop(portable);
+            }
+        }};
+    }
+
+    check!(Fp);
+    check!(Fq);
+}
+
 /// The entry points agree with the portable arithmetic of the field types, on edge operands and on
 /// pseudo-random ones. The portable arithmetic is the field types' inherent `const fn`s, which
 /// never use the backend, applied to the same Montgomery residues. The portable multiplication is
@@ -26,6 +92,9 @@ use crate::test_fields::{FIELDS, FP, FQ, Field, ONE, ZERO, p_minus_1};
 /// cases of its second contract where its accumulator comes nearest to wrapping.
 #[test]
 fn entry_points_match_the_portable_arithmetic() {
+    if !super::available() {
+        return;
+    }
     use rand::{Rng, SeedableRng};
     use rand_xorshift::XorShiftRng;
 
@@ -84,16 +153,27 @@ fn entry_points_match_the_portable_arithmetic() {
             for _ in 0..200_000u32 {
                 let a = $field::from_raw(core::array::from_fn(|_| rng.next_u64())).0;
                 let b = $field::from_raw(core::array::from_fn(|_| rng.next_u64())).0;
-                assert_eq!(mul(&a, &b, &f.modulus, f.inv), portable_mul(&a, &b), "{a:x?} {b:x?}");
+                assert_eq!(
+                    mul(&a, &b, &f.modulus, f.inv),
+                    portable_mul(&a, &b),
+                    "{a:x?} {b:x?}"
+                );
             }
 
             // The multiplication's second contract, where its five-limb accumulator comes nearest
             // to wrapping: an unreduced left operand, and a canonical right operand whose limbs 1
             // to 3 are at most `2^64 - 3`. Each case asserts that it is within the contract.
             let second_contract = |lhs: Limbs, rhs: Limbs| {
-                assert!(super::mul_contract(&lhs, &rhs, &f.modulus), "{lhs:x?} {rhs:x?}");
+                assert!(
+                    super::mul_contract(&lhs, &rhs, &f.modulus),
+                    "{lhs:x?} {rhs:x?}"
+                );
                 let product = portable_mul(&lhs, &rhs);
-                assert_eq!(mul(&lhs, &rhs, &f.modulus, f.inv), product, "{lhs:x?} {rhs:x?}");
+                assert_eq!(
+                    mul(&lhs, &rhs, &f.modulus, f.inv),
+                    product,
+                    "{lhs:x?} {rhs:x?}"
+                );
             };
             // The right operands are `R2` and `R3`, which `from_u512` multiplies by, and two
             // canonical values near the modulus.
@@ -180,6 +260,9 @@ fn sub_known_answers() {
 
 #[test]
 fn mul_known_answers() {
+    if !super::available() {
+        return;
+    }
     for f in FIELDS {
         assert_eq!(mul(&f.r, &f.r, &f.modulus, f.inv), f.r);
         assert_eq!(mul(&f.r, &f.r2, &f.modulus, f.inv), f.r2);
@@ -193,6 +276,9 @@ fn mul_known_answers() {
 
 #[test]
 fn square_known_answers() {
+    if !super::available() {
+        return;
+    }
     for f in FIELDS {
         assert_eq!(square(&f.r, &f.modulus, f.inv), f.r);
         assert_eq!(square(&f.r2, &f.modulus, f.inv), f.r3);
@@ -204,6 +290,9 @@ fn square_known_answers() {
 
 #[test]
 fn sqr_n_mul_known_answers() {
+    if !super::available() {
+        return;
+    }
     for f in FIELDS {
         assert_eq!(sqr_n_mul(&f.r2, 0, &f.r3, &f.modulus, f.inv), f.r4);
         assert_eq!(sqr_n_mul(&f.r, 1, &f.r2, &f.modulus, f.inv), f.r2);
@@ -214,13 +303,19 @@ fn sqr_n_mul_known_answers() {
 
 #[test]
 fn from_mont_known_answers() {
+    if !super::available() {
+        return;
+    }
     for f in FIELDS {
         assert_eq!(from_mont(&f.r, &f.modulus, f.inv), ONE);
         assert_eq!(from_mont(&f.r2, &f.modulus, f.inv), f.r);
         assert_eq!(from_mont(&ZERO, &f.modulus, f.inv), ZERO);
         // `from_mont` accepts any four-limb value: the all-ones input is the
         // largest one it accepts.
-        assert_eq!(from_mont(&[u64::MAX; 4], &f.modulus, f.inv), f.from_mont_ones);
+        assert_eq!(
+            from_mont(&[u64::MAX; 4], &f.modulus, f.inv),
+            f.from_mont_ones
+        );
     }
 }
 
@@ -304,6 +399,9 @@ fn run(op: &str, f: &Field, first: &Limbs, second: Option<&Limbs>) -> Limbs {
 /// the code handles them so that a file that gains some needs no other change.
 #[test]
 fn hardware_vectors_match() {
+    if !super::available() {
+        return;
+    }
     // Indexed by routine: MUL, SQR, FROM, ADD, SUB.
     let mut checked = [0usize; 5];
     let mut outside = [0usize; 5];

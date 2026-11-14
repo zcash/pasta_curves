@@ -3,7 +3,9 @@
 /// The result can be used as a function's tail expression or assigned to a local binding.
 macro_rules! if_asm {
     ($asm:expr, $portable:expr $(,)?) => {{
-        if_asm_supported! {{ $asm }}
+        if_asm_supported! {{
+            if crate::asm::available() { $asm } else { $portable }
+        }}
         if_asm_unsupported! {{ $portable }}
     }};
 }

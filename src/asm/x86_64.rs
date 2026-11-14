@@ -70,10 +70,10 @@
 //!
 //! ISA requirement: `mul` and `square` use MULX (BMI2) and ADCX/ADOX (ADX:
 //! Intel Broadwell / AMD Zen or newer). `from_mont` uses MULX (BMI2) alone.
-//! None of these are runtime-checked: the backend uses the instructions
-//! unconditionally, and running it on an older CPU faults with an illegal
-//! instruction; build with `--cfg pasta_curves_noasm` for such CPUs. `add` and
-//! `sub` use baseline x86-64 instructions only.
+//! Field-operation dispatch checks both flags before selecting this backend.
+//! The blocks themselves assume CPU support; direct callers must ensure it.
+//! SGX selection requires both compile-time target features instead of CPUID.
+//! Addition and subtraction use baseline x86-64 instructions only.
 
 use core::arch::asm;
 
