@@ -1512,7 +1512,8 @@ fn asm_mul_rejects_non_canonical_lhs_in_debug() {
     // The modulus itself is the smallest non-canonical value. This causes the asm mul
     // contract to constrain the rhs limbs, and limb 2 of `R` (1 in Montgomery form) is
     // `2^64 - 1`, violating the constraint.
-    let _ = MODULUS.mul_runtime(&Fp::one());
+    // Call the entry directly: portable fallback has no assembly contract to assert.
+    let _ = crate::asm::mul(&MODULUS.0, &R.0, &MODULUS.0, INV);
 }
 }
 

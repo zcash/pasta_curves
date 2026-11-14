@@ -12,31 +12,33 @@
 //! `mul`, `square`, and the routines built on them read limbs through pointers;
 //! the x32 ABI's 32-bit pointers would break them (see the x86-64 module's docs
 //! for why registers alone cannot serve there), so the module has no backend on
-//! that target. They also need, at run time, a CPU with BMI2 and ADX (MULX,
-//! ADCX/ADOX: Intel Broadwell / AMD Zen or newer); neither is checked.
-//! `from_mont` uses MULX (BMI2) alone. Apple x86-64 targets are excluded
-//! altogether: they reserve `rbp`, and so have fewer available registers than
+//! that target. Outside SGX, x86-64 field operations detect BMI2 and ADX at run
+//! time (MULX, ADCX/ADOX: Intel Broadwell / AMD Zen or newer), with a cache that
+//! does not require `std`. Enabling both target features at compile time removes
+//! the check. SGX cannot use CPUID, so it uses portable arithmetic unless both
+//! features are enabled at compile time.
+//! Apple x86-64 targets are excluded altogether: they reserve `rbp`, and so have
+//! fewer available registers than
 //! the squaring blocks need. The AArch64 backend also provides the six blocks
 //! of the constant-time inversion, which `crate::inversion` runs.
 //!
 //! On every other target, that is any target other than AArch64 and non-Apple
 //! x86-64 with 64-bit pointers, the module has no backend. The same holds on
 //! any target when the compiler is passed `--cfg pasta_curves_noasm` (through
-//! `RUSTFLAGS`, or `rustflags` in `.cargo/config.toml`), which is how to build
-//! for old x86-64 CPUs without BMI2 and ADX. Code that uses the backend does
-//! not repeat these conditions: it declares its uses of the backend under
-//! `if_asm_supported!` and its portable fallback under `if_asm_unsupported!`;
-//! the first expands to its items exactly where the module has a backend, and
-//! the second exactly where it does not. [`BACKEND`] names the result.
+//! `RUSTFLAGS`, or `rustflags` in `.cargo/config.toml`). Code that uses the
+//! backend declares its items under `if_asm_supported!` and selects operations
+//! through `if_asm!`, which includes the runtime check. The complementary
+//! `if_asm_unsupported!` selects items when no backend is compiled in.
+//! The diagnostic constant [`BACKEND`] names the compiled-in backend, not the runtime selection.
 //!
 //! Nothing is assembled at build time: the blocks are compiled by the Rust
 //! toolchain, so no C toolchain is needed, and the module adds no dependency.
 //!
 //! # Timing
 //!
-//! The blocks have no data-dependent branch or memory access, and a release
-//! build runs nothing else. So the routines' timing should not depend on their
-//! operands, unless behaviour of the Rust toolchain or platform introduces an
+//! The blocks have no data-dependent branch or memory access. Runtime dispatch
+//! depends only on the CPU, not on field operands. So the routines' timing should
+//! not depend on their operands, unless the Rust toolchain or platform introduces an
 //! unexpected obstacle to that. A debug build also runs the assertions' checks,
 //! and debug mode carries no constant-time guarantee. The checks are written
 //! without data-dependent branches, and pass their words through
@@ -124,15 +126,47 @@ if_asm_supported! {
     /// and benchmark labels; it is not a stable interface.
     pub const BACKEND: &str = if cfg!(target_arch = "aarch64") { "aarch64" } else { "x86-64" };
 
+    /// Whether field operations can use the compiled-in backend on this CPU.
+    #[inline(always)]
+    pub(crate) fn available() -> bool {
+        #[cfg(test)]
+        if tests::FORCE_PORTABLE.get() {
+            return false;
+        }
+        #[cfg(all(
+            target_arch = "x86_64",
+            not(target_env = "sgx"),
+            not(all(target_feature = "bmi2", target_feature = "adx"))
+        ))]
+        { dispatch::available() }
+        #[cfg(any(
+            target_arch = "aarch64",
+            all(target_feature = "bmi2", target_feature = "adx")
+        ))]
+        { true }
+        #[cfg(all(
+            target_arch = "x86_64",
+            target_env = "sgx",
+            not(all(target_feature = "bmi2", target_feature = "adx"))
+        ))]
+        { false }
+    }
+
+    #[cfg(all(
+        target_arch = "x86_64",
+        not(target_env = "sgx"),
+        not(all(target_feature = "bmi2", target_feature = "adx"))
+    ))]
+    mod dispatch;
+
     #[cfg(any(target_arch = "aarch64", doc))]
     pub(crate) mod aarch64;
 
     #[cfg(any(target_arch = "x86_64", doc))]
     mod x86_64;
 
-    // The tests use std only to catch the debug assertions they check, so a release test
-    // build stays free of it.
-    #[cfg(all(test, debug_assertions))]
+    // Tests use std for thread-local dispatch overrides and to catch debug assertions.
+    #[cfg(test)]
     extern crate std;
 
     #[cfg(test)]
@@ -147,4 +181,15 @@ if_asm_unsupported! {
     /// has one, and `"portable"` where it does not. Intended for diagnostics only, such as logs
     /// and benchmark labels; it is not a stable interface.
     pub const BACKEND: &str = "portable";
+}
+
+/// Returns the arithmetic backend selected for field operations on this CPU.
+///
+/// The result is `"aarch64"`, `"x86-64"`, or `"portable"`. Builds without assembly return
+/// `"portable"`. Selection uses cached CPU detection on x86-64, except that enabling BMI2
+/// and ADX at compile time removes detection. In SGX, assembly requires both target features.
+/// Intended for diagnostics only, such as logs and benchmark labels; not a stable interface.
+pub fn selected_backend() -> &'static str {
+    if_asm_supported! {{ if available() { BACKEND } else { "portable" } }}
+    if_asm_unsupported! {{ "portable" }}
 }
