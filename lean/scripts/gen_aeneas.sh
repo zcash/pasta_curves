@@ -135,4 +135,8 @@ translate Glue "" asm \
   crate::asm::entry::square_with crate::asm::entry::sqr_n_mul_with \
   crate::asm::entry::from_mont_with
 
+# The GLV path's wNAF recoding, as the crate compiles it with the `glv` feature. The rest of the
+# path is generic over the curve traits, which this Charon pin does not translate.
+translate Glv "" glv crate::glv::wnaf_digits
+
 log "done: $translations translations in $((SECONDS - start))s"
