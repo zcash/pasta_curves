@@ -492,3 +492,8 @@ case differed. The testing leaves these gaps, each with what would close it:
 * **x86-64's `amontred` never negated zero.** `neg {t0}` sets the carry flag unless its operand
   is zero; no input of the testing made that operand zero, so the case in which it clears the
   carry was not compared with the machine. A vector constructed to make it zero would close it.
+* **The definitions were evaluated by ports, not by Lean.** Each generated definition was
+  evaluated from its Lean text by a Python interpreter whose primitives are hand ports of the
+  `Semantics.lean` modules, each citing its line. A port that differs from its definition tests
+  the port. Evaluating the definitions in Lean on the same inputs, with `#eval` or as further
+  kernel-checked vectors, would close it.
