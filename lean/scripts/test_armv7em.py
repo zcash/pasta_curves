@@ -607,6 +607,23 @@ class ARMv7EMGeneratorTests(unittest.TestCase):
         with self.assertRaisesRegex(rust.GenerationError, "zero flag read while invalid"):
             lifter.lift("bne 2b", 3)
 
+    def test_a_pointer_must_keep_its_pointer_and_its_argument_is_read_only(self) -> None:
+        def lifter() -> Armv7emLifter:
+            memory = Armv7emLifter({"r0": "in", "r1": "inout", "r2": "out"})
+            memory.bind_memory("r0", "value")
+            memory.bind_memory("r1", None)
+            return memory
+
+        overwritten = lifter()
+        overwritten.lift("mov r1, #0", 0)
+        with self.assertRaisesRegex(rust.GenerationError, "through r1 after r1 was written"):
+            overwritten.lift("ldr r2, [r1, #4]", 1)
+        stored = lifter()
+        stored.lift("ldr r2, [r0, #4]", 0)
+        with self.assertRaisesRegex(rust.GenerationError, "store through the read-only pointer r0"):
+            stored.lift("str r2, [r0, #4]", 1)
+        stored.lift("str r2, [r1, #4]", 1)
+
     def test_cond_sub_rejects_malformed_offsets_uninitialized_memory_and_flags(self) -> None:
         malformed_offset = self.source.replace("cond_sub_word!(4),", "cond_sub_word!(2),", 1)
         self.assert_rejected(malformed_offset, "memory offset must be one of")

@@ -545,6 +545,8 @@ class Armv7emLifter(Lifter):
         super().__init__(directions)
         self.memory: dict[tuple[str, int], str] = {}  # (pointer, offset) -> its word's binding
         self.used_offsets: dict[str, list[int]] = {}  # pointer -> the offsets read or written
+        self.writable: set[str] = set()  # the pointers to memory the block may write
+        self.overwritten: set[str] = set()  # the pointer registers written since being bound
         self.carry_valid = False
         self.zero_valid = False
         self.loop = loop
@@ -591,6 +593,8 @@ class Armv7emLifter(Lifter):
         zero-initialized memory when `argument` is `None`."""
         self.check_declared(pointer)
         self.used_offsets[pointer] = []
+        if argument is None:
+            self.writable.add(pointer)
         for offset in range(0, 32, 4):
             name = self.slot(pointer, offset)
             node: Node
@@ -639,6 +643,8 @@ class Armv7emLifter(Lifter):
         pointer = named or fixed
         if pointer not in self.used_offsets:
             raise GenerationError(f"memory base {pointer} is not a declared pointer")
+        if pointer in self.overwritten:
+            raise GenerationError(f"memory access through {pointer} after {pointer} was written")
         offset = int(offset_text)
         if offset % 4 or offset < 0 or offset > 28:
             raise GenerationError(f"memory offset must be one of 0, 4, ..., 28: {offset}")
@@ -672,6 +678,10 @@ class Armv7emLifter(Lifter):
         register = self.register(token)
         if self.directions[register] == "in":
             raise GenerationError(f"input-only register {register} cannot be written")
+        # A memory access through the register is modelled as through the pointer it was bound
+        # to: once the register is written, it no longer holds that pointer.
+        if register in self.used_offsets:
+            self.overwritten.add(register)
         return register
 
     def value(self, token: str) -> Term:
@@ -730,6 +740,8 @@ class Armv7emLifter(Lifter):
             self.require_count(ins, 2)
             stored = self.read(operands[0])
             pointer, offset = self.address(operands[1])
+            if pointer not in self.writable:
+                raise GenerationError(f"store through the read-only pointer {pointer}")
             slot = self.slot(pointer, offset)
             self.emit(Mov(dest=slot, a=stored))
             self.memory[(pointer, offset)] = slot
