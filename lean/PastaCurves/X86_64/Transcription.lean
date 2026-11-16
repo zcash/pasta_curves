@@ -148,11 +148,11 @@ namespace MulMontAcc
 
 /-- Every field is below `2^64`. -/
 def Bounded (s : MulMontAcc) : Prop :=
-  s.r0 < 2^64 ∧ s.r1 < 2^64 ∧ s.r2 < 2^64 ∧ s.r3 < 2^64 ∧ s.r4 < 2^64 ∧ s.q < 2^64
+   s.r0 < 2^64 ∧ s.r1 < 2^64 ∧ s.r2 < 2^64 ∧ s.r3 < 2^64 ∧ s.r4 < 2^64 ∧ s.q < 2^64
 
 /-- The value of the five accumulator limbs. -/
 def toNat (s : MulMontAcc) : Nat :=
-  s.r0 + 2^64 * s.r1 + 2^128 * s.r2 + 2^192 * s.r3 + 2^256 * s.r4
+   s.r0 + 2^64 * s.r1 + 2^128 * s.r2 + 2^192 * s.r3 + 2^256 * s.r4
 
 end MulMontAcc
 
