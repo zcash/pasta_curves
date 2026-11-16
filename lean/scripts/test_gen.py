@@ -383,6 +383,18 @@ class AArch64FlagFormTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "fl read while the flags are not in that form"):
             self.run_steps(emitter, "csel {a}, {a}, {b}, ne")
 
+    def test_each_condition_alias_reads_the_carry_as_its_twin(self) -> None:
+        # `lo` and `cc` select the first operand when the carry is clear, `cs` and `hs` when set.
+        def lifted(condition: str) -> list[str]:
+            emitter = self.emitter("a", "b")
+            self.run_steps(emitter, "adds {a}, {a}, {b}", f"csel {{a}}, {{a}}, {{b}}, {condition}")
+            return [str(let.expr) for node in emitter.nodes for let in node.lets()]
+
+        for alias, twin, function in (("cc", "lo", "cselLo"), ("hs", "cs", "cselCs")):
+            with self.subTest(alias=alias):
+                self.assertEqual(lifted(alias), lifted(twin))
+                self.assertTrue(lifted(alias)[-1].startswith(function), lifted(alias))
+
     def test_divstep_conditions_and_signed_operations_transcribe(self) -> None:
         emitter = self.emitter("d", "pf", "pg", "t", "m")
         self.run_steps(
