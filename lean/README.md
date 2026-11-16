@@ -485,3 +485,7 @@ case differed. The testing leaves these gaps, each with what would close it:
   Reference Manual (DDI 0403E) for the testing, independently of `Semantics.lean`; a misreading
   of the manual shared by both would go unseen. Running the blocks on a Cortex-M4 or M7, or under
   `qemu-system-arm`, would close it.
+* **x86-64's `adcx` and `adox` were not executed by a processor.** Rosetta 2 lacks ADX, so the
+  runs under it emulated both instructions from the SDM. For them, the comparison is with the SDM
+  model only, on exactly the two independent carry chains the generator keeps apart. Running the
+  routines on an x86-64 processor with ADX would close it.
