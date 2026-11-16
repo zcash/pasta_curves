@@ -30,7 +30,20 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, TypeVar, cast
 
-from .ir import Arg, Get, Let, Lit, Node, Program, Reg, ScratchKey, Term, rename_term, show
+from .ir import (
+    Arg,
+    Get,
+    Let,
+    Lit,
+    Node,
+    Program,
+    Reg,
+    ScratchKey,
+    Term,
+    rename_term,
+    show,
+    term_registers,
+)
 from .lean import wrap_words
 from .rust import GenerationError
 
@@ -44,11 +57,22 @@ def ssa_names(lets: Sequence[Let], shadow: bool = False) -> list[str]:
 
     With `shadow`, a suffixed name does not skip a taken one: the later binding reuses the name,
     and Lean's later hypotheses of that name shadow the earlier ones. That is the naming of the
-    proofs written against it (`Program.shadow`)."""
+    proofs written against it (`Program.shadow`). It is sound only while no binding reads a
+    register whose name another register's binding has since shadowed: Lean would resolve the
+    read to the other register's value, so that is rejected."""
     counts: dict[str, int] = {}
     taken = {let.name for let in lets}
     names: list[str] = []
+    current: dict[str, str] = {}  # register -> the name of its latest binding
+    holder: dict[str, str] = {}  # name -> the register whose binding Lean resolves it to
     for let in lets:
+        for register in sorted(term_registers(let.term)):
+            name = current.get(register)
+            if name is not None and holder[name] != register:
+                raise GenerationError(
+                    f"`{let.comment}` reads {register} as {name}, which the binding of "
+                    f"{holder[name]} shadows"
+                )
         base = let.name + "'" if let.term == Arg(let.name) else let.name
         n = counts.get(let.name, 0)
         name = base
@@ -61,6 +85,8 @@ def ssa_names(lets: Sequence[Let], shadow: bool = False) -> list[str]:
             raise GenerationError(f"two bindings named {name}")
         taken.add(name)
         names.append(name)
+        current[let.name] = name
+        holder[name] = let.name
     return names
 
 

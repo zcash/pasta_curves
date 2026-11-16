@@ -21,6 +21,41 @@ from .skeleton import skeleton
 Manifest = Mapping[str, tuple[str, Sequence[str] | None]]
 
 
+def strip_block_comments(text: str) -> str:
+    """`text` without its block comments (`/- ... -/`, docstrings included), which nest in Lean,
+    keeping their line breaks so that line numbers stay. A `--` line comment and a string
+    literal are skipped, as Lean's lexer skips them, so a `/-` in either opens nothing. A skeleton
+    inside a block comment is not proof text, and must not count as one."""
+    out: list[str] = []
+    depth, index = 0, 0
+    while index < len(text):
+        pair = text[index : index + 2]
+        if depth == 0 and pair == "--":
+            end = text.find("\n", index)
+            end = len(text) if end < 0 else end
+            out.append(text[index:end])
+            index = end
+        elif depth == 0 and text[index] == '"':
+            end = index + 1
+            while end < len(text) and text[end] != '"':
+                end += 2 if text[end] == "\\" else 1
+            out.append(text[index : end + 1])
+            index = end + 1
+        elif pair == "/-":
+            depth += 1
+            index += 2
+        elif depth > 0 and pair == "-/":
+            depth -= 1
+            index += 2
+        else:
+            if depth == 0 or text[index] == "\n":
+                out.append(text[index])
+            index += 1
+    if depth:
+        raise ValueError("unterminated block comment")
+    return "".join(out)
+
+
 def _strip_annotations(path: Path, text: str) -> tuple[bool, list[str]]:
     """Remove checked annotation blocks and reject malformed marker structure."""
     remaining: list[str] = []
@@ -64,6 +99,11 @@ def check_spec(path: Path | str, routines: Sequence[Program]) -> bool:
         source = path.read_text()
     except OSError as error:
         print(f"{path}: cannot read proof file: {error.strerror}", file=sys.stderr)
+        return False
+    try:
+        source = strip_block_comments(source)
+    except ValueError as error:
+        print(f"{path}: {error}", file=sys.stderr)
         return False
     ok, remaining = _strip_annotations(path, source)
     expected_names = {routine.name for routine in routines}

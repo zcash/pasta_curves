@@ -383,6 +383,18 @@ class AArch64FlagFormTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "fl read while the flags are not in that form"):
             self.run_steps(emitter, "csel {a}, {a}, {b}, ne")
 
+    def test_each_condition_alias_reads_the_carry_as_its_twin(self) -> None:
+        # `lo` and `cc` select the first operand when the carry is clear, `cs` and `hs` when set.
+        def lifted(condition: str) -> list[str]:
+            emitter = self.emitter("a", "b")
+            self.run_steps(emitter, "adds {a}, {a}, {b}", f"csel {{a}}, {{a}}, {{b}}, {condition}")
+            return [str(let.expr) for node in emitter.nodes for let in node.lets()]
+
+        for alias, twin, function in (("cc", "lo", "cselLo"), ("hs", "cs", "cselCs")):
+            with self.subTest(alias=alias):
+                self.assertEqual(lifted(alias), lifted(twin))
+                self.assertTrue(lifted(alias)[-1].startswith(function), lifted(alias))
+
     def test_divstep_conditions_and_signed_operations_transcribe(self) -> None:
         emitter = self.emitter("d", "pf", "pg", "t", "m")
         self.run_steps(
@@ -939,6 +951,72 @@ class TranslationValidationTests(unittest.TestCase):
             ],
         )
 
+    def test_a_returned_term_reads_exactly_the_bound_results(self) -> None:
+        signature = ir.Signature("blk", (("x", "Nat"),), "Nat × Nat")
+        nodes: list[ir.Node] = [
+            ir.Scalar(dest="x", name="x"),
+            ir.Word(dest="y", function="addw", args=(ir.Reg("x"), ir.Reg("x"))),
+        ]
+        pair = ir.Prod((ir.Reg("x"), ir.Reg("y")))
+        ir.Program(signature, "doc", nodes, ["x", "y"], result_term=pair)
+        for results, term, message in (
+            (["x"], pair, "the result reads \\['x', 'y'\\], not the results \\['x'\\]"),
+            (["x", "y", "z"], pair, "not the results"),
+            (["x", "z"], ir.Prod((ir.Reg("x"), ir.Reg("z"))), "the result reads the unbound"),
+        ):
+            with self.subTest(results=results), self.assertRaisesRegex(GenerationError, message):
+                ir.Program(signature, "doc", nodes, results, result_term=term)
+
+    def test_a_structure_assumed_in_another_order_is_rejected(self) -> None:
+        programs = aarch64_blocks.programs()
+        lean.check_structures(programs)
+        declares = next(p for p in programs if p.struct and "structure DivstepState" in p.struct)
+        assert declares.struct is not None
+        swapped = declares.struct.replace("  f : Nat", "  F : Nat").replace(
+            "  g : Nat", "  f : Nat"
+        )
+        swapped = swapped.replace("  F : Nat", "  g : Nat")
+        reordered = dataclasses.replace(declares, struct=swapped)
+        with self.assertRaisesRegex(GenerationError, "takes DivstepState's fields as"):
+            lean.check_structures([reordered if p is declares else p for p in programs])
+
+    def test_text_that_would_escape_its_comment_is_rejected(self) -> None:
+        for doc in ("ends early -/ def evil := 0", "opens /- a nested comment"):
+            with self.subTest(doc=doc), self.assertRaisesRegex(GenerationError, "docstring"):
+                lean.docstring(doc)
+        signature = ir.Signature("blk", (("x", "Nat"),), "Nat")
+        nodes: list[ir.Node] = [
+            ir.Scalar(dest="x", name="x"),
+            ir.Word(
+                comment="add\ntheorem evil : False",
+                dest="y",
+                function="addw",
+                args=(ir.Reg("x"), ir.Reg("x")),
+            ),
+        ]
+        program = ir.Program(signature, "doc", nodes, ["y"])
+        with self.assertRaisesRegex(GenerationError, "line break"):
+            lean.definition(program, 40)
+
+    def test_a_round_named_like_an_operation_is_rejected(self) -> None:
+        # A helper named `addw` that computes `subw`: expanding it wherever `addw` is applied made
+        # the flat block's own `addw` a call of the helper, and the check passed.
+        def program(name: str, nodes: list[ir.Node]) -> ir.Program:
+            signature = ir.Signature(name, (("x", "Nat"), ("y", "Nat")), "Nat")
+            return ir.Program(signature, "doc", nodes, ["r"])
+
+        args: list[ir.Node] = [ir.Scalar(dest="x", name="x"), ir.Scalar(dest="y", name="y")]
+        flat = program(
+            "blk", [*args, ir.Word(dest="r", function="addw", args=(ir.Reg("x"), ir.Reg("y")))]
+        )
+        helper = program(
+            "addw", [*args, ir.Word(dest="r", function="subw", args=(ir.Reg("x"), ir.Reg("y")))]
+        )
+        with self.assertRaisesRegex(
+            GenerationError, "named like operations the flat block applies"
+        ):
+            validate.check(flat, [helper, flat])
+
     def test_a_stale_read_after_a_run_is_rejected(self) -> None:
         # `k` is written by every step of the run but not carried out of it: read after the run,
         # the rerolled block would see the `k` from before the run.
@@ -1064,6 +1142,10 @@ class SoundnessRegressionTests(unittest.TestCase):
             ("sbfx {d}, {a}, #60, #5", "sbfx width 5"),
             ("mov {d}, #0x10000000000000000", "does not fit a word"),
             ("add {d}, {a}, {a}, lsl #64", "shift 64"),
+            # LLVM reads a leading zero as octal: `#017` is 15, `#010` is 8.
+            ("add {d}, {a}, #017", "unexpected immediate #017"),
+            ("lsl {d}, {a}, #010", "unexpected immediate #010"),
+            ("add {d}, {a}, #8*01", "unexpected immediate #8\\*01"),
             # Only `subs xzr` (a comparison) has a node; the others need the value they drop.
             ("adds xzr, {a}, {a}", "adds to xzr is unsupported"),
         ):
@@ -1548,6 +1630,21 @@ class SkeletonCheckerTests(unittest.TestCase):
         )
         self.assertTrue(ok, diagnostics)
 
+    def test_a_skeleton_in_a_block_comment_does_not_count(self) -> None:
+        # Lean's block comments nest; a `/-` in a line comment or a string opens nothing.
+        for text, expected in (
+            ("/-\n" + self.skeleton + "-/\n", "found 0"),
+            ("/- outer /- inner -/\n" + self.skeleton + "-/\n", "found 0"),
+            ("/--\n" + self.skeleton + "-/\n", "found 0"),
+            ("/- unterminated\n" + self.skeleton, "unterminated block comment"),
+            ("-- a /- in a line comment\n" + self.skeleton, ""),
+            ('def s := "/-"\n' + self.skeleton, ""),
+        ):
+            with self.subTest(text=text[:30]):
+                ok, diagnostics = self.check_text(text)
+                self.assertEqual(ok, not expected, diagnostics)
+                self.assertIn(expected, diagnostics)
+
     def test_missing_and_duplicate_skeletons_are_rejected(self) -> None:
         for text, message in (
             ("", "expected one skeleton of addMod, found 0"),
@@ -1979,6 +2076,19 @@ class ScopeAndNamingTests(unittest.TestCase):
         names = ssa_names(lets)
         self.assertEqual(names, ["t", "t_1", "t_2", "t_1_1"])
         self.assertEqual(len(set(names)), len(names))
+
+    def test_shadowed_names_are_not_read_as_another_register(self) -> None:
+        # With shadowing, `t`'s second binding is named `t_1`, which register `t_1` still holds.
+        lets = [
+            ir.Let("t", ir.Arg("x"), None),
+            ir.Let("t_1", ir.Arg("y"), None),
+            ir.Let("t", ir.apply("addw", ir.Reg("t"), 1), "add t,t,#1"),
+        ]
+        self.assertEqual(ssa_names(lets, shadow=True), ["t", "t_1", "t_1"])
+        read = ir.Let("u", ir.apply("addw", ir.Reg("t_1"), 1), "add u,t_1,#1")
+        with self.assertRaisesRegex(GenerationError, "reads t_1 as t_1, which the binding of t"):
+            ssa_names([*lets, read], shadow=True)
+        self.assertEqual(ssa_names([*lets, read]), ["t", "t_1", "t_2", "u"])
 
     def test_scratch_keys_with_one_name_do_not_share_state(self) -> None:
         program = CONVENTIONS.program(

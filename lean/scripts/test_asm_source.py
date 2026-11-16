@@ -379,6 +379,171 @@ class SurroundingCodeTests(unittest.TestCase):
                 self.assertEqual(generate(commented), expected)
 
 
+class MacroArmOrderTests(unittest.TestCase):
+    """An invocation expands the first arm that matches, as `macro_rules!` does."""
+
+    IDENT_ARM = r'    ($r:ident) => { concat!("adds {r0}, {", stringify!($r), "}, {a0}\n") };'
+    LITERAL_ARM = r'    (b) => { "subs {r0}, {a0}, {b}\n" };'
+    BLOCK = """fn f(a0: u64, b: u64) -> [u64; 1] {
+    let r0: u64;
+    unsafe {
+        asm!(step!(b), a0 = in(reg) a0, b = in(reg) b, r0 = out(reg) r0,
+            options(pure, nomem, nostack));
+    }
+    [r0]
+}
+"""
+
+    def instructions(self, *arms: str) -> tuple[str, ...]:
+        source = "macro_rules! step {\n" + "\n".join(arms) + "\n}\n" + self.BLOCK
+        parsed = rust.parse_function(
+            source, "f", ["a0", "b"], 1, required_options={"pure", "nomem", "nostack"}
+        )
+        return parsed.instructions
+
+    def test_the_first_matching_arm_is_expanded(self) -> None:
+        # rustc expands `step!(b)` to the first arm that matches, whichever it is.
+        self.assertEqual(
+            self.instructions(self.IDENT_ARM, self.LITERAL_ARM), ("adds {r0}, {b}, {a0}",)
+        )
+        self.assertEqual(
+            self.instructions(self.LITERAL_ARM, self.IDENT_ARM), ("subs {r0}, {a0}, {b}",)
+        )
+
+
+class RustTypeTests(unittest.TestCase):
+    """A block's parameters, result, and outputs have the Rust types of the kinds the transcription
+    gives them."""
+
+    def test_a_parameter_of_another_type_is_rejected(self) -> None:
+        source = aarch64_blocks.SOURCE.read_text()
+        old = "pub(super) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {"
+        self.assertIn(old, source)
+        for new, message in (
+            (old.replace("inv: u64", "inv: u32"), "inv has the Rust type u32"),
+            (old.replace("lhs: &Limbs", "lhs: &[u32; 4]"), "lhs has the Rust type &\\[u32;4\\]"),
+            (old.replace("-> Limbs", "-> [u32; 4]"), "the result has the Rust type"),
+        ):
+            with (
+                self.subTest(signature=new),
+                self.assertRaisesRegex(rust.GenerationError, message),
+            ):
+                aarch64_blocks.programs(source.replace(old, new))
+
+    def test_outputs_of_another_word_are_rejected(self) -> None:
+        source = aarch64_blocks.SOURCE.read_text()
+        old = "    let (o0, o1, o2, o3): (u64, u64, u64, u64);"
+        self.assertIn(old, source)
+        with self.assertRaisesRegex(rust.GenerationError, "outputs declared as \\['u32'\\]"):
+            aarch64_blocks.programs(source.replace(old, old.replace("u64", "u32"), 1))
+
+    def test_the_32_bit_words_of_armv7em_are_checked_too(self) -> None:
+        source = armv7em_blocks.SOURCE.read_text()
+        old = "fn adc(a: u32, b: u32, carry: u32) -> (u32, u32) {"
+        self.assertIn(old, source)
+        with self.assertRaisesRegex(rust.GenerationError, "a has the Rust type u64"):
+            armv7em_blocks.programs(source.replace(old, old.replace("a: u32", "a: u64")))
+
+
+class DebugAssertTests(unittest.TestCase):
+    """A `debug_assert!` before the block is not transcribed, so it must have no side effect."""
+
+    BLOCK = """fn f(lhs: &Limbs, inv: u64) -> [u64; 1] {
+    let mut a0 = lhs[0];
+    ASSERTION
+    let r0: u64;
+    unsafe {
+        asm!("adds {r0}, {a0}, {inv}", a0 = in(reg) a0, inv = in(reg) inv, r0 = out(reg) r0,
+            options(pure, nomem, nostack));
+    }
+    [r0]
+}
+"""
+
+    def parse(self, assertion: str) -> rust.ParsedFunction:
+        return rust.parse_function(
+            self.BLOCK.replace("ASSERTION", assertion),
+            "f",
+            ["lhs", "inv"],
+            1,
+            required_options={"pure", "nomem", "nostack"},
+        )
+
+    def test_comparisons_are_accepted(self) -> None:
+        for assertion in (
+            'debug_assert!(lhs[0] <= inv, "the message = {}");',
+            "debug_assert_eq!(inv as u32, u32::MAX);",
+            "debug_assert!(lhs[3] != 1 << 62 && !(inv == 0));",
+        ):
+            with self.subTest(assertion=assertion):
+                self.parse(assertion)
+
+    def test_an_assertion_that_may_write_is_rejected(self) -> None:
+        # In a debug build, which CI runs, `{ a0 = lhs[1]; true }` makes the block read lhs[1].
+        for assertion in (
+            "debug_assert!({ a0 = lhs[1]; true });",
+            "debug_assert!(touch(&mut a0));",
+            "debug_assert!(lhs.iter().all(|x| *x < inv));",
+        ):
+            with (
+                self.subTest(assertion=assertion),
+                self.assertRaisesRegex(
+                    rust.GenerationError, "debug_assert! may have a side effect"
+                ),
+            ):
+                self.parse(assertion)
+
+
+class LateOutputTests(unittest.TestCase):
+    """A `lateout` may share a register with an allocated input, so it is accepted only beside
+    fixed-register inputs."""
+
+    BLOCK = """fn f(a: u64, b: u64) -> [u64; 1] {
+    let out: u64;
+    unsafe {
+        asm!(
+            "mov rdx, {a}",
+            "add rdx, {b}",
+            "mov {out}, rdx",
+            a = in(reg) a,
+            b = in(reg) b,
+            out = out(reg) out,
+            out("rdx") _,
+            options(pure, nomem, nostack),
+        );
+    }
+    [out]
+}
+"""
+
+    def parse(self, source: str) -> rust.ParsedFunction:
+        return rust.parse_function(
+            source,
+            "f",
+            ["a", "b"],
+            1,
+            fixed_registers={"rdx"},
+            required_options={"pure", "nomem", "nostack"},
+        )
+
+    def test_lateout_beside_an_allocated_input_is_rejected(self) -> None:
+        self.parse(self.BLOCK)
+        late = self.BLOCK.replace('out("rdx") _', 'lateout("rdx") _')
+        with self.assertRaisesRegex(rust.GenerationError, "lateout \\['rdx'\\] may share"):
+            self.parse(late)
+
+    def test_the_real_blocks_with_lateout_mutations_are_rejected(self) -> None:
+        source = x86_64_blocks.SOURCE.read_text()
+        self.assertIn('out("rdx") _', source)
+        with self.assertRaisesRegex(rust.GenerationError, "may share a register"):
+            x86_64_blocks.programs(source.replace('out("rdx") _', 'lateout("rdx") _'))
+
+    def test_lateout_beside_fixed_inputs_only_is_accepted(self) -> None:
+        # ARMv7E-M's `from_mont` reads its inputs from fixed registers and writes lateouts.
+        self.assertIn("lateout(", armv7em_blocks.SOURCE.read_text())
+        armv7em_blocks.programs()
+
+
 class InventoryTests(unittest.TestCase):
     """Every architecture transcribes exactly the functions of its source with an `asm!` block."""
 
@@ -402,6 +567,24 @@ fn stray(a: u64) -> u64 {
                 self.assertRaisesRegex(rust.GenerationError, "T: asm block inventory differs"),
             ):
                 rust.check_asm_inventory(source, covered, "T")
+
+    def test_blocks_anywhere_and_in_any_form_are_found(self) -> None:
+        source = (
+            'pub unsafe fn a() { asm!("") }\n'
+            'extern "C" fn b() -> [u64; 2] { asm!(""); [0, 0] }\n'
+            'mod tests {\n    fn c() { core::arch::asm!("") }\n}\n'
+            'impl T for U {\n    fn d(&self) { naked_asm!("") }\n}\n'
+            "trait V { fn e(); }\n"
+            'global_asm!("");\n'
+        )
+        self.assertEqual(rust.asm_functions(source), ("a", "b", "c", "d", "<top level, line 10>"))
+
+    def test_a_block_left_out_must_be_listed_with_its_reason(self) -> None:
+        source = aarch64_blocks.SOURCE.read_text()
+        covered = [block.rust_name for block in aarch64_blocks.BLOCKS]
+        with self.assertRaisesRegex(rust.GenerationError, "asm block inventory differs"):
+            rust.check_asm_inventory(source, covered, "AArch64")
+        rust.check_asm_inventory(source, covered, "AArch64", aarch64_blocks.UNTRANSCRIBED)
 
     def test_every_architecture_rejects_an_untranscribed_block(self) -> None:
         for module in (aarch64_blocks, armv7em_blocks, x86_64_blocks):

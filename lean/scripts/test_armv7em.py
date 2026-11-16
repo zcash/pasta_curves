@@ -14,7 +14,7 @@ sys.dont_write_bytecode = True
 from asm2lean import rust, validate
 from asm2lean.block import transcribe
 from asm2lean.ir import App, Lit, Mov, Node, Program, Tuple
-from asm2lean.isa.armv7em import Bind
+from asm2lean.isa.armv7em import Armv7emLifter, Bind
 from asm2lean.skeleton import skeleton
 from pasta.architectures import armv7em
 
@@ -595,6 +595,51 @@ class ARMv7EMGeneratorTests(unittest.TestCase):
             1,
         )
         self.assert_rejected(declaration, "assembly operand declarations differ")
+
+    def test_a_flag_write_between_the_decrement_and_the_branch_is_rejected(self) -> None:
+        # `adds` writes Z too: the branch would read its zero flag, not the decrement's.
+        lifter = Armv7emLifter({"n": "inout", "a": "inout", "b": "in"}, loop=True)
+        for register in ("n", "a", "b"):
+            lifter.bind_argument(register, register)
+        lifter.lift("2:", 0)
+        lifter.lift("subs {n}, {n}, #1", 1)
+        lifter.lift("adds {a}, {a}, {b}", 2)
+        with self.assertRaisesRegex(rust.GenerationError, "zero flag read while invalid"):
+            lifter.lift("bne 2b", 3)
+
+    def test_a_pointer_must_keep_its_pointer_and_its_argument_is_read_only(self) -> None:
+        def lifter() -> Armv7emLifter:
+            memory = Armv7emLifter({"r0": "in", "r1": "inout", "r2": "out"})
+            memory.bind_memory("r0", "value")
+            memory.bind_memory("r1", None)
+            return memory
+
+        overwritten = lifter()
+        overwritten.lift("mov r1, #0", 0)
+        with self.assertRaisesRegex(rust.GenerationError, "through r1 after r1 was written"):
+            overwritten.lift("ldr r2, [r1, #4]", 1)
+        stored = lifter()
+        stored.lift("ldr r2, [r0, #4]", 0)
+        with self.assertRaisesRegex(rust.GenerationError, "store through the read-only pointer r0"):
+            stored.lift("str r2, [r0, #4]", 1)
+        stored.lift("str r2, [r1, #4]", 1)
+
+    def test_an_operand_named_like_an_implicit_write_is_rejected(self) -> None:
+        # `adcs` binds its pair `adcs_pair`, and a loop's `subs` its zero flag `z`.
+        for pair, setup, line in (
+            ("adcs_pair", ["adds {adcs_pair}, {adcs_pair}, {b}"], "adcs {a}, {a}, {b}"),
+            ("z", [], "subs {a}, {a}, #1"),
+        ):
+            lifter = Armv7emLifter({"a": "inout", "b": "in", pair: "inout"}, loop=True)
+            for register in ("a", "b", pair):
+                lifter.bind_argument(register, register)
+            for pc, text in enumerate(setup):
+                lifter.lift(text, pc)
+            with (
+                self.subTest(pair=pair),
+                self.assertRaisesRegex(rust.GenerationError, f"operands \\['{pair}'\\] are named"),
+            ):
+                lifter.lift(line, len(setup))
 
     def test_cond_sub_rejects_malformed_offsets_uninitialized_memory_and_flags(self) -> None:
         malformed_offset = self.source.replace("cond_sub_word!(4),", "cond_sub_word!(2),", 1)

@@ -463,12 +463,11 @@ class Umaal(Node):
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class Bne(Node):
-    """`bne 2b`: whether the loop's backward branch is taken, `(if z = 0 then 1 else 0)`."""
-
-    dest: str = dst()
+    """`bne 2b`: whether the loop's backward branch is taken, `branch := (if z = 0 then 1 else
+    0)`, under the fixed name `branch`."""
 
     def lets(self) -> list[Let]:
-        return [self._let(self.dest, Ite(Reg("z"), Lit("1"), Lit("0")))]
+        return [self._let("branch", Ite(Reg("z"), Lit("1"), Lit("0")))]
 
     def prove(self, step: Step) -> None:
         step.eq(step.name, f"(if {step.r(Reg('z'))} = 0 then 1 else 0)")
@@ -545,6 +544,8 @@ class Armv7emLifter(Lifter):
         super().__init__(directions)
         self.memory: dict[tuple[str, int], str] = {}  # (pointer, offset) -> its word's binding
         self.used_offsets: dict[str, list[int]] = {}  # pointer -> the offsets read or written
+        self.writable: set[str] = set()  # the pointers to memory the block may write
+        self.overwritten: set[str] = set()  # the pointer registers written since being bound
         self.carry_valid = False
         self.zero_valid = False
         self.loop = loop
@@ -591,6 +592,8 @@ class Armv7emLifter(Lifter):
         zero-initialized memory when `argument` is `None`."""
         self.check_declared(pointer)
         self.used_offsets[pointer] = []
+        if argument is None:
+            self.writable.add(pointer)
         for offset in range(0, 32, 4):
             name = self.slot(pointer, offset)
             node: Node
@@ -639,6 +642,8 @@ class Armv7emLifter(Lifter):
         pointer = named or fixed
         if pointer not in self.used_offsets:
             raise GenerationError(f"memory base {pointer} is not a declared pointer")
+        if pointer in self.overwritten:
+            raise GenerationError(f"memory access through {pointer} after {pointer} was written")
         offset = int(offset_text)
         if offset % 4 or offset < 0 or offset > 28:
             raise GenerationError(f"memory offset must be one of 0, 4, ..., 28: {offset}")
@@ -672,6 +677,10 @@ class Armv7emLifter(Lifter):
         register = self.register(token)
         if self.directions[register] == "in":
             raise GenerationError(f"input-only register {register} cannot be written")
+        # A memory access through the register is modelled as through the pointer it was bound
+        # to: once the register is written, it no longer holds that pointer.
+        if register in self.used_offsets:
+            self.overwritten.add(register)
         return register
 
     def value(self, token: str) -> Term:
@@ -718,7 +727,7 @@ class Armv7emLifter(Lifter):
             if self.branch_seen:
                 raise GenerationError("duplicate loop branch")
             self.branch_seen = True
-            self.emit(Bne(dest="branch"))
+            self.emit(Bne())
         elif op == "ldr":
             self.require_count(ins, 2)
             pointer, offset = self.address(operands[1])
@@ -730,6 +739,8 @@ class Armv7emLifter(Lifter):
             self.require_count(ins, 2)
             stored = self.read(operands[0])
             pointer, offset = self.address(operands[1])
+            if pointer not in self.writable:
+                raise GenerationError(f"store through the read-only pointer {pointer}")
             slot = self.slot(pointer, offset)
             self.emit(Mov(dest=slot, a=stored))
             self.memory[(pointer, offset)] = slot
@@ -806,7 +817,10 @@ class Armv7emLifter(Lifter):
             self.emit(Subs(dest=dest, temp=temp, a=a, b=b, cin=Subs.carry_in, zero=True))
             self.zero_valid = True
         else:
+            # Every flag-setting instruction writes Z, which only a loop's `subs` models: any other
+            # leaves the modelled zero flag stale.
             self.emit(node(dest=dest, temp=temp, a=a, b=b, cin=node.carry_in))
+            self.zero_valid = False
         self.carry_valid = True
 
 

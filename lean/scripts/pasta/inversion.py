@@ -18,6 +18,17 @@ KINDS: dict[str, tuple[str, ...] | None] = {
     "Nat": None,
 }
 
+# The Rust types the 64-bit backends spell each kind with, without whitespace: the transcription
+# models the kind, so a block whose types differ is rejected (`block.check_types`).
+RUST_TYPES: dict[str, frozenset[str]] = {
+    "Nat": frozenset({"u64"}),
+    "Limbs": frozenset({"&Limbs", "Limbs", "&[u64;4]", "[u64;4]"}),
+    "Signed5": frozenset({"&[u64;5]", "[u64;5]"}),
+    "Divstep59Result": frozenset({"[u64;5]"}),
+    "SignMag": frozenset({"[u64;8]"}),
+    "WideLimbs": frozenset({"[u64;8]"}),
+}
+
 
 BLOCKS: tuple[Block, ...] = (
     Block(

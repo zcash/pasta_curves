@@ -18,6 +18,7 @@ def programs(source: str, blocks: Sequence[Block], target: Target) -> list[Progr
 def definitions(programs: Sequence[Program], column: int | None = None) -> str:
     """The programs' Lean definitions, their instruction comments at `column`, or, when it is
     `None`, each definition's at its own column."""
+    lean.check_structures(programs)
     return "\n".join(
         lean.definition(p, lean.comment_column([p]) if column is None else column) for p in programs
     )

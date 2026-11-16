@@ -155,11 +155,12 @@ def tokenize(rest: str) -> list[str]:
 
 
 def immediate(token: str) -> int:
-    """An immediate operand such as `#62`, `#0x100`, or `8*1`, as an integer."""
+    """An immediate operand such as `#62`, `#0x100`, or `8*1`, as an integer. A decimal number
+    with a leading zero is rejected: LLVM's assembler reads `#017` as octal, 15."""
     s = token.lstrip("#")
     if re.fullmatch(r"0x[0-9a-fA-F]+", s):
         return int(s, 16)
-    m = re.fullmatch(r"(-?[0-9]+)(?:\*([0-9]+))?", s)
+    m = re.fullmatch(r"(-?(?:0|[1-9][0-9]*))(?:\*(0|[1-9][0-9]*))?", s)
     if m is None:
         raise GenerationError(f"unexpected immediate {token}")
     return int(m.group(1)) * int(m.group(2) or 1)

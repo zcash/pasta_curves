@@ -176,10 +176,33 @@ def _label(term: Term) -> str:
     return str(getattr(term, "op", "") or getattr(term, "name", "") or getattr(term, "type", ""))
 
 
+def applied(program: Program) -> set[str]:
+    """The functions a program's terms apply."""
+    functions: set[str] = set()
+
+    def walk(term: Term) -> None:
+        if isinstance(term, App):
+            functions.add(term.function)
+        for t in subterms(term):
+            walk(t)
+
+    for _, let in program.bindings():
+        walk(let.term)
+    return functions
+
+
 def check(flat: Program, programs: list[Program]) -> None:
     """Require the rerolled `programs` (rounds first, the block last) to return what `flat`
     returns, as terms."""
     *rounds, block = programs
+    # A round is expanded wherever it is applied by name, so its name must not be that of an
+    # operation the flat block applies: that operation would be read as a call of the round.
+    names = {r.name for r in rounds}
+    captured = sorted(names & applied(flat))
+    if captured:
+        raise GenerationError(
+            f"{block.name}: rounds {captured} are named like operations the flat block applies"
+        )
     evaluator = Evaluator({r.name: r for r in rounds})
     expected, got = evaluator.run(flat), evaluator.run(block)
     if expected != got:

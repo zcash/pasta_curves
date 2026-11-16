@@ -930,9 +930,9 @@ class Program:
     arguments, for the skeleton; `clear_values` says whether the skeleton makes each extracted
     value opaque, and `lift_lets` whether it lifts every `let` of the unfolded definition to the
     top before extracting them (a definition whose state equality Lean would otherwise normalize
-    recursively extracts them as they come). `result_text`, when given, is the result line as
-    written, for a definition that returns more than its result registers' tuple (`results` are
-    then the registers it reads, for liveness). `shadow` lets the skeleton name a later binding
+    recursively extracts them as they come). `result_term`, when given, is the term the
+    definition returns, for one that returns more than its result registers' tuple: `results` are
+    then exactly the registers it reads, for liveness. `shadow` lets the skeleton name a later binding
     like an earlier one, which Lean then shadows (`skeleton.ssa_names`). `width` is the word of
     its instruction set (`Width`)."""
 
@@ -946,7 +946,7 @@ class Program:
     conventions: Conventions = dataclasses.field(default_factory=Conventions)
     clear_values: bool = True
     lift_lets: bool = True
-    result_text: str | None = None
+    result_term: Term | None = None
     shadow: bool = False
     width: Width = WIDTH64
     architecture: str = ""
@@ -956,6 +956,25 @@ class Program:
 
     def __post_init__(self) -> None:
         self.check_hygiene()
+        self.check_result()
+
+    def check_result(self) -> None:
+        """A returned term reads exactly the result registers, each bound by the definition: the
+        registers are what liveness keeps, so one the term reads but `results` omits could be
+        eliminated while still printed, and one `results` lists but the term omits would keep
+        dead code."""
+        if self.result_term is None:
+            return
+        read = term_registers(self.result_term)
+        if read != set(self.results):
+            raise GenerationError(
+                f"{self.name}: the result reads {sorted(read)}, not the results "
+                f"{sorted(self.results)}"
+            )
+        bound = {let.name for _, let in self.bindings()}
+        unbound = sorted(read - bound)
+        if unbound:
+            raise GenerationError(f"{self.name}: the result reads the unbound {unbound}")
 
     def check_hygiene(self) -> None:
         """Every argument a term reads is the argument itself, as Lean resolves the name.
