@@ -489,3 +489,6 @@ case differed. The testing leaves these gaps, each with what would close it:
   runs under it emulated both instructions from the SDM. For them, the comparison is with the SDM
   model only, on exactly the two independent carry chains the generator keeps apart. Running the
   routines on an x86-64 processor with ADX would close it.
+* **x86-64's `amontred` never negated zero.** `neg {t0}` sets the carry flag unless its operand
+  is zero; no input of the testing made that operand zero, so the case in which it clears the
+  carry was not compared with the machine. A vector constructed to make it zero would close it.
