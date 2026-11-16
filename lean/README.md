@@ -481,3 +481,7 @@ case differed. The testing leaves these gaps, each with what would close it:
   them, while CI's release tests keep them, and they change the code around each `asm!` block,
   register allocation included. Interpreting an object built with
   `CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true` would close it.
+* **ARMv7E-M was not executed on a core.** The interpreter was written from the Architecture
+  Reference Manual (DDI 0403E) for the testing, independently of `Semantics.lean`; a misreading
+  of the manual shared by both would go unseen. Running the blocks on a Cortex-M4 or M7, or under
+  `qemu-system-arm`, would close it.
