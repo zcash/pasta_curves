@@ -9,12 +9,66 @@ be dead code in the block.
 
 from __future__ import annotations
 
+import re
 import textwrap
 from collections.abc import Sequence
 
 from .ir import Dead, Program, show
+from .rust import GenerationError
 
 WIDTH = 100
+
+
+_STRUCTURE = re.compile(r"^structure (\w+) where\n((?:[ \t]+.*\n?)*)", re.MULTILINE)
+_FIELD = re.compile(r"^[ \t]+(\w+) : ")
+_BOUNDED = re.compile(r"^def Bounded \(s : (\w+)\) : Prop :=\n((?:[ \t]+.*\n?)*)", re.MULTILINE)
+
+
+def structures(text: str) -> dict[str, tuple[str, ...]]:
+    """The fields, in declaration order, of each `structure` declared in Lean text."""
+    found: dict[str, tuple[str, ...]] = {}
+    for declaration in _STRUCTURE.finditer(text):
+        fields = (_FIELD.match(line) for line in declaration.group(2).splitlines())
+        found[declaration.group(1)] = tuple(f.group(1) for f in fields if f)
+    return found
+
+
+def bounded_fields(text: str) -> dict[str, tuple[str, ...]]:
+    """For each structure whose `Bounded` predicate the text declares, the fields that
+    conjunction bounds, in its order."""
+    return {
+        d.group(1): tuple(re.findall(r"\bs\.(\w+) <", d.group(2))) for d in _BOUNDED.finditer(text)
+    }
+
+
+def check_structures(programs: Sequence[Program]) -> None:
+    """Require every field order a program assumes of a structure the programs declare to be the
+    declared one. A round's state is projected by its fields (`state_fields`), so those are the
+    structure's; a structured argument's fields (`arg_fields`) are those of the structure's
+    `Bounded` conjunction, which the skeleton projects a field's bound from, or, for a structure
+    without one, the structure's, which the validator binds positionally. The declarations are
+    text, and a reordered field would otherwise bind a value or a bound to the wrong name, Lean
+    accepting it whenever the fields' types agree."""
+    declared: dict[str, tuple[str, ...]] = {}
+    bounded: dict[str, tuple[str, ...]] = {}
+    for program in programs:
+        text = program.struct or ""
+        for table, found in ((declared, structures(text)), (bounded, bounded_fields(text))):
+            for name, fields in found.items():
+                if table.setdefault(name, fields) != fields:
+                    raise GenerationError(f"structure {name} is declared twice, differently")
+    for program in programs:
+        signature = program.signature
+        assumed = [(signature.result, program.state_fields, declared, "its result")]
+        for name, kind in signature.params:
+            table = bounded if kind in bounded else declared
+            assumed.append((kind, program.arg_fields.get(name, ()), table, name))
+        for kind, fields, table, what in assumed:
+            if kind in table and fields and fields != table[kind]:
+                raise GenerationError(
+                    f"{program.name}: {what} takes {kind}'s fields as {list(fields)}, declared "
+                    f"{list(table[kind])}"
+                )
 
 
 def docstring(text: str, width: int = WIDTH) -> str:

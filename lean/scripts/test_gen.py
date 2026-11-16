@@ -955,6 +955,19 @@ class TranslationValidationTests(unittest.TestCase):
             with self.subTest(results=results), self.assertRaisesRegex(GenerationError, message):
                 ir.Program(signature, "doc", nodes, results, result_term=term)
 
+    def test_a_structure_assumed_in_another_order_is_rejected(self) -> None:
+        programs = aarch64_blocks.programs()
+        lean.check_structures(programs)
+        declares = next(p for p in programs if p.struct and "structure DivstepState" in p.struct)
+        assert declares.struct is not None
+        swapped = declares.struct.replace("  f : Nat", "  F : Nat").replace(
+            "  g : Nat", "  f : Nat"
+        )
+        swapped = swapped.replace("  F : Nat", "  g : Nat")
+        reordered = dataclasses.replace(declares, struct=swapped)
+        with self.assertRaisesRegex(GenerationError, "takes DivstepState's fields as"):
+            lean.check_structures([reordered if p is declares else p for p in programs])
+
     def test_a_round_named_like_an_operation_is_rejected(self) -> None:
         # A helper named `addw` that computes `subw`: expanding it wherever `addw` is applied made
         # the flat block's own `addw` a call of the helper, and the check passed.
