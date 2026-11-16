@@ -71,8 +71,26 @@ def check_structures(programs: Sequence[Program]) -> None:
                 )
 
 
+def doc_text(text: str) -> str:
+    """Text for inside a `/-- ... -/` comment. Lean's block comments nest, so a `-/` in it would
+    end the comment early and a `/-` would open one that swallows the code after it: either way,
+    the rest of the text would change what Lean reads, so both are rejected."""
+    if "-/" in text or "/-" in text:
+        raise GenerationError(f"a docstring may not contain `-/` or `/-`: {text!r}")
+    return text
+
+
+def comment_text(text: str) -> str:
+    """Text for after a `--` comment, which ends at the line's end: a line break in it would make
+    the rest of the text Lean code, so it is rejected."""
+    if "\n" in text or "\r" in text:
+        raise GenerationError(f"a line comment may not contain a line break: {text!r}")
+    return text
+
+
 def docstring(text: str, width: int = WIDTH) -> str:
     """A `/-- ... -/` docstring wrapped to the repository's line width."""
+    doc_text(text)
     lines = textwrap.TextWrapper(
         width=width, break_long_words=False, break_on_hyphens=False, initial_indent="/-- "
     ).wrap(text)
@@ -108,9 +126,11 @@ def body_lines(program: Program) -> list[tuple[str | None, str | None]]:
     lines: list[tuple[str | None, str | None]] = []
     for _, let, live in program.kept():
         if live:
-            lines.append((f"  let {let.name} := {let.expr}", let.trailing))
+            trailing = let.trailing
+            lines.append((f"  let {let.name} := {let.expr}", trailing and comment_text(trailing)))
         elif let.dead is Dead.COMMENT:
-            lines.append((None, f"  -- {let.comment}: {let.name} = {let.expr} is never read"))
+            text = comment_text(f"{let.comment}: {let.name} = {let.expr} is never read")
+            lines.append((None, f"  -- {text}"))
         elif let.dead is Dead.ERROR:
             raise ValueError(f"dead computation: {let.name} := {let.expr} ({let.comment})")
     return lines
@@ -171,14 +191,14 @@ def state_structure(
     the `Nat` ones are the words."""
     lines = [doc, f"structure {name} where"]
     for field, field_doc, kind in fields:
-        lines += [f"  /-- {field_doc} -/", f"  {field} : {kind}"]
+        lines += [f"  /-- {doc_text(str(field_doc))} -/", f"  {field} : {kind}"]
     words = [field for field, _, kind in fields if kind == "Nat"]
     lines += [
         "  deriving DecidableEq, Repr",
         "",
         f"namespace {name}",
         "",
-        f"/-- Every {words_doc} is below `2^64`. -/",
+        f"/-- Every {doc_text(words_doc)} is below `2^64`. -/",
         f"def Bounded (s : {name}) : Prop :=",
     ]
     lines += wrap_words("", joined([f"s.{f} < 2^64" for f in words], " ∧"), "")
@@ -186,7 +206,7 @@ def state_structure(
         lines += [
             "",
             (
-                f"/-- {value_doc} -/"
+                f"/-- {doc_text(value_doc)} -/"
                 if value_doc is not None
                 else f"/-- The accumulator's value: limbs `{'`, `'.join(value)}` with weights "
                 f"`2^0` to `2^{64 * (len(value) - 1)}`. -/"

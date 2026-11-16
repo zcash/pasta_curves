@@ -968,6 +968,24 @@ class TranslationValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(GenerationError, "takes DivstepState's fields as"):
             lean.check_structures([reordered if p is declares else p for p in programs])
 
+    def test_text_that_would_escape_its_comment_is_rejected(self) -> None:
+        for doc in ("ends early -/ def evil := 0", "opens /- a nested comment"):
+            with self.subTest(doc=doc), self.assertRaisesRegex(GenerationError, "docstring"):
+                lean.docstring(doc)
+        signature = ir.Signature("blk", (("x", "Nat"),), "Nat")
+        nodes: list[ir.Node] = [
+            ir.Scalar(dest="x", name="x"),
+            ir.Word(
+                comment="add\ntheorem evil : False",
+                dest="y",
+                function="addw",
+                args=(ir.Reg("x"), ir.Reg("x")),
+            ),
+        ]
+        program = ir.Program(signature, "doc", nodes, ["y"])
+        with self.assertRaisesRegex(GenerationError, "line break"):
+            lean.definition(program, 40)
+
     def test_a_round_named_like_an_operation_is_rejected(self) -> None:
         # A helper named `addw` that computes `subw`: expanding it wherever `addw` is applied made
         # the flat block's own `addw` a call of the helper, and the check passed.
