@@ -445,6 +445,55 @@ class RustTypeTests(unittest.TestCase):
             armv7em_blocks.programs(source.replace(old, old.replace("a: u32", "a: u64")))
 
 
+class DebugAssertTests(unittest.TestCase):
+    """A `debug_assert!` before the block is not transcribed, so it must have no side effect."""
+
+    BLOCK = """fn f(lhs: &Limbs, inv: u64) -> [u64; 1] {
+    let mut a0 = lhs[0];
+    ASSERTION
+    let r0: u64;
+    unsafe {
+        asm!("adds {r0}, {a0}, {inv}", a0 = in(reg) a0, inv = in(reg) inv, r0 = out(reg) r0,
+            options(pure, nomem, nostack));
+    }
+    [r0]
+}
+"""
+
+    def parse(self, assertion: str) -> rust.ParsedFunction:
+        return rust.parse_function(
+            self.BLOCK.replace("ASSERTION", assertion),
+            "f",
+            ["lhs", "inv"],
+            1,
+            required_options={"pure", "nomem", "nostack"},
+        )
+
+    def test_comparisons_are_accepted(self) -> None:
+        for assertion in (
+            'debug_assert!(lhs[0] <= inv, "the message = {}");',
+            "debug_assert_eq!(inv as u32, u32::MAX);",
+            "debug_assert!(lhs[3] != 1 << 62 && !(inv == 0));",
+        ):
+            with self.subTest(assertion=assertion):
+                self.parse(assertion)
+
+    def test_an_assertion_that_may_write_is_rejected(self) -> None:
+        # In a debug build, which CI runs, `{ a0 = lhs[1]; true }` makes the block read lhs[1].
+        for assertion in (
+            "debug_assert!({ a0 = lhs[1]; true });",
+            "debug_assert!(touch(&mut a0));",
+            "debug_assert!(lhs.iter().all(|x| *x < inv));",
+        ):
+            with (
+                self.subTest(assertion=assertion),
+                self.assertRaisesRegex(
+                    rust.GenerationError, "debug_assert! may have a side effect"
+                ),
+            ):
+                self.parse(assertion)
+
+
 class LateOutputTests(unittest.TestCase):
     """A `lateout` may share a register with an allocated input, so it is accepted only beside
     fixed-register inputs."""

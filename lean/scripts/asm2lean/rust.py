@@ -797,6 +797,25 @@ _JOINED_U32_RETURN_ITEM = re.compile(
 )
 
 
+# What a `debug_assert!` before the block may not contain, outside its string literals: an
+# assignment, a block, a call (a callee could write anything), or a keyword that binds or loops.
+_SIDE_EFFECTS = re.compile(
+    r"(?<![=!<>])=(?!=)|[{}]|[\w)\]]\s*\(|\b(?:mut|unsafe|asm|let|loop|while|for|return|match)\b"
+)
+
+
+def _check_side_effect_free(arguments: str, function: str) -> None:
+    """A `debug_assert!` before the block runs in a debug build, which the transcription does not
+    model: its arguments must not be able to change what the block reads. They are accepted only
+    as comparisons of operands, casts, indexing, and literals."""
+    found = _SIDE_EFFECTS.search(arguments)
+    if found is not None:
+        raise GenerationError(
+            f"{function}: debug_assert! may have a side effect (`{found.group(0).strip()}`); "
+            "only comparisons of operands are accepted before the block"
+        )
+
+
 def _parse_function_prefix(
     body: str,
     masked_body: str,
@@ -832,6 +851,7 @@ def _parse_function_prefix(
             closing = matching_delimiter(body, opening, "(", ")")
             if closing >= asm_start:
                 raise GenerationError(f"{function}: debug_assert! overlaps asm!")
+            _check_side_effect_free(masked_body[opening + 1 : closing], function)
             pos = _skip_trivia(body, closing + 1)
             if pos >= asm_start or body[pos] != ";":
                 raise GenerationError(f"{function}: debug_assert! must end with `;`")
