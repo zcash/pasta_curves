@@ -468,3 +468,16 @@ conversion out of Montgomery form, and inversion on all three backends:
 The proof covers the modelled instructions and translated Rust behavior under their stated operand
 contracts. Compiler register allocation, pointer validity, inline-assembly declarations, and the
 hand-reviewed boundaries in the trust story above remain outside the formal model.
+
+## What the transcription's differential testing does not cover
+
+Beside the proofs, the transcriptions were tested against the machine code: each generated
+definition, evaluated in Python from its Lean text, was compared with the routine executed natively
+(AArch64), under Rosetta 2 and an executable model of Intel's SDM (x86-64), and under an
+interpreter of the ARMv7-M Architecture Reference Manual over the compiled object (ARMv7E-M). No
+case differed. The testing leaves these gaps, each with what would close it:
+
+* **ARMv7E-M was executed without debug assertions.** The interpreted object was built without
+  them, while CI's release tests keep them, and they change the code around each `asm!` block,
+  register allocation included. Interpreting an object built with
+  `CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true` would close it.
