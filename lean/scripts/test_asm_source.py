@@ -379,6 +379,38 @@ class SurroundingCodeTests(unittest.TestCase):
                 self.assertEqual(generate(commented), expected)
 
 
+class MacroArmOrderTests(unittest.TestCase):
+    """An invocation expands the first arm that matches, as `macro_rules!` does."""
+
+    IDENT_ARM = r'    ($r:ident) => { concat!("adds {r0}, {", stringify!($r), "}, {a0}\n") };'
+    LITERAL_ARM = r'    (b) => { "subs {r0}, {a0}, {b}\n" };'
+    BLOCK = """fn f(a0: u64, b: u64) -> [u64; 1] {
+    let r0: u64;
+    unsafe {
+        asm!(step!(b), a0 = in(reg) a0, b = in(reg) b, r0 = out(reg) r0,
+            options(pure, nomem, nostack));
+    }
+    [r0]
+}
+"""
+
+    def instructions(self, *arms: str) -> tuple[str, ...]:
+        source = "macro_rules! step {\n" + "\n".join(arms) + "\n}\n" + self.BLOCK
+        parsed = rust.parse_function(
+            source, "f", ["a0", "b"], 1, required_options={"pure", "nomem", "nostack"}
+        )
+        return parsed.instructions
+
+    def test_the_first_matching_arm_is_expanded(self) -> None:
+        # rustc expands `step!(b)` to the first arm that matches, whichever it is.
+        self.assertEqual(
+            self.instructions(self.IDENT_ARM, self.LITERAL_ARM), ("adds {r0}, {b}, {a0}",)
+        )
+        self.assertEqual(
+            self.instructions(self.LITERAL_ARM, self.IDENT_ARM), ("subs {r0}, {a0}, {b}",)
+        )
+
+
 class LateOutputTests(unittest.TestCase):
     """A `lateout` may share a register with an allocated input, so it is accepted only beside
     fixed-register inputs."""

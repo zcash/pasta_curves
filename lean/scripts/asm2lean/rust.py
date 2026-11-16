@@ -436,36 +436,26 @@ def _invocation_tokens(pattern: str) -> tuple[tuple[str, str], ...]:
 def _resolve_macro_invocation(
     arms: Mapping[str, object], pattern: str
 ) -> tuple[str, tuple[str, ...]]:
-    """Select one restricted macro arm and return its metavariable arguments."""
+    """Select the macro arm an invocation expands, and return its metavariable arguments. As
+    `macro_rules!` does, the arm is the FIRST, in definition order, whose pattern matches: an arm
+    of literal tokens defined after a metavariable arm that matches too is never used."""
     arguments = _invocation_tokens(pattern)
-    matches: list[tuple[str, tuple[str, ...], int]] = []
     for key in arms:
         parts = _split_macro_tokens(key)
         if len(parts) != len(arguments):
             continue
         values: list[str] = []
-        literal_count = 0
-        for part, (kind, value) in zip(parts, arguments):
+        for part, (kind, value) in zip(parts, arguments, strict=True):
             if part in ("$ident", "$literal"):
                 if part != f"${kind}":
                     break
                 values.append(value)
             elif kind != "ident" or part != value:
                 break
-            else:
-                literal_count += 1
         else:
-            matches.append((key, tuple(values), literal_count))
-    if not matches:
-        display = ", ".join(_split_macro_tokens(pattern))
-        raise GenerationError(f"macro has no arm for `{display}`")
-    most_literals = max(match[2] for match in matches)
-    matches = [match for match in matches if match[2] == most_literals]
-    if len(matches) != 1:
-        display = ", ".join(_split_macro_tokens(pattern))
-        raise GenerationError(f"macro invocation `{display}` matches multiple arms")
-    key, selected, _ = matches[0]
-    return key, selected
+            return key, tuple(values)
+    display = ", ".join(_split_macro_tokens(pattern))
+    raise GenerationError(f"macro has no arm for `{display}`")
 
 
 def _macro_literal(text: str, start: int) -> tuple[str, int]:
