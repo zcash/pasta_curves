@@ -11,8 +11,7 @@ sys.dont_write_bytecode = True
 
 
 from asm2lean import rust
-from asm2lean.ir import Lit, Node, Program
-from asm2lean.isa.armv7em import Mov
+from asm2lean.ir import Lit, Mov, Node, Program
 from asm2lean.skeleton import skeleton
 from pasta.architectures import armv7em
 

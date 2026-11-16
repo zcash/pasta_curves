@@ -428,8 +428,9 @@ class Load(Node):
         return [self._let(self.dest, Get(Arg(self.arg), self.field), dead=Dead.COMMENT)]
 
     def prove(self, step: Step) -> None:
-        step.eq(step.name, f"{self.arg}.{self.field}")
-        step.bound(step.name, step.argument_bound(self.arg, self.field))
+        width = step.state.program.width
+        proof = step.argument_bound(self.arg, self.field)
+        width.bound(step, step.name, f"{self.arg}.{self.field}", proof)
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -443,8 +444,8 @@ class Scalar(Node):
         return [self._let(self.dest, Arg(self.name))]
 
     def prove(self, step: Step) -> None:
-        step.eq(step.name, self.name)
-        step.bound(step.name, step.state.program.bound_hyp(self.name))
+        program = step.state.program
+        program.width.bound(step, step.name, self.name, program.bound_hyp(self.name))
 
 
 # -- the operations every instruction set shares ---------------------------------------------
@@ -459,9 +460,8 @@ class Mov(Node):
         return [self._let(self.dest, self.a)]
 
     def prove(self, step: Step) -> None:
-        a = step.r(self.a)
-        step.eq(step.name, a)
-        step.bound(step.name, step.lt64(self.a))
+        width = step.state.program.width
+        width.bound(step, step.name, step.r(self.a), step.lt64(self.a))
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)

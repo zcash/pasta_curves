@@ -34,8 +34,10 @@ from ..ir import (
     Ite,
     Let,
     Lit,
+    Mov,
     Node,
     Reg,
+    Scalar,
     Term,
     apply,
     dst,
@@ -74,39 +76,20 @@ def head(step: Step) -> str:
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
-class Param(Node):
-    """A word argument, or a field of one read as a word: `dest := value`, bounded below `2^32`
-    by the hypothesis `h<value>`."""
-
-    dest: str = dst()
-    value: Term = src()
-
-    def lets(self) -> list[Let]:
-        return [self._let(self.dest, self.value)]
-
-    def prove(self, step: Step) -> None:
-        text = step.r(self.value)
-        bound32(step, step.name, text, f"h{text}")
-
-
-@dataclasses.dataclass(frozen=True, kw_only=True)
-class StateLoad(Node):
-    """A word of a structured argument: `dest := arg.field`, bounded by the projection of the
-    hypothesis `h<arg>` that bounds the field."""
+class Field(Node):
+    """A register holding a field of a structure argument on entry, `dest := arg.field`, bounded
+    by the hypothesis on that field, `h<arg>.<field>` (a loop round's carried registers)."""
 
     dest: str = dst()
     arg: str
     field: str
 
     def lets(self) -> list[Let]:
-        return [self._let(self.dest, Get(Arg(self.arg), self.field), dead=Dead.COMMENT)]
+        return [self._let(self.dest, Get(Arg(self.arg), self.field))]
 
     def prove(self, step: Step) -> None:
-        from ..skeleton import projection
-
-        fields = step.state.program.arg_fields[self.arg]
-        proof = f"h{self.arg}.{projection(fields, self.field)}"
-        bound32(step, step.name, f"{self.arg}.{self.field}", proof)
+        value = f"{self.arg}.{self.field}"
+        bound32(step, step.name, value, f"h{value}")
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -159,20 +142,6 @@ class Zero(Node):
 
 
 # -- instructions ----------------------------------------------------------------------------
-
-
-@dataclasses.dataclass(frozen=True, kw_only=True)
-class Mov(Node):
-    """`mov`, and a load or store through a memory word's binding: `dest := a`."""
-
-    dest: str = dst()
-    a: Term = src()
-
-    def lets(self) -> list[Let]:
-        return [self._let(self.dest, self.a)]
-
-    def prove(self, step: Step) -> None:
-        bound32(step, step.name, step.r(self.a), step.lt64(self.a))
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -639,12 +608,18 @@ class Armv7emLifter(Lifter):
             self.known.add(name)
             self.memory[(pointer, offset)] = name
 
-    def bind_argument(self, register: str, value: Term) -> None:
-        """A register holding a word argument, or a word of one, on entry."""
+    def bind_argument(self, register: str, argument: str, field: str | None = None) -> None:
+        """A register holding a word argument, or a field of one, on entry."""
         self.check_declared(register)
         if register in self.known:
             raise GenerationError(f"duplicate initial binding for {register}")
-        self.nodes.append(Param(comment=f"input {register}", dest=register, value=value))
+        comment = f"input {register}"
+        node: Node
+        if field is None:
+            node = Scalar(comment=comment, dest=register, name=argument)
+        else:
+            node = Field(comment=comment, dest=register, arg=argument, field=field)
+        self.nodes.append(node)
         self.known.add(register)
 
     # -- operands of an instruction

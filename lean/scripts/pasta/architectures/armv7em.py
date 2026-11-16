@@ -35,11 +35,13 @@ from asm2lean.ir import (
     Get,
     Infix,
     Lit,
+    Load,
     Node,
     Prod,
     Program,
     Project,
     Reg,
+    Scalar,
     Signature,
     Term,
     Tuple,
@@ -50,8 +52,6 @@ from asm2lean.isa.armv7em import (
     Armv7emLifter,
     Bind,
     Join,
-    Param,
-    StateLoad,
     lift_all,
 )
 from asm2lean.lean import definition
@@ -394,12 +394,12 @@ def primitive(source: str, block: Primitive) -> Program:
                 )
             pointers.add(d.name)
         elif d.value in block.args:
-            lifter.bind_argument(d.name, Arg(d.value))
+            lifter.bind_argument(d.name, d.value)
         elif d.value in parsed.locals:
             argument, index = parsed.locals[d.value]
             if index is not None:
                 raise GenerationError(f"{fn}: unsupported indexed input operand {d.value}")
-            lifter.bind_argument(d.name, Arg(argument))
+            lifter.bind_argument(d.name, argument)
         else:
             raise GenerationError(f"{fn}: unsupported input operand expression {d.value}")
     lift_all(lifter, parsed.instructions)
@@ -705,7 +705,7 @@ def from_mont_programs(source: str) -> list[Program]:
         "Nat × Nat",
         "The first instruction of one checked `from_mont_round!` invocation: compute the Montgomery "
         "quotient and the subtraction carry used by the next instruction.",
-        [Param(comment="low accumulator word", dest="w0", value=Arg("w0")), *quotient],
+        [Scalar(comment="low accumulator word", dest="w0", name="w0"), *quotient],
         ["w0", "c"],
         result_text="  (w0, c)",
         struct=f"{FROM_MONT_STATE_STRUCT}\n\n{FROM_MONT_PREFIX_STRUCT}",
@@ -719,8 +719,8 @@ def from_mont_programs(source: str) -> list[Program]:
         "The second instruction of one checked `from_mont_round!` invocation: self-subtract the "
         "quotient under the first instruction's carry.",
         [
-            Param(comment="Montgomery quotient", dest="w0", value=Arg("quotient")),
-            Param(comment="subtraction carry", dest="c", value=Arg("subCarry")),
+            Scalar(comment="Montgomery quotient", dest="w0", name="quotient"),
+            Scalar(comment="subtraction carry", dest="c", name="subCarry"),
             *self_sub,
         ],
         ["r12"],
@@ -734,7 +734,7 @@ def from_mont_programs(source: str) -> list[Program]:
         "Nat",
         "The third instruction of one checked `from_mont_round!` invocation: mask the "
         "self-subtraction result to the low-word cancellation carry.",
-        [Param(comment="self-subtraction result", dest="r12", value=Arg("selfSub")), *mask],
+        [Scalar(comment="self-subtraction result", dest="r12", name="selfSub"), *mask],
         ["r12"],
         result_text="  r12",
         clear_values=False,
@@ -783,12 +783,9 @@ def from_mont_programs(source: str) -> list[Program]:
         "the sparse modulus by the quotient and propagate its carry through the accumulator.",
         [
             *suffix_lifter.nodes,
-            *(
-                StateLoad(comment="accumulator argument", dest=f, arg="st", field=f)
-                for f in fields[1:]
-            ),
-            Param(comment="Montgomery quotient", dest="w0", value=Arg("q")),
-            Param(comment="low-word cancellation carry", dest="r12", value=Arg("carry")),
+            *(Load(comment="accumulator argument", dest=f, arg="st", field=f) for f in fields[1:]),
+            Scalar(comment="Montgomery quotient", dest="w0", name="q"),
+            Scalar(comment="low-word cancellation carry", dest="r12", name="carry"),
             *suffix,
         ],
         [*fields[1:], "tmp"],
@@ -845,7 +842,7 @@ def from_mont_programs(source: str) -> list[Program]:
         [
             *subtraction_lifter.nodes,
             *(
-                StateLoad(comment="post-round accumulator argument", dest=f, arg="st", field=f)
+                Load(comment="post-round accumulator argument", dest=f, arg="st", field=f)
                 for f in fields
             ),
             *subtraction,
@@ -866,10 +863,10 @@ def from_mont_programs(source: str) -> list[Program]:
         [
             *addback_lifter.nodes,
             *(
-                StateLoad(comment="subtraction helper output", dest=f, arg="sub", field=f)
+                Load(comment="subtraction helper output", dest=f, arg="sub", field=f)
                 for f in fields
             ),
-            StateLoad(comment="subtraction borrow mask", dest="r12", arg="sub", field="mask"),
+            Load(comment="subtraction borrow mask", dest="r12", arg="sub", field="mask"),
             *addback,
         ],
         list(fields),
@@ -1024,7 +1021,7 @@ def batch_programs(source: str) -> list[Program]:
 
     lifter = Armv7emLifter({d.name: d.kind for d in declarations}, loop=True)
     for register in CARRIED:
-        lifter.bind_argument(register, Get(Arg("st"), register))
+        lifter.bind_argument(register, "st", register)
     lift_all(lifter, instructions)
     if not lifter.label_seen or not lifter.branch_seen:
         raise GenerationError("batch: loop label and backward branch must both be present")
@@ -1042,10 +1039,7 @@ def batch_programs(source: str) -> list[Program]:
         "The final five instructions of one validated `batch` loop iteration: shift packed `g`, "
         "decrement the public count, and compute the backward-branch decision.",
         [
-            *(
-                Param(comment=f"input {r}", dest=r, value=Arg(r))
-                for r in ("pglo", "pghi", "remaining")
-            ),
+            *(Scalar(comment=f"input {r}", dest=r, name=r) for r in ("pglo", "pghi", "remaining")),
             *lifter.nodes[split:],
         ],
         finish_results,
