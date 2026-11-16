@@ -6,6 +6,8 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.6.3] - 2026-11-16
 ### Added
 - An ARMv7E-M assembly backend for the `asm` feature flag on the
   `thumbv7em-none-eabihf` target (Cortex-M4 and Cortex-M7 class cores):
