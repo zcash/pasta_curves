@@ -128,6 +128,11 @@ class Lifter:
         node = dataclasses.replace(node, comment=self.text, pc=self.pc)
         if self.zero_register is not None and node.writes() == [self.zero_register]:
             return
+        # A name a node writes on its own account (a pair, a flag) must not be an operand's, or
+        # the operand's value would be silently replaced by it.
+        clash = sorted(node.implicit_writes() & set(self.directions))
+        if clash:
+            raise GenerationError(f"operands {clash} are named like what the instruction writes")
         self.nodes.append(node)
         self.known.update(node.writes())
         self.written.update(node.writes())

@@ -463,12 +463,11 @@ class Umaal(Node):
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class Bne(Node):
-    """`bne 2b`: whether the loop's backward branch is taken, `(if z = 0 then 1 else 0)`."""
-
-    dest: str = dst()
+    """`bne 2b`: whether the loop's backward branch is taken, `branch := (if z = 0 then 1 else
+    0)`, under the fixed name `branch`."""
 
     def lets(self) -> list[Let]:
-        return [self._let(self.dest, Ite(Reg("z"), Lit("1"), Lit("0")))]
+        return [self._let("branch", Ite(Reg("z"), Lit("1"), Lit("0")))]
 
     def prove(self, step: Step) -> None:
         step.eq(step.name, f"(if {step.r(Reg('z'))} = 0 then 1 else 0)")
@@ -728,7 +727,7 @@ class Armv7emLifter(Lifter):
             if self.branch_seen:
                 raise GenerationError("duplicate loop branch")
             self.branch_seen = True
-            self.emit(Bne(dest="branch"))
+            self.emit(Bne())
         elif op == "ldr":
             self.require_count(ins, 2)
             pointer, offset = self.address(operands[1])

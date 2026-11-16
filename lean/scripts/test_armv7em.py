@@ -624,6 +624,23 @@ class ARMv7EMGeneratorTests(unittest.TestCase):
             stored.lift("str r2, [r0, #4]", 1)
         stored.lift("str r2, [r1, #4]", 1)
 
+    def test_an_operand_named_like_an_implicit_write_is_rejected(self) -> None:
+        # `adcs` binds its pair `adcs_pair`, and a loop's `subs` its zero flag `z`.
+        for pair, setup, line in (
+            ("adcs_pair", ["adds {adcs_pair}, {adcs_pair}, {b}"], "adcs {a}, {a}, {b}"),
+            ("z", [], "subs {a}, {a}, #1"),
+        ):
+            lifter = Armv7emLifter({"a": "inout", "b": "in", pair: "inout"}, loop=True)
+            for register in ("a", "b", pair):
+                lifter.bind_argument(register, register)
+            for pc, text in enumerate(setup):
+                lifter.lift(text, pc)
+            with (
+                self.subTest(pair=pair),
+                self.assertRaisesRegex(rust.GenerationError, f"operands \\['{pair}'\\] are named"),
+            ):
+                lifter.lift(line, len(setup))
+
     def test_cond_sub_rejects_malformed_offsets_uninitialized_memory_and_flags(self) -> None:
         malformed_offset = self.source.replace("cond_sub_word!(4),", "cond_sub_word!(2),", 1)
         self.assert_rejected(malformed_offset, "memory offset must be one of")
