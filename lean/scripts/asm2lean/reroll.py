@@ -143,6 +143,51 @@ def alpha_match(source: list[Node], target: list[Node]) -> dict[str, str]:
     return forward
 
 
+# -- checked splits ------------------------------------------------------------------------------
+#
+# A block too long for its proof to take at once is split into helpers, each a contiguous range of
+# its instructions. A split is checked twice: each part must come from exactly the instructions it
+# claims, and the parts in order must be the whole, node for node; and the block calling the
+# helpers must compute what the flat block computes (`validate.check`).
+
+
+def fingerprint(nodes: Sequence[Node]) -> list[tuple[tuple[object, ...], int | None]]:
+    """What two pieces of a block must agree on to be the same: each node up to its comment, and
+    its position."""
+    return [(n.key(), n.pc) for n in nodes]
+
+
+def normalized(nodes: Sequence[Node], first: int, end: int, renaming: dict[str, str]) -> list[Node]:
+    """The nodes of the instructions `first` to `end - 1`, their registers renamed by `renaming`
+    and their positions relative to `first`."""
+    return [
+        dataclasses.replace(n.renamed(renaming), pc=n.pc - first)
+        for n in nodes
+        if n.pc is not None and first <= n.pc < end
+    ]
+
+
+def pcs(nodes: Sequence[Node]) -> list[int]:
+    """The positions of the instructions `nodes` come from, in order, each once."""
+    return sorted({n.pc for n in nodes if n.pc is not None})
+
+
+def covers(block: str, nodes: Sequence[Node], positions: range, what: str) -> None:
+    """Require the part `what` of `block` to come from exactly the instructions at `positions`."""
+    if pcs(nodes) != list(positions):
+        raise GenerationError(
+            f"{block}: {what} does not cover PCs {positions.start} through {positions.stop - 1}"
+        )
+
+
+def reconstructs(
+    block: str, parts: Sequence[Sequence[Node]], whole: Sequence[Node], what: str
+) -> None:
+    """Require the parts, in order, to be `whole` exactly; `what` says which split failed."""
+    if fingerprint([n for part in parts for n in part]) != fingerprint(whole):
+        raise GenerationError(f"{block}: {what}")
+
+
 # -- a prologue, rounds, and an epilogue -----------------------------------------------------------
 
 

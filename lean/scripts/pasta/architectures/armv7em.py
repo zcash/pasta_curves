@@ -9,9 +9,12 @@ against the flat lifted block before it is used:
   register, then a final reduction. The invocations must be one round under their rotations: the
   round is then split into its quotient prefix (itself three one-instruction helpers) and its sparse
   multiply/carry suffix, and the final reduction into its subtraction and its masked add-back. Each
-  split must reconstruct the instructions it splits, in order.
+  split must reconstruct the instructions it splits, in order (`reroll.covers`,
+  `reroll.reconstructs`), and the factored block, every helper expanded, must compute what the flat
+  block computes (`validate.check`).
 - `batch` is a loop. Its body is one round, carried in a structure with the loop's public count and
-  flags, and its last five instructions a helper of their own; the Rust around the block, and
+  flags, and its last five instructions a helper of their own, the round with the helper expanded
+  validated against the flat loop body; the Rust around the block, and
   `divstep59`, which composes three batches, are compositions whose source must be exactly the Rust
   this module models.
 
@@ -26,7 +29,7 @@ import dataclasses
 import re
 from collections.abc import Mapping, Sequence
 
-from asm2lean import rust
+from asm2lean import reroll, rust, validate
 from asm2lean.block import Target
 from asm2lean.ir import (
     App,
@@ -253,8 +256,10 @@ def program(
     arg_fields: Mapping[str, Sequence[str]] | None = None,
     clear_values: bool = True,
     lift_lets: bool = True,
+    state_fields: Sequence[str] = (),
 ) -> Program:
-    """A definition of this architecture's transcription."""
+    """A definition of this architecture's transcription. `state_fields` names the fields of the
+    structure it returns, if it returns one, for the validator to project."""
     fields = {"value": LIMBS, "modulus": LIMBS, **(arg_fields or {})}
     return CONVENTIONS.program(
         TARGET.isa.name,
@@ -268,6 +273,7 @@ def program(
         lift_lets=lift_lets,
         result_text=result_text,
         width=TARGET.isa.width,
+        state_fields=tuple(state_fields),
         # The proofs were written against the naming in which a later binding may shadow an
         # earlier one of the same name (`fromMontBlock`'s `r0_4`, a memory word and a register).
         shadow=True,
@@ -459,41 +465,6 @@ def primitive(source: str, block: Primitive) -> Program:
 # -- `from_mont` ---------------------------------------------------------------------------------
 
 
-def fingerprint(nodes: Sequence[Node]) -> list[tuple[tuple[object, ...], int | None]]:
-    """What two pieces of a block must agree on to be the same: each node up to its comment, and
-    its position."""
-    return [(n.key(), n.pc) for n in nodes]
-
-
-def normalized(nodes: Sequence[Node], first: int, end: int, renaming: dict[str, str]) -> list[Node]:
-    """The nodes of the instructions `first` to `end - 1`, their registers renamed by `renaming`
-    and their positions relative to `first`."""
-    return [
-        dataclasses.replace(n.renamed(renaming), pc=n.pc - first)
-        for n in nodes
-        if n.pc is not None and first <= n.pc < end
-    ]
-
-
-def pcs(nodes: Sequence[Node]) -> list[int]:
-    """The positions of the instructions `nodes` come from, in order, each once."""
-    return sorted({n.pc for n in nodes if n.pc is not None})
-
-
-def covers(nodes: Sequence[Node], positions: range, what: str) -> None:
-    """Require `nodes` to come from exactly the instructions at `positions`."""
-    if pcs(nodes) != list(positions):
-        raise GenerationError(
-            f"from_mont: {what} does not cover PCs {positions.start} through {positions.stop - 1}"
-        )
-
-
-def reconstructs(parts: Sequence[Sequence[Node]], whole: Sequence[Node], what: str) -> None:
-    """Require the parts, in order, to be `whole` exactly."""
-    if fingerprint([n for part in parts for n in part]) != fingerprint(whole):
-        raise GenerationError(f"from_mont: {what}")
-
-
 FROM_MONT_DECLARATIONS = (
     ("r0", "inout", "value.as_ptr()", "word1"),
     ("r1", "in", "modulus.as_ptr()", None),
@@ -552,10 +523,13 @@ def check_round_split(
 ) -> None:
     """Require the round's quotient prefix and sparse suffix to cover PCs 0 to 2 and 3 to 20,
     and to be the round exactly."""
-    covers(prefix, range(3), "quotient prefix")
-    covers(suffix, range(3, ROUND), "sparse suffix")
-    reconstructs(
-        [prefix, suffix], whole, "factored helpers do not reconstruct the normalized round"
+    reroll.covers("from_mont", prefix, range(3), "quotient prefix")
+    reroll.covers("from_mont", suffix, range(3, ROUND), "sparse suffix")
+    reroll.reconstructs(
+        "from_mont",
+        [prefix, suffix],
+        whole,
+        "factored helpers do not reconstruct the normalized round",
     )
 
 
@@ -569,9 +543,10 @@ def check_prefix_split(
     exactly."""
     parts = (("quotient", quotient), ("self-subtraction", self_sub), ("mask", mask))
     for pc, (what, part) in enumerate(parts):
-        if pcs(part) != [pc]:
+        if reroll.pcs(part) != [pc]:
             raise GenerationError(f"from_mont: {what} helper does not cover PC {pc}")
-    reconstructs(
+    reroll.reconstructs(
+        "from_mont",
         [quotient, self_sub, mask],
         prefix,
         "short prefix helpers do not reconstruct PCs 0 through 2",
@@ -583,12 +558,15 @@ def check_final_split(
 ) -> None:
     """Require the final reduction's subtraction and add-back to cover PCs 0 to 13 and 14 to 30,
     and to be the final reduction exactly."""
-    if pcs(subtraction) != list(range(14)):
+    if reroll.pcs(subtraction) != list(range(14)):
         raise GenerationError("from_mont: final subtraction helper does not cover PCs 0 through 13")
-    if pcs(addback) != list(range(14, len(FROM_MONT_FINAL))):
+    if reroll.pcs(addback) != list(range(14, len(FROM_MONT_FINAL))):
         raise GenerationError("from_mont: final add-back helper does not cover PCs 14 through 30")
-    reconstructs(
-        [subtraction, addback], final, "final reduction helpers do not reconstruct PCs 0 through 30"
+    reroll.reconstructs(
+        "from_mont",
+        [subtraction, addback],
+        final,
+        "final reduction helpers do not reconstruct PCs 0 through 30",
     )
 
 
@@ -599,15 +577,15 @@ def round_nodes(flat: Sequence[Node], site: int) -> list[Node]:
     registers = ring[site:] + ring[:site]
     start = FIRST_ROUND + ROUND * site
     renaming = dict(zip(registers, (*FROM_MONT_STATE_FIELDS, "tmp"), strict=True))
-    return normalized(flat, start, start + ROUND, renaming)
+    return reroll.normalized(flat, start, start + ROUND, renaming)
 
 
 def final_nodes(flat: Sequence[Node]) -> list[Node]:
     """The final reduction of the flat block, its registers renamed to the state's fields, and its
     positions relative to its first instruction."""
     renaming = dict(zip(FROM_MONT_FINAL_REGISTERS, FROM_MONT_STATE_FIELDS, strict=True))
-    final = normalized(flat, FINAL, FINAL + len(FROM_MONT_FINAL), renaming)
-    if pcs(final) != list(range(len(FROM_MONT_FINAL))):
+    final = reroll.normalized(flat, FINAL, FINAL + len(FROM_MONT_FINAL), renaming)
+    if reroll.pcs(final) != list(range(len(FROM_MONT_FINAL))):
         raise GenerationError("from_mont: final reduction does not cover PCs 177 through 207")
     return final
 
@@ -683,7 +661,9 @@ def from_mont_programs(source: str) -> list[Program]:
         raise GenerationError(
             "from_mont: instructions outside the eight macro calls changed origin"
         )
-    if not rounds[0] or any(fingerprint(r) != fingerprint(rounds[0]) for r in rounds[1:]):
+    if not rounds[0] or any(
+        reroll.fingerprint(r) != reroll.fingerprint(rounds[0]) for r in rounds[1:]
+    ):
         raise GenerationError("from_mont: macro rounds differ after the exact register rotation")
     if tuple(rotations[-1][1:]) != FROM_MONT_FINAL_REGISTERS:
         raise GenerationError("from_mont: post-round-8 register mapping differs")
@@ -772,6 +752,7 @@ def from_mont_programs(source: str) -> list[Program]:
         ],
         ["quotient", "carry"],
         lift_lets=False,
+        state_fields=("quotient", "carry"),
     )
     suffix_lifter = Armv7emLifter({"r1": "in"})
     suffix_lifter.bind_memory("r1", "modulus")
@@ -790,6 +771,7 @@ def from_mont_programs(source: str) -> list[Program]:
         ],
         [*fields[1:], "tmp"],
         arg_fields=state,
+        state_fields=fields,
     )
     round_program = program(
         "fromMontRound",
@@ -824,6 +806,7 @@ def from_mont_programs(source: str) -> list[Program]:
         ],
         list(fields),
         arg_fields=state,
+        state_fields=fields,
     )
 
     # The final reduction, split where the add-back mask is formed.
@@ -850,6 +833,7 @@ def from_mont_programs(source: str) -> list[Program]:
         [*fields, "c", "r12"],
         struct=FROM_MONT_FINAL_SUBTRACTION_STRUCT,
         arg_fields=state,
+        state_fields=(*fields, "carry", "mask"),
     )
     sub_fields = (*fields, "carry", "mask")
     addback_lifter = Armv7emLifter({"r1": "in"})
@@ -871,6 +855,7 @@ def from_mont_programs(source: str) -> list[Program]:
         ],
         list(fields),
         arg_fields={"sub": sub_fields},
+        state_fields=fields,
     )
     final_program = program(
         "fromMontFinalReductionBlock",
@@ -930,23 +915,19 @@ def from_mont_programs(source: str) -> list[Program]:
         for r, f in zip(FROM_MONT_FINAL_REGISTERS, fields, strict=True)
     ]
     returned = rust.returned_registers(parsed, "from_mont")
-    results = []
-    for limb, (low, high) in enumerate(zip(returned[::2], returned[1::2], strict=True)):
-        results.append(f"result{limb}")
-        nodes.append(
-            Join(comment="join returned words", dest=results[-1], low=Reg(low), high=Reg(high))
-        )
-    block = program(
-        "fromMontBlock",
-        (("value", "Limbs"), ("modulus", "Limbs")),
-        "Limbs",
+    results = [f"result{limb}" for limb in range(len(returned) // 2)]
+    joins = [
+        Join(comment="join returned words", dest=result, low=Reg(low), high=Reg(high))
+        for result, low, high in zip(results, returned[::2], returned[1::2], strict=True)
+    ]
+    signature = (("value", "Limbs"), ("modulus", "Limbs"))
+    doc = (
         "The fixed-register inline `asm!` block of `from_mont`: load eight input words, apply "
         "eight mechanically checked rotated Montgomery rounds, then call the checked final "
-        "reduction block once.",
-        nodes,
-        results,
+        "reduction block once."
     )
-    return [
+    block = program("fromMontBlock", signature, "Limbs", doc, [*nodes, *joins], results)
+    programs = [
         quotient_program,
         self_sub_program,
         mask_program,
@@ -958,6 +939,11 @@ def from_mont_programs(source: str) -> list[Program]:
         final_program,
         block,
     ]
+    # The block, its rounds, their prefixes and suffixes, and the final reduction's halves, all
+    # expanded, compute what the flat block computes.
+    flat_block = program("fromMontBlock", signature, "Limbs", doc, [*flat.nodes, *joins], results)
+    validate.check(flat_block, programs)
+    return programs
 
 
 # -- `batch` and `divstep59` -------------------------------------------------------------------
@@ -1045,6 +1031,7 @@ def batch_programs(source: str) -> list[Program]:
         finish_results,
         struct=BATCH_FINISH_STRUCT,
         clear_values=False,
+        state_fields=finish_results,
     )
     round_ = program(
         "batchRound",
@@ -1071,7 +1058,11 @@ def batch_programs(source: str) -> list[Program]:
         # Extracting the loop's lets one instruction at a time: lifting the whole chain makes Lean
         # normalize the nested `BatchState` equality recursively before `word_step` can factor it.
         lift_lets=False,
+        state_fields=(*CARRIED, "c", "z", "branch"),
     )
+    # The round, its last five instructions expanded, computes what the flat loop body computes.
+    flat_round = dataclasses.replace(round_, nodes=list(lifter.nodes))
+    validate.check(flat_round, [finish, round_])
     st = Reg("st")
     block = composition(
         "batchBlock",

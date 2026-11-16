@@ -2,6 +2,7 @@
 """Focused tests for the ARMv7E-M transcription: its lifter (`asm2lean/isa/armv7em.py`) and its
 blocks and factorings (`pasta/architectures/armv7em.py`)."""
 
+import dataclasses
 import re
 import sys
 import unittest
@@ -10,8 +11,9 @@ import unittest
 sys.dont_write_bytecode = True
 
 
-from asm2lean import rust
-from asm2lean.ir import Lit, Mov, Node, Program
+from asm2lean import rust, validate
+from asm2lean.ir import App, Lit, Mov, Node, Program, Tuple
+from asm2lean.isa.armv7em import Bind
 from asm2lean.skeleton import skeleton
 from pasta.architectures import armv7em
 
@@ -385,6 +387,47 @@ class ARMv7EMGeneratorTests(unittest.TestCase):
             rust.GenerationError, "final reduction helpers do not reconstruct"
         ):
             armv7em.check_final_split(final, subtraction, changed(addback))
+
+    def test_factorings_are_validated_and_mutations_rejected(self) -> None:
+        checked: list[tuple[Program, list[Program]]] = []
+        real = validate.check
+
+        def spy(flat: Program, programs: list[Program]) -> None:
+            checked.append((flat, programs))
+            real(flat, programs)
+
+        validate.check = spy
+        try:
+            armv7em.programs(self.source)
+        finally:
+            validate.check = real
+        self.assertEqual(
+            [programs[-1].name for _, programs in checked], ["fromMontBlock", "batchRound"]
+        )
+        flat, programs = checked[0]
+
+        def swapped(node: Node) -> Node:
+            if isinstance(node, Bind) and node.dest == "round1":
+                assert isinstance(node.term, App) and isinstance(node.term.args[1], Tuple)
+                items = node.term.args[1].items
+                state = Tuple((items[1], items[0], *items[2:]))
+                return dataclasses.replace(
+                    node, term=App(node.term.function, (node.term.args[0], state))
+                )
+            return node
+
+        block = programs[-1]
+        mutated_block = dataclasses.replace(block, nodes=[swapped(n) for n in block.nodes])
+        with self.assertRaisesRegex(rust.GenerationError, "does not compute the flat block"):
+            real(flat, [*programs[:-1], mutated_block])
+        suffix = next(p for p in programs if p.name == "fromMontRoundSuffix")
+        index = next(i for i, n in enumerate(suffix.nodes) if n.pc is not None)
+        mutated_suffix = dataclasses.replace(
+            suffix,
+            nodes=[*suffix.nodes[:index], *changed(suffix.nodes[index:])],
+        )
+        with self.assertRaisesRegex(rust.GenerationError, "does not compute the flat block"):
+            real(flat, [mutated_suffix if p is suffix else p for p in programs])
 
     def test_from_mont_rejects_offset_rotation_alias_selection_and_output_mutations(self) -> None:
         cases = (

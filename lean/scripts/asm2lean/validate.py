@@ -11,7 +11,8 @@ treated as uninterpreted. Every `let`'s right-hand side is a term (`ir.py`); fol
 register replaced by the number of the term that register holds and interning each node
 (hash-consing) gives equal terms equal numbers: this is global value numbering. A copy
 (`x := y`) adds no term, a call evaluates the round's body on the call's arguments, `n` times for
-`round^[n]`, and a projection selects a field of the call's result. The two programs are equivalent when their result tuples are the same
+`round^[n]`, as does an application of a helper factored out of a block, and a projection selects
+a field of the call's result. The two programs are equivalent when their result tuples are the same
 numbers.
 
 Equal terms in the free algebra are equal in every interpretation of the operations, so the check
@@ -49,7 +50,9 @@ Value = int | Record
 
 
 class Evaluator:
-    """Evaluates programs to term numbers, expanding the calls of the `rounds` (by name)."""
+    """Evaluates programs to term numbers, expanding the calls of the `rounds` (by name): a
+    round's `Call`, or an application of any of them by name to its arguments, as a helper
+    factored out of a block is applied."""
 
     def __init__(self, rounds: dict[str, Program]) -> None:
         self.rounds = rounds
@@ -62,6 +65,10 @@ class Evaluator:
         """The terms of `program`'s results. `params` maps each parameter to its argument's
         value: a term number, or a `Record` for a state structure. Without `params` every
         argument is free."""
+        return tuple(self.number(v) for v in self.values(program, params))
+
+    def values(self, program: Program, params: dict[str, Value] | None = None) -> tuple[Value, ...]:
+        """The values of `program`'s results, which may be structures."""
         params = params or {}
         env: dict[str, Value] = {}  # register -> a term number, or a call's `Record`
         for node in program.nodes:
@@ -70,7 +77,7 @@ class Evaluator:
             else:
                 for let in node.lets():
                     env[let.name] = self.value(let.term, env, params)
-        return tuple(self.number(env[r]) for r in program.results)
+        return tuple(env[r] for r in program.results)
 
     def number(self, value: Value) -> int:
         """A value that must be a word's term, not a structure."""
@@ -99,6 +106,8 @@ class Evaluator:
                 if isinstance(value, Record):
                     return value.get(field)
                 return self.intern(("get", value, field))
+            case App(function, args) if function in self.rounds:
+                return self.apply(self.rounds[function], args, env, params)
             case App(function, args):
                 values = (self.number(self.value(a, env, params)) for a in args)
                 return self.intern(("app", function, *values))
@@ -107,6 +116,40 @@ class Evaluator:
         # Any other term is an uninterpreted operation on its subterms, keyed by its own data.
         parts = tuple(self.number(self.value(t, env, params)) for t in subterms(term))
         return self.intern((type(term).__name__, _label(term), *parts))
+
+    def apply(
+        self,
+        program: Program,
+        args: tuple[Term, ...],
+        env: dict[str, Value],
+        params: dict[str, Value],
+    ) -> Value:
+        """`program` applied to `args`, one per parameter: an anonymous constructor binds a
+        structure parameter's fields. Its value is its one result, or its results as a structure:
+        the fields of its state structure, or a pair's `1` and `2`."""
+        names = program.signature.names
+        if len(args) != len(names):
+            raise GenerationError(f"application of `{program.name}` to {len(args)} arguments")
+        inner: dict[str, Value] = {}
+        for name, arg in zip(names, args, strict=True):
+            if isinstance(arg, Tuple):
+                fields = program.arg_fields.get(name, ())
+                if len(fields) != len(arg.items):
+                    raise GenerationError(
+                        f"`{program.name}`: {name} does not take {len(arg.items)} fields"
+                    )
+                items = tuple(self.number(self.value(i, env, params)) for i in arg.items)
+                inner[name] = Record(fields, items)
+            else:
+                inner[name] = self.value(arg, env, params)
+        results = self.values(program, inner)
+        if program.state_fields:
+            return Record(program.state_fields, tuple(self.number(r) for r in results))
+        if len(results) == 1:
+            return results[0]
+        if len(results) == 2:
+            return Record(("1", "2"), tuple(self.number(r) for r in results))
+        raise GenerationError(f"`{program.name}` returns {len(results)} values and no structure")
 
     def call(self, node: Call, env: dict[str, Value], params: dict[str, Value]) -> Record:
         round_ = self.rounds.get(node.round)
