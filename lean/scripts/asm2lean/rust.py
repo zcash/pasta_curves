@@ -1016,10 +1016,29 @@ def parse_function(
     """Extract one Rust function's sole inline-asm block and surrounding bindings.
 
     The function is a top-level item, at the start of a line: a method of the same name in a
-    trait implementation, which forwards to it, is indented and so not matched."""
+    trait implementation, which forwards to it, is indented and so not matched. A source may also
+    define, under the same name, a portable function for other targets: the one with an `asm!`
+    block is read."""
     masked_source = masked_noncode(source)
     pattern = re.compile(rf"(?m)^(?:pub(?:\([^)]*\))?\s+)?fn\s+{re.escape(function)}\s*\(")
     functions = list(pattern.finditer(masked_source))
+    if len(functions) > 1:
+        with_asm = [
+            match
+            for match in functions
+            if re.search(
+                r"\basm\s*!\s*\(",
+                masked_source[
+                    slice(*_function_span(source, masked_source, match.start(), function))
+                ],
+            )
+        ]
+        if len(with_asm) != 1:
+            raise GenerationError(
+                f"expected exactly one top-level `fn {function}(` containing asm!, "
+                f"found {len(with_asm)}"
+            )
+        functions = with_asm
     if len(functions) != 1:
         raise GenerationError(f"expected exactly one `fn {function}(`, found {len(functions)}")
     found = functions[0]

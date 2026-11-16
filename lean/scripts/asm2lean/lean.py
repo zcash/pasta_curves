@@ -88,7 +88,13 @@ def definition(program: Program, column: int) -> str:
         else:
             body.append(f"{code}  -- {comment}")
     head = f"{program.struct}\n" if program.struct else ""
-    result = program.result_text or f"  ⟨{', '.join(program.results)}⟩"
+    if program.result_text is not None:
+        result = program.result_text
+    elif " × " in program.signature.result:
+        # A product is a Lean tuple, `(a, b)`; any other result a structure, `⟨a, b⟩`.
+        result = f"  ({', '.join(program.results)})"
+    else:
+        result = f"  ⟨{', '.join(program.results)}⟩"
     return (
         head
         + f"{docstring(program.doc)}\n{program.signature.text()}\n"

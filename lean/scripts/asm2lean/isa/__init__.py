@@ -35,7 +35,7 @@ instruction returning a pair, and `ScratchKey` for proof facts spanning several 
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, ClassVar
 
 from ..ir import WIDTH64, Load, Mov, Node, Scalar, Width
@@ -64,6 +64,7 @@ class Lifter:
         self.directions: dict[str, Direction] = dict(directions or {})
         self.nodes: list[Node] = []
         self.known: set[str] = set()  # the registers holding a value
+        self.written: set[str] = set()  # the registers an instruction writes
         self.pointers: dict[str, str] = {}  # pointer operand -> the argument it points to
         # Pointer operand -> the fields of the argument it points to, one per word, in order.
         self.pointer_fields: dict[str, tuple[str, ...]] = {}
@@ -129,6 +130,7 @@ class Lifter:
             return
         self.nodes.append(node)
         self.known.update(node.writes())
+        self.written.update(node.writes())
         self.emitted(node)
 
     def emitted(self, node: Node) -> None:
@@ -171,3 +173,13 @@ class Isa:
 
     def check_block(self, parsed: ParsedFunction, block: Block) -> None:
         """Checks of the block that this instruction set needs beyond the shared ones."""
+
+    def check_results(self, lifter: Lifter, results: Sequence[str], block: Block) -> None:
+        """Require each register the block returns to hold a value: one an instruction wrote, or
+        an input it passes through. An instruction set whose outputs must be computed requires
+        `lifter.written` instead."""
+        for register in results:
+            if register not in lifter.known:
+                raise GenerationError(
+                    f"{block.rust_name}: output register {register} was never written"
+                )

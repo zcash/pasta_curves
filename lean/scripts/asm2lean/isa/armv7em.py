@@ -48,6 +48,7 @@ from ..rust import Direction, GenerationError
 from . import Instruction, Isa, Lifter
 
 if TYPE_CHECKING:
+    from ..block import Block
     from ..skeleton import Step
 
 WORD_MOD = Const("wordMod")
@@ -549,7 +550,6 @@ class Armv7emLifter(Lifter):
         self.loop = loop
         self.label_seen = False
         self.branch_seen = False
-        self.written: set[str] = set()  # the registers an instruction writes
 
     @staticmethod
     def parse_instruction(text: str) -> Instruction:
@@ -672,7 +672,6 @@ class Armv7emLifter(Lifter):
         register = self.register(token)
         if self.directions[register] == "in":
             raise GenerationError(f"input-only register {register} cannot be written")
-        self.written.add(register)
         return register
 
     def value(self, token: str) -> Term:
@@ -816,6 +815,18 @@ class Armv7em(Isa):
     width = WIDTH32
     lifter = Armv7emLifter
     reserved_names = frozenset({"c", "d", "m", "s"})
+    # A register-only block is pure and touches neither memory nor the stack.
+    allowed_options = frozenset({"pure", "nomem", "nostack"})
+    required_options = frozenset({"pure", "nomem", "nostack"})
+
+    def check_results(self, lifter: Lifter, results: Sequence[str], block: Block) -> None:
+        """Each returned register must be written by an instruction: a primitive's outputs are
+        its computation, and one passed through unchanged is a mistake in the block."""
+        for register in results:
+            if register not in lifter.written:
+                raise GenerationError(
+                    f"{block.rust_name}: output register {register} was never written"
+                )
 
 
 def lift_all(lifter: Armv7emLifter, instructions: Sequence[str]) -> None:

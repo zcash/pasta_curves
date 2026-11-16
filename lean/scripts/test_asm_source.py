@@ -625,10 +625,19 @@ fn f(a: u32) -> (u32, u32) {
             block + forwarding, "f", ["a"], 1, required_options={"pure", "nomem", "nostack"}
         )
         self.assertEqual(len(parsed.instructions), 1)
-        with self.assertRaisesRegex(rust.GenerationError, "expected exactly one `fn f\\(`"):
+        with self.assertRaisesRegex(
+            rust.GenerationError,
+            "expected exactly one top-level `fn f\\(` containing asm!, found 2",
+        ):
             rust.parse_function(
                 block + block, "f", ["a"], 1, required_options={"pure", "nomem", "nostack"}
             )
+        # A portable definition of the same name, for other targets, is not the block.
+        portable = "fn f(a: u64) -> [u64; 1] {\n    [a]\n}\n"
+        parsed = rust.parse_function(
+            portable + block, "f", ["a"], 1, required_options={"pure", "nomem", "nostack"}
+        )
+        self.assertEqual(parsed.instructions, ("mov {a}, {a}",))
 
 
 if __name__ == "__main__":

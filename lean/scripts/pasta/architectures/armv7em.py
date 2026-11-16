@@ -1,7 +1,9 @@
 """ARMv7E-M (`src/asm/armv7em.rs`): its blocks, how its rounds are factored, and its transcription.
 
-The register-only word primitives (`adc`, `add_word`, `sbb`, `mac_word`, `inversion_mac_words`) and
-the memory block `cond_sub` transcribe instruction for instruction. Three blocks are larger, and are
+The register-only word primitives (`adc`, `add_word`, `sbb`, `mac_word`, `inversion_mac_words`)
+transcribe instruction for instruction, through the shared block driver; the memory block
+`cond_sub`, whose pointers read 32-bit halves of limbs and write zero-initialized memory, through
+this module's own. Three blocks are larger, and are
 factored here into definitions their proofs can take one at a time; each factoring is checked
 against the flat lifted block before it is used:
 
@@ -30,7 +32,7 @@ import re
 from collections.abc import Mapping, Sequence
 
 from asm2lean import reroll, rust, validate
-from asm2lean.block import Target
+from asm2lean.block import Block, Target, transcribe
 from asm2lean.ir import (
     App,
     Arg,
@@ -66,7 +68,19 @@ from ..paths import ROOT
 SOURCE = ROOT / "src/asm/armv7em.rs"
 OUTPUT = ROOT / "lean/PastaCurves/ARMv7EM/Transcription.lean"
 TARGET = Target(
-    isa=Armv7em(), kinds={"Nat": None, "Limbs": ("l0", "l1", "l2", "l3")}, conventions=CONVENTIONS
+    isa=Armv7em(),
+    kinds={
+        "Nat": None,
+        "Limbs": ("l0", "l1", "l2", "l3"),
+        "Nat × Nat": ("1", "2"),
+        "Nat × Nat × Nat × Nat": ("1", "2", "3", "4"),
+    },
+    conventions=CONVENTIONS,
+    # Each input operand is named by its register.
+    input_comment=lambda d, scalar: f"input {d.name}",
+    # The proofs were written against the naming in which a later binding may shadow an earlier
+    # one of the same name (`fromMontBlock`'s `r0_4`, a memory word and a register).
+    shadow=True,
 )
 
 # The column of the instruction comments in the transcription.
@@ -274,9 +288,7 @@ def program(
         result_text=result_text,
         width=TARGET.isa.width,
         state_fields=tuple(state_fields),
-        # The proofs were written against the naming in which a later binding may shadow an
-        # earlier one of the same name (`fromMontBlock`'s `r0_4`, a memory word and a register).
-        shadow=True,
+        shadow=TARGET.shadow,
     )
 
 
@@ -287,179 +299,125 @@ def words(*names: str) -> tuple[tuple[str, str], ...]:
 # -- the primitives and `cond_sub` ---------------------------------------------------------------
 
 
-@dataclasses.dataclass(frozen=True)
-class Primitive:
-    """A block transcribed instruction for instruction: the Rust function, the Lean name, its
-    arguments, and its docstring; how many words it returns, and the outputs it discards; and
-    whether it is the memory block `cond_sub`."""
-
-    rust_name: str
-    lean_name: str
-    args: tuple[str, ...]
-    doc: str
-    result_count: int = 2
-    discarded_outputs: frozenset[str] = frozenset()
-    memory: bool = False
-
-
-PRIMITIVES = (
-    Primitive(
+# The register-only primitives, which the shared block driver transcribes instruction for
+# instruction.
+BLOCKS = (
+    Block(
         "adc",
         "adc",
-        ("a", "b", "carry"),
         "The inline `asm!` block of `adc`: add two 32-bit words and a carry-in, "
         "returning the low word and carry-out.",
+        words("a", "b", "carry"),
+        "Nat × Nat",
     ),
-    Primitive(
+    Block(
         "add_word",
         "addWord",
-        ("a", "b"),
         "The inline `asm!` block of `add_word`: add two 32-bit words, returning the low word "
         "and carry-out.",
+        words("a", "b"),
+        "Nat × Nat",
     ),
-    Primitive(
+    Block(
         "sbb",
         "sbb",
-        ("a", "b", "borrow"),
         "The inline `asm!` block of `sbb`: subtract a 32-bit word and borrow-in, returning "
         "the low word and borrow-out.",
+        words("a", "b", "borrow"),
+        "Nat × Nat",
     ),
-    Primitive(
+    Block(
         "mac_word",
         "macWord",
-        ("acc", "a", "b", "carry"),
         "The inline `asm!` block of `mac_word`: multiply two 32-bit words, add an accumulator "
         "and carry, and return the low and high words.",
+        words("acc", "a", "b", "carry"),
+        "Nat × Nat",
     ),
-    Primitive(
+    Block(
         "inversion_mac_words",
         "inversionMacWords",
-        ("r0", "r1", "b0", "b1", "c0", "c1", "r2", "r3"),
         "The inline `asm!` block of `inversion_mac_words`: add the four-word product `b * c` "
         "to the four-word accumulator `r`, retaining every carry.",
-        result_count=4,
-        discarded_outputs=frozenset(("c0",)),
-    ),
-    Primitive(
-        "cond_sub",
-        "condSub",
-        ("value", "modulus"),
-        "The inline `asm!` block of `cond_sub`: subtract the modulus from `value` as eight "
-        "32-bit words, then use the final borrow as a mask to select the original value or "
-        "the difference without a branch.",
-        result_count=1,
-        memory=True,
+        words("r0", "r1", "b0", "b1", "c0", "c1", "r2", "r3"),
+        "Nat × Nat × Nat × Nat",
+        discarded=frozenset(("c0",)),
     ),
 )
 
+COND_SUB_DOC = (
+    "The inline `asm!` block of `cond_sub`: subtract the modulus from `value` as eight 32-bit "
+    "words, then use the final borrow as a mask to select the original value or the difference "
+    "without a branch."
+)
 POINTER = re.compile(r"([A-Za-z_]\w*)\.(as_ptr|as_mut_ptr)\(\)")
 
 
-def parse_primitive(source: str, block: Primitive) -> ParsedFunction:
-    text = source if block.memory else rust.inline_asm_function(source, block.rust_name)
-    options = {"nostack"} if block.memory else {"pure", "nomem", "nostack"}
-    return rust.parse_function(
-        text,
-        block.rust_name,
-        block.args,
-        block.result_count,
+def cond_sub_program(source: str) -> Program:
+    """`cond_sub`, which reads `value` and `modulus` through pointers, a word at a time, and
+    writes its result to zero-initialized memory: so its operands are bound by pointer, its
+    memory accesses checked against their schedule, and its result is the memory's words joined
+    into limbs."""
+    fn = "cond_sub"
+    options = {"nostack"}
+    parsed = rust.parse_function(
+        source,
+        fn,
+        ("value", "modulus"),
+        1,
         reserved_names=RESERVED,
-        fixed_registers={"r2", "r3"} if block.memory else frozenset(),
+        fixed_registers={"r2", "r3"},
         allowed_options=options,
         required_options=options,
     )
-
-
-def primitive(source: str, block: Primitive) -> Program:
-    """One of the blocks transcribed instruction for instruction."""
-    fn = block.rust_name
-    parsed = parse_primitive(source, block)
     lifter = Armv7emLifter(rust.declaration_directions(parsed, fn))
     pointers: set[str] = set()
     for d in parsed.declarations:
         if d.kind == "out":
             continue
-        if d.kind not in ("in", "inout"):
-            raise GenerationError(f"{fn}: unsupported operand direction {d.kind}")
         pointer_target = POINTER.fullmatch(d.value)
-        if pointer_target:
-            target, method = pointer_target.groups()
-            if not block.memory:
-                raise GenerationError(f"{fn}: pointer operand {d.name} is unsupported")
-            if method == "as_ptr" and target in block.args:
-                lifter.bind_memory(d.name, target)
-            elif (
-                method == "as_mut_ptr"
-                and parsed.zero_arrays.get(target) == 4
-                and parsed.returns == (target,)
-            ):
-                lifter.bind_memory(d.name, None)
-            else:
-                raise GenerationError(
-                    f"{fn}: unsupported or uninitialized pointer target {d.value}"
-                )
-            pointers.add(d.name)
-        elif d.value in block.args:
-            lifter.bind_argument(d.name, d.value)
-        elif d.value in parsed.locals:
-            argument, index = parsed.locals[d.value]
-            if index is not None:
-                raise GenerationError(f"{fn}: unsupported indexed input operand {d.value}")
-            lifter.bind_argument(d.name, argument)
+        if d.kind not in ("in", "inout") or not pointer_target:
+            raise GenerationError(f"{fn}: unsupported operand {d.name}")
+        target, method = pointer_target.groups()
+        if method == "as_ptr" and target in ("value", "modulus"):
+            lifter.bind_memory(d.name, target)
+        elif (
+            method == "as_mut_ptr"
+            and parsed.zero_arrays.get(target) == 4
+            and parsed.returns == (target,)
+        ):
+            lifter.bind_memory(d.name, None)
         else:
-            raise GenerationError(f"{fn}: unsupported input operand expression {d.value}")
+            raise GenerationError(f"{fn}: unsupported or uninitialized pointer target {d.value}")
+        pointers.add(d.name)
     lift_all(lifter, parsed.instructions)
-
-    if block.memory:
-        if pointers != {"value", "modulus", "out"}:
-            raise GenerationError(f"{fn}: expected value, modulus, and out pointer operands")
-        offsets = list(range(0, 32, 4))
-        expected = {
-            "value": offsets + offsets,
-            "modulus": offsets,
-            "out": offsets + [offset for offset in offsets for _ in range(2)],
-        }
-        for pointer, accesses in expected.items():
-            if lifter.used_offsets[pointer] != accesses:
-                raise GenerationError(
-                    f"{fn}: {pointer} memory offsets differ: expected {accesses}, found "
-                    f"{lifter.used_offsets[pointer]}"
-                )
-        results = []
-        for limb, offset in enumerate(range(0, 32, 8)):
-            low = lifter.memory.get(("out", offset))
-            high = lifter.memory.get(("out", offset + 4))
-            if low is None or high is None:
-                raise GenerationError(f"{fn}: output limb {limb} is uninitialized")
-            name = f"result{limb}"
-            lifter.nodes.append(
-                Join(comment="combine output words", dest=name, low=Reg(low), high=Reg(high))
+    if pointers != {"value", "modulus", "out"}:
+        raise GenerationError(f"{fn}: expected value, modulus, and out pointer operands")
+    offsets = list(range(0, 32, 4))
+    expected = {
+        "value": offsets + offsets,
+        "modulus": offsets,
+        "out": offsets + [offset for offset in offsets for _ in range(2)],
+    }
+    for pointer, accesses in expected.items():
+        if lifter.used_offsets[pointer] != accesses:
+            raise GenerationError(
+                f"{fn}: {pointer} memory offsets differ: expected {accesses}, found "
+                f"{lifter.used_offsets[pointer]}"
             )
-            results.append(name)
-        return program(
-            block.lean_name,
-            tuple((arg, "Limbs") for arg in block.args),
-            "Limbs",
-            block.doc,
-            lifter.nodes,
-            results,
+    results = []
+    for limb, offset in enumerate(range(0, 32, 8)):
+        low = lifter.memory.get(("out", offset))
+        high = lifter.memory.get(("out", offset + 4))
+        if low is None or high is None:
+            raise GenerationError(f"{fn}: output limb {limb} is uninitialized")
+        name = f"result{limb}"
+        lifter.nodes.append(
+            Join(comment="combine output words", dest=name, low=Reg(low), high=Reg(high))
         )
-
-    results = list(
-        rust.returned_registers(parsed, fn, discarded_outputs=set(block.discarded_outputs))
-    )
-    for register in results:
-        if register not in lifter.written:
-            raise GenerationError(f"{fn}: output register {register} was never written")
-    return program(
-        block.lean_name,
-        words(*block.args),
-        " × ".join(["Nat"] * block.result_count),
-        block.doc,
-        lifter.nodes,
-        results,
-        result_text=f"  ({', '.join(results)})",
-    )
+        results.append(name)
+    limbs = (("value", "Limbs"), ("modulus", "Limbs"))
+    return program("condSub", limbs, "Limbs", COND_SUB_DOC, lifter.nodes, results)
 
 
 # -- `from_mont` ---------------------------------------------------------------------------------
@@ -1208,7 +1166,8 @@ def programs(source: str | None = None) -> list[Program]:
     """Every definition of the transcription, in order."""
     source = SOURCE.read_text() if source is None else source
     rust.check_asm_inventory(source, ASM_BLOCKS, TARGET.isa.name)
-    *primitives, cond_sub = [primitive(source, block) for block in PRIMITIVES]
+    primitives = [p for block in BLOCKS for p in transcribe(source, block, TARGET)]
+    cond_sub = cond_sub_program(source)
     return [
         *primitives,
         *from_mont_programs(source),

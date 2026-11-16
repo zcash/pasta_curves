@@ -185,7 +185,7 @@ TARGET = Target(
     # Unlike AArch64's, this transcription keeps every architectural result, including dead flag
     # writes, and names each input by the Rust value it binds.
     dead_code=DeadCode.RETAIN,
-    input_comment=lambda value, scalar: "scalar input" if scalar else f"input {value}",
+    input_comment=lambda d, scalar: "scalar input" if scalar else f"input {d.value}",
 )
 
 

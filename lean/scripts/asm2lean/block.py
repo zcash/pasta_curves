@@ -39,6 +39,8 @@ class Block:
     doc: str
     args: tuple[tuple[str, str], ...]
     result: str = "Limbs"
+    # The outputs the Rust function discards after the block, rather than returns.
+    discarded: frozenset[str] = frozenset()
 
     @property
     def arg_names(self) -> list[str]:
@@ -63,7 +65,8 @@ class Target:
     It also holds how the crate writes its transcription, which is a convention of the crate and
     not of the instruction set: whether a transcription keeps the bindings nothing reads
     (`dead_code`), and the comment on the binding of an input operand whose Rust value is
-    `value` (`input_comment(value, scalar)`)."""
+    `value` (`input_comment(declaration, scalar)`), and whether its proofs name a later binding
+    like an earlier one (`shadow`, see `skeleton.ssa_names`)."""
 
     isa: Isa
     kinds: dict[str, tuple[str, ...] | None]
@@ -72,7 +75,8 @@ class Target:
     rerollers: dict[str, Reroller] = dataclasses.field(default_factory=dict)
     macro_rounds: dict[tuple[str, str], MacroRound] = dataclasses.field(default_factory=dict)
     dead_code: DeadCode = DeadCode.ELIMINATE
-    input_comment: Callable[[str, bool], str] = lambda value, scalar: "argument"
+    input_comment: Callable[[Declaration, bool], str] = lambda declaration, scalar: "argument"
+    shadow: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -103,6 +107,7 @@ class Unit:
             results,
             dead_code=target.dead_code,
             width=target.isa.width,
+            shadow=target.shadow,
             **kw,
         )
 
@@ -147,9 +152,9 @@ def input_binding(
         if index is None:
             if arg not in kinds or kinds[arg] is not None:
                 raise GenerationError(f"operand {name} reads {value}, which is not a word argument")
-            return Scalar(comment=target.input_comment(value, True), dest=name, name=arg)
+            return Scalar(comment=target.input_comment(declaration, True), dest=name, name=arg)
     elif value in kinds and kinds[value] is None:
-        comment = target.input_comment(value, True)
+        comment = target.input_comment(declaration, True)
         return Scalar(comment=comment, dest=name, name=value)
     else:
         raise GenerationError(f"unsupported input operand expression {value}")
@@ -158,7 +163,7 @@ def input_binding(
     fields = kinds[arg]
     if fields is None or index >= len(fields):
         raise GenerationError(f"operand {name} reads {value}, which {arg} does not have")
-    comment = target.input_comment(value, False)
+    comment = target.input_comment(declaration, False)
     return Load(comment=comment, dest=name, arg=arg, field=fields[index])
 
 
@@ -211,12 +216,10 @@ def transcribe(source: str, block: Block, target: Target) -> list[Program]:
     rounds reroll, and checked to compute what the flat block computes."""
     parsed = parse(source, block, target)
     lifter, instructions = lift(parsed, block, target)
-    results = list(rust.returned_registers(parsed, block.rust_name))
-    for register in results:
-        if register not in lifter.known:
-            raise GenerationError(
-                f"{block.rust_name}: output register {register} was never written"
-            )
+    results = list(
+        rust.returned_registers(parsed, block.rust_name, discarded_outputs=block.discarded)
+    )
+    target.isa.check_results(lifter, results, block)
     unit = Unit(block, target, instructions, parsed.origins)
     flat = unit.make(
         Signature(block.lean_name, block.args, block.result),

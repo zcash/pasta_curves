@@ -12,6 +12,7 @@ sys.dont_write_bytecode = True
 
 
 from asm2lean import rust, validate
+from asm2lean.block import transcribe
 from asm2lean.ir import App, Lit, Mov, Node, Program, Tuple
 from asm2lean.isa.armv7em import Bind
 from asm2lean.skeleton import skeleton
@@ -750,14 +751,14 @@ class ARMv7EMGeneratorTests(unittest.TestCase):
 
     def test_second_inline_asm_definition_is_rejected(self) -> None:
         inline = rust.inline_asm_function(self.source, "adc")
-        block = armv7em.Primitive("adc_extra", "adcExtra", ("a", "b", "carry"), "test")
+        block = dataclasses.replace(armv7em.BLOCKS[0], rust_name="adc_extra", lean_name="adcExtra")
         renamed = inline.replace("fn adc(", "fn adc_extra(")
         duplicated = self.source + "\n" + renamed + "\n" + renamed
         with self.assertRaisesRegex(
             rust.GenerationError,
             "exactly one top-level `fn adc_extra\\(` containing asm!, found 2",
         ):
-            armv7em.primitive(duplicated, block)
+            transcribe(duplicated, block, armv7em.TARGET)
 
 
 if __name__ == "__main__":
