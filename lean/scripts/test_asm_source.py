@@ -3,35 +3,36 @@
 
 import re
 import sys
-import tempfile
 import unittest
-from pathlib import Path
-from unittest import mock
 
 # Running this source-tree test should not leave lean/scripts/__pycache__ behind.
 sys.dont_write_bytecode = True
 
-import asm_source
-import gen_aarch64
-import gen_x86_64
+from asm2lean import rust
+from pasta.architectures import aarch64 as aarch64_blocks
+from pasta.architectures import armv7em as armv7em_blocks
+from pasta.architectures import x86_64 as x86_64_blocks
 
 
 class SurroundingCodeTests(unittest.TestCase):
+    aarch64_source: str
+    x86_64_source: str
+
     @classmethod
-    def setUpClass(cls):
-        cls.aarch64_source = gen_aarch64.INLINE.read_text()
-        cls.x86_64_source = gen_x86_64.SOURCE.read_text()
+    def setUpClass(cls) -> None:
+        cls.aarch64_source = aarch64_blocks.SOURCE.read_text()
+        cls.x86_64_source = x86_64_blocks.SOURCE.read_text()
 
     @staticmethod
-    def mutate_function(source, name, old, new):
-        masked = asm_source.masked_noncode(source)
+    def mutate_function(source: str, name: str, old: str, new: str) -> str:
+        masked = rust.masked_noncode(source)
         match = re.search(rf"(?m)^.*\bfn\s+{re.escape(name)}\s*\(", masked)
         if match is None:
             raise AssertionError(f"function {name} not found")
         signature_open = masked.find("(", match.start())
-        signature_close = asm_source.matching_delimiter(source, signature_open, "(", ")")
+        signature_close = rust.matching_delimiter(source, signature_open, "(", ")")
         body_open = masked.find("{", signature_close)
-        body_close = asm_source.matching_delimiter(source, body_open, "{", "}")
+        body_close = rust.matching_delimiter(source, body_open, "{", "}")
         function_source = source[match.start() : body_close + 1]
         if function_source.count(old) != 1:
             raise AssertionError(f"expected one {old!r} in {name}")
@@ -40,27 +41,23 @@ class SurroundingCodeTests(unittest.TestCase):
         )
 
     @staticmethod
-    def generate_aarch64(source):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "aarch64.rs"
-            path.write_text(source)
-            with mock.patch.object(gen_aarch64, "INLINE", path):
-                return gen_aarch64.gen_program()
+    def generate_aarch64(source: str) -> str:
+        return aarch64_blocks.text(source)
 
-    def test_current_sources_generate_committed_output(self):
+    def test_current_sources_generate_committed_output(self) -> None:
         self.assertEqual(
             self.generate_aarch64(self.aarch64_source),
-            gen_aarch64.OUT_PROGRAM.read_text(),
+            aarch64_blocks.OUTPUT.read_text(),
         )
         self.assertEqual(
-            gen_x86_64.gen_program(self.x86_64_source),
-            gen_x86_64.OUTPUT.read_text(),
+            x86_64_blocks.text(self.x86_64_source),
+            x86_64_blocks.OUTPUT.read_text(),
         )
 
-    def test_inv_shadowing_is_rejected_by_both_backends(self):
+    def test_inv_shadowing_is_rejected_by_both_backends(self) -> None:
         for architecture, source, generate in (
             ("aarch64", self.aarch64_source, self.generate_aarch64),
-            ("x86_64", self.x86_64_source, gen_x86_64.gen_program),
+            ("x86_64", self.x86_64_source, x86_64_blocks.text),
         ):
             with self.subTest(architecture=architecture):
                 mutated = self.mutate_function(
@@ -70,12 +67,12 @@ class SurroundingCodeTests(unittest.TestCase):
                     "    let inv = 0;\n    let (o0, o1, o2, o3): (u64, u64, u64, u64);",
                 )
                 with self.assertRaisesRegex(
-                    asm_source.GenerationError,
+                    rust.GenerationError,
                     "local inv shadows a function argument",
                 ):
                     generate(mutated)
 
-    def test_u32_tuple_outputs_are_parsed(self):
+    def test_u32_tuple_outputs_are_parsed(self) -> None:
         source = """fn f(a: u32) -> (u32, u32) {
     let low: u32;
     let high: u32;
@@ -91,7 +88,7 @@ class SurroundingCodeTests(unittest.TestCase):
     (low, high)
 }
 """
-        parsed = asm_source.parse_function(
+        parsed = rust.parse_function(
             source,
             "f",
             ["a"],
@@ -99,9 +96,9 @@ class SurroundingCodeTests(unittest.TestCase):
             required_options={"pure", "nomem", "nostack"},
         )
         self.assertEqual(parsed.returns, ("low", "high"))
-        self.assertEqual(asm_source.returned_registers(parsed, "f"), ("low", "high"))
+        self.assertEqual(rust.returned_registers(parsed, "f"), ("low", "high"))
 
-    def test_direct_scalar_local_initializers_are_parsed(self):
+    def test_direct_scalar_local_initializers_are_parsed(self) -> None:
         source = """fn f(a: u32, b: u32) -> (u32, u32) {
     let mut low = a;
     let mut high = b;
@@ -118,7 +115,7 @@ class SurroundingCodeTests(unittest.TestCase):
     (low, high)
 }
 """
-        parsed = asm_source.parse_function(
+        parsed = rust.parse_function(
             source,
             "f",
             ["a", "b"],
@@ -126,9 +123,9 @@ class SurroundingCodeTests(unittest.TestCase):
             required_options={"pure", "nomem", "nostack"},
         )
         self.assertEqual(parsed.locals, {"low": ("a", None), "high": ("b", None)})
-        self.assertEqual(asm_source.returned_registers(parsed, "f"), ("low", "high"))
+        self.assertEqual(rust.returned_registers(parsed, "f"), ("low", "high"))
 
-    def test_zero_initialized_array_and_direct_return_are_parsed(self):
+    def test_zero_initialized_array_and_direct_return_are_parsed(self) -> None:
         source = """fn f(a: u32) -> [u64; 4] {
     let mut output = [0u64; 4];
     unsafe {
@@ -138,7 +135,7 @@ class SurroundingCodeTests(unittest.TestCase):
     output
 }
 """
-        parsed = asm_source.parse_function(
+        parsed = rust.parse_function(
             source,
             "f",
             ["a"],
@@ -149,8 +146,8 @@ class SurroundingCodeTests(unittest.TestCase):
         self.assertEqual(parsed.zero_arrays, {"output": 4})
         self.assertEqual(parsed.returns, ("output",))
 
-        with self.assertRaisesRegex(asm_source.GenerationError, "unsupported code before asm"):
-            asm_source.parse_function(
+        with self.assertRaisesRegex(rust.GenerationError, "unsupported code before asm"):
+            rust.parse_function(
                 source.replace("[0u64; 4]", "[1u64; 4]"),
                 "f",
                 ["a"],
@@ -159,7 +156,7 @@ class SurroundingCodeTests(unittest.TestCase):
                 required_options={"nostack"},
             )
 
-    def test_identity_scalar_shadow_is_parsed_but_other_shadowing_is_rejected(self):
+    def test_identity_scalar_shadow_is_parsed_but_other_shadowing_is_rejected(self) -> None:
         source = """fn f(a: u32) -> (u32, u32) {
     let mut a = a;
     let high: u32;
@@ -176,7 +173,7 @@ class SurroundingCodeTests(unittest.TestCase):
     (a, high)
 }
 """
-        parsed = asm_source.parse_function(
+        parsed = rust.parse_function(
             source,
             "f",
             ["a"],
@@ -184,16 +181,16 @@ class SurroundingCodeTests(unittest.TestCase):
             required_options={"pure", "nomem", "nostack"},
         )
         self.assertEqual(parsed.locals, {"a": ("a", None)})
-        with self.assertRaisesRegex(asm_source.GenerationError, "local reads non-argument missing"):
-            asm_source.parse_function(
+        with self.assertRaisesRegex(rust.GenerationError, "local reads non-argument missing"):
+            rust.parse_function(
                 source.replace("let mut a = a;", "let mut a = missing;"),
                 "f",
                 ["a"],
                 2,
                 required_options={"pure", "nomem", "nostack"},
             )
-        with self.assertRaisesRegex(asm_source.GenerationError, "unsupported attribute before asm"):
-            asm_source.parse_function(
+        with self.assertRaisesRegex(rust.GenerationError, "unsupported attribute before asm"):
+            rust.parse_function(
                 source.replace(
                     '#[expect(unused_assignments, reason = "temporary assembly value")]',
                     "#[allow(unused_assignments)]",
@@ -204,7 +201,7 @@ class SurroundingCodeTests(unittest.TestCase):
                 required_options={"pure", "nomem", "nostack"},
             )
 
-    def test_explicit_discarded_outputs_are_validated(self):
+    def test_explicit_discarded_outputs_are_validated(self) -> None:
         source = """fn f(a: u32) -> (u32, u32) {
     let mut low = a;
     let mut high = a;
@@ -222,7 +219,7 @@ class SurroundingCodeTests(unittest.TestCase):
     (low, high)
 }
 """
-        parsed = asm_source.parse_function(
+        parsed = rust.parse_function(
             source,
             "f",
             ["a"],
@@ -230,11 +227,11 @@ class SurroundingCodeTests(unittest.TestCase):
             required_options={"pure", "nomem", "nostack"},
         )
         with self.assertRaisesRegex(
-            asm_source.GenerationError, "named asm outputs not returned.*temporary"
+            rust.GenerationError, "named asm outputs not returned.*temporary"
         ):
-            asm_source.returned_registers(parsed, "f")
+            rust.returned_registers(parsed, "f")
         self.assertEqual(
-            asm_source.returned_registers(
+            rust.returned_registers(
                 parsed,
                 "f",
                 discarded_outputs={"temporary"},
@@ -242,11 +239,11 @@ class SurroundingCodeTests(unittest.TestCase):
             ("low", "high"),
         )
         with self.assertRaisesRegex(
-            asm_source.GenerationError, "configured discarded values are not asm outputs"
+            rust.GenerationError, "configured discarded values are not asm outputs"
         ):
-            asm_source.returned_registers(parsed, "f", discarded_outputs={"missing"})
+            rust.returned_registers(parsed, "f", discarded_outputs={"missing"})
 
-    def test_direct_scalar_local_must_read_an_argument_and_only_initialize(self):
+    def test_direct_scalar_local_must_read_an_argument_and_only_initialize(self) -> None:
         source = """fn f(a: u32) -> (u32, u32) {
     let mut low = missing;
     let mut high = a;
@@ -271,9 +268,9 @@ class SurroundingCodeTests(unittest.TestCase):
         ):
             with (
                 self.subTest(message=message),
-                self.assertRaisesRegex(asm_source.GenerationError, message),
+                self.assertRaisesRegex(rust.GenerationError, message),
             ):
-                asm_source.parse_function(
+                rust.parse_function(
                     mutated,
                     "f",
                     ["a"],
@@ -281,7 +278,7 @@ class SurroundingCodeTests(unittest.TestCase):
                     required_options={"pure", "nomem", "nostack"},
                 )
 
-    def test_qualified_asm_path_is_parsed(self):
+    def test_qualified_asm_path_is_parsed(self) -> None:
         source = """fn f(a: u32) -> (u32, u32) {
     let low: u32;
     let high: u32;
@@ -297,7 +294,7 @@ class SurroundingCodeTests(unittest.TestCase):
     (low, high)
 }
 """
-        parsed = asm_source.parse_function(
+        parsed = rust.parse_function(
             source,
             "f",
             ["a"],
@@ -306,7 +303,7 @@ class SurroundingCodeTests(unittest.TestCase):
         )
         self.assertEqual(parsed.instructions, ("umull {low}, {high}, {a}, {a}",))
 
-    def test_unsupported_output_declarations_and_tuple_returns_are_rejected(self):
+    def test_unsupported_output_declarations_and_tuple_returns_are_rejected(self) -> None:
         source = """fn f(a: u32) -> (u32, u32) {
     let (low, high): (u32, u32);
     unsafe {
@@ -329,9 +326,9 @@ class SurroundingCodeTests(unittest.TestCase):
         for message, mutated in cases.items():
             with (
                 self.subTest(message=message),
-                self.assertRaisesRegex(asm_source.GenerationError, message),
+                self.assertRaisesRegex(rust.GenerationError, message),
             ):
-                asm_source.parse_function(
+                rust.parse_function(
                     mutated,
                     "f",
                     ["a"],
@@ -339,10 +336,10 @@ class SurroundingCodeTests(unittest.TestCase):
                     required_options={"pure", "nomem", "nostack"},
                 )
 
-    def test_postasm_output_mutation_is_rejected_by_both_backends(self):
+    def test_postasm_output_mutation_is_rejected_by_both_backends(self) -> None:
         for architecture, source, generate in (
             ("aarch64", self.aarch64_source, self.generate_aarch64),
-            ("x86_64", self.x86_64_source, gen_x86_64.gen_program),
+            ("x86_64", self.x86_64_source, x86_64_blocks.text),
         ):
             with self.subTest(architecture=architecture):
                 mutated = self.mutate_function(
@@ -352,24 +349,24 @@ class SurroundingCodeTests(unittest.TestCase):
                     "    }\n    r0 = 0;\n    [r0, r1, r2, r3]",
                 )
                 with self.assertRaisesRegex(
-                    asm_source.GenerationError,
+                    rust.GenerationError,
                     "unsupported code after asm!",
                 ):
                     generate(mutated)
 
-    def test_comments_are_allowed_between_surrounding_grammar_tokens(self):
+    def test_comments_are_allowed_between_surrounding_grammar_tokens(self) -> None:
         for architecture, source, generate, expected in (
             (
                 "aarch64",
                 self.aarch64_source,
                 self.generate_aarch64,
-                gen_aarch64.OUT_PROGRAM.read_text(),
+                aarch64_blocks.OUTPUT.read_text(),
             ),
             (
                 "x86_64",
                 self.x86_64_source,
-                gen_x86_64.gen_program,
-                gen_x86_64.OUTPUT.read_text(),
+                x86_64_blocks.text,
+                x86_64_blocks.OUTPUT.read_text(),
             ),
         ):
             with self.subTest(architecture=architecture):
@@ -382,20 +379,54 @@ class SurroundingCodeTests(unittest.TestCase):
                 self.assertEqual(generate(commented), expected)
 
 
+class InventoryTests(unittest.TestCase):
+    """Every architecture transcribes exactly the functions of its source with an `asm!` block."""
+
+    STRAY = """
+fn stray(a: u64) -> u64 {
+    let out: u64;
+    unsafe {
+        asm!("mov {out}, {a}", a = in(reg) a, out = out(reg) out, options(pure, nomem, nostack));
+    }
+    out
+}
+"""
+
+    def test_functions_with_asm_blocks_are_found_in_source_order(self) -> None:
+        source = 'fn plain() {}\npub(crate) fn second() { asm!("") }\nfn first() { asm!("") }\n'
+        self.assertEqual(rust.asm_functions(source), ("second", "first"))
+        rust.check_asm_inventory(source, ["first", "second"], "T")
+        for covered in (["first"], ["first", "second", "third"], ["first", "second", "second"]):
+            with (
+                self.subTest(covered=covered),
+                self.assertRaisesRegex(rust.GenerationError, "T: asm block inventory differs"),
+            ):
+                rust.check_asm_inventory(source, covered, "T")
+
+    def test_every_architecture_rejects_an_untranscribed_block(self) -> None:
+        for module in (aarch64_blocks, armv7em_blocks, x86_64_blocks):
+            with self.subTest(architecture=module.TARGET.isa.name):
+                source = module.SOURCE.read_text() + self.STRAY
+                with self.assertRaisesRegex(rust.GenerationError, "asm block inventory differs"):
+                    module.programs(source)
+
+
 class TriviaNormalizationTests(unittest.TestCase):
-    def test_code_without_trivia_preserves_literals_and_removes_spacing(self):
+    def test_code_without_trivia_preserves_literals_and_removes_spacing(self) -> None:
         source = "fn f(a: u32) { let text = \"a b\"; /* ignored */ let c = ' '; }"
         self.assertEqual(
-            asm_source.code_without_trivia(source),
+            rust.code_without_trivia(source),
             "fnf(a:u32){lettext=\"a b\";letc=' ';}",
         )
 
 
 class MacroTests(unittest.TestCase):
-    def parse(self, definitions):
-        return asm_source.parse_macros(definitions)
+    def parse(
+        self, definitions: str
+    ) -> dict[str, dict[str, tuple[str, ...] | rust.ParameterizedMacro]]:
+        return rust.parse_macros(definitions)
 
-    def test_arms_expand_literals_and_earlier_arms(self):
+    def test_arms_expand_literals_and_earlier_arms(self) -> None:
         macros = self.parse(
             "macro_rules! step {\n"
             '    (core) => { concat!("add {a}, {a}, #1\\n", "sub {b}, {b}, #1\\n") };\n'
@@ -414,7 +445,7 @@ class MacroTests(unittest.TestCase):
             },
         )
 
-    def test_literal_macro_arguments_expand_stringify(self):
+    def test_literal_macro_arguments_expand_stringify(self) -> None:
         source = """macro_rules! load {
     ($offset:literal) => { concat!("ldr {word}, [{base}, #", stringify!($offset), "]") };
 }
@@ -429,7 +460,7 @@ fn f(a: u32) -> (u32, u32) {
     (low, high)
 }
 """
-        parsed = asm_source.parse_function(
+        parsed = rust.parse_function(
             source,
             "f",
             ["a"],
@@ -438,10 +469,10 @@ fn f(a: u32) -> (u32, u32) {
             required_options={"nostack"},
         )
         self.assertEqual(parsed.instructions[0], "ldr {word}, [{base}, #12]")
-        self.assertEqual(parsed.origins[0], asm_source.MacroOrigin("load", "12", 0))
+        self.assertEqual(parsed.origins[0], rust.MacroOrigin("load", "12", 0))
 
-        with self.assertRaisesRegex(asm_source.GenerationError, "has no arm for `OFFSET`"):
-            asm_source.parse_function(
+        with self.assertRaisesRegex(rust.GenerationError, "has no arm for `OFFSET`"):
+            rust.parse_function(
                 source.replace("load!(12)", "load!(OFFSET)"),
                 "f",
                 ["a"],
@@ -450,7 +481,7 @@ fn f(a: u32) -> (u32, u32) {
                 required_options={"nostack"},
             )
 
-    def test_identifier_macro_arguments_expand_nested_concat_and_stringify(self):
+    def test_identifier_macro_arguments_expand_nested_concat_and_stringify(self) -> None:
         source = """macro_rules! rotate {
     ($a:ident, $b:ident) => { concat!(
         concat!("add ", stringify!($a), ", ", stringify!($a), ", #1\\n"),
@@ -465,7 +496,7 @@ fn f(mut a: u32, mut b: u32) -> (u32, u32) {
     (a, b)
 }
 """
-        parsed = asm_source.parse_function(
+        parsed = rust.parse_function(
             source,
             "f",
             ["a", "b"],
@@ -476,12 +507,12 @@ fn f(mut a: u32, mut b: u32) -> (u32, u32) {
         self.assertEqual(
             parsed.origins,
             (
-                asm_source.MacroOrigin("rotate", "a, b", 0),
-                asm_source.MacroOrigin("rotate", "a, b", 0),
+                rust.MacroOrigin("rotate", "a, b", 0),
+                rust.MacroOrigin("rotate", "a, b", 0),
             ),
         )
 
-    def test_malformed_macros_are_rejected(self):
+    def test_malformed_macros_are_rejected(self) -> None:
         cases = {
             "escape only": 'macro_rules! m { () => { "add {a}, {a}, #1\\t\\n" }; }',
             "no arm for `x`": 'macro_rules! m { () => { concat!(m!(x), "a\\n") }; }',
@@ -495,11 +526,11 @@ fn f(mut a: u32, mut b: u32) -> (u32, u32) {
         for message, source in cases.items():
             with (
                 self.subTest(message=message),
-                self.assertRaisesRegex(asm_source.GenerationError, message),
+                self.assertRaisesRegex(rust.GenerationError, message),
             ):
                 self.parse(source)
 
-    def test_parameterized_macro_argument_kinds_are_rejected(self):
+    def test_parameterized_macro_argument_kinds_are_rejected(self) -> None:
         source = """macro_rules! m {
     ($word:ident, $offset:literal) => {
         concat!("ldr ", stringify!($word), ", [r0, #", stringify!($offset), "]\\n")
@@ -515,12 +546,12 @@ fn f(a: u32) -> (u32, u32) {
     (low, high)
 }
 """
-        parsed = asm_source.parse_function(
+        parsed = rust.parse_function(
             source, "f", ["a"], 2, allowed_options={"nostack"}, required_options={"nostack"}
         )
         self.assertEqual(parsed.instructions[0], "ldr r2, [r0, #4]")
-        with self.assertRaisesRegex(asm_source.GenerationError, "has no arm for `4, r2`"):
-            asm_source.parse_function(
+        with self.assertRaisesRegex(rust.GenerationError, "has no arm for `4, r2`"):
+            rust.parse_function(
                 source.replace("m!(r2, 4)", "m!(4, r2)"),
                 "f",
                 ["a"],
@@ -529,7 +560,7 @@ fn f(a: u32) -> (u32, u32) {
                 required_options={"nostack"},
             )
 
-    def test_invocations_in_template_position_expand_with_origins(self):
+    def test_invocations_in_template_position_expand_with_origins(self) -> None:
         source = (
             'macro_rules! step { () => { concat!("add {a}, {a}, #1\\n", "add {a}, {a}, #1\\n") }; }\n'
             "fn f(mut a: u64) -> [u64; 1] {\n"
@@ -540,7 +571,7 @@ fn f(a: u32) -> (u32, u32) {
             "    [a]\n"
             "}\n"
         )
-        parsed = asm_source.parse_function(
+        parsed = rust.parse_function(
             source, "f", ["a"], 1, required_options={"pure", "nomem", "nostack"}
         )
         self.assertEqual(len(parsed.instructions), 6)
@@ -548,23 +579,23 @@ fn f(a: u32) -> (u32, u32) {
             parsed.origins,
             (
                 None,
-                asm_source.MacroOrigin("step", "", 0),
-                asm_source.MacroOrigin("step", "", 0),
-                asm_source.MacroOrigin("step", "", 1),
-                asm_source.MacroOrigin("step", "", 1),
+                rust.MacroOrigin("step", "", 0),
+                rust.MacroOrigin("step", "", 0),
+                rust.MacroOrigin("step", "", 1),
+                rust.MacroOrigin("step", "", 1),
                 None,
             ),
         )
-        with self.assertRaisesRegex(asm_source.GenerationError, "unknown macro other!"):
-            asm_source.parse_function(
+        with self.assertRaisesRegex(rust.GenerationError, "unknown macro other!"):
+            rust.parse_function(
                 source.replace("step!(), step!()", "other!()"),
                 "f",
                 ["a"],
                 1,
                 required_options={"pure", "nomem", "nostack"},
             )
-        with self.assertRaisesRegex(asm_source.GenerationError, "has no arm for `last`"):
-            asm_source.parse_function(
+        with self.assertRaisesRegex(rust.GenerationError, "has no arm for `last`"):
+            rust.parse_function(
                 source.replace("step!(), step!()", "step!(last)"),
                 "f",
                 ["a"],
@@ -572,7 +603,7 @@ fn f(a: u32) -> (u32, u32) {
                 required_options={"pure", "nomem", "nostack"},
             )
 
-    def test_block_function_is_the_top_level_one(self):
+    def test_block_function_is_the_top_level_one(self) -> None:
         # A trait implementation's method of the same name, which forwards to the block, is
         # indented and so not the block; a second top-level definition is an error.
         block = (
@@ -590,14 +621,23 @@ fn f(a: u32) -> (u32, u32) {
             "    }\n"
             "}\n"
         )  # fmt: skip
-        parsed = asm_source.parse_function(
+        parsed = rust.parse_function(
             block + forwarding, "f", ["a"], 1, required_options={"pure", "nomem", "nostack"}
         )
         self.assertEqual(len(parsed.instructions), 1)
-        with self.assertRaisesRegex(asm_source.GenerationError, "expected exactly one `fn f\\(`"):
-            asm_source.parse_function(
+        with self.assertRaisesRegex(
+            rust.GenerationError,
+            "expected exactly one top-level `fn f\\(` containing asm!, found 2",
+        ):
+            rust.parse_function(
                 block + block, "f", ["a"], 1, required_options={"pure", "nomem", "nostack"}
             )
+        # A portable definition of the same name, for other targets, is not the block.
+        portable = "fn f(a: u64) -> [u64; 1] {\n    [a]\n}\n"
+        parsed = rust.parse_function(
+            portable + block, "f", ["a"], 1, required_options={"pure", "nomem", "nostack"}
+        )
+        self.assertEqual(parsed.instructions, ("mov {a}, {a}",))
 
 
 if __name__ == "__main__":
