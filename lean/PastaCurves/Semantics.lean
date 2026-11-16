@@ -1,4 +1,6 @@
-import Mathlib.Logic.Function.Iterate
+module
+public import Mathlib.Logic.Function.Iterate
+@[expose] public section
 
 /-!
 # Generic semantics for the Pasta arithmetic routines

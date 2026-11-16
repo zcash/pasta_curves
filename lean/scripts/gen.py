@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the Lean transcription of the crate's inline Pasta Montgomery blocks.
 
-Reads the inline `asm!` blocks in `src/asm/aarch64.rs` and `src/asm/x86_64.rs`, and writes
+Reads the inline `asm!` blocks in the architecture sources under `src/asm`, and writes
 
 - `lean/PastaCurves/<Architecture>/Transcription.lean`: each block as a Lean definition over
   its instruction semantics, one `let` per instruction result, in the block's order,
@@ -81,6 +81,9 @@ class Emitter:
 
     def __init__(self):
         self.entries = []  # dicts: name, expr, comment, reads, load (bool)
+        # Skeletons normally clear each extracted value's defining equation. Large factored
+        # routines can override this to keep their dependent equality tails transparent.
+        self.clear_values = True
         self.known = set()  # names holding a value the program may read
         self.cur_reads = set()
         self.pc = None  # index of the instruction being transcribed (None: an argument)
@@ -148,10 +151,12 @@ class Routine:
         result_names,
         struct=None,
         arg_fields=None,
+        lift_lets=True,
     ):
         self.doc, self.signature, self.lines, self.result = doc, signature, lines, result
         self.name, self.emitter, self.result_names = name, emitter, result_names
         self.struct = struct
+        self.lift_lets = lift_lets
         self.arg_fields = {arg: list(fields) for arg, fields in ARG_FIELDS.items()}
         if arg_fields:
             self.arg_fields.update({arg: list(fields) for arg, fields in arg_fields.items()})
@@ -633,8 +638,9 @@ def skeleton(routine):
     out = [
         f"  -- generated skeleton for `{routine.name}`: do not edit between the annotations",
         f"  unfold {routine.name} at hres",
-        "  lift_lets -merge at hres",
     ]
+    if routine.lift_lets:
+        out.append("  lift_lets -merge at hres")
     products = {}
     values = {}  # the current group's equations `e_x : x = v`, as the `x := v` of its step
     bounds = {}  # the current group's bounds `b_x : x < 2^64`, as the `using proof` of its step
@@ -908,19 +914,25 @@ def check_spec(path, routines):
 # while this common CLI imports them only when orchestration needs them.
 def _backends():
     import gen_aarch64
+    import gen_armv7em
     import gen_x86_64
 
-    return gen_aarch64, gen_x86_64
+    return gen_aarch64, gen_armv7em, gen_x86_64
 
 
 def generated_outputs():
     """Return every generated path and its expected contents without writing files."""
-    gen_aarch64, gen_x86_64 = _backends()
+    gen_aarch64, gen_armv7em, gen_x86_64 = _backends()
     shared = [(OUT_VECTORS, render_vector_data(VECTORS.read_text().splitlines()))]
     shared.append((OUT_KNOWN_ANSWERS, render_known_answers(KNOWN_ANSWERS.read_text())))
     field_types = {m: (ROOT / f"src/fields/{m}.rs").read_text() for m in FIELD_TYPE_SOURCES}
     shared.append((OUT_FIELD_TYPES, render_field_types(field_types)))
-    return shared + gen_aarch64.generated_outputs() + gen_x86_64.generated_outputs()
+    return (
+        shared
+        + gen_aarch64.generated_outputs()
+        + gen_armv7em.generated_outputs()
+        + gen_x86_64.generated_outputs()
+    )
 
 
 # Existing proof files only. None selects every generated routine of that architecture.
@@ -936,6 +948,64 @@ SPEC_MANIFEST = {
     "lean/PastaCurves/AArch64/Spec/FgRow.lean": ("AArch64", ("fgRowBlock",)),
     "lean/PastaCurves/AArch64/Spec/Divstep.lean": ("AArch64", ("divstepRound", "divstepLast")),
     "lean/PastaCurves/AArch64/Spec/Divstep59.lean": ("AArch64", ("divstep59Block",)),
+    "lean/PastaCurves/ARMv7EM/Spec/Arithmetic.lean": (
+        "ARMv7EM",
+        ("adc", "addWord", "sbb", "macWord"),
+    ),
+    "lean/PastaCurves/ARMv7EM/Spec/Invert/InversionMacWords.lean": (
+        "ARMv7EM",
+        ("inversionMacWords",),
+    ),
+    "lean/PastaCurves/ARMv7EM/Spec/FromMont/Prefix.lean": (
+        "ARMv7EM",
+        (
+            "fromMontRoundPrefixQuotient",
+            "fromMontRoundPrefixSelfSub",
+            "fromMontRoundPrefixMask",
+            "fromMontRoundPrefix",
+        ),
+    ),
+    "lean/PastaCurves/ARMv7EM/Spec/FromMont/Suffix.lean": (
+        "ARMv7EM",
+        ("fromMontRoundSuffix",),
+    ),
+    "lean/PastaCurves/ARMv7EM/Spec/FromMont/RoundComposition.lean": (
+        "ARMv7EM",
+        ("fromMontRound",),
+    ),
+    "lean/PastaCurves/ARMv7EM/Spec/FromMont/FinalReduction/Subtraction.lean": (
+        "ARMv7EM",
+        ("fromMontFinalSubtractionBlock",),
+    ),
+    "lean/PastaCurves/ARMv7EM/Spec/FromMont/FinalReduction/AddBack.lean": (
+        "ARMv7EM",
+        ("fromMontFinalAddBackBlock",),
+    ),
+    "lean/PastaCurves/ARMv7EM/Spec/FromMont/FinalReduction/Block.lean": (
+        "ARMv7EM",
+        ("fromMontFinalReductionBlock",),
+    ),
+    "lean/PastaCurves/ARMv7EM/Spec/FromMont/Block.lean": (
+        "ARMv7EM",
+        ("fromMontBlock",),
+    ),
+    "lean/PastaCurves/ARMv7EM/Spec/Invert/CondSub.lean": ("ARMv7EM", ("condSub",)),
+    "lean/PastaCurves/ARMv7EM/Spec/Invert/Divstep59/Batch.lean": (
+        "ARMv7EM",
+        ("batchBlock",),
+    ),
+    "lean/PastaCurves/ARMv7EM/Spec/Invert/Divstep59/Block.lean": (
+        "ARMv7EM",
+        ("divstep59Block",),
+    ),
+    "lean/PastaCurves/ARMv7EM/Spec/Invert/Divstep59/Finish.lean": (
+        "ARMv7EM",
+        ("batchRoundFinish",),
+    ),
+    "lean/PastaCurves/ARMv7EM/Spec/Invert/Divstep59/Round.lean": (
+        "ARMv7EM",
+        ("batchRound",),
+    ),
     "lean/PastaCurves/X86_64/Spec/Add.lean": ("X86_64", ("addMod",)),
     "lean/PastaCurves/X86_64/Spec/Sub.lean": ("X86_64", ("subMod",)),
     "lean/PastaCurves/X86_64/Spec/FromMont.lean": ("X86_64", ("fromMont",)),
@@ -944,14 +1014,18 @@ SPEC_MANIFEST = {
 }
 
 # Missing proofs are tracked by routine, not by hypothetical files; a block transcribed ahead of
-# its proof is listed here under its architecture. None at present.
+# its proof is listed here under its architecture.
 UNPROVED_ROUTINES = {}
 
 
 def architecture_routines():
     """Return the proof-capable routine manifest for each assembly architecture."""
-    gen_aarch64, gen_x86_64 = _backends()
-    return {"AArch64": gen_aarch64.all_routines(), "X86_64": gen_x86_64.all_routines()}
+    gen_aarch64, gen_armv7em, gen_x86_64 = _backends()
+    return {
+        "AArch64": gen_aarch64.all_routines(),
+        "ARMv7EM": gen_armv7em.all_routines(),
+        "X86_64": gen_x86_64.all_routines(),
+    }
 
 
 def find_routine(specification):

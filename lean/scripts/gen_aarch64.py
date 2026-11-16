@@ -796,11 +796,26 @@ def emit_inline(config):
                 if arg not in args:
                     raise ValueError(f"{name}: operand {n} reads {v}, not an argument")
                 fields = config.fields(arg)
-                if fields is None or i >= len(fields):
-                    raise ValueError(f"{name}: operand {n} reads {v}, which {arg} does not have")
-                e.bind(
-                    n, f"{arg}.l{i}", "argument", reads=(), load=True, fact=("load", arg, f"l{i}")
-                )
+                if i is None:
+                    if fields is not None:
+                        raise ValueError(
+                            f"{name}: scalar local {v} aliases structured argument {arg}"
+                        )
+                    fact = ("inv",) if arg == "inv" else ("param", arg)
+                    e.bind(n, arg, "argument", reads=(), fact=fact)
+                else:
+                    if fields is None or i >= len(fields):
+                        raise ValueError(
+                            f"{name}: operand {n} reads {v}, which {arg} does not have"
+                        )
+                    e.bind(
+                        n,
+                        f"{arg}.l{i}",
+                        "argument",
+                        reads=(),
+                        load=True,
+                        fact=("load", arg, f"l{i}"),
+                    )
             # An `inout` operand whose output is discarded (`=> _`) is an input only.
             if kind == "inout" and out != "_":
                 if named_outputs.get(out) != n:

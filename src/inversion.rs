@@ -3,8 +3,8 @@
 //! blocks, and `lean/PastaCurves/Inversion/Composition.lean` proves it equal to the algorithm's
 //! model for any blocks that meet the record of their specifications.
 //!
-//! [`invert`] runs the AArch64 assembly blocks where the AArch64 backend is compiled, and the
-//! same blocks in portable Rust (`portable`) everywhere else.
+//! [`invert`] runs the AArch64 or ARMv7E-M assembly blocks where those backends are
+//! compiled, and the same blocks in portable Rust (`portable`) elsewhere.
 
 // The inversion is not yet reached from the field types.
 #![allow(dead_code)]
@@ -12,10 +12,10 @@
 use crate::limbs::Limbs;
 
 if_asm_supported! {
-    // The portable blocks serve wherever the assembly blocks do not; beside the AArch64 backend
-    // they are compiled for their tests and the documentation only.
+    // The ARMv7E-M backend also uses whole portable methods for blocks it does not
+    // optimize. Beside AArch64, portable blocks are compiled for tests and docs.
     #[cfg(any(not(target_arch = "aarch64"), test, doc))]
-    mod portable;
+    pub(crate) mod portable;
 }
 if_asm_unsupported! {
     mod portable;
@@ -99,18 +99,22 @@ pub(crate) fn invert_with<B: InvertBlocks>(
 }
 
 if_asm_supported! {
-    /// The blocks that [`invert`] runs: the AArch64 assembly blocks where the AArch64 backend is
-    /// compiled, and the portable blocks elsewhere.
+    /// The blocks that [`invert`] runs: AArch64 or ARMv7E-M assembly blocks where
+    /// the corresponding backend is compiled, and portable blocks elsewhere.
     #[cfg(target_arch = "aarch64")]
     type Selected = crate::asm::aarch64::Backend;
-    /// The blocks that [`invert`] runs: the AArch64 assembly blocks where the AArch64 backend is
-    /// compiled, and the portable blocks elsewhere.
-    #[cfg(not(target_arch = "aarch64"))]
+    /// The blocks that [`invert`] runs: AArch64 or ARMv7E-M assembly blocks where
+    /// the corresponding backend is compiled, and portable blocks elsewhere.
+    #[cfg(target_arch = "arm")]
+    type Selected = crate::asm::armv7em::Backend;
+    /// The blocks that [`invert`] runs: AArch64 or ARMv7E-M assembly blocks where
+    /// the corresponding backend is compiled, and portable blocks elsewhere.
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "arm")))]
     type Selected = portable::Backend;
 }
 if_asm_unsupported! {
-    /// The blocks that [`invert`] runs: the AArch64 assembly blocks where the AArch64 backend is
-    /// compiled, and the portable blocks elsewhere.
+    /// The blocks that [`invert`] runs: AArch64 or ARMv7E-M assembly blocks where
+    /// the corresponding backend is compiled, and portable blocks elsewhere.
     type Selected = portable::Backend;
 }
 

@@ -494,7 +494,7 @@ class Emitter(gen.Emitter):
 
 def input_expression(
     value: str,
-    locals_map: dict[str, tuple[str, int]],
+    locals_map: dict[str, tuple[str, int | None]],
     argument_types: dict[str, str],
 ) -> tuple[str, str]:
     direct = re.fullmatch(r"([A-Za-z_]\w*)\[([0-9]+)\]", value)
@@ -510,6 +510,10 @@ def input_expression(
     if argument not in argument_types:
         raise GenerationError(f"operand reads non-argument {argument}")
     kind = argument_types[argument]
+    if index is None:
+        if kind != "Nat":
+            raise GenerationError(f"scalar local {value} aliases non-scalar {argument} : {kind}")
+        return argument, f"input {value}"
     limit = 8 if kind == "WideLimbs" else 4 if kind == "Limbs" else 0
     if index < 0 or index >= limit:
         raise GenerationError(f"limb {index} is out of range for {argument} : {kind}")

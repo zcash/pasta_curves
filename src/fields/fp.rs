@@ -111,7 +111,7 @@ pub(crate) const MODULUS: Fp = Fp([
 ]);
 
 /// The modulus as u32 limbs.
-#[cfg(not(target_pointer_width = "64"))]
+#[cfg(all(not(target_pointer_width = "64"), any(feature = "bits", test)))]
 const MODULUS_LIMBS_32: [u32; 8] = [
     0x0000_0001,
     0x992d_30ed,
@@ -437,7 +437,7 @@ impl Fp {
 
     #[cfg_attr(not(feature = "uninline-portable"), inline)]
     fn sub_runtime(&self, rhs: &Self) -> Self {
-        if_asm!(
+        if_asm_addsub!(
             Fp(crate::asm::sub(&self.0, &rhs.0, &MODULUS.0)),
             self.sub_portable(rhs)
         )
@@ -470,7 +470,7 @@ impl Fp {
 
     #[cfg_attr(not(feature = "uninline-portable"), inline)]
     fn add_runtime(&self, rhs: &Self) -> Self {
-        if_asm!(
+        if_asm_addsub!(
             Fp(crate::asm::add(&self.0, &rhs.0, &MODULUS.0)),
             self.add_portable(rhs)
         )

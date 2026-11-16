@@ -780,6 +780,7 @@ class X86RealSourceTests(unittest.TestCase):
                     f"  -- generated skeleton for `{routine.name}`: do not edit between the annotations",
                 )
                 self.assertEqual(generated[-1], "  subst hres")
+                self.assertEqual(generated[2], "  lift_lets -merge at hres")
                 self.assertIs(
                     gen.find_routine(f"X86_64:{routine.name}").emitter.__class__,
                     routine.emitter.__class__,
@@ -1011,6 +1012,83 @@ class SkeletonCheckerTests(unittest.TestCase):
                         gen.parse_spec_manifest(str(manifest_path))
         with self.assertRaisesRegex(ValueError, "belongs to X86_64, not AArch64"):
             gen.parse_spec_manifest(f"AArch64:{add_path}")
+
+    def test_armv7em_proofs_are_registered_and_new_routines_are_explicitly_unproved(self):
+        spec = "lean/PastaCurves/ARMv7EM/Spec/Arithmetic.lean"
+        self.assertEqual(
+            gen.SPEC_MANIFEST[spec],
+            ("ARMv7EM", ("adc", "addWord", "sbb", "macWord")),
+        )
+        inversion_spec = "lean/PastaCurves/ARMv7EM/Spec/Invert/InversionMacWords.lean"
+        self.assertEqual(
+            gen.SPEC_MANIFEST[inversion_spec],
+            ("ARMv7EM", ("inversionMacWords",)),
+        )
+        cond_sub_spec = "lean/PastaCurves/ARMv7EM/Spec/Invert/CondSub.lean"
+        self.assertEqual(
+            gen.SPEC_MANIFEST[cond_sub_spec],
+            ("ARMv7EM", ("condSub",)),
+        )
+        for name, module in (
+            ("batchRoundFinish", "Finish"),
+            ("batchRound", "Round"),
+            ("batchBlock", "Batch"),
+            ("divstep59Block", "Block"),
+        ):
+            spec_file = f"lean/PastaCurves/ARMv7EM/Spec/Invert/Divstep59/{module}.lean"
+            self.assertEqual(gen.SPEC_MANIFEST[spec_file], ("ARMv7EM", (name,)))
+        finish_spec = "lean/PastaCurves/ARMv7EM/Spec/Invert/Divstep59/Finish.lean"
+        prefix_spec = "lean/PastaCurves/ARMv7EM/Spec/FromMont/Prefix.lean"
+        self.assertEqual(
+            gen.SPEC_MANIFEST[prefix_spec],
+            (
+                "ARMv7EM",
+                (
+                    "fromMontRoundPrefixQuotient",
+                    "fromMontRoundPrefixSelfSub",
+                    "fromMontRoundPrefixMask",
+                    "fromMontRoundPrefix",
+                ),
+            ),
+        )
+        suffix_spec = "lean/PastaCurves/ARMv7EM/Spec/FromMont/Suffix.lean"
+        self.assertEqual(gen.SPEC_MANIFEST[suffix_spec], ("ARMv7EM", ("fromMontRoundSuffix",)))
+        for name, module in (
+            ("fromMontFinalSubtractionBlock", "Subtraction"),
+            ("fromMontFinalAddBackBlock", "AddBack"),
+            ("fromMontFinalReductionBlock", "Block"),
+        ):
+            spec_file = f"lean/PastaCurves/ARMv7EM/Spec/FromMont/FinalReduction/{module}.lean"
+            self.assertEqual(gen.SPEC_MANIFEST[spec_file], ("ARMv7EM", (name,)))
+        self.assertEqual(gen.UNPROVED_ROUTINES.get("ARMv7EM", ()), ())
+        path, routines = gen.parse_spec_manifest(str(gen.ROOT / spec))
+        self.assertEqual(path, gen.ROOT / spec)
+        self.assertEqual(
+            [routine.name for routine in routines],
+            ["adc", "addWord", "sbb", "macWord"],
+        )
+        inversion_path, inversion_routines = gen.parse_spec_manifest(str(gen.ROOT / inversion_spec))
+        self.assertEqual(inversion_path, gen.ROOT / inversion_spec)
+        self.assertEqual(
+            [routine.name for routine in inversion_routines],
+            ["inversionMacWords"],
+        )
+        cond_sub_path, cond_sub_routines = gen.parse_spec_manifest(str(gen.ROOT / cond_sub_spec))
+        self.assertEqual(cond_sub_path, gen.ROOT / cond_sub_spec)
+        self.assertEqual([routine.name for routine in cond_sub_routines], ["condSub"])
+        finish_path, finish_routines = gen.parse_spec_manifest(str(gen.ROOT / finish_spec))
+        self.assertEqual(finish_path, gen.ROOT / finish_spec)
+        self.assertEqual([routine.name for routine in finish_routines], ["batchRoundFinish"])
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertTrue(gen.check_specs())
+        for name in gen.UNPROVED_ROUTINES.get("ARMv7EM", ()):
+            self.assertIn(f"unproved: ARMv7EM:{name}", output.getvalue())
+        self.assertIn("0 unproved; checks passed", output.getvalue())
+
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertTrue(gen.check_specs(strict=True))
 
 
 class KnownAnswerTests(unittest.TestCase):

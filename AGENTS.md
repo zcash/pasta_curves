@@ -94,27 +94,22 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ## The assembly backends (`src/asm`)
 
-The `asm` module provides assembly backends for the Pasta field arithmetic, one for AArch64 and one
-for x86-64. Each contains:
+The `asm` module provides architecture-specific backends for the Pasta fields. Their operations
+and availability are summarized in `src/asm/README.md`; `src/inversion.rs` drives the selected
+inversion blocks. The module is the one part of the crate that allows unsafe code. Its priorities
+are those of the crate: **correctness, constant-time behaviour, and performance**, in that order.
 
-- Montgomery multiplication and squaring, and modular addition and subtraction, as inline `asm!`
-  blocks;
-- a repeated-squaring chain, and the conversion out of Montgomery form, composed from those blocks.
+The AArch64 and x86-64 Montgomery routines are transcriptions of Supranational's Semolina v0.1.4;
+the ARMv7E-M routines are original 32-bit code. The inversion follows s2n-bignum's
+`bignum_montinv_p256` (see `src/asm/README.md`). The instruction streams are the object of
+machine-checked correctness proofs, so a change to an instruction is a change to a specification:
+keep the transcription, its documentation, and the proofs in step, and do not "improve" the assembly
+in passing.
 
-The AArch64 backend also contains the six blocks of a constant-time inversion. Their driver,
-`src/inversion.rs`, runs the same six blocks in portable Rust wherever the AArch64 backend is not
-compiled. The module is the one part of the crate that allows unsafe code. Its priorities are those
-of the crate: **correctness, constant-time behaviour, and performance**, in that order.
-
-The Montgomery routines are transcriptions of Supranational's Semolina v0.1.4, and the
-inversion's blocks are adapted from s2n-bignum's `bignum_montinv_p256` (see
-`src/asm/README.md`). The instruction streams are the object of machine-checked correctness
-proofs, so a change to an instruction is a change to a specification: keep the transcription,
-its documentation, and the proofs in step, and do not "improve" the assembly in passing.
-
-With the `asm` feature, the module provides a backend on `target_arch = "aarch64"`, and on
-`target_arch = "x86_64"` with 64-bit pointers except on Apple targets (see `src/asm/README.md`).
-Elsewhere, without the feature, or with `--cfg pasta_curves_noasm`, the module has no backend.
+With the `asm` feature, the module provides backends on the targets described in
+`src/asm/README.md`. On ARM, the gate also matches some targets that lack required instructions;
+use `--cfg pasta_curves_noasm` to select the portable fallback there. Without the feature, the
+module has no backend.
 Nothing is assembled at build time, so no C toolchain is needed. Where there is a backend, beside
 the crate's usual checks:
 
@@ -132,12 +127,18 @@ allocation.
 A cfg-gated test that compiles out still reports success, so CI counts the `#[test]`
 functions under `src/asm` and requires the run of the module's tests to report exactly that
 many passed, in both profiles. A test that needs one architecture lives in that backend's
-file (`aarch64.rs` or `x86_64.rs`), which is only counted on that architecture. CI also
-builds `core` from source on a nightly toolchain instead of using the sysroot, which proves
-that nothing in the backend reaches for std:
+file (`aarch64.rs`, `x86_64.rs`, or `armv7em.rs`), which is only counted on that
+architecture. The ARMv7E-M backend's target, `thumbv7em-none-eabihf`, has no std to run the
+tests, so CI selects the backend in the unit-test binary for
+`thumbv7neon-unknown-linux-gnueabihf`, an ARM target with std that compiles in Thumb state.
+It runs the backend's counted tests and the crate's unit tests under qemu's user-mode emulation;
+regular library builds for that target remain portable. CI also
+builds `core` from source on a nightly toolchain instead of using the sysroot, which proves that
+nothing in the backend reaches for std:
 `cargo +nightly build --release --no-default-features -Z build-std=core,compiler_builtins`
-with `--target` set to `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, and
-`x86_64-apple-darwin` in turn, for each backend and for a target without one.
+with `--target` set in turn to `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`,
+`x86_64-apple-darwin`, and `thumbv7em-none-eabihf`, for each backend and for a target without
+one.
 
 Documentation is a synthetic cross-platform build: `cfg(doc)` retains APIs that are unavailable
 on the rustdoc host, while `doc(cfg(...))` renders their real architecture requirements. Because
@@ -146,7 +147,8 @@ backend, update these conditions and keep doc-only fallback bodies non-executabl
 
 - **Preserve constant-time behaviour in the backend.** No secret-dependent branches or memory
   accesses in the blocks; the repeated-squaring loop branches only on its public count.
-  Conditional reductions use `csel` after a full-width subtraction.
+  Conditional reductions select after a full-width subtraction, using `csel` on AArch64 and
+  masks on ARMv7E-M.
 - **Operand contracts are stated on the entry points and checked by `debug_assert!`.** A
   change to a contract needs a change to the proofs that establish it.
 
@@ -187,8 +189,9 @@ describes the tools in more detail.
 
 - **Every architecture's `Transcription.lean` and the shared `Vectors.lean` are generated** by
   `lean/scripts/gen.py` from the Rust `asm!` blocks and the reference vectors. Never edit them
-  by hand; change the generator or its inputs and regenerate. Architecture-specific
-  `Compositions.lean` mirrors the actual Rust compositions, not another backend's implementation.
+  by hand; change the generator or its inputs and regenerate. Architecture-specific composition
+  proof models mirror the actual Rust compositions, not another backend's implementation. For
+  ARMv7E-M this is `Compositions/Model.lean`; `Compositions.lean` is the translation/model umbrella.
   Shared `Compositions.lean` models common operand checks and the inversion's driver over a
   record of a backend's blocks; `Fields.lean` states the two fields' constants. A change on
   either side changes the other.
@@ -200,8 +203,8 @@ describes the tools in more detail.
   annotations are then moved to their new places. Independently handwritten instruction traces
   or proof scripts are not a substitute for this synchronization check.
 - **Architecture modules have consistent roles.** `Semantics` defines instruction behavior;
-  `Transcription` contains generated block models; `Compositions` models Rust around those
-  blocks; `Vectors` checks the backend's routines against the shared generated vectors by kernel
+  `Transcription` contains generated block models; the composition proof model models Rust around
+  those blocks; `Vectors` checks the backend's routines against the shared generated vectors by kernel
   evaluation; `Spec` proves block and composition correctness; `Backend` builds the backend's
   record of Montgomery blocks, with `Glue.blocksOf`, that the Aeneas-translated glue runs over;
   `Entry` contains correctness **theorems** specializing those results to `PastaField` and the
@@ -217,9 +220,11 @@ describes the tools in more detail.
   self-contained responsibility. Extend shared components rather than duplicating them.
   Reject unsupported syntax, uninitialized register/flag reads, and unmodeled memory accesses;
   test those rejection paths. For x86, CF and OF are independent and must not be conflated.
-- **The Aeneas translations are generated** (`Types.lean` and `Funs.lean` under `Portable/`
-  and `Glue/`, by `lean/scripts/gen_aeneas.sh`); never edit them by hand. `Glue/FunsExternal.lean`
-  is written by hand: it defines the one external function that the glue calls. Proofs about the
+- **The Aeneas translations are generated** (`Types.lean` and `Funs.lean` under `Portable/`,
+  `Glue/`, and `ARMv7EM/Compositions/`, by `lean/scripts/gen_aeneas.sh`); never edit them by hand.
+  `Glue/FunsExternal.lean` is written by hand: it defines the one external function that the glue
+  calls. `ARMv7EM/Compositions/FunsExternal.lean` is also written by hand: it models the
+  inline-assembly primitives that the ARMv7E-M translation treats as opaque. Proofs about the
   translations follow Aeneas' own guidance at the revision that `lean/lakefile.toml` pins: the
   skill files in [`documentation/skills/`](https://github.com/AeneasVerif/aeneas/tree/b86120db3183b0107eb5f2637b11c424cd06ef1c/documentation/skills)
   (`aeneas-lean-core`, `aeneas-tactics-quickref`, `proof-patterns`, and

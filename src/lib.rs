@@ -89,6 +89,16 @@ fn backend_name() {
                 target_arch = "x86_64",
                 target_pointer_width = "64",
                 not(target_vendor = "apple")
+            ),
+            all(
+                target_arch = "arm",
+                any(
+                    target_os = "none",
+                    all(test, pasta_curves_armv7em_test, target_os = "linux")
+                ),
+                target_abi = "eabihf",
+                target_pointer_width = "32",
+                target_endian = "little"
             )
         )
     ));
@@ -96,6 +106,8 @@ fn backend_name() {
         "portable"
     } else if cfg!(target_arch = "aarch64") {
         "aarch64"
+    } else if cfg!(target_arch = "arm") {
+        "armv7em"
     } else {
         "x86-64"
     };

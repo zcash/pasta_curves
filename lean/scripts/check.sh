@@ -16,6 +16,7 @@ export PYTHONDONTWRITEBYTECODE=1
 "$PYTHON" lean/scripts/gen.py --check
 "$PYTHON" lean/scripts/gen.py --check-specs
 "$PYTHON" lean/scripts/test_gen.py
+"$PYTHON" lean/scripts/test_armv7em.py
 "$PYTHON" lean/scripts/test_vectors.py
 "$PYTHON" lean/scripts/test_asm_source.py
 echo "Lean transcription: current."

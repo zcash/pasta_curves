@@ -199,7 +199,9 @@ theorem blocks_spec (F : PastaField) : (pureBlocks blocks).Spec F where
     rw [← word_val (lt_of_eq_emod ed)] at ed
     rw [← word_val (lt_of_eq_emod ef)] at ef
     rw [← word_val (lt_of_eq_emod eg)] at eg
-    exact getD_of_spec (divstep59_spec _ _ _ s hf hd hD ed ef eg) _
+    apply getD_of_spec (divstep59_spec _ _ _ s hf hd (by
+      unfold InvertBlocks.divstep59StateBound at hD
+      omega) ed ef eg) _
   signMag zu zv zq zr u v q r hzu hzv hzq hzr eu ev eq er := by
     rw [← word_val (lt_of_eq_emod eu)] at eu
     rw [← word_val (lt_of_eq_emod ev)] at ev

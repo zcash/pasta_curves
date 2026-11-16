@@ -6,6 +6,13 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- An ARMv7E-M assembly backend for the `asm` feature flag on the
+  `thumbv7em-none-eabihf` target (Cortex-M4 and Cortex-M7 class cores):
+  Montgomery multiplication, squaring, and conversion, and three of the
+  inversion's blocks. Other bare-metal ARM targets with the same target OS and ABI
+  may also select this backend; use `--cfg pasta_curves_noasm` if their CPU does
+  not support its Thumb-2 and DSP instructions.
 
 ## [0.6.2] - 2026-11-14
 ### Added

@@ -35,14 +35,20 @@ namespace PastaCurves
 open Inversion (State divsteps M RoundState rounds trueState round initState startE montInvModel
   signWordOf finalD updateFG updateDE amontredZ Mat2 SignMagRep signMask mul_word addw_word)
 
+/-- The input states on which a backend's signed packed `divstep59` must be correct. The added
+`118` reserves the maximum growth of `two_delta` during the block's 59 divsteps. -/
+def InvertBlocks.divstep59StateBound (s : State) : Prop :=
+  |s.two_delta| + 118 < 2^31
+
 /-- What the composition needs of a backend's blocks at a field `F`: each block, under the
 hypotheses of its field, computes the word-level function of the shared layer that the round model
 composes. -/
 structure InvertBlocks.Spec (B : InvertBlocks) (F : PastaField) : Prop where
-  /-- `divstep59` on the words of a true state with `f` and `two_delta` odd and `two_delta` small
-  returns `two_delta` and the entries of the 59-step matrix, modulo `2^64`. -/
-  divstep59 : ∀ (two_delta f0 g0 : ℕ) (s : State), s.f % 2 = 1 → s.two_delta % 2 = 1 → |s.two_delta| < 2^61 →
-    (two_delta : ℤ) = s.two_delta % 2^64 → (f0 : ℤ) = s.f % 2^64 → (g0 : ℤ) = s.g % 2^64 →
+  /-- `divstep59` on the words of a true state with `f` and `two_delta` odd, under the shared state
+  bound, returns `two_delta` and the entries of the 59-step matrix, modulo `2^64`. -/
+  divstep59 : ∀ (two_delta f0 g0 : ℕ) (s : State), s.f % 2 = 1 → s.two_delta % 2 = 1 →
+    InvertBlocks.divstep59StateBound s → (two_delta : ℤ) = s.two_delta % 2^64 →
+    (f0 : ℤ) = s.f % 2^64 → (g0 : ℤ) = s.g % 2^64 →
     ((B.divstep59 two_delta f0 g0).two_delta : ℤ) = (divsteps 59 s).two_delta % 2^64 ∧
       ((B.divstep59 two_delta f0 g0).u : ℤ) = (M 59 s).u % 2^64 ∧
       ((B.divstep59 two_delta f0 g0).v : ℤ) = (M 59 s).v % 2^64 ∧
@@ -85,9 +91,10 @@ def Carries (st : InvertState) (rs : RoundState) : Prop :=
   (st.two_delta : ℤ) = rs.two_delta % 2^64 ∧ st.f = rs.f ∧ st.g = rs.g ∧ st.d = rs.d ∧ st.e = rs.e
 
 /-- What the blocks need of the true divstep state after `59 i` steps, for `i ≤ 9`: `f` odd,
-`two_delta` odd and small, and `f`, `g` below `2^256` in magnitude. -/
+`two_delta` odd and within the shared state bound, and `f`, `g` below `2^256` in magnitude. -/
 theorem trueState_facts (F : PastaField) (x : Limbs) (hx : x.Bounded) (i : ℕ) (hi : i ≤ 9) :
-    (trueState F x i).f % 2 = 1 ∧ (trueState F x i).two_delta % 2 = 1 ∧ |(trueState F x i).two_delta| < 2^61 ∧
+    (trueState F x i).f % 2 = 1 ∧ (trueState F x i).two_delta % 2 = 1 ∧
+      InvertBlocks.divstep59StateBound (trueState F x i) ∧
       |(trueState F x i).f| < 2^256 ∧ |(trueState F x i).g| < 2^256 := by
   have hp_odd : (F.modulus.toNat : ℤ) % 2 = 1 := by exact_mod_cast F.modulus_odd
   have hp255 : (F.modulus.toNat : ℤ) < 2^255 := by exact_mod_cast F.modulus_lt
@@ -103,10 +110,11 @@ theorem trueState_facts (F : PastaField) (x : Limbs) (hx : x.Bounded) (i : ℕ) 
   have hdB := Inversion.divsteps_two_delta_abs_le (59 * i) s0
   rw [hs0d, abs_one] at hdB
   push_cast at hdB
-  rw [abs_le] at hdB hfB hgB
+  rw [abs_le] at hfB hgB
   refine ⟨Inversion.divsteps_f_odd _ _ (by rw [← hs0]; exact hp_odd), ?_, ?_, ?_, ?_⟩
   · rw [Inversion.divsteps_two_delta_emod_two, hs0d]; rfl
-  · rw [abs_lt]; constructor <;> omega
+  · unfold InvertBlocks.divstep59StateBound
+    omega
   · rw [abs_lt]; constructor <;> omega
   · rw [abs_lt]; constructor <;> omega
 

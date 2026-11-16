@@ -23,6 +23,7 @@ import PastaCurves.Inversion.PackedWords
 import PastaCurves.Inversion.Composition
 import PastaCurves.Inversion.Vectors
 import PastaCurves.AArch64
+import PastaCurves.ARMv7EM
 import PastaCurves.X86_64
 import PastaCurves.FlagConventions
 import PastaCurves.Portable.Funs

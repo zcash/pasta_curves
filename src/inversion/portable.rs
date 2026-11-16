@@ -1,5 +1,5 @@
-//! The inversion's six blocks in portable Rust, for the targets without the AArch64 assembly
-//! blocks.
+//! The inversion's six blocks in portable Rust. The ARMv7E-M backend uses these for
+//! `sign_mag`, `fg_row`, and `de_row` alongside its assembly blocks.
 //!
 //! Each function computes what its block contract in [`InvertBlocks`] states, in the shape that the
 //! Lean word-level model gives it (`lean/PastaCurves/Inversion/`) rather than instruction for
@@ -87,7 +87,7 @@ fn divstep(two_delta: u64, f: u64, g: u64) -> (u64, u64, u64) {
 /// `unpack` reads it: negate the word, round its upper part to the nearest at bit `41 - k`, and
 /// split that at bit 21, with the first coefficient in `(-2^20, 2^20]` for every `k`.
 #[inline(always)]
-fn unpack(k: u32, w: u64) -> (u64, u64) {
+pub(crate) fn unpack(k: u32, w: u64) -> (u64, u64) {
     let t = 0u64.wrapping_sub(w) as i64;
     let up = t.wrapping_add(1i64 << (40 - k)) >> (41 - k);
     let v = up.wrapping_add((1i64 << 20) - 1) >> 21;
@@ -114,13 +114,13 @@ fn batch(k: u32, two_delta: u64, f: u64, g: u64) -> [u64; 5] {
 /// The next low word after a batch: the row `(a, b)` applied to the low words, modulo `2^64`,
 /// shifted down by the batch's `k` steps (`Divstep59.lean`'s `nextLow`).
 #[inline(always)]
-fn next_low(k: u32, a: u64, b: u64, f: u64, g: u64) -> u64 {
+pub(crate) fn next_low(k: u32, a: u64, b: u64, f: u64, g: u64) -> u64 {
     a.wrapping_mul(f).wrapping_add(b.wrapping_mul(g)) >> k
 }
 
 /// The product of two matrices given as `[u, v, q, r]`, each entry modulo `2^64`.
 #[inline(always)]
-fn mat_mul(m: [u64; 4], n: [u64; 4]) -> [u64; 4] {
+pub(crate) fn mat_mul(m: [u64; 4], n: [u64; 4]) -> [u64; 4] {
     [
         m[0].wrapping_mul(n[0])
             .wrapping_add(m[1].wrapping_mul(n[2])),
@@ -172,10 +172,23 @@ fn row(x: &[u64; 5], y: &[u64; 5], m0: u64, m1: u64, s0: u64, s1: u64) -> [u64; 
     out
 }
 
+/// The five words of `2^61 p` for the one-word almost-Montgomery reduction.
+#[inline(always)]
+pub(crate) fn shifted_modulus(modulus: &Limbs) -> [u64; 5] {
+    let p = modulus;
+    [
+        p[0] << 61,
+        (p[0] >> 3) | (p[1] << 61),
+        (p[1] >> 3) | (p[2] << 61),
+        (p[2] >> 3) | (p[3] << 61),
+        p[3] >> 3,
+    ]
+}
+
 /// `x + y` modulo `2^320`.
 #[inline(always)]
 #[expect(unused_assignments, reason = "the carry out of the top word is dropped")]
-fn add5(x: &[u64; 5], y: &[u64; 5]) -> [u64; 5] {
+pub(crate) fn add5(x: &[u64; 5], y: &[u64; 5]) -> [u64; 5] {
     let mut out = [0u64; 5];
     let mut carry = 0u64;
     unroll!(i in [0, 1, 2, 3, 4] {
@@ -255,14 +268,7 @@ impl InvertBlocks for Backend {
     #[inline]
     fn amontred(t: &[u64; 5], modulus: &Limbs, inv: u64) -> Limbs {
         let p = modulus;
-        let p61 = [
-            p[0] << 61,
-            (p[0] >> 3) | (p[1] << 61),
-            (p[1] >> 3) | (p[2] << 61),
-            (p[2] >> 3) | (p[3] << 61),
-            p[3] >> 3,
-        ];
-        let s = add5(t, &p61);
+        let s = add5(t, &shifted_modulus(p));
         let w = s[0].wrapping_mul(inv);
         // The low word cancels: `s[0] + w p[0] ≡ 0 (mod 2^64)`.
         let (_, carry) = mac(s[0], w, p[0], 0);
