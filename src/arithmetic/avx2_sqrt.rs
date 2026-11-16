@@ -8,9 +8,10 @@
 //! # Availability
 //!
 //! This module requires `asm` and `sqrt-table`, and respects `pasta_curves_noasm`.
-//! Entry points check AVX2, XSAVE/OSXSAVE and enabled XMM/YMM state at runtime,
-//! including in no_std builds. Scalar interleaved decoding remains the fallback;
-//! BMI2/ADX availability alone is deliberately not treated as an AVX2 guarantee.
+//! Entry points use cpufeatures to check AVX2 and OS-enabled XMM/YMM state at
+//! runtime, including hosted `no_std` builds. SGX, freestanding
+//! (`target_os = "none"`) and UEFI targets require compile-time AVX2 guarantees
+//! instead. Scalar decoding remains the fallback; BMI2/ADX do not imply AVX2.
 //!
 //! # Arithmetic
 //!
@@ -39,37 +40,13 @@
 #![allow(unused_unsafe)]
 
 use core::arch::x86_64::*;
-use core::sync::atomic::{AtomicU8, Ordering};
 
-static AVX2: AtomicU8 = AtomicU8::new(0);
+cpufeatures::new!(avx2_cpuid, "avx2");
 
 /// Whether this CPU and operating system permit AVX2 instructions.
 #[inline]
 pub(crate) fn available() -> bool {
-    match AVX2.load(Ordering::Relaxed) {
-        1 => false,
-        2 => true,
-        _ => detect(),
-    }
-}
-
-#[cold]
-fn detect() -> bool {
-    // SAFETY: CPUID is baseline on x86-64. XGETBV is called only when XSAVE,
-    // OSXSAVE and AVX are supported; XCR0 must enable both XMM and YMM state.
-    #[allow(unused_unsafe)]
-    let supported = unsafe {
-        let max = __cpuid(0).eax;
-        max >= 7 && {
-            let state = __cpuid(1).ecx;
-            let required = (1 << 26) | (1 << 27) | (1 << 28);
-            state & required == required
-                && _xgetbv(0) & 6 == 6
-                && __cpuid_count(7, 0).ebx & (1 << 5) != 0
-        }
-    };
-    AVX2.store(if supported { 2 } else { 1 }, Ordering::Relaxed);
-    supported
+    avx2_cpuid::get()
 }
 
 use super::fields::SqrtTableHelpers;
