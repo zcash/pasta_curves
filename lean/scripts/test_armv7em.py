@@ -167,7 +167,7 @@ class ARMv7EMGeneratorTests(unittest.TestCase):
                 self.assertNotRegex(generated, rf"(?m)^(?:abbrev|def) {name}\b")
 
     def test_transcribed_source_blocks_and_full_inventory(self) -> None:
-        self.assertEqual(armv7em.asm_block_inventory(self.source), armv7em.ASM_BLOCKS)
+        self.assertEqual(rust.asm_functions(self.source), armv7em.ASM_BLOCKS)
         self.assertEqual(
             [program.name for program in armv7em.programs(self.source)],
             [
@@ -471,7 +471,7 @@ class ARMv7EMGeneratorTests(unittest.TestCase):
             self.assertGreaterEqual(
                 len(re.findall(rf"-- {re.escape(instruction)}$", generated, re.MULTILINE)), 1
             )
-        asm_inner = armv7em.checked_function(self.source, "batch", armv7em.BATCH_RUST)
+        asm_inner = rust.checked_function(self.source, "batch", armv7em.BATCH_RUST)
         instructions, _, _, _ = rust.parse_asm_invocation(
             self.source,
             asm_inner,
@@ -570,7 +570,7 @@ class ARMv7EMGeneratorTests(unittest.TestCase):
 
     def test_full_asm_inventory_changes_are_rejected(self) -> None:
         renamed = self.source.replace("fn batch(k:", "fn batch_changed(k:", 1)
-        self.assert_rejected(renamed, "ARM asm block inventory differs")
+        self.assert_rejected(renamed, "ARMv7EM: asm block inventory differs")
 
     def test_unsupported_instruction_is_rejected(self) -> None:
         source = self.mutate_function(
@@ -707,7 +707,7 @@ class ARMv7EMGeneratorTests(unittest.TestCase):
         self.assert_rejected(output, "returned value sum is not an asm output")
 
     def test_second_inline_asm_definition_is_rejected(self) -> None:
-        inline = armv7em.inline_asm_function(self.source, "adc")
+        inline = rust.inline_asm_function(self.source, "adc")
         block = armv7em.Primitive("adc_extra", "adcExtra", ("a", "b", "carry"), "test")
         renamed = inline.replace("fn adc(", "fn adc_extra(")
         duplicated = self.source + "\n" + renamed + "\n" + renamed

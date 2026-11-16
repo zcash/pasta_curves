@@ -2,6 +2,7 @@
 
 import re
 
+from asm2lean import rust
 from asm2lean.block import Block, Target
 from asm2lean.ir import DeadCode, Program
 from asm2lean.isa.x86_64 import X86_64_ISA
@@ -192,6 +193,7 @@ def programs(source: str | None = None) -> list[Program]:
     """Every program of the transcription, in order."""
     source = SOURCE.read_text() if source is None else source
     validate_high_limb(source)
+    rust.check_asm_inventory(source, [block.rust_name for block in BLOCKS], TARGET.isa.name)
     return transcription.programs(source, BLOCKS, TARGET)
 
 

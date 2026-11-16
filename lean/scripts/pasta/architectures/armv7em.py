@@ -240,100 +240,6 @@ structure BatchState where
   deriving DecidableEq, Repr"""
 
 
-# -- reading the source --------------------------------------------------------------------------
-
-
-def _function_span(source: str, masked: str, start: int, name: str) -> tuple[int, int]:
-    """The body's braces of the function whose definition starts at `start`."""
-    signature_open = masked.find("(", start)
-    signature_close = rust.matching_delimiter(source, signature_open, "(", ")")
-    body_open = masked.find("{", signature_close)
-    if body_open < 0:
-        raise GenerationError(f"{name}: missing function body")
-    return body_open, rust.matching_delimiter(source, body_open, "{", "}")
-
-
-def asm_block_inventory(source: str) -> tuple[str, ...]:
-    """Every top-level function with an `asm!` block, in source order."""
-    masked = rust.masked_noncode(source)
-    blocks = []
-    for match in re.finditer(r"(?m)^(?:pub(?:\([^)]*\))?\s+)?fn\s+([A-Za-z_]\w*)\s*\(", masked):
-        body_open, body_close = _function_span(source, masked, match.start(), match.group(1))
-        if re.search(r"\basm\s*!\s*\(", masked[body_open + 1 : body_close]):
-            blocks.append(match.group(1))
-    return tuple(blocks)
-
-
-def check_inventory(source: str) -> None:
-    found = asm_block_inventory(source)
-    if found != ASM_BLOCKS:
-        raise GenerationError(
-            f"ARM asm block inventory differs: expected {list(ASM_BLOCKS)}, found {list(found)}"
-        )
-
-
-def _functions(source: str, name: str) -> list[str]:
-    """The text of each top-level `fn name(` of the source."""
-    masked = rust.masked_noncode(source)
-    found = []
-    for match in re.finditer(rf"(?m)^fn\s+{re.escape(name)}\s*\(", masked):
-        _, body_close = _function_span(source, masked, match.start(), name)
-        found.append(source[match.start() : body_close + 1])
-    return found
-
-
-def top_level_function(source: str, name: str) -> str:
-    """The unique top-level definition of `name`."""
-    found = _functions(source, name)
-    if len(found) != 1:
-        raise GenerationError(f"expected exactly one top-level `fn {name}(`, found {len(found)}")
-    return found[0]
-
-
-def inline_asm_function(source: str, name: str) -> str:
-    """The unique top-level definition of `name` with an `asm!` block. The source also defines a
-    portable model of each primitive under the same name, for the other targets; the one with the
-    block is the one transcribed."""
-    found = [
-        text
-        for text in _functions(source, name)
-        if re.search(r"\basm\s*!\s*\(", rust.masked_noncode(text))
-    ]
-    if len(found) != 1:
-        raise GenerationError(
-            f"expected exactly one top-level `fn {name}(` containing asm!, found {len(found)}"
-        )
-    return found[0]
-
-
-def asm_placeholder(function: str) -> tuple[str, str]:
-    """The function's code without trivia, its one `asm!(...)` replaced by `asm!(ASM)`, and the
-    invocation's contents."""
-    masked = rust.masked_noncode(function)
-    matches = list(re.finditer(r"\basm\s*!\s*\(", masked))
-    if len(matches) != 1:
-        raise GenerationError(f"expected one asm! invocation, found {len(matches)}")
-    opening = masked.find("(", matches[0].start())
-    closing = rust.matching_delimiter(function, opening, "(", ")")
-    normalized = rust.code_without_trivia(
-        function[: matches[0].start()] + "asm!(ASM)" + function[closing + 1 :]
-    )
-    return normalized, function[opening + 1 : closing]
-
-
-def checked_function(source: str, name: str, expected: str) -> str:
-    """Require the Rust of `name`, around its `asm!` block if `expected` has one (`asm!(ASM)`), to
-    be `expected` up to trivia; the block's contents, or `""`."""
-    function = top_level_function(source, name)
-    if "ASM" in expected:
-        normalized, inner = asm_placeholder(function)
-    else:
-        normalized, inner = rust.code_without_trivia(function), ""
-    if normalized != rust.code_without_trivia(expected):
-        raise GenerationError(f"{name}: surrounding Rust differs from the checked transcription")
-    return inner
-
-
 def program(
     name: str,
     params: Sequence[tuple[str, str]],
@@ -443,7 +349,7 @@ POINTER = re.compile(r"([A-Za-z_]\w*)\.(as_ptr|as_mut_ptr)\(\)")
 
 
 def parse_primitive(source: str, block: Primitive) -> ParsedFunction:
-    text = source if block.memory else inline_asm_function(source, block.rust_name)
+    text = source if block.memory else rust.inline_asm_function(source, block.rust_name)
     options = {"nostack"} if block.memory else {"pure", "nomem", "nostack"}
     return rust.parse_function(
         text,
@@ -1097,7 +1003,7 @@ def composition(
 def batch_programs(source: str) -> list[Program]:
     """`batch`'s loop body as one round, its last five instructions factored, iterated by the
     public count in the Rust around it."""
-    inner = checked_function(source, "batch", BATCH_RUST)
+    inner = rust.checked_function(source, "batch", BATCH_RUST)
     instructions, origins, declarations, options = rust.parse_asm_invocation(
         source,
         inner,
@@ -1234,7 +1140,7 @@ def batch_programs(source: str) -> list[Program]:
 def divstep59_program(source: str) -> Program:
     """The Rust `divstep59`: three batches, the next low words between them, and the product of
     their matrices."""
-    checked_function(source, "divstep59", DIVSTEP59_RUST)
+    rust.checked_function(source, "divstep59", DIVSTEP59_RUST)
     bindings: list[tuple[str, Term, str]] = []
     previous: tuple[Term, Term] = (Arg("f0"), Arg("g0"))
     delta: Term = Arg("two_delta")
@@ -1315,7 +1221,7 @@ def _rust(term: Term) -> str:
 def programs(source: str | None = None) -> list[Program]:
     """Every definition of the transcription, in order."""
     source = SOURCE.read_text() if source is None else source
-    check_inventory(source)
+    rust.check_asm_inventory(source, ASM_BLOCKS, TARGET.isa.name)
     *primitives, cond_sub = [primitive(source, block) for block in PRIMITIVES]
     return [
         *primitives,

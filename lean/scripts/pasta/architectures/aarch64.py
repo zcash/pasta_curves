@@ -2,6 +2,7 @@
 
 import textwrap
 
+from asm2lean import rust
 from asm2lean.block import Block, Target
 from asm2lean.ir import Program
 from asm2lean.isa.aarch64 import AARCH64
@@ -165,6 +166,7 @@ def block_list() -> str:
 def programs(source: str | None = None) -> list[Program]:
     """Every program of the transcription, in order."""
     source = SOURCE.read_text() if source is None else source
+    rust.check_asm_inventory(source, [block.rust_name for block in BLOCKS], TARGET.isa.name)
     return transcription.programs(source, BLOCKS, TARGET)
 
 

@@ -10,6 +10,7 @@ sys.dont_write_bytecode = True
 
 from asm2lean import rust
 from pasta.architectures import aarch64 as aarch64_blocks
+from pasta.architectures import armv7em as armv7em_blocks
 from pasta.architectures import x86_64 as x86_64_blocks
 
 
@@ -376,6 +377,38 @@ class SurroundingCodeTests(unittest.TestCase):
                     "    let /* outputs */ [mut r0, mut r1, mut r2, mut r3] = * /* input */ lhs;",
                 )
                 self.assertEqual(generate(commented), expected)
+
+
+class InventoryTests(unittest.TestCase):
+    """Every architecture transcribes exactly the functions of its source with an `asm!` block."""
+
+    STRAY = """
+fn stray(a: u64) -> u64 {
+    let out: u64;
+    unsafe {
+        asm!("mov {out}, {a}", a = in(reg) a, out = out(reg) out, options(pure, nomem, nostack));
+    }
+    out
+}
+"""
+
+    def test_functions_with_asm_blocks_are_found_in_source_order(self) -> None:
+        source = 'fn plain() {}\npub(crate) fn second() { asm!("") }\nfn first() { asm!("") }\n'
+        self.assertEqual(rust.asm_functions(source), ("second", "first"))
+        rust.check_asm_inventory(source, ["first", "second"], "T")
+        for covered in (["first"], ["first", "second", "third"], ["first", "second", "second"]):
+            with (
+                self.subTest(covered=covered),
+                self.assertRaisesRegex(rust.GenerationError, "T: asm block inventory differs"),
+            ):
+                rust.check_asm_inventory(source, covered, "T")
+
+    def test_every_architecture_rejects_an_untranscribed_block(self) -> None:
+        for module in (aarch64_blocks, armv7em_blocks, x86_64_blocks):
+            with self.subTest(architecture=module.TARGET.isa.name):
+                source = module.SOURCE.read_text() + self.STRAY
+                with self.assertRaisesRegex(rust.GenerationError, "asm block inventory differs"):
+                    module.programs(source)
 
 
 class TriviaNormalizationTests(unittest.TestCase):

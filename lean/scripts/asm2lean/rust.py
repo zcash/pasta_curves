@@ -15,7 +15,7 @@ invocation into its instructions, recording where they came from in `origins`.
 
 import dataclasses
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from collections.abc import Set as AbstractSet
 from typing import Literal
 
@@ -1132,3 +1132,105 @@ def returned_registers(
     if unused:
         raise GenerationError(f"{function}: named asm outputs not returned: {sorted(unused)}")
     return tuple(registers)
+
+
+# -- the functions of a source file ------------------------------------------------------------
+
+
+def _function_span(source: str, masked: str, start: int, name: str) -> tuple[int, int]:
+    """The braces of the body of the function whose definition starts at `start`."""
+    signature_open = masked.find("(", start)
+    signature_close = matching_delimiter(source, signature_open, "(", ")")
+    body_open = masked.find("{", signature_close)
+    if body_open < 0:
+        raise GenerationError(f"{name}: missing function body")
+    return body_open, matching_delimiter(source, body_open, "{", "}")
+
+
+def asm_functions(source: str) -> tuple[str, ...]:
+    """Every top-level function with an `asm!` block, in source order."""
+    masked = masked_noncode(source)
+    blocks = []
+    for match in re.finditer(r"(?m)^(?:pub(?:\([^)]*\))?\s+)?fn\s+([A-Za-z_]\w*)\s*\(", masked):
+        body_open, body_close = _function_span(source, masked, match.start(), match.group(1))
+        if re.search(r"\basm\s*!\s*\(", masked[body_open + 1 : body_close]):
+            blocks.append(match.group(1))
+    return tuple(blocks)
+
+
+def check_asm_inventory(source: str, covered: Collection[str], architecture: str) -> None:
+    """Require the functions of `source` with an `asm!` block to be exactly those an
+    architecture transcribes (`covered`), each once: a block added, removed, or renamed fails
+    generation until the architecture decides how to cover it."""
+    found = asm_functions(source)
+    if (
+        len(set(found)) != len(found)
+        or set(found) != set(covered)
+        or len(set(covered)) != len(covered)
+    ):
+        raise GenerationError(
+            f"{architecture}: asm block inventory differs: transcribed {sorted(covered)}, "
+            f"source has {list(found)}"
+        )
+
+
+def _functions(source: str, name: str) -> list[str]:
+    """The text of each top-level `fn name(` of the source."""
+    masked = masked_noncode(source)
+    found = []
+    for match in re.finditer(rf"(?m)^fn\s+{re.escape(name)}\s*\(", masked):
+        _, body_close = _function_span(source, masked, match.start(), name)
+        found.append(source[match.start() : body_close + 1])
+    return found
+
+
+def top_level_function(source: str, name: str) -> str:
+    """The unique top-level definition of `name`."""
+    found = _functions(source, name)
+    if len(found) != 1:
+        raise GenerationError(f"expected exactly one top-level `fn {name}(`, found {len(found)}")
+    return found[0]
+
+
+def inline_asm_function(source: str, name: str) -> str:
+    """The unique top-level definition of `name` with an `asm!` block, where the source may also
+    define a portable function of that name for other targets."""
+    found = [
+        text
+        for text in _functions(source, name)
+        if re.search(r"\basm\s*!\s*\(", masked_noncode(text))
+    ]
+    if len(found) != 1:
+        raise GenerationError(
+            f"expected exactly one top-level `fn {name}(` containing asm!, found {len(found)}"
+        )
+    return found[0]
+
+
+def asm_placeholder(function: str) -> tuple[str, str]:
+    """The function's code without trivia, its one `asm!(...)` replaced by `asm!(ASM)`, and the
+    invocation's contents."""
+    masked = masked_noncode(function)
+    matches = list(re.finditer(r"\basm\s*!\s*\(", masked))
+    if len(matches) != 1:
+        raise GenerationError(f"expected one asm! invocation, found {len(matches)}")
+    opening = masked.find("(", matches[0].start())
+    closing = matching_delimiter(function, opening, "(", ")")
+    normalized = code_without_trivia(
+        function[: matches[0].start()] + "asm!(ASM)" + function[closing + 1 :]
+    )
+    return normalized, function[opening + 1 : closing]
+
+
+def checked_function(source: str, name: str, expected: str) -> str:
+    """Require the Rust of `name`, around its `asm!` block if `expected` has one (`asm!(ASM)`), to
+    be `expected` up to trivia, for Rust that a transcription models by hand; the block's
+    contents, or `""`."""
+    function = top_level_function(source, name)
+    if "ASM" in expected:
+        normalized, inner = asm_placeholder(function)
+    else:
+        normalized, inner = code_without_trivia(function), ""
+    if normalized != code_without_trivia(expected):
+        raise GenerationError(f"{name}: surrounding Rust differs from the checked transcription")
+    return inner
