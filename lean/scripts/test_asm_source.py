@@ -411,6 +411,40 @@ class MacroArmOrderTests(unittest.TestCase):
         )
 
 
+class RustTypeTests(unittest.TestCase):
+    """A block's parameters, result, and outputs have the Rust types of the kinds the transcription
+    gives them."""
+
+    def test_a_parameter_of_another_type_is_rejected(self) -> None:
+        source = aarch64_blocks.SOURCE.read_text()
+        old = "pub(super) fn mul(lhs: &Limbs, rhs: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {"
+        self.assertIn(old, source)
+        for new, message in (
+            (old.replace("inv: u64", "inv: u32"), "inv has the Rust type u32"),
+            (old.replace("lhs: &Limbs", "lhs: &[u32; 4]"), "lhs has the Rust type &\\[u32;4\\]"),
+            (old.replace("-> Limbs", "-> [u32; 4]"), "the result has the Rust type"),
+        ):
+            with (
+                self.subTest(signature=new),
+                self.assertRaisesRegex(rust.GenerationError, message),
+            ):
+                aarch64_blocks.programs(source.replace(old, new))
+
+    def test_outputs_of_another_word_are_rejected(self) -> None:
+        source = aarch64_blocks.SOURCE.read_text()
+        old = "    let (o0, o1, o2, o3): (u64, u64, u64, u64);"
+        self.assertIn(old, source)
+        with self.assertRaisesRegex(rust.GenerationError, "outputs declared as \\['u32'\\]"):
+            aarch64_blocks.programs(source.replace(old, old.replace("u64", "u32"), 1))
+
+    def test_the_32_bit_words_of_armv7em_are_checked_too(self) -> None:
+        source = armv7em_blocks.SOURCE.read_text()
+        old = "fn adc(a: u32, b: u32, carry: u32) -> (u32, u32) {"
+        self.assertIn(old, source)
+        with self.assertRaisesRegex(rust.GenerationError, "a has the Rust type u64"):
+            armv7em_blocks.programs(source.replace(old, old.replace("a: u32", "a: u64")))
+
+
 class LateOutputTests(unittest.TestCase):
     """A `lateout` may share a register with an allocated input, so it is accepted only beside
     fixed-register inputs."""

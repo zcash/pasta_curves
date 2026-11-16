@@ -138,7 +138,13 @@ MACRO_ROUNDS = {
 }
 
 TARGET = Target(
-    AARCH64, KINDS, CONVENTIONS, rerollers={"mulMont": MUL_ROUNDS}, macro_rounds=MACRO_ROUNDS
+    AARCH64,
+    KINDS,
+    CONVENTIONS,
+    rerollers={"mulMont": MUL_ROUNDS},
+    macro_rounds=MACRO_ROUNDS,
+    rust_types=inversion.RUST_TYPES,
+    output_word="u64",
 )
 
 MODULE_DOC = (

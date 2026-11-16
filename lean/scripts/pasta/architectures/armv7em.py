@@ -32,7 +32,7 @@ import re
 from collections.abc import Mapping, Sequence
 
 from asm2lean import reroll, rust, validate
-from asm2lean.block import Block, Target, transcribe
+from asm2lean.block import Block, Target, check_types, transcribe
 from asm2lean.ir import (
     App,
     Arg,
@@ -81,6 +81,14 @@ TARGET = Target(
     # The proofs were written against the naming in which a later binding may shadow an earlier
     # one of the same name (`fromMontBlock`'s `r0_4`, a memory word and a register).
     shadow=True,
+    # The words are 32-bit; the limbs a block reads through a pointer are the crate's 64-bit ones.
+    rust_types={
+        "Nat": frozenset({"u32"}),
+        "Nat × Nat": frozenset({"(u32,u32)"}),
+        "Nat × Nat × Nat × Nat": frozenset({"(u32,u32,u32,u32)"}),
+        "Limbs": frozenset({"&Limbs", "Limbs"}),
+    },
+    output_word="u32",
 )
 
 # The column of the instruction comments in the transcription.
@@ -370,6 +378,7 @@ def cond_sub_program(source: str) -> Program:
         allowed_options=options,
         required_options=options,
     )
+    check_types(parsed, fn, (("value", "Limbs"), ("modulus", "Limbs")), "Limbs", TARGET)
     lifter = Armv7emLifter(rust.declaration_directions(parsed, fn))
     pointers: set[str] = set()
     for d in parsed.declarations:
@@ -562,6 +571,9 @@ def lift_from_mont(source: str) -> tuple[ParsedFunction, Armv7emLifter]:
         allowed_options={"pure", "readonly", "nostack"},
         required_options={"pure", "readonly", "nostack"},
     )
+    # `inv` is only asserted, in a debug build; the block reads the modulus words.
+    limbs = (("value", "Limbs"), ("modulus", "Limbs"))
+    check_types(parsed, "from_mont", limbs, "Limbs", TARGET)
     declarations = tuple((d.name, d.kind, d.value, d.output) for d in parsed.declarations)
     if declarations != FROM_MONT_DECLARATIONS:
         raise GenerationError("from_mont: fixed-register declarations differ")

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol
 
 from . import rust, validate
@@ -77,6 +77,12 @@ class Target:
     dead_code: DeadCode = DeadCode.ELIMINATE
     input_comment: Callable[[Declaration, bool], str] = lambda declaration, scalar: "argument"
     shadow: bool = False
+    # The Rust types each kind may be spelled as, without whitespace (`"Limbs": {"&Limbs",
+    # "&[u64;4]"}`), and the Rust type of an output word: the transcription models a value of the
+    # kind, so a parameter, result, or output of another type (a `u32` where the words are 64-bit)
+    # is not what it models. `None` checks nothing, which only a test should do.
+    rust_types: Mapping[str, frozenset[str]] | None = None
+    output_word: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -117,8 +123,44 @@ class Unit:
         return [arg for arg, kind in self.block.args if self.target.kinds[kind]]
 
 
+def check_types(
+    parsed: ParsedFunction,
+    function: str,
+    args: Sequence[tuple[str, str]],
+    result: str,
+    target: Target,
+) -> None:
+    """Require the Rust types of `function`'s parameters, result, and output locals to be those
+    of the kinds the transcription gives them (`Target.rust_types`, `Target.output_word`)."""
+    if target.rust_types is None:
+        return
+    types = target.rust_types
+    for name, kind in (*args, ("the result", result)):
+        written = parsed.return_type if name == "the result" else parsed.param_types.get(name)
+        allowed = types.get(kind)
+        if allowed is None:
+            raise GenerationError(f"{function}: no Rust type is known for the kind {kind}")
+        if written not in allowed:
+            raise GenerationError(
+                f"{function}: {name} has the Rust type {written}, which does not model {kind} "
+                f"({', '.join(sorted(allowed))})"
+            )
+    stray = parsed.output_types - {target.output_word}
+    if target.output_word is not None and stray:
+        raise GenerationError(
+            f"{function}: outputs declared as {sorted(stray)}, not the word {target.output_word}"
+        )
+
+
 def parse(source: str, block: Block, target: Target) -> ParsedFunction:
-    """The front end's reading of `block`'s Rust function, under the instruction set's rules."""
+    """The front end's reading of `block`'s Rust function, under the instruction set's rules,
+    its types checked against the kinds the transcription gives them."""
+    parsed = _parse(source, block, target)
+    check_types(parsed, block.rust_name, block.args, block.result, target)
+    return parsed
+
+
+def _parse(source: str, block: Block, target: Target) -> ParsedFunction:
     isa = target.isa
     return rust.parse_function(
         source,

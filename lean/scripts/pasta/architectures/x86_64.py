@@ -186,6 +186,8 @@ TARGET = Target(
     # writes, and names each input by the Rust value it binds.
     dead_code=DeadCode.RETAIN,
     input_comment=lambda d, scalar: "scalar input" if scalar else f"input {d.value}",
+    rust_types=inversion.RUST_TYPES,
+    output_word="u64",
 )
 
 

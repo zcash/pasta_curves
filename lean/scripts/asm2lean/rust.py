@@ -84,6 +84,11 @@ class ParsedFunction:
     origins: tuple[MacroOrigin | None, ...] = ()
     # Locals initialized as `[0u64; N]`, by local name and 64-bit element count.
     zero_arrays: dict[str, int] = dataclasses.field(default_factory=dict)
+    # Each parameter's Rust type, and the return type, as written without whitespace.
+    param_types: dict[str, str] = dataclasses.field(default_factory=dict)
+    return_type: str = ""
+    # The Rust types of the locals declared for the block's outputs (`let (a, b): (u64, u64);`).
+    output_types: frozenset[str] = frozenset()
 
 
 def _line_comment_end(text: str, start: int) -> int:
@@ -798,9 +803,10 @@ def _parse_function_prefix(
     asm_start: int,
     function: str,
     expected: set[str],
-) -> tuple[dict[str, tuple[str, int | None]], dict[str, int]]:
+) -> tuple[dict[str, tuple[str, int | None]], dict[str, int], frozenset[str]]:
     """Consume the supported statements before an inline-assembly block."""
     locals_map: dict[str, tuple[str, int | None]] = {}
+    output_types: set[str] = set()
     zero_arrays: dict[str, int] = {}
     bound_names: set[str] = set()
 
@@ -906,6 +912,7 @@ def _parse_function_prefix(
                 or types[0] not in ("u32", "u64")
             ):
                 raise GenerationError(f"{function}: unsupported output declaration")
+            output_types.add(types[0])
             for name in names:
                 bind(name)
             pos = _skip_trivia(body, output_declaration.end())
@@ -913,6 +920,7 @@ def _parse_function_prefix(
 
         single_output = _SINGLE_OUTPUT_DECLARATION.match(masked_body, pos, asm_start)
         if single_output:
+            output_types.add(single_output.group(2))
             bind(single_output.group(1))
             pos = _skip_trivia(body, single_output.end())
             continue
@@ -922,7 +930,7 @@ def _parse_function_prefix(
             pos = _skip_trivia(body, unsafe_block.end())
             if pos != asm_start:
                 raise GenerationError(f"{function}: unsupported code before asm!")
-            return locals_map, zero_arrays
+            return locals_map, zero_arrays, frozenset(output_types)
 
         direct_binding = _DIRECT_BINDING.match(masked_body, pos, asm_start)
         if direct_binding and direct_binding.group(1) in expected:
@@ -1004,6 +1012,30 @@ def _parse_function_suffix(
     return returns
 
 
+def _parameter_types(text: str, function: str) -> dict[str, str]:
+    """Each parameter of a signature (`[mut] name: Type, ...`) and its type, without whitespace."""
+    types: dict[str, str] = {}
+    masked = masked_noncode(text)
+    depth, start, pieces = 0, 0, []
+    for index, char in enumerate(masked):
+        if char in "([<":
+            depth += 1
+        elif char in ")]>":
+            depth -= 1
+        elif char == "," and depth == 0:
+            pieces.append(text[start:index])
+            start = index + 1
+    pieces.append(text[start:])
+    for piece in pieces:
+        if not piece.strip():
+            continue
+        found = re.fullmatch(rf"\s*(?:mut\s+)?({_IDENTIFIER})\s*:(.*)", piece, re.DOTALL)
+        if found is None:
+            raise GenerationError(f"{function}: unsupported parameter `{piece.strip()}`")
+        types[found.group(1)] = re.sub(r"\s+", "", found.group(2))
+    return types
+
+
 def parse_function(
     source: str,
     function: str,
@@ -1048,12 +1080,8 @@ def parse_function(
     found = functions[0]
     signature_open = found.end() - 1
     signature_close = matching_delimiter(source, signature_open, "(", ")")
-    parameters = set(
-        re.findall(
-            r"\b([A-Za-z_]\w*)\s*:",
-            masked_source[signature_open + 1 : signature_close],
-        )
-    )
+    param_types = _parameter_types(source[signature_open + 1 : signature_close], function)
+    parameters = set(param_types)
     expected = set(expected_args)
     if parameters != expected:
         raise GenerationError(
@@ -1086,14 +1114,26 @@ def parse_function(
         required_options=required_options,
     )
 
-    locals_map, zero_arrays = _parse_function_prefix(
+    locals_map, zero_arrays, output_types = _parse_function_prefix(
         body, masked_body, asm.start(), function, expected
     )
     returns = _parse_function_suffix(
         body, masked_body, asm_close, function, result_count, set(zero_arrays)
     )
+    return_type = re.sub(r"\s+", "", source[signature_close + 1 : body_open])
+    if not return_type.startswith("->"):
+        raise GenerationError(f"{function}: the function returns nothing")
     return ParsedFunction(
-        instructions, declarations, locals_map, returns, options, origins, zero_arrays
+        instructions,
+        declarations,
+        locals_map,
+        returns,
+        options,
+        origins,
+        zero_arrays,
+        param_types,
+        return_type.removeprefix("->"),
+        output_types,
     )
 
 
