@@ -939,6 +939,25 @@ class TranslationValidationTests(unittest.TestCase):
             ],
         )
 
+    def test_a_round_named_like_an_operation_is_rejected(self) -> None:
+        # A helper named `addw` that computes `subw`: expanding it wherever `addw` is applied made
+        # the flat block's own `addw` a call of the helper, and the check passed.
+        def program(name: str, nodes: list[ir.Node]) -> ir.Program:
+            signature = ir.Signature(name, (("x", "Nat"), ("y", "Nat")), "Nat")
+            return ir.Program(signature, "doc", nodes, ["r"])
+
+        args: list[ir.Node] = [ir.Scalar(dest="x", name="x"), ir.Scalar(dest="y", name="y")]
+        flat = program(
+            "blk", [*args, ir.Word(dest="r", function="addw", args=(ir.Reg("x"), ir.Reg("y")))]
+        )
+        helper = program(
+            "addw", [*args, ir.Word(dest="r", function="subw", args=(ir.Reg("x"), ir.Reg("y")))]
+        )
+        with self.assertRaisesRegex(
+            GenerationError, "named like operations the flat block applies"
+        ):
+            validate.check(flat, [helper, flat])
+
     def test_a_stale_read_after_a_run_is_rejected(self) -> None:
         # `k` is written by every step of the run but not carried out of it: read after the run,
         # the rerolled block would see the `k` from before the run.
