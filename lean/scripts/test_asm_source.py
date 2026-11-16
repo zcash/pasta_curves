@@ -568,6 +568,24 @@ fn stray(a: u64) -> u64 {
             ):
                 rust.check_asm_inventory(source, covered, "T")
 
+    def test_blocks_anywhere_and_in_any_form_are_found(self) -> None:
+        source = (
+            'pub unsafe fn a() { asm!("") }\n'
+            'extern "C" fn b() -> [u64; 2] { asm!(""); [0, 0] }\n'
+            'mod tests {\n    fn c() { core::arch::asm!("") }\n}\n'
+            'impl T for U {\n    fn d(&self) { naked_asm!("") }\n}\n'
+            "trait V { fn e(); }\n"
+            'global_asm!("");\n'
+        )
+        self.assertEqual(rust.asm_functions(source), ("a", "b", "c", "d", "<top level, line 10>"))
+
+    def test_a_block_left_out_must_be_listed_with_its_reason(self) -> None:
+        source = aarch64_blocks.SOURCE.read_text()
+        covered = [block.rust_name for block in aarch64_blocks.BLOCKS]
+        with self.assertRaisesRegex(rust.GenerationError, "asm block inventory differs"):
+            rust.check_asm_inventory(source, covered, "AArch64")
+        rust.check_asm_inventory(source, covered, "AArch64", aarch64_blocks.UNTRANSCRIBED)
+
     def test_every_architecture_rejects_an_untranscribed_block(self) -> None:
         for module in (aarch64_blocks, armv7em_blocks, x86_64_blocks):
             with self.subTest(architecture=module.TARGET.isa.name):

@@ -169,10 +169,18 @@ def block_list() -> str:
     return ", ".join(names[:-1]) + f", and {names[-1]}"
 
 
+# The source's blocks that are deliberately not transcribed, and why.
+UNTRANSCRIBED = {
+    "divstep_once": "a test's single `divstep!` step, which traces the block; not in the crate",
+}
+
+
 def programs(source: str | None = None) -> list[Program]:
     """Every program of the transcription, in order."""
     source = SOURCE.read_text() if source is None else source
-    rust.check_asm_inventory(source, [block.rust_name for block in BLOCKS], TARGET.isa.name)
+    rust.check_asm_inventory(
+        source, [block.rust_name for block in BLOCKS], TARGET.isa.name, UNTRANSCRIBED
+    )
     return transcription.programs(source, BLOCKS, TARGET)
 
 

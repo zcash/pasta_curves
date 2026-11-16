@@ -1230,30 +1230,65 @@ def _function_span(source: str, masked: str, start: int, name: str) -> tuple[int
     return body_open, matching_delimiter(source, body_open, "{", "}")
 
 
+# Any function definition, at any indentation (in a module, an impl, a test), with any qualifiers.
+_ANY_FUNCTION = re.compile(
+    r"(?m)^[ \t]*(?:pub(?:\([^)]*\))?\s+)?(?:const\s+)?(?:async\s+)?(?:unsafe\s+)?"
+    r'(?:extern\s+(?:"[^"]*"\s+)?)?fn\s+([A-Za-z_]\w*)\s*[(<]'
+)
+# Every macro that assembles code: an `asm!` block, a naked function's, or module-level assembly.
+_ANY_ASM = re.compile(r"\b(?:core\s*::\s*arch\s*::\s*)?(?:asm|naked_asm|global_asm)\s*!\s*[(\[{]")
+
+
 def asm_functions(source: str) -> tuple[str, ...]:
-    """Every top-level function with an `asm!` block, in source order."""
+    """Where the source assembles code: for each `asm!`, `naked_asm!`, or `global_asm!`, in
+    source order, the innermost function it is in, or `<top level, line N>` outside any."""
     masked = masked_noncode(source)
-    blocks = []
-    for match in re.finditer(r"(?m)^(?:pub(?:\([^)]*\))?\s+)?fn\s+([A-Za-z_]\w*)\s*\(", masked):
-        body_open, body_close = _function_span(source, masked, match.start(), match.group(1))
-        if re.search(r"\basm\s*!\s*\(", masked[body_open + 1 : body_close]):
-            blocks.append(match.group(1))
-    return tuple(blocks)
+    spans: list[tuple[int, int, str]] = []
+    for match in _ANY_FUNCTION.finditer(masked):
+        name = match.group(1)
+        open_at = masked.find("(", match.start())
+        close = matching_delimiter(source, open_at, "(", ")")
+        # The body's brace, or the `;` of a declaration without a body (in a trait or an extern
+        # block), whichever comes first outside the brackets of the return type (`[u64; 5]`).
+        depth, body_open = 0, -1
+        for index in range(close + 1, len(masked)):
+            char = masked[index]
+            if char in "[(":
+                depth += 1
+            elif char in "])":
+                depth -= 1
+            elif depth == 0 and char in "{;":
+                body_open = index if char == "{" else -1
+                break
+        if body_open < 0:
+            continue
+        spans.append((body_open, matching_delimiter(source, body_open, "{", "}"), name))
+    found = []
+    for invocation in _ANY_ASM.finditer(masked):
+        enclosing = [s for s in spans if s[0] < invocation.start() < s[1]]
+        if enclosing:
+            found.append(max(enclosing)[2])
+        else:
+            found.append(f"<top level, line {source.count(chr(10), 0, invocation.start()) + 1}>")
+    return tuple(dict.fromkeys(found))
 
 
-def check_asm_inventory(source: str, covered: Collection[str], architecture: str) -> None:
-    """Require the functions of `source` with an `asm!` block to be exactly those an
-    architecture transcribes (`covered`), each once: a block added, removed, or renamed fails
-    generation until the architecture decides how to cover it."""
+def check_asm_inventory(
+    source: str,
+    covered: Collection[str],
+    architecture: str,
+    untranscribed: Mapping[str, str] | None = None,
+) -> None:
+    """Require the places `source` assembles code (`asm_functions`) to be exactly the functions
+    an architecture transcribes (`covered`), each once, and those it deliberately does not
+    (`untranscribed`, each with the reason): a block added, removed, or renamed fails generation
+    until the architecture decides how to cover it."""
     found = asm_functions(source)
-    if (
-        len(set(found)) != len(found)
-        or set(found) != set(covered)
-        or len(set(covered)) != len(covered)
-    ):
+    expected = [*covered, *(untranscribed or {})]
+    if set(found) != set(expected) or len(set(expected)) != len(expected):
         raise GenerationError(
             f"{architecture}: asm block inventory differs: transcribed {sorted(covered)}, "
-            f"source has {list(found)}"
+            f"left out {sorted(untranscribed or {})}, source has {list(found)}"
         )
 
 
