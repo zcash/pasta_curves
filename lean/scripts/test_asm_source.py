@@ -379,6 +379,56 @@ class SurroundingCodeTests(unittest.TestCase):
                 self.assertEqual(generate(commented), expected)
 
 
+class LateOutputTests(unittest.TestCase):
+    """A `lateout` may share a register with an allocated input, so it is accepted only beside
+    fixed-register inputs."""
+
+    BLOCK = """fn f(a: u64, b: u64) -> [u64; 1] {
+    let out: u64;
+    unsafe {
+        asm!(
+            "mov rdx, {a}",
+            "add rdx, {b}",
+            "mov {out}, rdx",
+            a = in(reg) a,
+            b = in(reg) b,
+            out = out(reg) out,
+            out("rdx") _,
+            options(pure, nomem, nostack),
+        );
+    }
+    [out]
+}
+"""
+
+    def parse(self, source: str) -> rust.ParsedFunction:
+        return rust.parse_function(
+            source,
+            "f",
+            ["a", "b"],
+            1,
+            fixed_registers={"rdx"},
+            required_options={"pure", "nomem", "nostack"},
+        )
+
+    def test_lateout_beside_an_allocated_input_is_rejected(self) -> None:
+        self.parse(self.BLOCK)
+        late = self.BLOCK.replace('out("rdx") _', 'lateout("rdx") _')
+        with self.assertRaisesRegex(rust.GenerationError, "lateout \\['rdx'\\] may share"):
+            self.parse(late)
+
+    def test_the_real_blocks_with_lateout_mutations_are_rejected(self) -> None:
+        source = x86_64_blocks.SOURCE.read_text()
+        self.assertIn('out("rdx") _', source)
+        with self.assertRaisesRegex(rust.GenerationError, "may share a register"):
+            x86_64_blocks.programs(source.replace('out("rdx") _', 'lateout("rdx") _'))
+
+    def test_lateout_beside_fixed_inputs_only_is_accepted(self) -> None:
+        # ARMv7E-M's `from_mont` reads its inputs from fixed registers and writes lateouts.
+        self.assertIn("lateout(", armv7em_blocks.SOURCE.read_text())
+        armv7em_blocks.programs()
+
+
 class InventoryTests(unittest.TestCase):
     """Every architecture transcribes exactly the functions of its source with an `asm!` block."""
 

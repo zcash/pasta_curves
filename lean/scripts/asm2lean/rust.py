@@ -44,6 +44,9 @@ class Declaration:
     value: str
     output: str | None
     fixed: bool = False
+    # A `lateout`: written only after the block has read every input, so that the compiler may
+    # give it the register of an input it allocates.
+    late: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -351,7 +354,8 @@ def parse_declaration(
                 valid = output is not None and bool(re.fullmatch(_IDENTIFIER, output))
         if not valid:
             raise GenerationError(f"unsupported fixed-register binding: {text.strip()}")
-        return Declaration(register, normalized_kind, value, output, fixed=True)
+        late = kind_text == "lateout"
+        return Declaration(register, normalized_kind, value, output, fixed=True, late=late)
 
     named = re.fullmatch(r"([A-Za-z_]\w*)\s*=\s*(in|out|inout)\(([^)]+)\)\s+(.+)", declaration)
     if not named:
@@ -761,6 +765,16 @@ def _parse_asm(
         raise GenerationError(f"{function}: unsupported options {sorted(unsupported_options)}")
     if not required_options <= options:
         raise GenerationError(f"{function}: requires options {sorted(required_options)}")
+    # A transcription gives every operand a register of its own. The compiler may give a `lateout`
+    # the register of an input it allocates (`in(reg)`), which the block then overwrites before the
+    # input is read: only when every input is in a fixed register can no `lateout` share one.
+    late = [d.name for d in declarations if d.late]
+    allocated = [d.name for d in declarations if not d.fixed and d.kind in ("in", "inout")]
+    if late and allocated:
+        raise GenerationError(
+            f"{function}: lateout {late} may share a register with the allocated inputs "
+            f"{allocated}, which the transcription would model as distinct"
+        )
     return tuple(instructions), tuple(origins), tuple(declarations), options
 
 
