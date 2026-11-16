@@ -7,9 +7,10 @@ shared changes, and the crate's configuration (`../../pasta/`) imports the one i
 How the crate writes a transcription (whether it keeps unread bindings, how it comments an
 argument) is the crate's convention, in its `block.Target`, not the instruction set's.
 
-The shared nodes of `ir.py` are on 64-bit words, and `word_step` proves their bounds as `< 2^64`.
-A 32-bit instruction set (ARMv7E-M) uses nodes of its own, each stating its `< 2^32` bound as a
-line after its step and recording only its equation in the step.
+An instruction set's word is its `Isa.width` (`ir.Width`): 64 bits, whose bounds `word_step`
+proves (`x := v using proof`), or 32 (ARMv7E-M), whose bounds are lines after the step. A node
+shared between instruction sets of both widths, such as `ir.CarryChain`, states its bounds through
+the program's width.
 
 Everything else is shared: the front end reads the Rust function (`rust.py`), the block driver
 binds its operands and runs the lifter (`block.py`), the rerolling strategies fold its rounds and
@@ -37,7 +38,7 @@ import dataclasses
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, ClassVar
 
-from ..ir import Load, Mov, Node, Scalar
+from ..ir import WIDTH64, Load, Mov, Node, Scalar, Width
 from ..rust import ALLOWED_OPTIONS, REQUIRED_OPTIONS, Direction, GenerationError, ParsedFunction
 
 if TYPE_CHECKING:
@@ -156,6 +157,7 @@ class Isa:
     """An instruction set: subclass it, and set what differs from these defaults."""
 
     name: ClassVar[str] = ""  # the Lean namespace of its semantics, `PastaCurves.<name>`
+    width: ClassVar[Width] = WIDTH64  # its word
     lifter: ClassVar[type[Lifter]] = Lifter
     reserved_names: ClassVar[frozenset[str]] = frozenset()  # names its transcription binds
     # The registers a block names directly, through a fixed operand.

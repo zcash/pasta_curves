@@ -22,7 +22,7 @@ from ..ir import (
     MOD_LT,
     App,
     Asr,
-    Component,
+    CarryChain,
     Dead,
     FlagState,
     Get,
@@ -33,8 +33,6 @@ from ..ir import (
     MulHi,
     MulLo,
     Node,
-    Operand,
-    PairOp,
     Reg,
     Select,
     Shl,
@@ -190,89 +188,21 @@ def bits(token: str, low: int, high: int, what: str) -> int:
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
-class CarryPair(PairOp):
-    """`adds`/`adcs` (`addc`) and `subs`/`sbcs` (`subc`): the pair, its result in `dest`, and its
-    carry in `c`. A carry that nothing reads is not bound, and the proof obtains it as a ghost."""
+class AddCarry(CarryChain):
+    """`adds`/`adcs`: `addc a b cin`, and its carry in `c`. The lifter rejects `xzr` as the
+    destination: the proof step needs the value."""
 
     pair = PAIR
-    dest: str = dst()
-    a: Term = src()
-    b: Term = src()
-    cin: Term = src()
-
-    def pair_args(self) -> tuple[Operand, ...]:
-        return (self.a, self.b, self.cin)
-
-    def components(self) -> list[Component]:
-        # The lifter rejects `xzr` as the destination: the proof step needs the value.
-        return [
-            Component("1", self.dest, f"  `-> {self.source_name('dest')}"),
-            Component("2", CARRY, "  `-> carry", Dead.DROP),
-        ]
-
-    def label(self, names: list[str]) -> str:
-        return names[1]
-
-    def formulas(
-        self, a: str, b: str, cin: str, xn: str, cn: str, step: Step
-    ) -> tuple[str, str, str, str]:
-        raise NotImplementedError
-
-    def prove(self, step: Step) -> None:
-        a, b, cin = step.r(self.a), step.r(self.b), step.r(self.cin)
-        xn = step.names[1]
-        dead_carry = len(step.names) == 2
-        cn = f"k_{xn}" if dead_carry else step.names[2]
-        val, lin, lin_proof, carry_proof = self.formulas(a, b, cin, xn, cn, step)
-        step.eq(xn, f"{val} % 2^64")
-        step.bound(xn, MOD_LT)
-        if dead_carry:
-            step.line(f"  obtain ⟨{cn}, b_{cn}, l_{xn}⟩ :")
-            step.line(f"      ∃ k, k ≤ 1 ∧ {lin.replace(cn, 'k')} :=")
-            step.line(f"    ⟨{val} / 2^64, {carry_proof},")
-            step.line(f"      by rw [e_{xn}]; exact {lin_proof}⟩")
-            step.line(f"  clear e_{xn}")
-            step.define(1)
-        else:
-            step.eq(cn, f"{val} / 2^64")
-            step.line(f"  have l_{xn} : {lin} := by")
-            step.line(f"    rw [e_{xn}, e_{cn}]; exact {lin_proof}")
-            step.line(f"  have b_{cn} : {cn} ≤ 1 := by")
-            step.line(f"    rw [e_{cn}]; exact {carry_proof}")
-            step.line(f"  clear e_{xn} e_{cn}")
-            step.define(1)
-            step.define(2)
-            step.unit(cn)
-
-
-@dataclasses.dataclass(frozen=True, kw_only=True)
-class AddCarry(CarryPair):
     function = "addc"
 
-    def formulas(
-        self, a: str, b: str, cin: str, xn: str, cn: str, step: Step
-    ) -> tuple[str, str, str, str]:
-        return (
-            f"({a} + {b} + {cin})",
-            f"{xn} + 2^64 * {cn} = {a} + {b} + {cin}",
-            "Nat.mod_add_div _ _",
-            f"addc_carry_le_one {a} {b} {cin} {step.lt64(self.a)} {step.lt64(self.b)} {step.le1(self.cin)}",
-        )
-
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
-class SubBorrow(CarryPair):
-    function = "subc"
+class SubBorrow(CarryChain):
+    """`subs`/`sbcs`: `subc a b cin`, whose carry is set when no borrow occurred."""
 
-    def formulas(
-        self, a: str, b: str, cin: str, xn: str, cn: str, step: Step
-    ) -> tuple[str, str, str, str]:
-        return (
-            f"({a} + 2^64 - {b} - (1 - {cin}))",
-            f"{xn} + 2^64 * {cn} + {b} + 1 = {a} + 2^64 + {cin}",
-            f"subc_lin {a} {b} {cin} {step.lt64(self.b)} {step.le1(self.cin)}",
-            f"subc_carry_le_one {a} {b} {cin} {step.lt64(self.a)}",
-        )
+    pair = PAIR
+    function = "subc"
+    subtraction = True
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)

@@ -22,8 +22,11 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, ClassVar
 
 from ..ir import (
+    WIDTH32,
     App,
     Arg,
+    CarryChain,
+    Component,
     Const,
     Dead,
     Get,
@@ -173,111 +176,36 @@ class Mov(Node):
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
-class Carry(Node):
-    """An instruction writing the carry flag: the pair `temp := function left right carry`
-    (`addc32` or `subc32`), its value `dest`, and its carry `c`. Each instruction is a subclass,
-    fixing the function and the carry it adds or borrows.
+class Carry(CarryChain):
+    """An instruction writing the carry flag, a link of the shared carry chain: each instruction
+    is a subclass, fixing its function and its carry-in (`cin`, a literal or the flag `c`).
 
-    Its step names every kept binding. The value and the carry get their equations, bounds, and
-    the carry-chain equation; a binding the step names without a value (a loop's zero flag) then
-    gets a step of its own, after them."""
+    The pair's name depends on the block (`temp`), a carry nothing reads is left out rather than
+    obtained as a ghost, and the step is labelled by the value only when it names the pair, the
+    value, and the carry."""
 
-    function: ClassVar[str]
-    # The carry-in: a literal, or the flag `c`.
-    carry: ClassVar[Term]
+    ghost_carry = False
+    carry_in: ClassVar[Term]
 
-    dest: str = dst()
     temp: str
-    left: Term = src()
-    right: Term = src()
 
-    @property
-    def subtraction(self) -> bool:
-        return self.function == "subc32"
-
-    def value(self) -> Let:
-        return Let(self.dest, Get(Reg(self.temp), "1"), None, f"  `-> {self.source_name('dest')}")
-
-    def lets(self) -> list[Let]:
-        pair = Reg(self.temp)
-        return [
-            self._let(self.temp, App(self.function, (self.left, self.right, self.carry))),
-            self.value(),
-            Let("c", Get(pair, "2"), None, "  `-> carry", Dead.DROP),
-        ]
+    def pair_name(self) -> str:
+        return self.temp
 
     def label(self, names: list[str]) -> str:
         return names[1] if len(names) == 3 else names[0]
-
-    def prove(self, step: Step) -> None:
-        a, b, carry = step.r(self.left), step.r(self.right), step.r(self.carry)
-        names, lets, ren = step.names, step.lets, step.state.ren
-        if self.subtraction:
-            value = f"({a} + 2^32 - {b} - (1 - {carry}))"
-        else:
-            value = f"({a} + {b} + {carry})"
-        if isinstance(self, Rsbs) and len(names) == 2 and lets[1].name == "c":
-            flag = names[1]
-            step.eq(flag, f"{value} / 2^32")
-            step.line(f"  have b_{flag} : {flag} ≤ 1 := by")
-            step.line(
-                f"    rw [e_{flag}]; exact subc32_carry_le_one {a} {b} {carry} "
-                f"{step.lt64(self.left)}"
-            )
-            step.line(f"  clear e_{flag}")
-            ren[lets[1].name] = flag
-            step.state.bnd[flag] = f"b_{flag}"
-            step.state.unit_bound.add(flag)
-            consumed = 2
-        elif len(names) == 2:
-            bound32(step, names[1], f"{value} % 2^32")
-            ren[lets[1].name] = names[1]
-            consumed = 2
-        else:
-            value_name, flag = names[1:3]
-            if self.subtraction:
-                linear = f"{value_name} + 2^32 * {flag} + {b} + 1 = {a} + 2^32 + {carry}"
-                linear_proof = (
-                    f"subc32_lin {a} {b} {carry} {step.lt64(self.right)} {step.le1(self.carry)}"
-                )
-                flag_proof = f"subc32_carry_le_one {a} {b} {carry} {step.lt64(self.left)}"
-            else:
-                linear = f"{value_name} + 2^32 * {flag} = {a} + {b} + {carry}"
-                linear_proof = "Nat.mod_add_div _ _"
-                flag_proof = (
-                    f"addc32_carry_le_one {a} {b} {carry} {step.lt64(self.left)} "
-                    f"{step.lt64(self.right)} {step.le1(self.carry)}"
-                )
-            bound32(step, value_name, f"{value} % 2^32")
-            step.eq(flag, f"{value} / 2^32")
-            step.line(f"  have l_{value_name} : {linear} := by")
-            step.line(f"    rw [e_{value_name}, e_{flag}]; exact {linear_proof}")
-            step.line(f"  have b_{flag} : {flag} ≤ 1 := by")
-            step.line(f"    rw [e_{flag}]; exact {flag_proof}")
-            step.line(f"  clear e_{value_name} e_{flag}")
-            ren[lets[1].name] = value_name
-            ren[lets[2].name] = flag
-            step.state.bnd[flag] = f"b_{flag}"
-            step.state.unit_bound.add(flag)
-            consumed = 3
-        for let, name in zip(lets[consumed:], names[consumed:], strict=True):
-            self.prove_rest(step, let, name)
-
-    def prove_rest(self, step: Step, let: Let, name: str) -> None:
-        """The step of a binding the pair's step names without a value."""
-        raise GenerationError(f"`{self.comment}`: no step for its binding {let.name}")
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class Adds(Carry):
     function = "addc32"
-    carry = Lit("0")
+    carry_in = Lit("0")
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class Adcs(Carry):
     function = "addc32"
-    carry = Reg("c")
+    carry_in = Reg("c")
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -285,7 +213,8 @@ class Subs(Carry):
     """`subs`; in a loop, it also sets the zero flag `z` that the loop's branch reads."""
 
     function = "subc32"
-    carry = Lit("1")
+    subtraction = True
+    carry_in = Lit("1")
     zero: bool = False
 
     def lets(self) -> list[Let]:
@@ -311,16 +240,34 @@ class Rsbs(Carry):
     """`rsbs dest, x, #0`: `0 - x`, whose value may go unread when only its borrow is wanted."""
 
     function = "subc32"
-    carry = Lit("1")
+    subtraction = True
+    carry_in = Lit("1")
 
-    def value(self) -> Let:
-        return Let(self.dest, Get(Reg(self.temp), "1"), self.comment, dead=Dead.COMMENT)
+    def components(self) -> list[Component]:
+        _, carry = super().components()
+        return [Component("1", self.dest, None, Dead.COMMENT), carry]
+
+    def prove(self, step: Step) -> None:
+        names, lets = step.names, step.lets
+        if len(names) != 2 or lets[1].name != "c":
+            super().prove(step)
+            return
+        # Only the borrow is read: its bound, without the value's.
+        a, b, cin = step.r(self.a), step.r(self.b), step.r(self.cin)
+        flag = names[1]
+        step.eq(flag, f"({a} + 2^32 - {b} - (1 - {cin})) / 2^32")
+        step.line(f"  have b_{flag} : {flag} ≤ 1 := by")
+        step.line(f"    rw [e_{flag}]; exact subc32_carry_le_one {a} {b} {cin} {step.lt64(self.a)}")
+        step.line(f"  clear e_{flag}")
+        step.define(1)
+        step.unit(flag)
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class Sbcs(Carry):
     function = "subc32"
-    carry = Reg("c")
+    subtraction = True
+    carry_in = Reg("c")
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -864,16 +811,16 @@ class Armv7emLifter(Lifter):
         node = PAIRS[ins.op]
         operands = ins.operands
         self.require_count(ins, 3)
-        left: Term
+        a: Term
         if node is Rsbs:
-            right = self.value(operands[1])
+            b = self.value(operands[1])
             if operands[2] != "#0":
                 raise GenerationError("rsbs supports only reverse subtraction from #0")
-            left = Lit("0")
+            a = Lit("0")
         else:
-            if node.carry == Reg("c"):
+            if node.carry_in == Reg("c"):
                 self.require_carry()
-            left, right = self.value(operands[1]), self.value(operands[2])
+            a, b = self.value(operands[1]), self.value(operands[2])
         dest = self.write(operands[0])
         if node is Adcs:
             temp = "adcs_pair"
@@ -882,15 +829,16 @@ class Armv7emLifter(Lifter):
         else:
             temp = "sub" if "d" in self.directions else "d"
         if node is Subs and self.loop:
-            self.emit(Subs(dest=dest, temp=temp, left=left, right=right, zero=True))
+            self.emit(Subs(dest=dest, temp=temp, a=a, b=b, cin=Subs.carry_in, zero=True))
             self.zero_valid = True
         else:
-            self.emit(node(dest=dest, temp=temp, left=left, right=right))
+            self.emit(node(dest=dest, temp=temp, a=a, b=b, cin=node.carry_in))
         self.carry_valid = True
 
 
 class Armv7em(Isa):
     name = "ARMv7EM"
+    width = WIDTH32
     lifter = Armv7emLifter
     reserved_names = frozenset({"c", "d", "m", "s"})
 

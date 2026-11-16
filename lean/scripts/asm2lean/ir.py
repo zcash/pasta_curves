@@ -517,6 +517,34 @@ class MulHi(Node):
             step.line(f"  clear e_{nm}")
 
 
+@dataclasses.dataclass(frozen=True)
+class Width:
+    """The word of an instruction set: its bits, the suffix of the Lean names of its word
+    operations (`addc`, `addc32`), and whether `word_step` proves a word's bound. It does for a
+    64-bit word, `x < 2^64` being the bound it states (`x := v using proof`); a narrower word's
+    bound is a line after the step instead."""
+
+    bits: int
+    suffix: str = ""
+
+    @property
+    def in_step(self) -> bool:
+        return self.bits == 64
+
+    def bound(self, step: Step, name: str, value: str, proof: str) -> None:
+        """`name := value`, below `2^bits` by `proof`."""
+        step.eq(name, value)
+        if self.in_step:
+            step.bound(name, proof)
+            return
+        step.line(f"  have b_{name} : {name} < 2^{self.bits} := by rw [e_{name}]; exact {proof}")
+        step.state.bnd[name] = f"b_{name}"
+
+
+WIDTH64 = Width(64)
+WIDTH32 = Width(32, "32")
+
+
 def bounded(step: Step, value: str, proof: str) -> None:
     """The step's one binding is `value`, below `2^64` by `proof`."""
     step.eq(step.name, value)
@@ -649,7 +677,7 @@ class Component:
 
     index: str
     register: str
-    note: str
+    note: str | None
     dead: Dead = Dead.ERROR
 
 
@@ -665,6 +693,11 @@ class PairOp(Node):
     pair: ClassVar[str] = ""
     function: ClassVar[str] = ""
 
+    def pair_name(self) -> str:
+        """The internal name of the pair: the class's, unless an instruction set chooses it per
+        instruction."""
+        return self.pair
+
     def pair_args(self) -> tuple[Operand, ...]:
         raise NotImplementedError
 
@@ -672,11 +705,91 @@ class PairOp(Node):
         raise NotImplementedError
 
     def lets(self) -> list[Let]:
+        pair = self.pair_name()
         unpacked = [
-            self._let(c.register, Get(Reg(self.pair), c.index), note=c.note, dead=c.dead)
+            self._let(c.register, Get(Reg(pair), c.index), note=c.note, dead=c.dead)
             for c in self.components()
         ]
-        return [self._let(self.pair, apply(self.function, *self.pair_args())), *unpacked]
+        return [self._let(pair, apply(self.function, *self.pair_args())), *unpacked]
+
+
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class CarryChain(PairOp):
+    """A link of a carry chain: `pair := function a b cin` (`addc`, or `subc`, whose carry is set
+    when no borrow occurred), its value in `dest`, and its carry in `c`.
+
+    Its step bounds the value, then derives the chain's linear equation (`dest + 2^w * c =
+    a + b + cin`, or `dest + 2^w * c + b + 1 = a + 2^w + cin`) and the carry's bound by `1`, and
+    clears the `%` and `/` equations. A carry nothing reads is, with `ghost_carry`, obtained as a
+    ghost for the linear equation, and otherwise left out. A binding after the carry, which the
+    step names without a value, gets a step of its own (`prove_rest`)."""
+
+    subtraction: ClassVar[bool] = False
+    ghost_carry: ClassVar[bool] = True
+
+    dest: str = dst()
+    a: Term = src()
+    b: Term = src()
+    cin: Term = src()
+
+    def pair_args(self) -> tuple[Operand, ...]:
+        return (self.a, self.b, self.cin)
+
+    def components(self) -> list[Component]:
+        return [
+            Component("1", self.dest, f"  `-> {self.source_name('dest')}"),
+            Component("2", "c", "  `-> carry", Dead.DROP),
+        ]
+
+    def label(self, names: list[str]) -> str:
+        return names[1]
+
+    def prove(self, step: Step) -> None:
+        width = step.state.program.width
+        w, suffix = f"2^{width.bits}", width.suffix
+        a, b, cin = step.r(self.a), step.r(self.b), step.r(self.cin)
+        names, lets = step.names, step.lets
+        value = names[1]
+        carry = names[2] if len(names) > 2 else f"k_{value}"
+        if self.subtraction:
+            total = f"({a} + {w} - {b} - (1 - {cin}))"
+            linear = f"{value} + {w} * {carry} + {b} + 1 = {a} + {w} + {cin}"
+            linear_proof = (
+                f"subc{suffix}_lin {a} {b} {cin} {step.lt64(self.b)} {step.le1(self.cin)}"
+            )
+            carry_proof = f"subc{suffix}_carry_le_one {a} {b} {cin} {step.lt64(self.a)}"
+        else:
+            total = f"({a} + {b} + {cin})"
+            linear = f"{value} + {w} * {carry} = {a} + {b} + {cin}"
+            linear_proof = "Nat.mod_add_div _ _"
+            carry_proof = (
+                f"addc{suffix}_carry_le_one {a} {b} {cin} {step.lt64(self.a)} "
+                f"{step.lt64(self.b)} {step.le1(self.cin)}"
+            )
+        width.bound(step, value, f"{total} % {w}", MOD_LT)
+        step.define(1)
+        if len(names) == 2:
+            if self.ghost_carry:
+                step.line(f"  obtain ⟨{carry}, b_{carry}, l_{value}⟩ :")
+                step.line(f"      ∃ k, k ≤ 1 ∧ {linear.replace(carry, 'k')} :=")
+                step.line(f"    ⟨{total} / {w}, {carry_proof},")
+                step.line(f"      by rw [e_{value}]; exact {linear_proof}⟩")
+                step.line(f"  clear e_{value}")
+            return
+        step.eq(carry, f"{total} / {w}")
+        step.line(f"  have l_{value} : {linear} := by")
+        step.line(f"    rw [e_{value}, e_{carry}]; exact {linear_proof}")
+        step.line(f"  have b_{carry} : {carry} ≤ 1 := by")
+        step.line(f"    rw [e_{carry}]; exact {carry_proof}")
+        step.line(f"  clear e_{value} e_{carry}")
+        step.define(2)
+        step.unit(carry)
+        for index in range(3, len(names)):
+            self.prove_rest(step, lets[index], names[index])
+
+    def prove_rest(self, step: Step, let: Let, name: str) -> None:
+        """The step of a binding after the carry, which the pair's step names without a value."""
+        raise GenerationError(f"`{self.comment}`: no step for its binding {let.name}")
 
 
 def pair_names(*nodes: type[PairOp]) -> frozenset[str]:
@@ -820,7 +933,8 @@ class Program:
     recursively extracts them as they come). `result_text`, when given, is the result line as
     written, for a definition that returns more than its result registers' tuple (`results` are
     then the registers it reads, for liveness). `shadow` lets the skeleton name a later binding
-    like an earlier one, which Lean then shadows (`skeleton.ssa_names`)."""
+    like an earlier one, which Lean then shadows (`skeleton.ssa_names`). `width` is the word of
+    its instruction set (`Width`)."""
 
     signature: Signature
     doc: str
@@ -834,6 +948,7 @@ class Program:
     lift_lets: bool = True
     result_text: str | None = None
     shadow: bool = False
+    width: Width = WIDTH64
     architecture: str = ""
     # For a round, the fields of the state structure it takes and returns, in order: its results
     # are their values, and a call's projections name them.

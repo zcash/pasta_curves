@@ -96,7 +96,14 @@ class Unit:
         """A program of this block's transcription."""
         target = self.target
         return target.conventions.program(
-            target.isa.name, signature, doc, nodes, results, dead_code=target.dead_code, **kw
+            target.isa.name,
+            signature,
+            doc,
+            nodes,
+            results,
+            dead_code=target.dead_code,
+            width=target.isa.width,
+            **kw,
         )
 
     @property

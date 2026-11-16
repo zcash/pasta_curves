@@ -267,6 +267,7 @@ def program(
         clear_values=clear_values,
         lift_lets=lift_lets,
         result_text=result_text,
+        width=TARGET.isa.width,
         # The proofs were written against the naming in which a later binding may shadow an
         # earlier one of the same name (`fromMontBlock`'s `r0_4`, a memory word and a register).
         shadow=True,
