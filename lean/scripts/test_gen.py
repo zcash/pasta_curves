@@ -939,6 +939,22 @@ class TranslationValidationTests(unittest.TestCase):
             ],
         )
 
+    def test_a_returned_term_reads_exactly_the_bound_results(self) -> None:
+        signature = ir.Signature("blk", (("x", "Nat"),), "Nat × Nat")
+        nodes: list[ir.Node] = [
+            ir.Scalar(dest="x", name="x"),
+            ir.Word(dest="y", function="addw", args=(ir.Reg("x"), ir.Reg("x"))),
+        ]
+        pair = ir.Prod((ir.Reg("x"), ir.Reg("y")))
+        ir.Program(signature, "doc", nodes, ["x", "y"], result_term=pair)
+        for results, term, message in (
+            (["x"], pair, "the result reads \\['x', 'y'\\], not the results \\['x'\\]"),
+            (["x", "y", "z"], pair, "not the results"),
+            (["x", "z"], ir.Prod((ir.Reg("x"), ir.Reg("z"))), "the result reads the unbound"),
+        ):
+            with self.subTest(results=results), self.assertRaisesRegex(GenerationError, message):
+                ir.Program(signature, "doc", nodes, results, result_term=term)
+
     def test_a_round_named_like_an_operation_is_rejected(self) -> None:
         # A helper named `addw` that computes `subw`: expanding it wherever `addw` is applied made
         # the flat block's own `addw` a call of the helper, and the check passed.

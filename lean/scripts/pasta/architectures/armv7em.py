@@ -50,6 +50,7 @@ from asm2lean.ir import (
     Signature,
     Term,
     Tuple,
+    term_registers,
 )
 from asm2lean.isa.armv7em import (
     WORD_MOD,
@@ -273,7 +274,7 @@ def program(
     nodes: Sequence[Node],
     results: Sequence[str],
     *,
-    result_text: str | None = None,
+    result_term: Term | None = None,
     struct: str | None = None,
     arg_fields: Mapping[str, Sequence[str]] | None = None,
     clear_values: bool = True,
@@ -293,7 +294,7 @@ def program(
         struct=struct,
         clear_values=clear_values,
         lift_lets=lift_lets,
-        result_text=result_text,
+        result_term=result_term,
         width=TARGET.isa.width,
         state_fields=tuple(state_fields),
         shadow=TARGET.shadow,
@@ -657,7 +658,7 @@ def from_mont_programs(source: str) -> list[Program]:
         "quotient and the subtraction carry used by the next instruction.",
         [Scalar(comment="low accumulator word", dest="w0", name="w0"), *quotient],
         ["w0", "c"],
-        result_text="  (w0, c)",
+        result_term=Prod((Reg("w0"), Reg("c"))),
         struct=f"{FROM_MONT_STATE_STRUCT}\n\n{FROM_MONT_PREFIX_STRUCT}",
         clear_values=False,
         lift_lets=False,
@@ -674,7 +675,7 @@ def from_mont_programs(source: str) -> list[Program]:
             *self_sub,
         ],
         ["r12"],
-        result_text="  r12",
+        result_term=Reg("r12"),
         clear_values=False,
         lift_lets=False,
     )
@@ -686,7 +687,7 @@ def from_mont_programs(source: str) -> list[Program]:
         "self-subtraction result to the low-word cancellation carry.",
         [Scalar(comment="self-subtraction result", dest="r12", name="selfSub"), *mask],
         ["r12"],
-        result_text="  r12",
+        result_term=Reg("r12"),
         clear_values=False,
         lift_lets=False,
     )
@@ -846,7 +847,7 @@ def from_mont_programs(source: str) -> list[Program]:
             ),
         ],
         ["addback"],
-        result_text="  addback",
+        result_term=Reg("addback"),
         arg_fields=state,
     )
 
@@ -943,15 +944,15 @@ def composition(
     params: Sequence[tuple[str, str]],
     doc: str,
     bindings: Sequence[tuple[str, Term, str]],
-    result_text: str,
-    results: Sequence[str],
+    result_term: Term,
 ) -> Program:
     """Rust around a block, which the module writes as `(name, term, comment)` bindings; their
     bounds are the annotations'."""
     nodes = [
         Bind(comment=comment, dest=b, term=term, annotated=True) for b, term, comment in bindings
     ]
-    return program(name, params, "Divstep59Result", doc, nodes, results, result_text=result_text)
+    results = sorted(term_registers(result_term))
+    return program(name, params, "Divstep59Result", doc, nodes, results, result_term=result_term)
 
 
 def batch_programs(source: str) -> list[Program]:
@@ -1087,8 +1088,15 @@ def batch_programs(source: str) -> list[Program]:
             ("uv", App("unpackWords", (Arg("k"), Reg("pf"))), "Rust unpack(k, pf)"),
             ("qr", App("unpackWords", (Arg("k"), Reg("pg"))), "Rust unpack(k, pg)"),
         ],
-        "  ⟨delta, uv.1, uv.2, qr.1, qr.2⟩",
-        ["delta", "uv", "qr"],
+        Tuple(
+            (
+                Reg("delta"),
+                Get(Reg("uv"), "1"),
+                Get(Reg("uv"), "2"),
+                Get(Reg("qr"), "1"),
+                Get(Reg("qr"), "2"),
+            )
+        ),
     )
     return [finish, round_, block]
 
@@ -1160,8 +1168,15 @@ def divstep59_program(source: str) -> Program:
         "The Rust `divstep59` composition: packed batches of 20, 20, and 19 divsteps, with the "
         "next low words between them and the newest transition matrix multiplied on the left.",
         bindings,
-        "  ⟨b3.two_delta, matrix.1, matrix.2.1, matrix.2.2.1, matrix.2.2.2⟩",
-        ["b3", "matrix"],
+        Tuple(
+            (
+                Get(Reg("b3"), "two_delta"),
+                Get(Reg("matrix"), "1"),
+                Get(Get(Reg("matrix"), "2"), "1"),
+                Get(Get(Get(Reg("matrix"), "2"), "2"), "1"),
+                Get(Get(Get(Reg("matrix"), "2"), "2"), "2"),
+            )
+        ),
     )
 
 

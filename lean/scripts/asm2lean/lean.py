@@ -12,7 +12,7 @@ from __future__ import annotations
 import textwrap
 from collections.abc import Sequence
 
-from .ir import Dead, Program
+from .ir import Dead, Program, show
 
 WIDTH = 100
 
@@ -88,8 +88,8 @@ def definition(program: Program, column: int) -> str:
         else:
             body.append(f"{code}  -- {comment}")
     head = f"{program.struct}\n" if program.struct else ""
-    if program.result_text is not None:
-        result = program.result_text
+    if program.result_term is not None:
+        result = f"  {show(program.result_term)}"
     elif " × " in program.signature.result:
         # A product is a Lean tuple, `(a, b)`; any other result a structure, `⟨a, b⟩`.
         result = f"  ({', '.join(program.results)})"
