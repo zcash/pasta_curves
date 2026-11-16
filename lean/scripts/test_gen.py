@@ -1618,6 +1618,21 @@ class SkeletonCheckerTests(unittest.TestCase):
         )
         self.assertTrue(ok, diagnostics)
 
+    def test_a_skeleton_in_a_block_comment_does_not_count(self) -> None:
+        # Lean's block comments nest; a `/-` in a line comment or a string opens nothing.
+        for text, expected in (
+            ("/-\n" + self.skeleton + "-/\n", "found 0"),
+            ("/- outer /- inner -/\n" + self.skeleton + "-/\n", "found 0"),
+            ("/--\n" + self.skeleton + "-/\n", "found 0"),
+            ("/- unterminated\n" + self.skeleton, "unterminated block comment"),
+            ("-- a /- in a line comment\n" + self.skeleton, ""),
+            ('def s := "/-"\n' + self.skeleton, ""),
+        ):
+            with self.subTest(text=text[:30]):
+                ok, diagnostics = self.check_text(text)
+                self.assertEqual(ok, not expected, diagnostics)
+                self.assertIn(expected, diagnostics)
+
     def test_missing_and_duplicate_skeletons_are_rejected(self) -> None:
         for text, message in (
             ("", "expected one skeleton of addMod, found 0"),
