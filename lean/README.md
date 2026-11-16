@@ -497,3 +497,6 @@ case differed. The testing leaves these gaps, each with what would close it:
   `Semantics.lean` modules, each citing its line. A port that differs from its definition tests
   the port. Evaluating the definitions in Lean on the same inputs, with `#eval` or as further
   kernel-checked vectors, would close it.
+* **The package was not built alongside the testing.** The generator's fixes that followed it
+  leave its output byte-identical, which `gen.py --check` and the skeleton check confirm, but
+  `lake` was not run with them. A green `scripts/build.sh` on the same revision closes it.
