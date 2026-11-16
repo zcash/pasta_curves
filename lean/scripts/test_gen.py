@@ -1064,6 +1064,10 @@ class SoundnessRegressionTests(unittest.TestCase):
             ("sbfx {d}, {a}, #60, #5", "sbfx width 5"),
             ("mov {d}, #0x10000000000000000", "does not fit a word"),
             ("add {d}, {a}, {a}, lsl #64", "shift 64"),
+            # LLVM reads a leading zero as octal: `#017` is 15, `#010` is 8.
+            ("add {d}, {a}, #017", "unexpected immediate #017"),
+            ("lsl {d}, {a}, #010", "unexpected immediate #010"),
+            ("add {d}, {a}, #8*01", "unexpected immediate #8\\*01"),
             # Only `subs xzr` (a comparison) has a node; the others need the value they drop.
             ("adds xzr, {a}, {a}", "adds to xzr is unsupported"),
         ):
