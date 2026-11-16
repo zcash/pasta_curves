@@ -7,6 +7,14 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `CurveExt::try_multiexp_vartime`, an optional variable-time multiscalar
+  multiplication hook for public inputs. The `glv` feature enables optimized
+  Pallas and Vesta backends; callers must retain a generic fallback when the
+  hook returns `None`.
+- `multicore` feature flag, which enables `glv` and parallel MSM evaluation
+  using Rayon.
+
 ## [0.6.3] - 2026-11-16
 ### Added
 - An ARMv7E-M assembly backend for the `asm` feature flag on the

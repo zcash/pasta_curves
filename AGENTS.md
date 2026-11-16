@@ -354,6 +354,9 @@ Defined in `Cargo.toml`; `default = ["bits", "sqrt-table"]`.
 - `sqrt-table` — large precomputed tables (on the heap) that speed up square roots;
   implies `alloc`, pulls in `lazy_static`. *(default)*
 - `glv` — variable-time GLV scalar multiplication for non-secret scalars (implies `alloc`).
+- `multicore`: evaluates the variable-time MSM behind `CurveExt::try_multiexp_vartime` in
+  parallel through Rayon (implies `glv`); pulls in `maybe-rayon` with its `threads` feature.
+  WebAssembly without atomics stays serial.
 - `deferred` — the `deferred` module: `DeferredField` and a wide `Product` accumulator
   for batching many field multiplications behind a single Montgomery reduction.
 - `gpu` — exposes `ec-gpu`'s `GpuField` for `Fp`/`Fq` (implies `alloc`).
@@ -464,16 +467,17 @@ and `sage`. The individual jobs are:
 - **`no-std`** — builds `--no-default-features` for `thumbv6m-none-eabi`,
   `wasm32-unknown-unknown`, and `wasm32-wasi`.
 - **`bitrot`** — builds the benchmarks (`--benches --all-features`).
-- **`sage`**: runs the four scripts in `sage/` under the pinned SageMath
+- **`sage`**: runs the five scripts in `sage/` under the pinned SageMath
   (`uv run --locked`), one step each: `glv_constants.sage` (the GLV short basis
   and Babai rounding constants), `glv_boundary_scalars.sage` (the
   `*_BOUNDARY_SCALAR` witnesses, re-verifying every property the Rust tests
   assert), `glv_eisenstein.sage` (the Eisenstein recoding: the ring facts, the
   free `mu_6` action giving the eight `REPS`, the seven-addition chain, the
-  `MAX_DIGITS` bound, and the ladder run on both curves), and
+  `MAX_DIGITS` bound, and the ladder run on both curves),
   `glv_test_vectors.sage` (the known-answer `k * G` vectors that both
   recodings are tested against, `PALLAS_VECTORS`, `VESTA_VECTORS` and their
-  batch counterparts in `src/glv.rs`). The scripts assert
+  batch counterparts in `src/glv.rs`), and `msm_window_thresholds.sage` (the
+  interval-derived generic-MSM window thresholds). The scripts assert
   their own derivations and print the constants in the shape of the Rust
   source; CI does not diff that output against `src/`, which the in-crate
   `constants` test covers instead.

@@ -24,10 +24,13 @@ them in the exact shape of the Rust code so the two can be diffed:
   end to end by running the resulting ladder on Pallas and Vesta, and the
   norm bound showing that the batch-affine ladder has no exceptional case
   but the identity.
+- `msm_window_thresholds.sage`: the `DEFAULT_MULTIEXP_WINDOW_THRESHOLDS`
+  table in `src/glv/msm.rs`, the floors of `e^k` that encode the generic
+  MSM's `ceil(ln(terms))` window schedule. It computes them with interval
+  arithmetic and checks each floor is exact.
 
-The scripts use exact integer/rational arithmetic and hand-rolled
-lattice reduction only, so their output is deterministic and does not
-depend on the SageMath version.
+The scripts use exact integer/rational arithmetic, hand-rolled lattice
+reduction and verified interval bounds. Their output is deterministic.
 
 ## Running
 
@@ -40,6 +43,7 @@ pip-installable distribution of SageMath (see `pyproject.toml` /
 $ uv run sage glv_constants.sage
 $ uv run sage glv_boundary_scalars.sage
 $ uv run sage glv_eisenstein.sage
+$ uv run sage msm_window_thresholds.sage
 ```
 
 Any reasonably recent standalone SageMath installation works too:
