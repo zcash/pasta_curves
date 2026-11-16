@@ -6,10 +6,11 @@ import PastaCurves.Primality
 
 The crate's routines take the modulus limbs and `inv` from the caller, for either Pasta base
 field. This module states those constants once, with the facts about them that the theorems in
-`AArch64/Spec.lean` assume: the limbs are `[p0, p1, 0, 2^62]` and `inv * p0 ≡ -1 (mod 2^64)`. Each
-fact is closed by `decide`, and two examples check that the limbs encode the primes as pasta_curves
-states them. The modulus is prime, by the Pratt certificates of `Primality.lean`. The vectors in
-`AArch64/Vectors.lean` exercise both fields' constants against the hardware outputs.
+each architecture's `Spec.lean` assume: the limbs are `[p0, p1, 0, 2^62]` and
+`inv * p0 ≡ -1 (mod 2^64)`. Each fact is closed by `decide`, and two examples check that the limbs
+encode the primes as pasta_curves states them. The modulus is prime, by the Pratt certificates of
+`Primality.lean`. The vectors in each architecture's `Vectors.lean` exercise both fields' constants
+against the AArch64 hardware outputs.
 -/
 
 namespace PastaCurves

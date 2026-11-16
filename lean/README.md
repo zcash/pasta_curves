@@ -1,20 +1,18 @@
 # Verifying the crate's Pasta assembly routines
 
 The `PastaCurves` library separates shared arithmetic definitions and lemmas from
-architecture-specific models. The AArch64 backend has transcriptions and correctness proofs.
-`PastaCurves/X86_64/Semantics.lean` adds the x86-64 word operations and borrow convention;
-`X86_64/Transcription.lean` mechanically transcribes all six assembly blocks from
-`src/asm/x86_64.rs`. The x86-64 addition and subtraction blocks have correctness proofs in
-`X86_64/Spec/Add.lean` and `X86_64/Spec/Sub.lean`. `X86_64/Spec/Square.lean` proves the exact
-eight-limb square, its `squareHi` Montgomery reduction, and their `sqrMont` composition.
-`X86_64/Spec/FromMont.lean` proves the standalone conversion block for every four-limb input,
-including all four cancellation steps and the final conditional subtraction. `X86_64/Spec/Mul.lean`
-proves Montgomery multiplication under both public operand contracts, using mechanically factored
-internal rounds. `X86_64/Spec.lean` exposes the completed block proofs, `Compositions.lean` mirrors
-the split square, and `Entry.lean` instantiates the block proofs at the two fields.
-`X86_64/Vectors.lean` checks the x86-64 blocks against the 874 in-contract vectors of the shared
-`Vectors.lean`, the existing AArch64 hardware corpus, so these are cross-backend checks rather than
-x86 hardware captures. `Checks.lean` supplies additional kernel-checked arithmetic regressions.
+architecture-specific models: one module per architecture that has an assembly backend, at present
+`AArch64`, `X86_64`, and `ARMv7EM`, each with the same roles (see the layout below). Each holds the
+architecture's instruction semantics, the generated transcription of every block of its backend's
+source file, the Rust compositions around those blocks, the vector checks, a proof of every block,
+and the entry theorems at the two fields. The block structure follows each backend's source: on
+x86-64, for instance, the squaring is split into `squareLo`, the exact eight-limb square, and
+`squareHi`, its Montgomery reduction, which `X86_64/Compositions.lean` composes into `sqrMont`,
+and `from_mont` is a block of its own, proved for every four-limb input. The vectors of the shared
+`Vectors.lean` were recorded on AArch64 hardware, so on any other architecture
+(`X86_64/Vectors.lean`, `ARMv7EM/Vectors.lean`) they are cross-backend checks rather than
+hardware captures of that architecture. The AArch64 and x86-64 `Checks.lean` run the shared
+boundary-input checks of `ArithmeticChecks.lean` on their routines.
 
 The assembly backends use `scripts/gen.py`, with shared Rust `asm!` parsing and
 architecture-specific instruction emitters; `--check` compares generated output without
@@ -43,16 +41,17 @@ a re-derivation of the algorithms:
 
 - `src/asm/aarch64.rs`: `add`, `sub`, `mul`, `square`, and the inversion's `divstep59`, `sign_mag`,
   `fg_row`, `de_row`, `amontred`, and `cond_sub`.
-- `src/asm/x86_64.rs`: `add`, `sub`, `mul`, `square_lo`, `square_hi`, and `from_mont`.
+- `src/asm/x86_64.rs`: `add`, `sub`, `mul`, `square_lo`, `square_hi`, `from_mont`, and the
+  inversion's `divstep59`, `sign_mag`, `fg_row`, `de_row`, `amontred`, and `cond_sub`.
 - `src/asm/armv7em.rs`: 32-bit word primitives, Montgomery multiplication and conversion,
   conditional subtraction, and the packed divstep loop; squaring and inversion compose or
   delegate those blocks. ARMv7E-M does not implement Montgomery addition or subtraction.
 
-The crate's `invert` is a Rust composition of blocks on AArch64 and ARMv7E-M, and is modelled as
-such. The portable Rust blocks of `invert` (`src/inversion/portable.rs`), which the remaining targets
-run, are translated to Lean by Aeneas, with the driver they run under (`PastaCurves/Portable/`). The
-translation is run, as compiled code, on the blocks' known answers and against the model. Each of
-its six blocks is proved to meet its contract. The translated driver is proved to compute the
+The crate's `invert` is a Rust composition of blocks on AArch64, x86-64, and ARMv7E-M, and is
+modelled as such. The portable Rust blocks of `invert` (`src/inversion/portable.rs`), which the
+remaining targets run, are translated to Lean by Aeneas, with the driver they run under
+(`PastaCurves/Portable/`). The translation is run, as compiled code, on the blocks' known answers
+and against the model. Each of its six blocks is proved to meet its contract. The translated driver is proved to compute the
 composition over the blocks that it runs, so it returns the inverse whenever they meet their
 contracts. Since the portable blocks meet them at either of the crate's fields, the translation is
 proved to return the Montgomery inverse there.
@@ -88,7 +87,7 @@ What is trusted, beyond Lean's kernel and standard axioms:
 3. The Rust mirrored in `PastaCurves/AArch64/Compositions.lean`, AArch64's `from_mont` as the
    multiplication block at one; in `PastaCurves/X86_64/Compositions.lean`, the split square; and in
    `PastaCurves/Compositions.lean`, the inversion's driver `invert` over a record of a backend's
-   six blocks, which the AArch64 module instantiates, with the canonicity check `is_canonical`
+   six blocks, which each backend's module instantiates, with the canonicity check `is_canonical`
    that its entry point asserts. Short, and checked against the Rust by inspection.
 4. The reference vectors: outputs of the real assembly on an Apple M-series machine, at
    pasta_curves commit `8ad85e9fab7929f6236960e472f432a4bd9ccd74`, embedded as kernel-checked
@@ -146,6 +145,7 @@ PastaCurves/Vectors.lean                 GENERATED: the reference vectors inside
 ../test-vectors/pasta_mul-armv8-vectors.txt   the hardware outputs the vectors are generated from
 PastaCurves/VectorCheck.lean             a backend's routines, and the vectors it fails
 PastaCurves/ArithmeticChecks.lean        boundary-input arithmetic checks over a backend's routines
+PastaCurves/Entry.lean                   `EntrySpecs`: the entry points on a backend's records
 PastaCurves/Words.lean                   the model's values as the translations' words and arrays
 PastaCurves/Inversion/Divstep.lean       half-delta divsteps on integers: the step matrix and its bounds
 PastaCurves/Inversion/Packed.lean        divsteps on packed words: the batch equals the true matrix
@@ -162,6 +162,7 @@ PastaCurves/Inversion/SignMag.lean       the sign-magnitude form of a matrix ent
 PastaCurves/Inversion/PackedWords.lean   the packed step on words, its packing and decoder, and its batch iteration
 PastaCurves/Inversion/Composition.lean   `InvertBlocks.Spec`, and `invert` equals the model over blocks that meet it
 PastaCurves/Inversion/Vectors.lean       known answers for the six blocks, from the round model
+PastaCurves/Inversion/VectorCheck.lean   a backend's inversion blocks, and the answers they fail
 PastaCurves/AArch64.lean                 AArch64 umbrella module
 PastaCurves/AArch64/Semantics.lean       AArch64 instruction semantics
 PastaCurves/AArch64/Transcription.lean   GENERATED: the blocks and their factored rounds
@@ -170,7 +171,7 @@ PastaCurves/AArch64/Vectors.lean         the AArch64 blocks on the vectors, kern
 PastaCurves/AArch64/Checks.lean          the shared arithmetic checks on the AArch64 routines
 PastaCurves/AArch64/Spec.lean            proofs about the AArch64 blocks
 PastaCurves/AArch64/Spec/*.lean          the block proofs, one file per block, imported by Spec.lean
-PastaCurves/AArch64/Entry.lean           the AArch64 blocks at the two fields: the contracts, `invert`
+PastaCurves/AArch64/Entry.lean           the AArch64 blocks' contracts; `EntrySpecs` on the backend
 PastaCurves/AArch64/Backend.lean         the AArch64 blocks as the translated glue's backend
 PastaCurves/ARMv7EM.lean                 ARMv7E-M umbrella module
 PastaCurves/ARMv7EM/Semantics.lean       ARMv7E-M instruction and 32-bit word semantics
@@ -188,13 +189,13 @@ PastaCurves/ARMv7EM/Entry.lean           the proved ARMv7E-M entry compositions 
 PastaCurves/ARMv7EM/Backend.lean         the proved ARMv7E-M blocks as a glue backend
 PastaCurves/X86_64.lean                  x86-64 umbrella module
 PastaCurves/X86_64/Semantics.lean        x86-64 instruction semantics and eight-word product
-PastaCurves/X86_64/Transcription.lean    GENERATED: all six x86-64 assembly blocks
-PastaCurves/X86_64/Compositions.lean     split square
+PastaCurves/X86_64/Transcription.lean    GENERATED: the blocks and their factored rounds
+PastaCurves/X86_64/Compositions.lean     split square; the inversion blocks' record
 PastaCurves/X86_64/Vectors.lean          the x86-64 blocks on the vectors, kernel-checked
 PastaCurves/X86_64/Checks.lean           the shared arithmetic checks on the x86-64 routines
 PastaCurves/X86_64/Spec.lean             proofs about the x86-64 blocks
 PastaCurves/X86_64/Spec/*.lean           the block proofs, one file per block, and Arithmetic.lean
-PastaCurves/X86_64/Entry.lean            the x86-64 blocks at the two fields: the contracts
+PastaCurves/X86_64/Entry.lean            the x86-64 blocks' contracts; `EntrySpecs` on the backend
 PastaCurves/X86_64/Backend.lean          the x86-64 blocks as the translated glue's backend
 PastaCurves/FlagConventions.lean         the AArch64 and x86-64 subtraction flags and selections correspond
 PastaCurves/Portable/Types.lean          GENERATED by Aeneas: the `InvertBlocks` trait, as a record
@@ -384,8 +385,8 @@ The inversion's blocks, each equated with the word-level function of the shared 
   `PastaCurves/Compositions.lean`, which mirrors the Rust driver over a record of the six blocks,
   computes `montInvModel` for any backend whose blocks meet `InvertBlocks.Spec`, the record of
   the six statements above. Each round carries the model's state by those statements, whose
-  bounds come from the model's round invariant. `invertBlocks_spec` instantiates the record for
-  the AArch64 blocks.
+  bounds come from the model's round invariant. Each architecture's `invertBlocks_spec`
+  instantiates the record for its backend's blocks.
 
 The crate's Montgomery entry points, in `Glue/Spec.lean`: `add_with_spec`, `sub_with_spec`,
 `mul_with_spec`, `square_with_spec`, `sqr_n_mul_with_spec`, and `from_mont_with_spec` (all proved)
@@ -419,6 +420,12 @@ result is canonical. For `x = 0` it is `0`, and otherwise it is the Montgomery i
 `x · result ≡ R^2 (mod p)`. The primality of the modulus is the field's `prime`, and the
 termination bound is `terminationBound_256`.
 
+`EntrySpecs` (`Entry.lean`) bundles the seven entry-point statements over a backend's two records,
+and `EntrySpecs.of` proves them from the records' contracts. The AArch64 and x86-64 `entrySpecs`
+instantiate it from `montgomeryBlocks_spec` and `invertBlocks_spec`, so a backend that meets
+`BlocksSpec` states only its records' contracts. ARMv7E-M, which meets `MulBlocksSpec` only,
+states its entry theorems in its own `Entry.lean`.
+
 ## Status
 
 The generated assembly transcriptions, their checked proof skeletons, and the translated Rust
@@ -428,8 +435,9 @@ the entry theorems establish the asserted contracts for each backend's implement
 addition and subtraction on AArch64 and x86-64, and multiplication, squaring, repeated squaring,
 conversion out of Montgomery form, and inversion on all three backends:
 
-* AArch64 and x86-64 prove their instruction blocks and field-level compositions. AArch64's
-  conversion uses multiplication by one; x86-64 proves its standalone conversion block.
+* AArch64 and x86-64 prove their instruction blocks, including the inversion's six blocks, and
+  their field-level compositions. AArch64's conversion uses multiplication by one; x86-64 proves
+  its standalone conversion block.
 * ARMv7E-M proves the 32-bit primitives and the factored Montgomery, conditional-subtraction,
   inversion multiply-accumulate, and packed divstep instruction routines. The checked conversion
   rounds and final reduction compose into `fromMontBlock`; the three checked divstep batches

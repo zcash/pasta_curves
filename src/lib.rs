@@ -26,7 +26,7 @@ pub use asm::BACKEND;
 // `unroll!` macro, which its users import by path.
 mod limbs;
 
-// The constant-time inversion, over the AArch64 assembly blocks or the portable ones.
+// The constant-time inversion, over the assembly backend's blocks or the portable ones.
 mod inversion;
 
 // The fields' constants and known answers for the tests of the backends and the inversion.
@@ -108,8 +108,10 @@ fn backend_name() {
         "aarch64"
     } else if cfg!(target_arch = "arm") {
         "armv7em"
-    } else {
+    } else if cfg!(target_arch = "x86_64") {
         "x86-64"
+    } else {
+        panic!("the assembly backend for this architecture has no expected name")
     };
     assert_eq!(BACKEND, expected);
 }
