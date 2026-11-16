@@ -3,19 +3,16 @@ use super::*;
 
 #[cfg(debug_assertions)]
 #[test]
-fn reconstructed_points_must_be_on_curve() {
-    assert!(
-        std::panic::catch_unwind(|| {
-            affine_from_xy_unchecked::<pallas::Point>(crate::Fp::ONE, crate::Fp::ONE)
-        })
-        .is_err()
-    );
-    assert!(
-        std::panic::catch_unwind(|| {
-            affine_from_xy_unchecked::<vesta::Point>(crate::Fq::ONE, crate::Fq::ONE)
-        })
-        .is_err()
-    );
+#[should_panic(expected = "reconstructed point is on curve")]
+fn reconstructed_pallas_points_must_be_on_curve() {
+    affine_from_xy_unchecked::<pallas::Point>(crate::Fp::ONE, crate::Fp::ONE);
+}
+
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "reconstructed point is on curve")]
+fn reconstructed_vesta_points_must_be_on_curve() {
+    affine_from_xy_unchecked::<vesta::Point>(crate::Fq::ONE, crate::Fq::ONE);
 }
 
 fn batch_invert_and_add_two_lanes_matches_individual<F>()
