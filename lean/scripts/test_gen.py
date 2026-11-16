@@ -2077,6 +2077,19 @@ class ScopeAndNamingTests(unittest.TestCase):
         self.assertEqual(names, ["t", "t_1", "t_2", "t_1_1"])
         self.assertEqual(len(set(names)), len(names))
 
+    def test_shadowed_names_are_not_read_as_another_register(self) -> None:
+        # With shadowing, `t`'s second binding is named `t_1`, which register `t_1` still holds.
+        lets = [
+            ir.Let("t", ir.Arg("x"), None),
+            ir.Let("t_1", ir.Arg("y"), None),
+            ir.Let("t", ir.apply("addw", ir.Reg("t"), 1), "add t,t,#1"),
+        ]
+        self.assertEqual(ssa_names(lets, shadow=True), ["t", "t_1", "t_1"])
+        read = ir.Let("u", ir.apply("addw", ir.Reg("t_1"), 1), "add u,t_1,#1")
+        with self.assertRaisesRegex(GenerationError, "reads t_1 as t_1, which the binding of t"):
+            ssa_names([*lets, read], shadow=True)
+        self.assertEqual(ssa_names([*lets, read]), ["t", "t_1", "t_2", "u"])
+
     def test_scratch_keys_with_one_name_do_not_share_state(self) -> None:
         program = CONVENTIONS.program(
             "Test", ir.Signature("p", (), "Nat"), "", [Mov(dest="d", a=ir.lit(0))], ["d"]
