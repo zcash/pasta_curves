@@ -14,7 +14,7 @@ sys.dont_write_bytecode = True
 from asm2lean import rust, validate
 from asm2lean.block import transcribe
 from asm2lean.ir import App, Lit, Mov, Node, Program, Tuple
-from asm2lean.isa.armv7em import Bind
+from asm2lean.isa.armv7em import Armv7emLifter, Bind
 from asm2lean.skeleton import skeleton
 from pasta.architectures import armv7em
 
@@ -595,6 +595,17 @@ class ARMv7EMGeneratorTests(unittest.TestCase):
             1,
         )
         self.assert_rejected(declaration, "assembly operand declarations differ")
+
+    def test_a_flag_write_between_the_decrement_and_the_branch_is_rejected(self) -> None:
+        # `adds` writes Z too: the branch would read its zero flag, not the decrement's.
+        lifter = Armv7emLifter({"n": "inout", "a": "inout", "b": "in"}, loop=True)
+        for register in ("n", "a", "b"):
+            lifter.bind_argument(register, register)
+        lifter.lift("2:", 0)
+        lifter.lift("subs {n}, {n}, #1", 1)
+        lifter.lift("adds {a}, {a}, {b}", 2)
+        with self.assertRaisesRegex(rust.GenerationError, "zero flag read while invalid"):
+            lifter.lift("bne 2b", 3)
 
     def test_cond_sub_rejects_malformed_offsets_uninitialized_memory_and_flags(self) -> None:
         malformed_offset = self.source.replace("cond_sub_word!(4),", "cond_sub_word!(2),", 1)

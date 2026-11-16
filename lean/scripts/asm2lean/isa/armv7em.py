@@ -806,7 +806,10 @@ class Armv7emLifter(Lifter):
             self.emit(Subs(dest=dest, temp=temp, a=a, b=b, cin=Subs.carry_in, zero=True))
             self.zero_valid = True
         else:
+            # Every flag-setting instruction writes Z, which only a loop's `subs` models: any other
+            # leaves the modelled zero flag stale.
             self.emit(node(dest=dest, temp=temp, a=a, b=b, cin=node.carry_in))
+            self.zero_valid = False
         self.carry_valid = True
 
 
