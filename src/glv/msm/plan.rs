@@ -307,15 +307,65 @@ where
     )
 }
 
+/// How [`super::try_multiexp`] evaluates an MSM, decided by [`plan`] from the
+/// numbers of terms and threads alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Plan {
+    /// One GLV-Straus table over all terms.
+    Straus,
+    /// GLV-Straus leaves of at most [`STRAUS_LEAF_TERMS`] terms, split into
+    /// `jobs` parallel jobs, run on the calling thread when `jobs` is 1.
+    #[cfg(feature = "multicore")]
+    StrausLeaves {
+        /// The number of jobs, at least 1 and at most the number of terms.
+        jobs: usize,
+    },
+    /// The signed-Booth bucket backend at this window width.
+    Buckets {
+        /// The width of the signed-Booth windows.
+        window_bits: usize,
+    },
+    /// Not profitable here: the caller keeps its generic MSM.
+    Decline,
+}
+
+/// Decides how to evaluate an MSM of `terms` terms on `num_threads` threads.
+pub(super) fn plan<C>(terms: usize, num_threads: usize) -> Plan
+where
+    C: GlvParams,
+{
+    #[cfg(feature = "multicore")]
+    if num_threads > 1 && (MIN_PARALLEL_STRAUS_TERMS..=MAX_PARALLEL_STRAUS_TERMS).contains(&terms) {
+        // Bound small-MSM jobs to a share of the pool (STRAUS_POOL_SHARES),
+        // leaving room for concurrent caller work. Keep each leaf small
+        // instead of building one wide table for an entire worker's share.
+        return Plan::StrausLeaves {
+            jobs: num_threads.div_ceil(STRAUS_POOL_SHARES).min(terms),
+        };
+    }
+    let straus_max_terms = if num_threads <= 1 {
+        SERIAL_STRAUS_MAX_TERMS
+    } else {
+        STRAUS_LEAF_TERMS
+    };
+    if terms <= straus_max_terms {
+        return Plan::Straus;
+    }
+    match glv_multiexp_window_bits::<C>(terms, num_threads) {
+        Some(window_bits) => Plan::Buckets { window_bits },
+        None => Plan::Decline,
+    }
+}
+
 /// Choose the cheapest weighted GLV width when it is no worse than generic.
 /// Half-width components can favor up to two bits beyond the generic width.
-pub(super) fn glv_multiexp_window_bits<C>(terms: usize, num_threads: usize) -> Option<usize>
+/// Called by [`plan`] once Straus has declined.
+fn glv_multiexp_window_bits<C>(terms: usize, num_threads: usize) -> Option<usize>
 where
     C: GlvParams,
 {
     if terms < MIN_GLV_MULTIEXP_TERMS || (terms == MIN_GLV_MULTIEXP_TERMS && num_threads <= 1) {
-        return (num_threads <= 1 && terms > SERIAL_STRAUS_MAX_TERMS)
-            .then(|| serial_small_window_bits(terms));
+        return (num_threads <= 1).then(|| serial_small_window_bits(terms));
     }
 
     let window_bits = multiexp_window_bits::<C>(terms, num_threads)?;
