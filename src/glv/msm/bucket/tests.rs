@@ -108,10 +108,7 @@ where
     let as_points = |buckets: Vec<Option<AffinePoint<AffineBase<C>>>>| {
         buckets
             .into_iter()
-            .map(|bucket| match bucket {
-                Some(point) => C::from(affine_from_xy_unchecked::<C>(point.x, point.y)),
-                None => C::identity(),
-            })
+            .map(bucket_point::<C>)
             .collect::<Vec<_>>()
     };
 

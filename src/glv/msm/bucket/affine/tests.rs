@@ -1,8 +1,8 @@
 use ff::Field;
 
-use super::super::affine_xy;
+use super::super::{affine_xy, bucket_point};
 use super::*;
-use crate::glv::{GlvParams, affine_from_xy_unchecked, private::AffineBase};
+use crate::glv::{GlvParams, private::AffineBase};
 use crate::{pallas, vesta};
 
 fn batch_invert_and_add_two_lanes_matches_individual<F>()
@@ -67,10 +67,7 @@ fn assert_affine_bucket_results_match_native<C>(
 {
     assert_eq!(reduced.len(), source.len());
     for (actual, bucket) in reduced.into_iter().zip(source) {
-        let actual = match actual {
-            Some(point) => C::from(affine_from_xy_unchecked::<C>(point.x, point.y)),
-            None => C::identity(),
-        };
+        let actual = bucket_point::<C>(actual);
         let expected = bucket.iter().copied().sum::<C>();
         assert_eq!(actual, expected, "affine reduction mismatch in case {case}");
     }

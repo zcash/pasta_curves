@@ -114,6 +114,18 @@ where
     sum
 }
 
+/// The curve point a reduced bucket holds, the identity for an empty bucket.
+#[cfg(test)]
+fn bucket_point<C>(bucket: Option<AffinePoint<AffineBase<C>>>) -> C
+where
+    C: GlvParams,
+{
+    match bucket {
+        Some(point) => C::from(affine_from_xy_unchecked::<C>(point.x, point.y)),
+        None => C::identity(),
+    }
+}
+
 /// Smallest number of terms a window reduces at a time.
 const MIN_WINDOW_BLOCK_TERMS: usize = 1 << 14;
 
