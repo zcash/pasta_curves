@@ -1,5 +1,54 @@
 //! Large sums: signed-Booth buckets per window, reduced with batched affine
 //! additions, then combined across windows.
+//!
+//! # Components
+//!
+//! The MSM computes $S = \sum_i k_i P_i$. Each term is split as in
+//! [`crate::glv`], into component $c = 2i$, $(k_{i,1}, P_i)$, and component
+//! $c = 2i + 1$, $(k_{i,2}, \phi(P_i))$; write $(m_c, Q_c)$ for them.
+//!
+//! # One window
+//!
+//! With the signed-Booth digits $d_{c,k}$ of [`super::booth`], $m_c = \sum_k
+//! d_{c,k} 2^{kw}$, hence $S = \sum_k 2^{kw} W_k$ with
+//! $W_k = \sum_c d_{c,k} Q_c$. The bucket method, usually attributed to
+//! Pippenger (N. Pippenger, "On the evaluation of powers and monomials", SIAM
+//! J. Comput. 9(2), 1980), computes $W_k$ without any scalar multiplication:
+//!
+//! 1. **Assign.** Put $\operatorname{sign}(d_{c,k}) Q_c$ into bucket
+//!    $|d_{c,k}| - 1$, for every nonzero digit. Negating a point negates $y$,
+//!    so signed digits need only [`bucket_count`]$(w) = 2^{w-1}$ buckets.
+//! 2. **Reduce.** Sum each bucket to one point $B_j$, all buckets at once
+//!    ([`affine`]). Then $W_k = \sum_j (j + 1) B_j$.
+//! 3. **Running sum** ([`sum_buckets`]). From the highest bucket down, keep
+//!    $R = \sum_{j' \ge j} B_{j'}$ and add $R$ into the total at each step: each
+//!    $B_j$ is added $j + 1$ times, with at most $2 \cdot 2^{w-1}$ additions.
+//!
+//! # All windows
+//!
+//! [`horner`] combines the window sums from the highest window down with $w$
+//! doublings between them: $S = (\cdots(W_K 2^w + W_{K-1}) 2^w + \cdots) + W_0$.
+//! Serially, one [`WindowReducer`] serves every window in turn; with
+//! `multicore`, each window is its own Rayon task.
+//!
+//! # Memory
+//!
+//! A window is filled and reduced in blocks of at most
+//! `max(2^14, 8 * buckets)` components; each block's bucket sums enter the
+//! next block as the first point of the same buckets. The buffers live in a
+//! [`WindowReducer`] that is reused across windows, and with `multicore`
+//! across calls on the same thread ([`cache`]).
+//!
+//! # Reading guide
+//!
+//! [`multiexp`] is the entry point, with bases prepared by [`multiexp_bases`].
+//! It runs the windows with [`multiexp_serial`] or, with `multicore`,
+//! `multiexp_parallel`, and combines them with [`horner`]. A [`WindowReducer`]
+//! computes each window: [`WindowReducer::fill_window`] splits it into blocks
+//! ([`MIN_WINDOW_BLOCK_TERMS`], [`WINDOW_BLOCK_TERMS_PER_BUCKET`]),
+//! [`WindowReducer::fill_block`] assigns the digits to buckets
+//! ([`window_assignments`]) and reduces them ([`affine`]), and [`sum_buckets`]
+//! turns the buckets into the window sum. Reducers come from [`cache`].
 
 mod affine;
 mod cache;
@@ -30,12 +79,17 @@ where
         .unwrap_or((AffineBase::<C>::ZERO, AffineBase::<C>::ZERO))
 }
 
+/// One nonzero digit of a window: component `component` goes into bucket
+/// `|signed_bucket| - 1`, negated when `signed_bucket < 0`.
 #[derive(Clone, Copy)]
 struct WindowAssignment {
     component: usize,
     signed_bucket: isize,
 }
 
+/// A base $P$ prepared for the MSM: its coordinates, and `endo_x`, the $x$ of
+/// $\phi(P)$ (see [`crate::glv`]). When `identity` is set, the coordinates are
+/// meaningless and the base is skipped.
 #[derive(Clone, Copy)]
 pub(super) struct MultiexpBase<F> {
     x: F,
@@ -61,6 +115,10 @@ fn bucket_count(window_bits: usize) -> usize {
 }
 
 /// Collects the nonzero signed points assigned to one Booth window.
+///
+/// Fills `assignments` with one entry per nonzero digit of window `window`,
+/// skipping identity bases, and `counts[j]` with the number of entries in
+/// bucket `j`.
 fn window_assignments<F>(
     components: &[(SignedMagnitude, SignedMagnitude)],
     bases: &[MultiexpBase<F>],
@@ -99,6 +157,9 @@ fn window_assignments<F>(
     }
 }
 
+/// Returns $\sum_j (j + 1) B_j$, where $B_j$ is bucket `j` (the identity for
+/// `None`): the window sum, since bucket `j` holds the digits of magnitude
+/// `j + 1`. Computed with a running sum from the highest bucket down.
 fn sum_buckets<C>(buckets: &[Option<AffinePoint<AffineBase<C>>>]) -> C
 where
     C: GlvParams,
@@ -139,11 +200,17 @@ const WINDOW_BLOCK_TERMS_PER_BUCKET: usize = 8;
 /// in turn (see [`ReduceScratch`]) and, with `multicore`, the calls on the same
 /// thread (see [`cache`]).
 pub(crate) struct WindowReducer<F> {
+    /// The nonzero digits of the current block.
     assignments: Vec<WindowAssignment>,
+    /// The number of points in each bucket of the current block.
     counts: Vec<usize>,
+    /// The bucket boundaries in `points`.
     offsets: Vec<usize>,
+    /// Each bucket's next free slot in `points` while the block is filled.
     positions: Vec<usize>,
+    /// Every bucket's points, contiguous.
     points: Vec<AffinePoint<F>>,
+    /// The reduction's buffers, including the output buckets.
     reduce: ReduceScratch<F>,
 }
 
@@ -197,6 +264,13 @@ where
     F: VartimeField,
 {
     /// Fills and reduces one window's buckets.
+    ///
+    /// Returns, on `Some`, the buckets $B_j$ of window `window`: $B_j$ is the
+    /// sum of the components' signed points with digit magnitude `j + 1`
+    /// (`None` when that sum is the identity), so that [`sum_buckets`] gives
+    /// $W_k$. `None` means the reduction declined (see
+    /// [`affine::reduce_affine_buckets_reusing`]); it does not happen for valid
+    /// inputs.
     ///
     /// Scratch is bounded by `max(2^14, 8 * buckets)` terms for each window, rather
     /// than by the whole input. Wider windows increase the bucket count and thus
@@ -315,6 +389,9 @@ where
 /// Combines the window sums, highest window first, by Horner's rule: one shift
 /// chain of `window_bits` doublings between windows, shared by all of them.
 /// Declines as soon as any window does.
+///
+/// Returns $\sum_k 2^{kw} W_k$ for window sums given as $W_K, \dots, W_0$, or
+/// `None` if any window is `None`.
 fn horner<C>(
     window_bits: usize,
     sums_from_highest: impl IntoIterator<Item = Option<C>>,
@@ -382,6 +459,11 @@ where
     horner::<C>(window_bits, window_sums?.into_iter().rev().map(Some))
 }
 
+/// Returns $\sum_c m_c Q_c = \sum_i k_i P_i$ for the GLV components of the
+/// scalars (from `glv::decompose`) and the prepared bases (from
+/// [`multiexp_bases`]), in the same order; `None` only if a reduction
+/// declined. Uses parallel windows when `multicore` is enabled and
+/// `num_threads > 1`.
 pub(super) fn multiexp<C>(
     components: &[(SignedMagnitude, SignedMagnitude)],
     bases: &[MultiexpBase<AffineBase<C>>],
@@ -407,6 +489,7 @@ where
     acc
 }
 
+/// Prepares the bases: coordinates, the $x$ of $\phi(P)$, and the identity flag.
 pub(super) fn multiexp_bases<C>(bases: &[C::AffineExt]) -> Vec<MultiexpBase<AffineBase<C>>>
 where
     C: GlvParams,
