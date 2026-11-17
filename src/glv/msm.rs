@@ -63,6 +63,7 @@
 //! sum stays in projective coordinates.
 
 mod bucket;
+mod calibration;
 mod plan;
 mod straus;
 
