@@ -231,16 +231,21 @@ where
         .checked_mul(8)
 }
 
+/// The one schedule width that the serial planner also compares with its
+/// successor. The comparison stays this narrow because the model omits cache
+/// behaviour.
+const SERIAL_WIDENED_WINDOW_BITS: usize = 9;
+
 /// Selects the backend's signed-window width.
 ///
-/// Compare the nine-bit schedule with its wider successor in serial mode.
-/// Keep the comparison narrow because this model omits cache behavior.
+/// Compare [`SERIAL_WIDENED_WINDOW_BITS`] with its wider successor in serial
+/// mode.
 fn multiexp_window_bits<C>(terms: usize, num_threads: usize) -> Option<usize>
 where
     C: GlvParams,
 {
     let window_bits = default_multiexp_window_bits(terms)?;
-    if num_threads != 1 || window_bits != 9 {
+    if num_threads != 1 || window_bits != SERIAL_WIDENED_WINDOW_BITS {
         return Some(window_bits);
     }
 
