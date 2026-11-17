@@ -10,8 +10,6 @@ use group::CurveAffine as _;
 use maybe_rayon::prelude::*;
 
 use super::booth::{GLV_COMPONENT_BITS, SignedMagnitude, booth_digit};
-#[cfg(feature = "multicore")]
-use super::plan::current_num_threads;
 use crate::arithmetic::{CurveAffine, VartimeField};
 use crate::glv::{GlvParams, affine_from_xy_unchecked, private::AffineBase};
 #[cfg(feature = "multicore")]
@@ -325,6 +323,25 @@ fn fill_block<C: GlvParams>(
     reduce_affine_buckets_reusing::<AffineBase<C>, false>(points, offsets, reduce)
 }
 
+/// Combines the window sums, highest window first, by Horner's rule: one shift
+/// chain of `window_bits` doublings between windows, shared by all of them.
+/// Declines as soon as any window does.
+fn horner<C: GlvParams>(
+    window_bits: usize,
+    sums_from_highest: impl IntoIterator<Item = Option<C>>,
+) -> Option<C> {
+    let mut acc = C::identity();
+    for (index, sum) in sums_from_highest.into_iter().enumerate() {
+        if index != 0 {
+            for _ in 0..window_bits {
+                acc = acc.double();
+            }
+        }
+        acc += sum?;
+    }
+    Some(acc)
+}
+
 fn multiexp_serial<C: GlvParams>(
     components: &[(SignedMagnitude, SignedMagnitude)],
     bases: &[MultiexpBase<AffineBase<C>>],
@@ -332,21 +349,22 @@ fn multiexp_serial<C: GlvParams>(
 ) -> Option<C> {
     let window_count = GLV_COMPONENT_BITS / window_bits + 1;
     with_window_scratch(|scratch| {
-        let mut acc = C::identity();
-        for window in (0..window_count).rev() {
-            if window + 1 != window_count {
-                for _ in 0..window_bits {
-                    acc = acc.double();
-                }
-            }
-
-            let buckets = fill_window::<C>(components, bases, window_bits, window, scratch)?;
-            acc += sum_buckets::<C>(&buckets);
-        }
-        Some(acc)
+        horner::<C>(
+            window_bits,
+            (0..window_count).rev().map(|window| {
+                let buckets = fill_window::<C>(components, bases, window_bits, window, scratch)?;
+                Some(sum_buckets::<C>(&buckets))
+            }),
+        )
     })
 }
 
+/// Evaluates each signed-Booth window as its own Rayon task, then combines the
+/// ordered sums with one Horner fold. This keeps the expensive window
+/// reductions parallel, with work stealing, without duplicating the shift
+/// chain. Each task checks scratch out for its window: a thread returns it
+/// before starting its next window, so consecutive windows on a thread reuse
+/// the same buffers.
 #[cfg(feature = "multicore")]
 fn multiexp_parallel<C: GlvParams>(
     components: &[(SignedMagnitude, SignedMagnitude)],
@@ -354,38 +372,16 @@ fn multiexp_parallel<C: GlvParams>(
     window_bits: usize,
 ) -> Option<C> {
     let window_count = GLV_COMPONENT_BITS / window_bits + 1;
-    // Stride one task per worker over the windows, reusing its buffers while
-    // preserving the existing ordered Horner fold and its single shift chain.
-    let tasks = current_num_threads().clamp(1, window_count);
-    let sums: Option<Vec<Vec<(usize, C)>>> = (0..tasks)
+    let window_sums: Option<Vec<C>> = (0..window_count)
         .into_par_iter()
-        .map(|task| {
+        .map(|window| {
             with_window_scratch(|scratch| {
-                (task..window_count)
-                    .step_by(tasks)
-                    .map(|window| {
-                        let buckets =
-                            fill_window::<C>(components, bases, window_bits, window, scratch)?;
-                        Some((window, sum_buckets::<C>(&buckets)))
-                    })
-                    .collect()
+                let buckets = fill_window::<C>(components, bases, window_bits, window, scratch)?;
+                Some(sum_buckets::<C>(&buckets))
             })
         })
         .collect();
-    let mut window_sums = alloc::vec![C::identity(); window_count];
-    for (window, sum) in sums?.into_iter().flatten() {
-        window_sums[window] = sum;
-    }
-    let mut acc = C::identity();
-    for (window, sum) in window_sums.into_iter().enumerate().rev() {
-        if window + 1 != window_count {
-            for _ in 0..window_bits {
-                acc = acc.double();
-            }
-        }
-        acc += sum;
-    }
-    Some(acc)
+    horner::<C>(window_bits, window_sums?.into_iter().rev().map(Some))
 }
 
 pub(super) fn multiexp<C: GlvParams>(
