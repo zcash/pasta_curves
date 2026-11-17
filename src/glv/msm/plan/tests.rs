@@ -1,6 +1,13 @@
 use super::*;
 use crate::{pallas, vesta};
 
+/// Unit weights, so that the work estimates count operations.
+const UNIT_PLANNER_WEIGHTS: PlannerWeights = PlannerWeights {
+    point_visit: 1,
+    bucket_addition: 1,
+    doubling: 1,
+};
+
 #[test]
 fn planner_boundaries() {
     // Serial: Straus up to SERIAL_STRAUS_MAX_TERMS, then measured bucket widths.
@@ -82,7 +89,7 @@ fn weighted_planner_matches_calibrated_cells() {
     }
     for threads in [1, 3, 8] {
         for terms in [2_600, 8_192, 65_536, 1_000_000] {
-            let default = multiexp_window_bits::<pallas::Point>(terms, threads).unwrap();
+            let default = default_multiexp_window_bits(terms).unwrap();
             if let Some(width) = glv_multiexp_window_bits::<pallas::Point>(terms, threads) {
                 assert!((default..=default + GLV_EXTRA_WINDOW_BITS).contains(&width));
             }

@@ -37,9 +37,9 @@
 //! operation weighted by its cost in that backend ([`PlannerWeights`]):
 //!
 //! - the generic MSM the caller falls back to ([`GENERIC_PLANNER_WEIGHTS`]):
-//!   $n$ full-width terms of [`scalar_repr_bits`] bits, at the width
-//!   [`multiexp_window_bits`] picks from the schedule of `halo2_proofs`'
-//!   `best_multiexp` ([`default_multiexp_window_bits`]);
+//!   $n$ full-width terms of [`scalar_repr_bits`] bits, at the width it runs,
+//!   from the schedule of `halo2_proofs`' `best_multiexp`
+//!   ([`default_multiexp_window_bits`]);
 //! - the bucket backend ([`GLV_PLANNER_WEIGHTS`]): $2n$ half-width components,
 //!   at that width and up to [`GLV_EXTRA_WINDOW_BITS`] more, keeping the
 //!   cheapest.
@@ -186,13 +186,6 @@ struct PlannerWeights {
     doubling: usize,
 }
 
-/// Unit weights preserve the generic window schedule and unweighted reference estimates.
-const UNIT_PLANNER_WEIGHTS: PlannerWeights = PlannerWeights {
-    point_visit: 1,
-    bucket_addition: 1,
-    doubling: 1,
-};
-
 /// The GLV ladder: affine batched point visits, projective bucket sums.
 const GLV_PLANNER_WEIGHTS: PlannerWeights = PlannerWeights {
     point_visit: 5,
@@ -284,49 +277,6 @@ where
         .checked_mul(u8::BITS as usize)
 }
 
-/// The one schedule width that the serial planner also compares with its
-/// successor. The comparison stays this narrow because the model omits cache
-/// behaviour.
-const SERIAL_WIDENED_WINDOW_BITS: usize = 9;
-
-/// Selects the backend's signed-window width.
-///
-/// Compare [`SERIAL_WIDENED_WINDOW_BITS`] with its wider successor in serial
-/// mode.
-fn multiexp_window_bits<C>(terms: usize, num_threads: usize) -> Option<usize>
-where
-    C: GlvParams,
-{
-    let window_bits = default_multiexp_window_bits(terms)?;
-    if num_threads != 1 || window_bits != SERIAL_WIDENED_WINDOW_BITS {
-        return Some(window_bits);
-    }
-
-    let scalar_bits = scalar_repr_bits::<C>()?;
-    let next_window_bits = window_bits.checked_add(1)?;
-    let current = estimated_signed_booth_work(
-        terms,
-        scalar_bits,
-        window_bits,
-        num_threads,
-        UNIT_PLANNER_WEIGHTS,
-    );
-    let next = estimated_signed_booth_work(
-        terms,
-        scalar_bits,
-        next_window_bits,
-        num_threads,
-        UNIT_PLANNER_WEIGHTS,
-    );
-    Some(
-        if matches!((current, next), (Some(current), Some(next)) if next < current) {
-            next_window_bits
-        } else {
-            window_bits
-        },
-    )
-}
-
 /// How [`super::try_multiexp`] evaluates an MSM, decided by [`plan`] from the
 /// numbers of terms and threads alone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -388,7 +338,7 @@ where
         return (num_threads <= 1).then(|| serial_small_window_bits(terms));
     }
 
-    let window_bits = multiexp_window_bits::<C>(terms, num_threads)?;
+    let window_bits = default_multiexp_window_bits(terms)?;
     let generic = estimated_signed_booth_work(
         terms,
         scalar_repr_bits::<C>()?,
