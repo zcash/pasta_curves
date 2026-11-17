@@ -1,5 +1,26 @@
 //! Batched affine additions sharing one field inversion per tree level,
 //! failure-atomic so that a level can be retried with complete formulas.
+//!
+//! The points of every bucket of a window are added pairwise, level by level.
+//! All slopes of a level share one inversion: Montgomery's trick inverts the
+//! product of the denominators once and recovers each inverse from prefix
+//! products.
+//!
+//! Nothing existing fits. `ff` and `group` have no batched affine addition, and
+//! `ff::BatchInverter` is constant-time and skips zeros, whereas a level here
+//! must invert in variable time and fail as a whole when an equal or opposite
+//! pair makes a denominator zero, having written nothing, so that it can be
+//! retried with complete formulas. `crate::glv_eisenstein` batches affine
+//! additions too, but recovers exceptional lanes one by one.
+//!
+//! # Reading guide
+//!
+//! [`reduce_affine_buckets_reusing`] is the entry point. Each level records its
+//! additions as [`PendingAffineAddition`]s and finishes them all with
+//! [`batch_invert_and_add`], whose shared inversion runs
+//! [`BATCH_INVERSION_LANES`] independent multiplication chains. If it fails,
+//! the level restarts with `COMPLETE` set. [`ReduceScratch`] holds the buffers
+//! kept between calls, the output buckets included.
 
 use alloc::vec::Vec;
 
@@ -8,12 +29,15 @@ use crate::arithmetic::VartimeField;
 #[cfg(test)]
 mod tests;
 
+/// An affine point on the curve, never the identity: identities are dropped.
 #[derive(Clone, Copy)]
 pub(super) struct AffinePoint<F> {
     pub(super) x: F,
     pub(super) y: F,
 }
 
+/// One addition of a level, waiting for the level's shared inversion.
+//
 // The left operand lives in its `points[output]` result slot. The prefix pass
 // scales `numerator` in place, so the backward pass can recover the slope
 // directly without keeping a separate inversion scratch field.
@@ -149,10 +173,12 @@ where
     Some(())
 }
 
-/// The existing failure-atomic reducer compacts points in place, so unlike
-/// the source implementation's staged reducer it needs no second point buffer.
+/// The buffers [`reduce_affine_buckets_reusing`] keeps between calls. Points
+/// are compacted in place, so no second point buffer is needed.
 pub(super) struct ReduceScratch<F> {
+    /// The bucket boundaries of the next level, swapped with the current ones.
     pub(super) next_offsets: Vec<usize>,
+    /// The additions of the current level.
     pub(super) pending: Vec<PendingAffineAddition<F>>,
     /// The reduced buckets, one entry per bucket, `None` for an empty one.
     pub(super) buckets: Vec<Option<AffinePoint<F>>>,
@@ -168,9 +194,11 @@ impl<F> Default for ReduceScratch<F> {
     }
 }
 
-/// Consumes the logical contents of caller-owned buffers but retains their
-/// allocations, and writes the reduced buckets into `scratch.buckets`. A failed
-/// incomplete level leaves its points and offsets intact.
+/// Reduces bucket `j`, the points `points[offsets[j]..offsets[j + 1]]`, to its
+/// sum in `scratch.buckets[j]` (`None` for the identity). Requires valid,
+/// nonidentity points. `points` and `offsets` are consumed, their allocations
+/// kept. Returns `None` only if the complete formulas divide by zero, which
+/// valid inputs never do.
 pub(super) fn reduce_affine_buckets_reusing<F, const COMPLETE: bool>(
     points: &mut Vec<AffinePoint<F>>,
     offsets: &mut Vec<usize>,
