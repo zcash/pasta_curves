@@ -204,7 +204,7 @@ const FIRST_LN_WINDOW_BITS: usize = 4;
 /// [`SMALL_MULTIEXP_WINDOW_BITS`] below [`SMALL_MULTIEXP_TERMS`], and
 /// `ceil(ln(terms))` above, read from [`DEFAULT_MULTIEXP_WINDOW_THRESHOLDS`].
 /// `None` above `u32::MAX` terms.
-fn default_multiexp_window_bits(terms: usize) -> Option<usize> {
+pub(super) fn default_multiexp_window_bits(terms: usize) -> Option<usize> {
     if terms < TINY_MULTIEXP_TERMS {
         Some(TINY_MULTIEXP_WINDOW_BITS)
     } else if terms < SMALL_MULTIEXP_TERMS {

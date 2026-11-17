@@ -6,6 +6,9 @@
 
 use super::plan::PlannerWeights;
 
+#[cfg(all(test, feature = "multicore"))]
+mod grid;
+
 /// The cost model starts here for parallel MSMs and above this for serial MSMs.
 /// Serial MSMs through 256 terms use measured Straus and bucket choices.
 pub(super) const MIN_GLV_MULTIEXP_TERMS: usize = 256;
