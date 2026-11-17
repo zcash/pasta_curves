@@ -20,6 +20,19 @@
 //! Window assignment and affine-reduction buffers are reused across windows.
 //! With `multicore`, each thread also caches at most 8 MiB per field between
 //! calls; checked-out buffers are unavailable to nested Rayon work.
+//!
+//! # Reading guide
+//!
+//! [`try_multiexp`] is the entry point. Two methods share the work, because
+//! neither wins at every size: Strauss ([`strauss`]) pays one addition per
+//! nonzero digit of every term but has almost no setup, while the bucket
+//! method ([`bucket`]) amortizes additions over many terms at the price of
+//! setting up its buckets. So `try_multiexp` offers the input to Strauss
+//! first; if Strauss declines, the planner ([`plan`]) picks a window width for
+//! the bucket method, or declines when the caller's generic MSM is expected to
+//! be faster. The bucket method splits the scalars as in [`crate::glv`],
+//! recodes the halves into signed digits ([`booth`]), and evaluates the
+//! windows.
 
 mod booth;
 mod bucket;
