@@ -45,6 +45,30 @@ const MIN_GLV_MULTIEXP_TERMS: usize = 256;
 /// backend at 17 and 24 terms, and the bucket backend wins from 32 terms on.
 pub(super) const SERIAL_STRAUS_MAX_TERMS: usize = 24;
 
+/// Largest GLV-Straus leaf when MSMs are split across worker threads: the
+/// measured crossover above which one table stopped beating the bucket backend
+/// on one thread.
+pub(super) const STRAUS_LEAF_TERMS: usize = 16;
+
+/// Smallest MSM worth splitting across worker jobs.
+#[cfg(feature = "multicore")]
+pub(super) const MIN_PARALLEL_STRAUS_TERMS: usize = 3;
+
+/// Largest parallel MSM split into [`STRAUS_LEAF_TERMS`]-or-smaller Straus
+/// leaves. Above this conservative crossover, the generic or GLV bucket
+/// backends amortize their bucket setup more effectively.
+///
+/// Tuned for the halo2 IPA prover, whose last rounds commit to L and R with
+/// 66-term MSMs. `benches/msm.rs` brackets it with 66 and 67 terms.
+#[cfg(feature = "multicore")]
+pub(super) const MAX_PARALLEL_STRAUS_TERMS: usize = 66;
+
+/// The parallel Straus path splits into at most the pool's size divided by
+/// this, rounded up: the IPA prover computes its L and R commitments at the
+/// same time, and each gets an equal share.
+#[cfg(feature = "multicore")]
+pub(super) const STRAUS_POOL_SHARES: usize = 2;
+
 /// Serial window width of the bucket backend below
 /// [`SERIAL_WIDE_WINDOW_MIN_TERMS`] terms, the fastest measured from 32 to 96.
 const SERIAL_NARROW_WINDOW_BITS: usize = 5;
