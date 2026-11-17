@@ -1,5 +1,29 @@
 //! Small sums: one Strauss doubling chain shared by all terms, using the
 //! split-wNAF tables of `glv`, optionally split into parallel leaves.
+//!
+//! # The shared doubling chain
+//!
+//! The scalars are recoded ([`Decomposed`]) and the bases tabulated
+//! ([`Table`]) as in [`crate::glv`], where one multiplication $kP$ is Horner's
+//! rule over the digit columns: double, then add the column's table entries.
+//!
+//! For a sum $\sum_i k_i P_i$ the doublings can be shared. Doubling is a group
+//! homomorphism, so running Horner's rule once on the column-wise sum of all
+//! terms' contributions gives the sum of the individual results: double once
+//! per column, then add every term's entries for that column. This is Straus's
+//! method (E. G. Straus, "Addition chains of vectors", Amer. Math. Monthly 71,
+//! 1964). It costs about 128 doublings in all instead of 128 per term, plus one
+//! addition per nonzero digit and the tables, which share one normalization.
+//!
+//! For few terms that beats the bucket method, whose setup does not amortize;
+//! the crossovers are the constants below.
+//!
+//! # Reading guide
+//!
+//! [`planned_strauss_multiexp`] is the entry point. It decides whether Strauss
+//! applies, the constants being the measured crossovers, and runs either one
+//! [`strauss_multiexp`] or, with `multicore`, leaves of at most
+//! [`STRAUSS_LEAF_TERMS`] terms in parallel (`strauss_multiexp_leaves`).
 
 use alloc::vec::Vec;
 use group::CurveAffine as _;
@@ -24,6 +48,9 @@ const MAX_PARALLEL_STRAUSS_TERMS: usize = 66;
 
 /// Share the doubling ladder across all scalar/base pairs, reusing the
 /// upstream GLV decomposition and width-four split-wNAF tables unchanged.
+///
+/// Returns $\sum_i k_i P_i$ exactly, for `scalars` and `bases` of equal length.
+/// Zero scalars and identity bases are skipped.
 fn strauss_multiexp<C>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C
 where
     C: GlvParams,
@@ -75,6 +102,17 @@ where
         .fold(C::identity(), |left, right| left + right)
 }
 
+/// Evaluates the sum with Strauss when the input is small enough, and declines
+/// otherwise so that the caller can use the bucket backend.
+///
+/// Returns `Some` of $\sum_i k_i P_i$ when:
+/// - with `multicore` and `num_threads > 1`, there are 3 to 66 terms: they are
+///   split into at most `ceil(num_threads / 2)` jobs of Strauss leaves of at
+///   most [`STRAUSS_LEAF_TERMS`] terms, computed in parallel and summed;
+/// - otherwise, there are at most [`SERIAL_STRAUSS_MAX_TERMS`] terms with one
+///   thread, or [`STRAUSS_LEAF_TERMS`] terms with more.
+///
+/// Returns `None` for larger inputs. Requires `scalars.len() == bases.len()`.
 pub(super) fn planned_strauss_multiexp<C>(
     scalars: &[C::ScalarExt],
     bases: &[C::AffineExt],
