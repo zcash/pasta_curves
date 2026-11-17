@@ -407,7 +407,8 @@ def report(grids: list[Grid], this: str | None) -> None:
     print("\n== losses against the fastest measured alternative, per grid")
     for grid in grids:
         marker = " (this machine)" if grid.name == this else ""
-        print(f"\n{grid.name}{marker}: {grid.meta.get('cpu', '?')}, {grid.meta.get('os', '?')}")
+        cpu, os, backend, glv = (grid.meta.get(k, "?") for k in ("cpu", "os", "backend", "glv"))
+        print(f"\n{grid.name}{marker}: {cpu}, {os}, backend {backend}, {glv}")
         for label, evaluate in rows:
             print(f"  {label:<34} {evaluate(grid).row()}")
     lines = disagreements(grids)

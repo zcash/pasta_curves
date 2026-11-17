@@ -6,7 +6,8 @@
 
 use super::plan::PlannerWeights;
 
-#[cfg(all(test, feature = "multicore"))]
+// The calibration runs the code as deployed: parallel, with the assembly arithmetic.
+#[cfg(all(test, feature = "multicore", feature = "asm"))]
 mod grid;
 
 /// The cost model starts here for parallel MSMs and above this for serial MSMs.

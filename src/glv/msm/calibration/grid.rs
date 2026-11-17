@@ -15,9 +15,12 @@
 //! interleave the alternatives, so that drift during a run affects them alike,
 //! and each row is the median over the repetitions.
 //!
-//! Run it with
-//! `CALIBRATION_GRID=~/grid.csv cargo test --release --features multicore
-//! glv::msm::calibration::grid -- --ignored --test-threads=1`. Optional:
+//! It exists only with the `multicore` and `asm` features (`multicore` implies
+//! `glv`), so that it times the code as deployed, and records the arithmetic
+//! backend in use (`portable` on a target without an assembly backend). Run it
+//! with `CALIBRATION_GRID=~/grid.csv cargo test --release --features
+//! "glv multicore asm" glv::msm::calibration::grid -- --ignored
+//! --test-threads=1`. Optional:
 //! `CALIBRATION_REPS` (default 11), `CALIBRATION_SIZES` (comma-separated term
 //! counts) and `CALIBRATION_SEED` (32 hex digits).
 //!
@@ -201,6 +204,13 @@ fn timing_grid() {
     if fresh {
         writeln!(out, "threads,terms,method,param,median_ns,reps").expect("write");
     }
+    writeln!(out, "# backend: {}", crate::BACKEND).expect("write");
+    let glv = if cfg!(feature = "glv-eisenstein") {
+        "glv-eisenstein"
+    } else {
+        "glv"
+    };
+    writeln!(out, "# glv: {glv}").expect("write");
 
     for terms in sizes {
         let (scalars, bases) = (&scalars[..terms], &bases[..terms]);

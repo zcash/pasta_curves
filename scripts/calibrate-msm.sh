@@ -16,9 +16,9 @@
 # Environment, all optional:
 #   CALIBRATION_DIR       where grids are written and read (default:
 #                         ${XDG_DATA_HOME:-~/.local/share}/pasta_curves/calibration)
+#   CALIBRATION_GLV       the GLV feature: "glv" (default) or "glv-eisenstein", which adds the
+#                         Eisenstein recoding (the MSM does not use it yet)
 #   CALIBRATION_THREADS   thread counts to measure (default: 1 2 4 8 and the core count)
-#   CALIBRATION_FEATURES  Cargo features (default: "multicore asm"; asm falls back to the
-#                         portable arithmetic on targets without a backend)
 #   CALIBRATION_BUILD     a label for the build, part of the file name (default: "asm", or
 #                         "native" when RUSTFLAGS has -C target-cpu=native)
 #   CALIBRATION_HOST      a label for the machine (default: the CPU model)
@@ -30,7 +30,19 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 PYTHON=${PYTHON:-python3}
-FEATURES=${CALIBRATION_FEATURES:-multicore asm}
+# The features the calibrated code runs with: the GLV MSM (glv, or glv-eisenstein, which implies
+# it), parallel evaluation (multicore) and the assembly field arithmetic (asm). None is on by
+# default, and the timing grid only exists with all of them. On a target without an assembly
+# backend the grid records `backend: portable`.
+GLV=${CALIBRATION_GLV:-glv}
+case "$GLV" in
+  glv | glv-eisenstein) ;;
+  *)
+    echo "error: CALIBRATION_GLV must be glv or glv-eisenstein, not $GLV" >&2
+    exit 1
+    ;;
+esac
+FEATURES="$GLV multicore asm"
 
 cpu_model() {
   if [[ "$(uname -s)" == Darwin ]]; then
@@ -66,6 +78,9 @@ case "${RUSTFLAGS:-}" in
   *) default_build=asm ;;
 esac
 build=${CALIBRATION_BUILD:-$default_build}
+if [[ $GLV == glv-eisenstein ]]; then
+  build="$build-eisenstein"
+fi
 host=${CALIBRATION_HOST:-$(cpu_model | slug)}
 dir=${CALIBRATION_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/pasta_curves/calibration}
 mkdir -p "$dir"
@@ -104,9 +119,14 @@ cargo test --release --features "$FEATURES" --no-run -q
 
 for t in $threads; do
   echo "==> timing grid, $t thread(s)"
+  before=$(wc -l < "$out")
   RAYON_NUM_THREADS=$t CALIBRATION_GRID="$out" \
     cargo test --release --features "$FEATURES" -q glv::msm::calibration::grid \
     -- --ignored --test-threads=1
+  if [[ $(wc -l < "$out") -le $before ]]; then
+    echo "error: the timing grid wrote nothing for $t thread(s); is it compiled in?" >&2
+    exit 1
+  fi
 done
 echo "==> wrote $out"
 
