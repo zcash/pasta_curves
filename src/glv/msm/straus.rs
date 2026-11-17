@@ -59,6 +59,12 @@ const MIN_PARALLEL_STRAUS_TERMS: usize = 3;
 #[cfg(feature = "multicore")]
 const MAX_PARALLEL_STRAUS_TERMS: usize = 66;
 
+/// The parallel Straus path splits into at most the pool's size divided by
+/// this, rounded up: the IPA prover computes its L and R commitments at the
+/// same time, and each gets an equal share.
+#[cfg(feature = "multicore")]
+const STRAUS_POOL_SHARES: usize = 2;
+
 /// Share the doubling ladder across all scalar/base pairs, reusing the
 /// upstream GLV decomposition and width-four split-wNAF tables unchanged.
 ///
@@ -104,9 +110,11 @@ where
 /// otherwise so that the caller can use the bucket backend.
 ///
 /// Returns `Some` of $\sum_i k_i P_i$ when:
-/// - with `multicore` and `num_threads > 1`, there are 3 to 66 terms: they are
-///   split into at most `ceil(num_threads / 2)` jobs of Straus leaves of at
-///   most [`STRAUS_LEAF_TERMS`] terms, computed in parallel and summed;
+/// - with `multicore` and `num_threads > 1`, there are
+///   `MIN_PARALLEL_STRAUS_TERMS` to `MAX_PARALLEL_STRAUS_TERMS` terms: they
+///   are split into at most `ceil(num_threads / STRAUS_POOL_SHARES)` jobs of
+///   Straus leaves of at most [`STRAUS_LEAF_TERMS`] terms, computed in
+///   parallel and summed;
 /// - otherwise, there are at most [`SERIAL_STRAUS_MAX_TERMS`] terms with one
 ///   thread, or [`STRAUS_LEAF_TERMS`] terms with more.
 ///
@@ -123,12 +131,10 @@ where
     if (MIN_PARALLEL_STRAUS_TERMS..=MAX_PARALLEL_STRAUS_TERMS).contains(&scalars.len())
         && num_threads > 1
     {
-        // Bound small-MSM jobs to half the pool, rounded up, leaving room for
-        // concurrent caller work: the IPA prover computes its L and R
-        // commitments at the same time, and each gets half. Keep each leaf
-        // small instead of building one wide table for an entire worker's
-        // share.
-        let worker_jobs = num_threads.div_ceil(2).min(scalars.len());
+        // Bound small-MSM jobs to a share of the pool (STRAUS_POOL_SHARES),
+        // leaving room for concurrent caller work. Keep each leaf small
+        // instead of building one wide table for an entire worker's share.
+        let worker_jobs = num_threads.div_ceil(STRAUS_POOL_SHARES).min(scalars.len());
         if worker_jobs == 1 {
             return Some(straus_multiexp_leaves::<C>(scalars, bases));
         }
