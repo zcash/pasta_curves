@@ -122,7 +122,7 @@ where
     };
 
     for width in [1, 3, 6] {
-        for window in 0..GLV_COMPONENT_BITS / width + 1 {
+        for window in 0..window_count(width) {
             let whole = as_points(
                 WindowReducer::default()
                     .fill_window_in_blocks(&components, &bases, width, window, components.len())

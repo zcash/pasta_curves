@@ -28,7 +28,7 @@ fn booth_digits_reconstruct_components() {
                 };
                 let mut reconstructed = crate::Fq::ZERO;
                 let radix = crate::Fq::from(1u64 << width);
-                for window in (0..GLV_COMPONENT_BITS / width + 1).rev() {
+                for window in (0..window_count(width)).rev() {
                     let digit = booth_digit(component, width, window);
                     assert!(digit.magnitude <= 1 << (width - 1));
                     let value = crate::Fq::from(u64::try_from(digit.magnitude).unwrap());

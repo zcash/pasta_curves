@@ -9,6 +9,12 @@ mod tests;
 /// Each GLV decomposition component has magnitude strictly below `2^127`.
 pub(super) const GLV_COMPONENT_BITS: usize = 127;
 
+/// The number of signed-Booth windows of width `window_bits` that the MSM
+/// evaluates for a GLV half-scalar, the highest one included.
+pub(super) fn window_count(window_bits: usize) -> usize {
+    GLV_COMPONENT_BITS / window_bits + 1
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct SignedMagnitude {
     negative: bool,

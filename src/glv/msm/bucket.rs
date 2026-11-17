@@ -10,7 +10,7 @@ use group::CurveAffine as _;
 #[cfg(feature = "multicore")]
 use maybe_rayon::prelude::*;
 
-use super::booth::{GLV_COMPONENT_BITS, SignedMagnitude, booth_digit};
+use super::booth::{SignedMagnitude, booth_digit, window_count};
 use crate::arithmetic::{CurveAffine, VartimeField};
 use crate::glv::{GlvParams, affine_from_xy_unchecked, private::AffineBase};
 use affine::{AffinePoint, ReduceScratch, reduce_affine_buckets_reusing};
@@ -325,7 +325,7 @@ where
     C: GlvParams,
     AffineBase<C>: CachedField,
 {
-    let window_count = GLV_COMPONENT_BITS / window_bits + 1;
+    let window_count = window_count(window_bits);
     let mut reducer = Checkout::<AffineBase<C>>::take();
     horner::<C>(
         window_bits,
@@ -352,7 +352,7 @@ where
     C: GlvParams,
     AffineBase<C>: CachedField,
 {
-    let window_count = GLV_COMPONENT_BITS / window_bits + 1;
+    let window_count = window_count(window_bits);
     let window_sums: Option<Vec<C>> = (0..window_count)
         .into_par_iter()
         .map(|window| {
