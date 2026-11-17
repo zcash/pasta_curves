@@ -1,4 +1,5 @@
 use super::*;
+use crate::glv::msm::calibration::DEFAULT;
 use crate::{pallas, vesta};
 
 /// Unit weights, so that the work estimates count operations.
@@ -10,17 +11,38 @@ const UNIT_PLANNER_WEIGHTS: PlannerWeights = PlannerWeights {
 
 #[test]
 fn planner_boundaries() {
-    // Serial: Straus up to SERIAL_STRAUS_MAX_TERMS, then measured bucket widths.
-    assert_eq!(plan::<pallas::Point>(24, 1), Plan::Straus);
-    assert_eq!(glv_multiexp_window_bits::<pallas::Point>(25, 1), Some(5));
-    assert_eq!(glv_multiexp_window_bits::<pallas::Point>(127, 1), Some(5));
-    assert_eq!(glv_multiexp_window_bits::<pallas::Point>(128, 1), Some(6));
-    assert_eq!(glv_multiexp_window_bits::<pallas::Point>(255, 1), Some(6));
-    assert_eq!(glv_multiexp_window_bits::<pallas::Point>(256, 1), Some(6));
-    assert_eq!(glv_multiexp_window_bits::<vesta::Point>(256, 1), Some(6));
-    assert!(glv_multiexp_window_bits::<pallas::Point>(2048, 1).is_some());
-    // Parallel: below MIN_GLV_MULTIEXP_TERMS the planner still declines.
-    assert_eq!(glv_multiexp_window_bits::<pallas::Point>(255, 2), None);
+    // Serial: Straus up to serial_straus_max_terms, then measured bucket widths.
+    assert_eq!(plan_with::<pallas::Point>(24, 1, &DEFAULT), Plan::Straus);
+    assert_eq!(
+        glv_multiexp_window_bits::<pallas::Point>(25, 1, &DEFAULT),
+        Some(5)
+    );
+    assert_eq!(
+        glv_multiexp_window_bits::<pallas::Point>(127, 1, &DEFAULT),
+        Some(5)
+    );
+    assert_eq!(
+        glv_multiexp_window_bits::<pallas::Point>(128, 1, &DEFAULT),
+        Some(6)
+    );
+    assert_eq!(
+        glv_multiexp_window_bits::<pallas::Point>(255, 1, &DEFAULT),
+        Some(6)
+    );
+    assert_eq!(
+        glv_multiexp_window_bits::<pallas::Point>(256, 1, &DEFAULT),
+        Some(6)
+    );
+    assert_eq!(
+        glv_multiexp_window_bits::<vesta::Point>(256, 1, &DEFAULT),
+        Some(6)
+    );
+    assert!(glv_multiexp_window_bits::<pallas::Point>(2048, 1, &DEFAULT).is_some());
+    // Parallel: below min_glv_multiexp_terms the planner still declines.
+    assert_eq!(
+        glv_multiexp_window_bits::<pallas::Point>(255, 2, &DEFAULT),
+        None
+    );
     assert_eq!(default_multiexp_window_bits(31), Some(3));
     assert_eq!(default_multiexp_window_bits(32), Some(4));
     assert_eq!(default_multiexp_window_bits(54), Some(4));
@@ -77,12 +99,12 @@ fn weighted_planner_matches_calibrated_cells() {
         (65_536, 8, Some(12)),
     ] {
         assert_eq!(
-            glv_multiexp_window_bits::<pallas::Point>(terms, threads),
+            glv_multiexp_window_bits::<pallas::Point>(terms, threads, &DEFAULT),
             expected,
             "{terms} terms on {threads} workers, Pallas"
         );
         assert_eq!(
-            glv_multiexp_window_bits::<vesta::Point>(terms, threads),
+            glv_multiexp_window_bits::<vesta::Point>(terms, threads, &DEFAULT),
             expected,
             "{terms} terms on {threads} workers, Vesta"
         );
@@ -90,21 +112,22 @@ fn weighted_planner_matches_calibrated_cells() {
     for threads in [1, 3, 8] {
         for terms in [2_600, 8_192, 65_536, 1_000_000] {
             let default = default_multiexp_window_bits(terms).unwrap();
-            if let Some(width) = glv_multiexp_window_bits::<pallas::Point>(terms, threads) {
-                assert!((default..=default + GLV_EXTRA_WINDOW_BITS).contains(&width));
+            if let Some(width) = glv_multiexp_window_bits::<pallas::Point>(terms, threads, &DEFAULT)
+            {
+                assert!((default..=default + DEFAULT.glv_extra_window_bits).contains(&width));
             }
         }
     }
     assert_eq!(
-        glv_multiexp_window_bits::<pallas::Point>(usize::MAX, 8),
+        glv_multiexp_window_bits::<pallas::Point>(usize::MAX, 8, &DEFAULT),
         None
     );
     assert_eq!(
-        estimated_signed_booth_work(usize::MAX, 256, 8, 1, GLV_PLANNER_WEIGHTS),
+        estimated_signed_booth_work(usize::MAX, 256, 8, 1, DEFAULT.glv_weights),
         None
     );
     assert_eq!(
-        estimated_signed_booth_work(2048, 256, 0, 1, GENERIC_PLANNER_WEIGHTS),
+        estimated_signed_booth_work(2048, 256, 0, 1, DEFAULT.generic_weights),
         None
     );
 }
@@ -115,12 +138,12 @@ fn weighted_planner_matches_calibrated_cells() {
 fn plan_routes_the_boundary_sizes() {
     fn check(terms: usize, threads: usize, expected: Plan) {
         assert_eq!(
-            plan::<pallas::Point>(terms, threads),
+            plan_with::<pallas::Point>(terms, threads, &DEFAULT),
             expected,
             "{terms} terms on {threads} threads, Pallas"
         );
         assert_eq!(
-            plan::<vesta::Point>(terms, threads),
+            plan_with::<vesta::Point>(terms, threads, &DEFAULT),
             expected,
             "{terms} terms on {threads} threads, Vesta"
         );

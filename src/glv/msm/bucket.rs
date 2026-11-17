@@ -45,7 +45,8 @@
 //! It runs the windows with [`multiexp_serial`] or, with `multicore`,
 //! `multiexp_parallel`, and combines them with [`horner`]. A [`WindowReducer`]
 //! computes each window: [`WindowReducer::fill_window`] splits it into blocks
-//! ([`MIN_WINDOW_BLOCK_TERMS`], [`WINDOW_BLOCK_TERMS_PER_BUCKET`]),
+//! (the calibration's `min_window_block_terms` and
+//! `window_block_terms_per_bucket`),
 //! [`WindowReducer::fill_block`] assigns the digits to buckets
 //! ([`window_assignments`]) and reduces them ([`affine`]), and [`sum_buckets`]
 //! turns the buckets into the window sum. Reducers come from [`cache`].
@@ -58,7 +59,7 @@ use group::CurveAffine as _;
 #[cfg(feature = "multicore")]
 use maybe_rayon::prelude::*;
 
-use super::calibration::{MIN_WINDOW_BLOCK_TERMS, WINDOW_BLOCK_TERMS_PER_BUCKET};
+use super::calibration::CALIBRATION;
 use crate::arithmetic::VartimeField;
 use crate::glv::booth::{SignedMagnitude, booth_digit, window_count};
 use crate::glv::{
@@ -269,8 +270,9 @@ where
         window: usize,
     ) -> Option<&[Option<AffinePoint<F>>]> {
         let bucket_count = bucket_count(window_bits);
-        let block_terms =
-            MIN_WINDOW_BLOCK_TERMS.max(bucket_count.saturating_mul(WINDOW_BLOCK_TERMS_PER_BUCKET));
+        let block_terms = CALIBRATION
+            .min_window_block_terms
+            .max(bucket_count.saturating_mul(CALIBRATION.window_block_terms_per_bucket));
         self.fill_window_in_blocks(components, bases, window_bits, window, block_terms)
     }
 

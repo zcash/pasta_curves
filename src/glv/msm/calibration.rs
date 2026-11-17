@@ -1,73 +1,114 @@
-//! The constants of the MSM that depend on the machine: the measured
-//! crossovers between Straus, the bucket method and the generic MSM, the
-//! planner's weights, and the window blocks. They are the only values to
-//! revisit when calibrating on another machine; everything else in `glv::msm`
-//! is either a rule over them or fixed by the algorithm.
+//! The values of the MSM that depend on the machine: the crossovers between
+//! Straus, the bucket method and the generic MSM, the serial bucket widths, the
+//! planner's weights, and the window blocks. A [`Calibration`] holds them all;
+//! everything else in `glv::msm` is a rule over them or fixed by the algorithm.
+//!
+//! [`CALIBRATION`] is the calibration in use, chosen per target at compile
+//! time.
+//!
+//! # Providing another machine's values
+//!
+//! Each value is measured by timing the alternatives it chooses between, on
+//! the same inputs, on the machine to calibrate, built as deployed (`glv`,
+//! `multicore` and `asm`, plus any `RUSTFLAGS` the deployment uses), at the
+//! thread counts the deployment runs with:
+//!
+//! - the Straus crossovers and the serial widths: one Straus table, Straus
+//!   leaves at several job counts, and the bucket method at each width, from a
+//!   handful of terms to a few hundred;
+//! - the weights and the extra GLV widths: the generic MSM against the bucket
+//!   method at widths around halo2's default, from a few hundred terms up;
+//! - the window blocks: large MSMs, for time and for memory.
+//!
+//! Choose the values that minimise, over those measurements, the time lost
+//! against the fastest alternative of each size and thread count, and check
+//! them on an end-to-end benchmark of `CurveExt::try_multiexp_vartime`, such
+//! as `benches/msm.rs`.
+//!
+//! Then add the values as a constant of type [`Calibration`] named after the
+//! targets it covers, and select it in [`CALIBRATION`] with a `cfg` on the
+//! target, keeping [`DEFAULT`] as the fallback for every other target. The
+//! machine measured, the build and the measurements belong in the commit that
+//! adds the values, not here. The planner's tests
+//! pin the decisions of the calibration in use; a new calibration pins its
+//! own.
 
 use super::plan::PlannerWeights;
 
-/// The cost model starts here for parallel MSMs and above this for serial MSMs.
-/// Serial MSMs through 256 terms use measured Straus and bucket choices.
-pub(super) const MIN_GLV_MULTIEXP_TERMS: usize = 256;
+/// The machine-dependent values the planner and the bucket method read.
+#[derive(Clone, Copy)]
+pub(super) struct Calibration {
+    /// The cost model starts here for parallel MSMs and above this for serial
+    /// MSMs. Serial MSMs up to here use the measured Straus and bucket choices.
+    pub(super) min_glv_multiexp_terms: usize,
+    /// Largest serial MSM evaluated as one GLV-Straus table, the crossover
+    /// above which the bucket method is faster on one thread.
+    pub(super) serial_straus_max_terms: usize,
+    /// Largest GLV-Straus leaf when MSMs are split across worker threads, and
+    /// the largest single Straus table on several threads.
+    pub(super) straus_leaf_terms: usize,
+    /// Smallest MSM worth splitting into Straus leaves across worker jobs.
+    #[cfg(feature = "multicore")]
+    pub(super) min_parallel_straus_terms: usize,
+    /// Largest MSM split into Straus leaves across worker jobs; above it, the
+    /// bucket method or the generic MSM amortises its setup better.
+    #[cfg(feature = "multicore")]
+    pub(super) max_parallel_straus_terms: usize,
+    /// Serial window width of the bucket method below
+    /// `serial_wide_window_min_terms` terms.
+    pub(super) serial_narrow_window_bits: usize,
+    /// Serial window width of the bucket method from
+    /// `serial_wide_window_min_terms` terms through `min_glv_multiexp_terms`.
+    pub(super) serial_wide_window_bits: usize,
+    /// Smallest serial MSM that takes `serial_wide_window_bits`.
+    pub(super) serial_wide_window_min_terms: usize,
+    /// The cost of the GLV bucket method's operations: batched affine point
+    /// visits and projective bucket sums.
+    pub(super) glv_weights: PlannerWeights,
+    /// The cost of the generic MSM's operations: projective (mixed) point
+    /// visits and bucket sums.
+    pub(super) generic_weights: PlannerWeights,
+    /// How far past halo2's default width the GLV bucket method may widen. Its
+    /// components are half as long, so fewer, wider windows often pay off.
+    pub(super) glv_extra_window_bits: usize,
+    /// Smallest number of terms a window reduces at a time. It bounds a
+    /// window's scratch, which would otherwise grow with the input and be
+    /// multiplied by the windows in flight, at a small cost in time for MSMs
+    /// that need several blocks.
+    pub(super) min_window_block_terms: usize,
+    /// Terms per bucket in a window block. Each block after the first carries
+    /// one point per nonempty bucket, so this bounds the extra additions to
+    /// about `1 / (2 * window_block_terms_per_bucket)` of the block's points.
+    pub(super) window_block_terms_per_bucket: usize,
+}
 
-/// Largest serial MSM evaluated as one GLV-Straus table. Measured on Pallas
-/// with `benches/msm.rs`: one table beats both the generic MSM and the bucket
-/// backend at 17 and 24 terms, and the bucket backend wins from 32 terms on.
-pub(super) const SERIAL_STRAUS_MAX_TERMS: usize = 24;
-
-/// Largest GLV-Straus leaf when MSMs are split across worker threads: the
-/// measured crossover above which one table stopped beating the bucket backend
-/// on one thread.
-pub(super) const STRAUS_LEAF_TERMS: usize = 16;
-
-/// Smallest MSM worth splitting across worker jobs.
-#[cfg(feature = "multicore")]
-pub(super) const MIN_PARALLEL_STRAUS_TERMS: usize = 3;
-
-/// Largest parallel MSM split into [`STRAUS_LEAF_TERMS`]-or-smaller Straus
-/// leaves. Above this conservative crossover, the generic or GLV bucket
-/// backends amortize their bucket setup more effectively.
-///
-/// Tuned for the halo2 IPA prover, whose last rounds commit to L and R with
-/// 66-term MSMs. `benches/msm.rs` brackets it with 66 and 67 terms.
-#[cfg(feature = "multicore")]
-pub(super) const MAX_PARALLEL_STRAUS_TERMS: usize = 66;
-
-/// Serial window width of the bucket backend below
-/// [`SERIAL_WIDE_WINDOW_MIN_TERMS`] terms, the fastest measured from 32 to 96.
-pub(super) const SERIAL_NARROW_WINDOW_BITS: usize = 5;
-
-/// Serial window width of the bucket backend from
-/// [`SERIAL_WIDE_WINDOW_MIN_TERMS`] terms through [`MIN_GLV_MULTIEXP_TERMS`],
-/// the fastest measured from 128 to 256.
-pub(super) const SERIAL_WIDE_WINDOW_BITS: usize = 6;
-
-/// Smallest serial MSM that takes [`SERIAL_WIDE_WINDOW_BITS`]: the measured
-/// switch point between the two widths.
-pub(super) const SERIAL_WIDE_WINDOW_MIN_TERMS: usize = 128;
-
-/// The GLV ladder: affine batched point visits, projective bucket sums.
-pub(super) const GLV_PLANNER_WEIGHTS: PlannerWeights = PlannerWeights {
-    point_visit: 5,
-    bucket_addition: 10,
-    doubling: 5,
+/// The values the weighted planner was introduced with, used on every target
+/// without a calibration of its own.
+pub(super) const DEFAULT: Calibration = Calibration {
+    min_glv_multiexp_terms: 256,
+    serial_straus_max_terms: 24,
+    straus_leaf_terms: 16,
+    #[cfg(feature = "multicore")]
+    min_parallel_straus_terms: 3,
+    #[cfg(feature = "multicore")]
+    max_parallel_straus_terms: 66,
+    serial_narrow_window_bits: 5,
+    serial_wide_window_bits: 6,
+    serial_wide_window_min_terms: 128,
+    glv_weights: PlannerWeights {
+        point_visit: 5,
+        bucket_addition: 10,
+        doubling: 5,
+    },
+    generic_weights: PlannerWeights {
+        point_visit: 7,
+        bucket_addition: 5,
+        doubling: 5,
+    },
+    glv_extra_window_bits: 2,
+    min_window_block_terms: 1 << 14,
+    window_block_terms_per_bucket: 8,
 };
 
-pub(super) const GENERIC_PLANNER_WEIGHTS: PlannerWeights = PlannerWeights {
-    point_visit: 7,
-    bucket_addition: 5,
-    doubling: 5,
-};
-
-pub(super) const GLV_EXTRA_WINDOW_BITS: usize = 2;
-
-/// Smallest number of terms a window reduces at a time. It bounds a window's
-/// scratch, which would otherwise grow with the input and be multiplied by the
-/// windows in flight, at a small measured cost in time for MSMs that need
-/// several blocks, as `benches/msm.rs` does at 65,536 terms.
-pub(super) const MIN_WINDOW_BLOCK_TERMS: usize = 1 << 14;
-
-/// Terms per bucket in a window block. Each block after the first carries one
-/// point per nonempty bucket, so this bounds the extra additions to about
-/// `1 / (2 * WINDOW_BLOCK_TERMS_PER_BUCKET)` of the block's points.
-pub(super) const WINDOW_BLOCK_TERMS_PER_BUCKET: usize = 8;
+/// The calibration in use. Every target uses [`DEFAULT`].
+pub(super) const CALIBRATION: Calibration = DEFAULT;

@@ -30,7 +30,8 @@
 //!
 //! The planner decides whether Straus applies. [`straus_multiexp`] then runs
 //! one table, or, with `multicore`, `straus_multiexp_jobs` runs leaves of at
-//! most [`STRAUS_LEAF_TERMS`] terms in parallel (`straus_multiexp_leaves`).
+//! most `straus_leaf_terms` terms of the calibration in use, in parallel
+//! (`straus_multiexp_leaves`).
 
 use alloc::vec::Vec;
 use group::CurveAffine as _;
@@ -38,7 +39,7 @@ use group::CurveAffine as _;
 use maybe_rayon::prelude::*;
 
 #[cfg(any(feature = "multicore", doc))]
-use super::calibration::STRAUS_LEAF_TERMS;
+use super::calibration::CALIBRATION;
 use crate::glv::{Decomposed, GlvParams, Recoding, Table, Wnaf4};
 
 /// Share the doubling ladder across all scalar/base pairs, reusing the
@@ -76,15 +77,16 @@ where
     C: GlvParams,
 {
     scalars
-        .chunks(STRAUS_LEAF_TERMS)
-        .zip(bases.chunks(STRAUS_LEAF_TERMS))
+        .chunks(CALIBRATION.straus_leaf_terms)
+        .zip(bases.chunks(CALIBRATION.straus_leaf_terms))
         .map(|(scalars, bases)| straus_multiexp::<C>(scalars, bases))
         .fold(C::identity(), |left, right| left + right)
 }
 
 /// Returns $\sum_i k_i P_i$, the terms split into `jobs` contiguous jobs run in
 /// parallel and summed, each a run of Straus leaves of at most
-/// [`STRAUS_LEAF_TERMS`] terms; with one job, the leaves run on this thread.
+/// `straus_leaf_terms` terms (see [`CALIBRATION`]); with one job, the leaves
+/// run on this thread.
 /// Requires `scalars.len() == bases.len()` and `1 <= jobs <= scalars.len()`.
 #[cfg(feature = "multicore")]
 pub(super) fn straus_multiexp_jobs<C>(
