@@ -13,7 +13,9 @@
 //! Set `RAYON_NUM_THREADS` to compare them at a fixed worker count; without
 //! `multicore`, both implementations are serial.
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{
+    Bencher, BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main,
+};
 use ff::{Field, PrimeField};
 use group::{CurveAffine as _, Group};
 #[cfg(feature = "multicore")]
@@ -29,6 +31,16 @@ const SIZES: [usize; 19] = [
 
 /// Above this size the naive baseline only adds run time.
 const MAX_NAIVE_SIZE: usize = 4096;
+
+/// Up to this size, iterations go round robin through [`INPUT_SETS`]
+/// independent inputs. The MSM branches on its scalars, and replaying one input
+/// thousands of times lets the branch predictor learn those branches, which
+/// flatters small sizes. Above it, one MSM runs far more branches than a
+/// predictor's history holds.
+const MAX_ROTATED_SIZE: usize = 256;
+
+/// The number of independent inputs rotated through up to [`MAX_ROTATED_SIZE`].
+const INPUT_SETS: usize = 64;
 
 // Ported from halo2_proofs 0.4.1, src/arithmetic.rs (MIT OR Apache-2.0,
 // Copyright the Electric Coin Company and contributors): `Bucket`,
@@ -232,6 +244,34 @@ fn seed() -> [u8; 16] {
     ((u128::from(half(0)) << 64) | u128::from(half(1))).to_be_bytes()
 }
 
+/// One MSM's input: its scalars and its bases.
+type Input<'a, C> = (
+    &'a [<C as CurveExt>::ScalarExt],
+    &'a [<C as CurveExt>::AffineExt],
+);
+
+/// `len` random scalars and affine points.
+fn inputs<C: CurveExt>(
+    rng: &mut XorShiftRng,
+    len: usize,
+) -> (Vec<C::ScalarExt>, Vec<C::AffineExt>) {
+    let scalars = (0..len).map(|_| C::ScalarExt::random(&mut *rng)).collect();
+    let projective: Vec<C> = (0..len).map(|_| C::random(&mut *rng)).collect();
+    let mut bases = vec![C::AffineExt::identity(); len];
+    C::batch_normalize(&projective, &mut bases);
+    (scalars, bases)
+}
+
+/// Benchmarks `f`, each iteration on the next of `sets`, round robin.
+fn rotate<S, P, R>(b: &mut Bencher<'_>, sets: &[(&[S], &[P])], f: impl Fn(&[S], &[P]) -> R) {
+    let mut next = 0;
+    b.iter(|| {
+        let (scalars, bases) = sets[next];
+        next = (next + 1) % sets.len();
+        f(black_box(scalars), black_box(bases))
+    })
+}
+
 fn msm_bench<C: CurveExt>(c: &mut Criterion, name: &str) {
     let max = *SIZES.iter().max().unwrap();
     let seed = seed();
@@ -240,45 +280,57 @@ fn msm_bench<C: CurveExt>(c: &mut Criterion, name: &str) {
         u128::from_be_bytes(seed)
     );
     let mut rng = XorShiftRng::from_seed(seed);
-    let scalars: Vec<C::ScalarExt> = (0..max).map(|_| C::ScalarExt::random(&mut rng)).collect();
-    let projective: Vec<C> = (0..max).map(|_| C::random(&mut rng)).collect();
-    let mut bases = vec![C::AffineExt::identity(); max];
-    C::batch_normalize(&projective, &mut bases);
+    let (scalars, bases) = inputs::<C>(&mut rng, max);
+    let rotated: Vec<_> = (0..INPUT_SETS)
+        .map(|_| inputs::<C>(&mut rng, MAX_ROTATED_SIZE))
+        .collect();
 
     let mut group = c.benchmark_group(format!("msm/{name}"));
     group.sample_size(10);
     for size in SIZES {
-        let (scalars, bases) = (&scalars[..size], &bases[..size]);
+        let sets: Vec<Input<'_, C>> = if size <= MAX_ROTATED_SIZE {
+            rotated
+                .iter()
+                .map(|(scalars, bases)| (&scalars[..size], &bases[..size]))
+                .collect()
+        } else {
+            vec![(&scalars[..size], &bases[..size])]
+        };
 
-        // Check the three agree once per size, and say whether the hook ran.
-        let generic = generic::best_multiexp::<C::AffineExt>(scalars, bases);
-        let hook = C::try_multiexp_vartime(scalars, bases);
-        if let Some(hook) = hook {
-            assert_eq!(hook, generic, "{name}/{size}: hook differs from generic");
-        }
-        if size <= MAX_NAIVE_SIZE {
-            assert_eq!(naive::<C>(scalars, bases), generic, "{name}/{size}: naive");
+        // Check the three agree on every input set, and say whether the hook
+        // ran (the planner decides from the size alone, so once is enough).
+        let mut accepted = false;
+        for (i, &(scalars, bases)) in sets.iter().enumerate() {
+            let generic = generic::best_multiexp::<C::AffineExt>(scalars, bases);
+            let hook = C::try_multiexp_vartime(scalars, bases);
+            if let Some(hook) = hook {
+                assert_eq!(
+                    hook, generic,
+                    "{name}/{size}/{i}: hook differs from generic"
+                );
+            }
+            if i == 0 && size <= MAX_NAIVE_SIZE {
+                assert_eq!(naive::<C>(scalars, bases), generic, "{name}/{size}: naive");
+            }
+            accepted = hook.is_some();
         }
         eprintln!(
-            "msm/{name}/{size}: hook {}",
-            if hook.is_some() {
-                "accepted"
-            } else {
-                "declined"
-            }
+            "msm/{name}/{size}: hook {}, {} input set(s)",
+            if accepted { "accepted" } else { "declined" },
+            sets.len()
         );
 
         group.throughput(Throughput::Elements(size as u64));
         if size <= MAX_NAIVE_SIZE {
             group.bench_function(BenchmarkId::new("naive", size), |b| {
-                b.iter(|| naive::<C>(black_box(scalars), black_box(bases)))
+                rotate(b, &sets, naive::<C>)
             });
         }
         group.bench_function(BenchmarkId::new("generic", size), |b| {
-            b.iter(|| generic::best_multiexp::<C::AffineExt>(black_box(scalars), black_box(bases)))
+            rotate(b, &sets, generic::best_multiexp::<C::AffineExt>)
         });
         group.bench_function(BenchmarkId::new("hook-or-generic", size), |b| {
-            b.iter(|| hook_or_generic::<C>(black_box(scalars), black_box(bases)))
+            rotate(b, &sets, hook_or_generic::<C>)
         });
     }
     group.finish();
