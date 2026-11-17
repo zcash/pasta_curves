@@ -350,6 +350,7 @@ where
 
         positions.clear();
         positions.extend_from_slice(&offsets[..bucket_count]);
+        // Placeholders, not curve points: each is overwritten exactly once below.
         points.clear();
         points.resize(
             *offsets.last().unwrap(),
@@ -384,6 +385,14 @@ where
             };
             positions[bucket] += 1;
         }
+        // Each bucket received exactly its counted points, so every
+        // placeholder was overwritten and no bucket spilled into the next.
+        debug_assert!(
+            positions
+                .iter()
+                .zip(&offsets[1..])
+                .all(|(position, end)| position == end)
+        );
 
         reduce_affine_buckets_reusing::<F, false>(points, offsets, reduce)
     }
