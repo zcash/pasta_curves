@@ -250,6 +250,7 @@ where
             }
             // Complete formulas have nonzero denominators for valid inputs.
             // Decline rather than returning a partial MSM if that guard fails.
+            debug_assert!(false, "complete affine formulas divided by zero");
             return None;
         }
 

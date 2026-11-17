@@ -95,7 +95,11 @@ where
         .iter()
         .map(decompose::<C>)
         .map(checked_signed_magnitudes)
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Option<Vec<_>>>();
+    // `glv::decompose` keeps both halves below 2^127, so this never declines;
+    // if that bound broke, release builds would still fall back safely.
+    debug_assert!(components.is_some(), "a GLV half is 2^127 or larger");
+    let components = components?;
     let bases = multiexp_bases::<C>(bases);
     multiexp(&components, &bases, window_bits, num_threads)
 }
