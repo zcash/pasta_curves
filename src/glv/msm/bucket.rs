@@ -54,6 +54,12 @@ impl WindowAssignment {
     }
 }
 
+/// The number of buckets of a window of width `window_bits`: one per nonzero
+/// Booth digit magnitude, which ranges over `1..=2^(window_bits - 1)`.
+fn bucket_count(window_bits: usize) -> usize {
+    1 << (window_bits - 1)
+}
+
 /// Collects the nonzero signed points assigned to one Booth window.
 fn window_assignments<F>(
     components: &[(SignedMagnitude, SignedMagnitude)],
@@ -63,7 +69,7 @@ fn window_assignments<F>(
     assignments: &mut Vec<WindowAssignment>,
     counts: &mut Vec<usize>,
 ) {
-    let bucket_count = 1 << (window_bits - 1);
+    let bucket_count = bucket_count(window_bits);
     assignments.clear();
     assignments.reserve(bases.len().saturating_mul(2));
     counts.clear();
@@ -190,7 +196,7 @@ where
         window_bits: usize,
         window: usize,
     ) -> Option<&[Option<AffinePoint<F>>]> {
-        let bucket_count = 1usize << (window_bits - 1);
+        let bucket_count = bucket_count(window_bits);
         let block_terms =
             MIN_WINDOW_BLOCK_TERMS.max(bucket_count.saturating_mul(WINDOW_BLOCK_TERMS_PER_BUCKET));
         self.fill_window_in_blocks(components, bases, window_bits, window, block_terms)
@@ -212,7 +218,7 @@ where
         // Empty buckets are both the result of an empty window and the carry into
         // the first block, which therefore needs no special case.
         self.reduce.buckets.clear();
-        self.reduce.buckets.resize(1 << (window_bits - 1), None);
+        self.reduce.buckets.resize(bucket_count(window_bits), None);
         for (components, bases) in components
             .chunks(block_terms)
             .zip(bases.chunks(block_terms))
@@ -232,7 +238,7 @@ where
         window_bits: usize,
         window: usize,
     ) -> Option<()> {
-        let bucket_count = 1 << (window_bits - 1);
+        let bucket_count = bucket_count(window_bits);
         let Self {
             assignments,
             counts,
