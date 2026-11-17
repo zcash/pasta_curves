@@ -151,6 +151,8 @@ fn batch_invert_and_add<F: VartimeField>(
 pub(super) struct ReduceScratch<F> {
     pub(super) next_offsets: Vec<usize>,
     pub(super) pending: Vec<PendingAffineAddition<F>>,
+    /// The reduced buckets, one entry per bucket, `None` for an empty one.
+    pub(super) buckets: Vec<Option<AffinePoint<F>>>,
 }
 
 impl<F> Default for ReduceScratch<F> {
@@ -158,21 +160,24 @@ impl<F> Default for ReduceScratch<F> {
         Self {
             next_offsets: Vec::new(),
             pending: Vec::new(),
+            buckets: Vec::new(),
         }
     }
 }
 
 /// Consumes the logical contents of caller-owned buffers but retains their
-/// allocations. A failed incomplete level leaves its points and offsets intact.
+/// allocations, and writes the reduced buckets into `scratch.buckets`. A failed
+/// incomplete level leaves its points and offsets intact.
 pub(super) fn reduce_affine_buckets_reusing<F: VartimeField, const COMPLETE: bool>(
     points: &mut Vec<AffinePoint<F>>,
     offsets: &mut Vec<usize>,
     scratch: &mut ReduceScratch<F>,
-) -> Option<Vec<Option<AffinePoint<F>>>> {
+) -> Option<()> {
     debug_assert!(!offsets.is_empty());
     let ReduceScratch {
         next_offsets,
         pending,
+        buckets,
     } = scratch;
     next_offsets.clear();
     next_offsets.reserve(offsets.len());
@@ -243,10 +248,11 @@ pub(super) fn reduce_affine_buckets_reusing<F: VartimeField, const COMPLETE: boo
         core::mem::swap(offsets, next_offsets);
     }
 
-    Some(
+    buckets.clear();
+    buckets.extend(
         offsets
             .windows(2)
-            .map(|range| (range[0] != range[1]).then(|| points[range[0]]))
-            .collect(),
-    )
+            .map(|range| (range[0] != range[1]).then(|| points[range[0]])),
+    );
+    Some(())
 }

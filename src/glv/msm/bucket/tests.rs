@@ -128,7 +128,8 @@ fn blocks_match_single_block<C: GlvParams>() {
                     components.len(),
                     &mut WindowScratch::default(),
                 )
-                .unwrap(),
+                .unwrap()
+                .to_vec(),
             );
             for block_terms in [1, 2, 3, 5, 16, 63] {
                 let blocked = as_points(
@@ -140,7 +141,8 @@ fn blocks_match_single_block<C: GlvParams>() {
                         block_terms,
                         &mut WindowScratch::default(),
                     )
-                    .unwrap(),
+                    .unwrap()
+                    .to_vec(),
                 );
                 assert_eq!(
                     blocked, whole,

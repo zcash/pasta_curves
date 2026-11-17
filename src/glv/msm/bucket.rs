@@ -150,6 +150,7 @@ impl<F> WindowScratch<F> {
                 + self.reduce.next_offsets.capacity())
                 * size_of::<usize>()
             + self.points.capacity() * size_of::<AffinePoint<F>>()
+            + self.reduce.buckets.capacity() * size_of::<Option<AffinePoint<F>>>()
             + self.reduce.pending.capacity() * size_of::<PendingAffineAddition<F>>()
     }
 }
@@ -159,13 +160,13 @@ impl<F> WindowScratch<F> {
 /// Scratch is bounded by `max(2^14, 8 * buckets)` terms for each window, rather
 /// than by the whole input. Wider windows increase the bucket count and thus
 /// the block bound; parallel windows multiply this bound by the jobs in flight.
-fn fill_window<C: GlvParams>(
+fn fill_window<'a, C: GlvParams>(
     components: &[(SignedMagnitude, SignedMagnitude)],
     bases: &[MultiexpBase<AffineBase<C>>],
     window_bits: usize,
     window: usize,
-    scratch: &mut WindowScratch<AffineBase<C>>,
-) -> Option<Vec<Option<AffinePoint<AffineBase<C>>>>> {
+    scratch: &'a mut WindowScratch<AffineBase<C>>,
+) -> Option<&'a [Option<AffinePoint<AffineBase<C>>>]> {
     let bucket_count = 1usize << (window_bits - 1);
     let block_terms =
         MIN_WINDOW_BLOCK_TERMS.max(bucket_count.saturating_mul(WINDOW_BLOCK_TERMS_PER_BUCKET));
@@ -175,42 +176,39 @@ fn fill_window<C: GlvParams>(
 /// Reduces a window block by block. Each block's bucket results enter the next
 /// block as the first point of the same buckets, so the batched affine reducer
 /// also merges the blocks, including when a carried point doubles or cancels.
-fn fill_window_in_blocks<C: GlvParams>(
+/// The result is the reused `scratch.reduce.buckets`.
+fn fill_window_in_blocks<'a, C: GlvParams>(
     components: &[(SignedMagnitude, SignedMagnitude)],
     bases: &[MultiexpBase<AffineBase<C>>],
     window_bits: usize,
     window: usize,
     block_terms: usize,
-    scratch: &mut WindowScratch<AffineBase<C>>,
-) -> Option<Vec<Option<AffinePoint<AffineBase<C>>>>> {
+    scratch: &'a mut WindowScratch<AffineBase<C>>,
+) -> Option<&'a [Option<AffinePoint<AffineBase<C>>>]> {
     debug_assert!(block_terms > 0);
-    let mut buckets: Option<Vec<Option<AffinePoint<AffineBase<C>>>>> = None;
+    // Empty buckets are both the result of an empty window and the carry into
+    // the first block, which therefore needs no special case.
+    scratch.reduce.buckets.clear();
+    scratch.reduce.buckets.resize(1 << (window_bits - 1), None);
     for (components, bases) in components
         .chunks(block_terms)
         .zip(bases.chunks(block_terms))
     {
-        buckets = Some(fill_block::<C>(
-            components,
-            bases,
-            window_bits,
-            window,
-            buckets.as_deref(),
-            scratch,
-        )?);
+        fill_block::<C>(components, bases, window_bits, window, scratch)?;
     }
-    Some(buckets.unwrap_or_else(|| alloc::vec![None; 1 << (window_bits - 1)]))
+    Some(&scratch.reduce.buckets)
 }
 
-/// Fills one block's buckets, each led by its carried point from the previous
-/// block, and reduces them.
+/// Fills one block's buckets, each led by its point carried in
+/// `scratch.reduce.buckets` from the previous block, and reduces them into
+/// `scratch.reduce.buckets`.
 fn fill_block<C: GlvParams>(
     components: &[(SignedMagnitude, SignedMagnitude)],
     bases: &[MultiexpBase<AffineBase<C>>],
     window_bits: usize,
     window: usize,
-    carry: Option<&[Option<AffinePoint<AffineBase<C>>>]>,
     scratch: &mut WindowScratch<AffineBase<C>>,
-) -> Option<Vec<Option<AffinePoint<AffineBase<C>>>>> {
+) -> Option<()> {
     let bucket_count = 1 << (window_bits - 1);
     let WindowScratch {
         assignments,
@@ -221,10 +219,8 @@ fn fill_block<C: GlvParams>(
         reduce,
     } = scratch;
     window_assignments::<C>(components, bases, window_bits, window, assignments, counts);
-    if let Some(carry) = carry {
-        for (count, point) in counts.iter_mut().zip(carry) {
-            *count += usize::from(point.is_some());
-        }
+    for (count, point) in counts.iter_mut().zip(&reduce.buckets) {
+        *count += usize::from(point.is_some());
     }
 
     offsets.clear();
@@ -244,12 +240,10 @@ fn fill_block<C: GlvParams>(
             y: AffineBase::<C>::ZERO,
         },
     );
-    if let Some(carry) = carry {
-        for (bucket, point) in carry.iter().enumerate() {
-            if let Some(point) = point {
-                points[positions[bucket]] = *point;
-                positions[bucket] += 1;
-            }
+    for (bucket, point) in reduce.buckets.iter().enumerate() {
+        if let Some(point) = point {
+            points[positions[bucket]] = *point;
+            positions[bucket] += 1;
         }
     }
     for &assignment in assignments.iter() {
@@ -309,7 +303,7 @@ where
         window_bits,
         (0..window_count).rev().map(|window| {
             let buckets = fill_window::<C>(components, bases, window_bits, window, &mut scratch)?;
-            Some(sum_buckets::<C>(&buckets))
+            Some(sum_buckets::<C>(buckets))
         }),
     )
 }
@@ -335,7 +329,7 @@ where
         .map(|window| {
             let mut scratch = Checkout::<AffineBase<C>>::take();
             let buckets = fill_window::<C>(components, bases, window_bits, window, &mut scratch)?;
-            Some(sum_buckets::<C>(&buckets))
+            Some(sum_buckets::<C>(buckets))
         })
         .collect();
     horner::<C>(window_bits, window_sums?.into_iter().rev().map(Some))

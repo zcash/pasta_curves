@@ -168,8 +168,9 @@ fn assert_batch_affine_buckets_match_native<C: GlvParams>(
 
     let original = original_reduce_affine_buckets::<_, false>(points.clone(), offsets.clone())
         .unwrap_or_else(|| panic!("original reducer must succeed in case {case}"));
-    let reduced = reduce_affine_buckets_reusing::<_, false>(&mut points, &mut offsets, scratch)
+    reduce_affine_buckets_reusing::<_, false>(&mut points, &mut offsets, scratch)
         .unwrap_or_else(|| panic!("valid curve points must reduce in case {case}"));
+    let reduced = scratch.buckets.clone();
     for (actual, expected) in reduced.iter().zip(&original) {
         assert_eq!(
             actual.map(|point| (point.x, point.y)),
