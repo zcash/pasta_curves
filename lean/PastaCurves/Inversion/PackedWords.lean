@@ -311,18 +311,10 @@ the signed range even when that input is representable: the step must have room 
 `2 ± two_delta` without wrapping. The packed `f` and `g` values remain 64-bit words. -/
 structure PackedStep.WidthSpec (S : PackedStep) (width : ℕ) : Prop where
   round : ∀ (st : S.Words), S.Bounded st → ∀ (s : State), s.f % 2 = 1 → s.two_delta % 2 = 1 →
-    |s.two_delta| + 2 < 2^width → |s.g| < 2^63 → |(divstep s).g| < 2^62 →
-    (S.two_delta st : ℤ) = s.two_delta % 2^64 → (S.f st : ℤ) = s.f % 2^64 →
-    (S.g st : ℤ) = s.g % 2^64 → S.z st = (if s.g % 2 = 0 then 1 else 0) →
-    S.Bounded (S.round st) ∧
-      (S.two_delta (S.round st) : ℤ) = (divstep s).two_delta % 2^64 ∧
-      (S.f (S.round st) : ℤ) = (divstep s).f % 2^64 ∧
-      (S.g (S.round st) : ℤ) = (divstep s).g % 2^64 ∧
-      S.z (S.round st) = if (divstep s).g % 2 = 0 then 1 else 0
+    |s.two_delta| + 2 < 2^width → |s.g| < 2^63 → |(divstep s).g| < 2^62 → S.Carries st s →
+    S.Bounded (S.round st) ∧ S.Carries (S.round st) (divstep s)
   last : ∀ (st : S.Words), S.Bounded st → ∀ (s : State), s.f % 2 = 1 → s.two_delta % 2 = 1 →
-    |s.two_delta| + 2 < 2^width → |s.g| < 2^63 → |(divstep s).g| < 2^62 →
-    (S.two_delta st : ℤ) = s.two_delta % 2^64 → (S.f st : ℤ) = s.f % 2^64 →
-    (S.g st : ℤ) = s.g % 2^64 → S.z st = (if s.g % 2 = 0 then 1 else 0) →
+    |s.two_delta| + 2 < 2^width → |s.g| < 2^63 → |(divstep s).g| < 2^62 → S.Carries st s →
     S.Bounded (S.last st) ∧
       (S.two_delta (S.last st) : ℤ) = (divstep s).two_delta % 2^64 ∧
       (S.f (S.last st) : ℤ) = (divstep s).f % 2^64 ∧
@@ -331,10 +323,10 @@ structure PackedStep.WidthSpec (S : PackedStep) (width : ℕ) : Prop where
 /-- The existing packed-step contract supplies the width-bounded contract at its 62-bit
 `two_delta` bound. This is only a compatibility direction; the existing contract is unchanged. -/
 theorem PackedStep.Spec.widthSpec {S : PackedStep} (hS : S.Spec) : S.WidthSpec 62 where
-  round st hst s hf hd hD hg hg' ed ef eg hz :=
-    hS.round st hst s hf hd (by omega) hg hg' ed ef eg hz
-  last st hst s hf hd hD hg hg' ed ef eg hz :=
-    hS.last st hst s hf hd (by omega) hg hg' ed ef eg hz
+  round st hst s hf hd hD hg hg' hc :=
+    hS.round st hst s hf hd (by omega) hg hg' hc
+  last st hst s hf hd hD hg hg' hc :=
+    hS.last st hst s hf hd (by omega) hg hg' hc
 
 /-- `n` width-bounded rounds on words carrying `P` carry `divsteps n P`. The initial budget
 reserves two units for every round, and `divsteps_two_delta_abs_le` supplies each round's local
@@ -343,19 +335,12 @@ theorem PackedStep.WidthSpec.rounds_words {S : PackedStep} {width : ℕ}
     (hS : S.WidthSpec width) (n : ℕ) (P : State) (hf : P.f % 2 = 1)
     (hd : P.two_delta % 2 = 1) (hD : |P.two_delta| + 2 * n < 2^width)
     (hg0 : |P.g| < 2^63) (hg : ∀ j, j < n → |(divsteps (j + 1) P).g| < 2^62)
-    (st : S.Words) (hst : S.Bounded st)
-    (ed : (S.two_delta st : ℤ) = P.two_delta % 2^64)
-    (ef : (S.f st : ℤ) = P.f % 2^64) (eg : (S.g st : ℤ) = P.g % 2^64)
-    (hz : S.z st = if P.g % 2 = 0 then 1 else 0) :
-    S.Bounded (S.round^[n] st) ∧
-      (S.two_delta (S.round^[n] st) : ℤ) = (divsteps n P).two_delta % 2^64 ∧
-      (S.f (S.round^[n] st) : ℤ) = (divsteps n P).f % 2^64 ∧
-      (S.g (S.round^[n] st) : ℤ) = (divsteps n P).g % 2^64 ∧
-      S.z (S.round^[n] st) = if (divsteps n P).g % 2 = 0 then 1 else 0 := by
+    (st : S.Words) (hst : S.Bounded st) (hc : S.Carries st P) :
+    S.Bounded (S.round^[n] st) ∧ S.Carries (S.round^[n] st) (divsteps n P) := by
   induction n with
-  | zero => exact ⟨hst, ed, ef, eg, hz⟩
+  | zero => exact ⟨hst, hc⟩
   | succ n ih =>
-    obtain ⟨ihb, ihd, ihf, ihg, ihz⟩ := ih (by omega) (fun j hj => hg j (by omega))
+    obtain ⟨ihb, ihc⟩ := ih (by omega) (fun j hj => hg j (by omega))
     rw [Function.iterate_succ_apply', divsteps_succ']
     have hsd : |(divsteps n P).two_delta| + 2 < 2^width := by
       have := divsteps_two_delta_abs_le n P
@@ -366,24 +351,21 @@ theorem PackedStep.WidthSpec.rounds_words {S : PackedStep} {width : ℕ}
       · exact lt_trans (hg n (by omega)) (by norm_num)
     exact hS.round _ ihb (divsteps n P) (divsteps_f_odd n P hf)
       (by rw [divsteps_two_delta_emod_two]; exact hd) hsd hsg
-      (by rw [← divsteps_succ']; exact hg n (by omega)) ihd ihf ihg ihz
+      (by rw [← divsteps_succ']; exact hg n (by omega)) ihc
 
 /-- A width-bounded batch of `n + 1` steps: `n` rounds and the last step. -/
 theorem PackedStep.WidthSpec.batch_words {S : PackedStep} {width : ℕ}
     (hS : S.WidthSpec width) (n : ℕ) (P : State) (hf : P.f % 2 = 1)
     (hd : P.two_delta % 2 = 1) (hD : |P.two_delta| + 2 * (n + 1) < 2^width)
     (hg0 : |P.g| < 2^63) (hg : ∀ j, j < n + 1 → |(divsteps (j + 1) P).g| < 2^62)
-    (st : S.Words) (hst : S.Bounded st)
-    (ed : (S.two_delta st : ℤ) = P.two_delta % 2^64)
-    (ef : (S.f st : ℤ) = P.f % 2^64) (eg : (S.g st : ℤ) = P.g % 2^64)
-    (hz : S.z st = if P.g % 2 = 0 then 1 else 0) :
+    (st : S.Words) (hst : S.Bounded st) (hc : S.Carries st P) :
     S.Bounded (S.last (S.round^[n] st)) ∧
       (S.two_delta (S.last (S.round^[n] st)) : ℤ) =
         (divsteps (n + 1) P).two_delta % 2^64 ∧
       (S.f (S.last (S.round^[n] st)) : ℤ) = (divsteps (n + 1) P).f % 2^64 ∧
       (S.g (S.last (S.round^[n] st)) : ℤ) = (divsteps (n + 1) P).g % 2^64 := by
-  obtain ⟨ihb, ihd, ihf, ihg, ihz⟩ := hS.rounds_words n P hf hd (by omega) hg0
-    (fun j hj => hg j (by omega)) st hst ed ef eg hz
+  obtain ⟨ihb, ihc⟩ := hS.rounds_words n P hf hd (by omega) hg0
+    (fun j hj => hg j (by omega)) st hst hc
   rw [divsteps_succ']
   have hsd : |(divsteps n P).two_delta| + 2 < 2^width := by
     have := divsteps_two_delta_abs_le n P
@@ -394,6 +376,6 @@ theorem PackedStep.WidthSpec.batch_words {S : PackedStep} {width : ℕ}
     · exact lt_trans (hg m (by omega)) (by norm_num)
   exact hS.last _ ihb (divsteps n P) (divsteps_f_odd _ P hf)
     (by rw [divsteps_two_delta_emod_two]; exact hd) hsd hsg
-    (by rw [← divsteps_succ']; exact hg n (by omega)) ihd ihf ihg ihz
+    (by rw [← divsteps_succ']; exact hg n (by omega)) ihc
 
 end PastaCurves.Inversion
