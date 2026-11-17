@@ -237,7 +237,7 @@ where
     <C::ScalarExt as PrimeField>::Repr::default()
         .as_ref()
         .len()
-        .checked_mul(8)
+        .checked_mul(u8::BITS as usize)
 }
 
 /// The one schedule width that the serial planner also compares with its
