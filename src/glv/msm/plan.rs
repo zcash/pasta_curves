@@ -1,31 +1,51 @@
-//! The planner: estimates the work of the signed-Booth bucket MSM against the
-//! generic MSM a caller falls back to, and chooses a window width or declines.
+//! The planner: decides how an MSM is evaluated, from its numbers of terms
+//! and threads alone.
+//!
+//! # Decisions
+//!
+//! [`plan`] returns a [`Plan`]:
+//!
+//! | threads | terms    | plan                                                  |
+//! |---------|----------|-------------------------------------------------------|
+//! | 1       | 0..=24   | `Straus`                                              |
+//! | 1       | 25..=256 | `Buckets`, width 5 below 128 terms, 6 from 128        |
+//! | 1       | 257..    | `Buckets` at the modelled width, or `Decline`         |
+//! | > 1     | 0..=2    | `Straus`                                              |
+//! | > 1     | 3..=66   | `StrausLeaves`, `ceil(threads / 2).min(terms)` jobs   |
+//! | > 1     | 67..=255 | `Decline`                                             |
+//! | > 1     | 256..    | `Buckets` at the modelled width, or `Decline`         |
+//!
+//! Several threads arise only with `multicore`. The bounds are the constants
+//! below, from [`SERIAL_STRAUS_MAX_TERMS`] to [`MIN_GLV_MULTIEXP_TERMS`].
 //!
 //! # Reading guide
 //!
-//! [`glv_multiexp_window_bits`] is the entry point, called once Straus has
-//! declined. It takes one of two paths.
+//! [`plan`] is the entry point. It first gives small inputs to Straus, the
+//! measured crossovers being [`SERIAL_STRAUS_MAX_TERMS`], [`STRAUS_LEAF_TERMS`]
+//! and, with `multicore`, `MIN_PARALLEL_STRAUS_TERMS`,
+//! `MAX_PARALLEL_STRAUS_TERMS` and `STRAUS_POOL_SHARES`. Otherwise
+//! [`glv_multiexp_window_bits`] picks the bucket width, or declines, on one of
+//! two paths.
 //!
 //! **Measured, for small inputs:** up to [`MIN_GLV_MULTIEXP_TERMS`] terms on
-//! one thread, or below it on several. The cost model below is too coarse
-//! there (it prices a batched affine addition like a projective one), so the
-//! choices come from benchmarks: buckets of the width
-//! [`serial_small_window_bits`] gives above [`SERIAL_STRAUS_MAX_TERMS`] (the
-//! largest input Straus takes on one thread). On several threads the bucket
+//! one thread, or below it on several. On one thread the width is the one
+//! [`serial_small_window_bits`] gives, from benchmarks; on several the bucket
 //! backend declines at these sizes.
 //!
-//! **Modelled, for large inputs:** [`estimated_signed_booth_work`] counts the
-//! point operations on the critical path ([`BoothWork`]) of both competitors:
+//! **Modelled, for large inputs:** [`estimated_signed_booth_work`] estimates
+//! the work on the critical path ([`BoothWork`]) of both competitors, each
+//! operation weighted by its cost in that backend ([`PlannerWeights`]):
 //!
-//! - the generic MSM the caller falls back to:
+//! - the generic MSM the caller falls back to ([`GENERIC_PLANNER_WEIGHTS`]):
 //!   $n$ full-width terms of [`scalar_repr_bits`] bits, at the width
 //!   [`multiexp_window_bits`] picks from the schedule of `halo2_proofs`'
 //!   `best_multiexp` ([`default_multiexp_window_bits`]);
-//! - the bucket backend: $2n$ half-width
-//!   components at that width and the next.
+//! - the bucket backend ([`GLV_PLANNER_WEIGHTS`]): $2n$ half-width components,
+//!   at that width and up to [`GLV_EXTRA_WINDOW_BITS`] more, keeping the
+//!   cheapest.
 //!
-//! The backend runs only when it is estimated cheaper. The counts compare
-//! plans; they do not predict time.
+//! The backend runs when its estimate is no worse than the generic MSM's. The
+//! estimates compare plans; they do not predict time.
 //!
 //! [`current_num_threads`] is the thread count all of this plans for.
 

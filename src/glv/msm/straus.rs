@@ -20,7 +20,7 @@
 //! all tables sharing one normalization. The cost grows with every term, while
 //! the bucket method pays a fixed setup per window and amortizes it over many
 //! terms, so Straus's method wins for few terms. The crossovers are the
-//! constants below.
+//! planner's (`plan`).
 //!
 //! E. G. Straus, "Addition chains of vectors" (solution to Advanced Problem
 //! 5125, posed by R. Bellman), Amer. Math. Monthly 71 (1964), 806-808.
