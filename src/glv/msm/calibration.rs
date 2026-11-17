@@ -29,14 +29,37 @@
 //! targets it covers, and select it in [`CALIBRATION`] with a `cfg` on the
 //! target, keeping [`DEFAULT`] as the fallback for every other target. The
 //! machine measured, the build and the measurements belong in the commit that
-//! adds the values, not here. The planner's tests
-//! pin the decisions of the calibration in use; a new calibration pins its
-//! own.
+//! adds the values, not here. The planner's tests pin the decisions of the
+//! calibration in use; a new calibration pins its own.
+//!
+//! # Trying other values
+//!
+//! Building with `--cfg pasta_curves_calibration` replaces the calibration in
+//! use with the one in the environment variable `PASTA_CURVES_CALIBRATION`,
+//! read at compile time (see [`overrides`] for the syntax). The values stay
+//! constants, and cargo rebuilds the crate when the variable changes. Against a
+//! baseline saved without the override, `benches/msm.rs` compares them:
+//!
+//! ```text
+//! cargo bench --features glv,multicore,asm --bench msm -- \
+//!   'msm/Pallas/hook-or-generic' --save-baseline current
+//! RUSTFLAGS='--cfg pasta_curves_calibration' \
+//! PASTA_CURVES_CALIBRATION='min_glv_multiexp_terms=64,glv_weights=5/6/5' \
+//!   cargo bench --features glv,multicore,asm --bench msm -- \
+//!   'msm/Pallas/hook-or-generic' --baseline current
+//! ```
+//!
+//! The values only choose between methods that compute the same result, so an
+//! override changes speed, never results.
 
 use super::plan::PlannerWeights;
 
+#[cfg_attr(not(any(test, pasta_curves_calibration)), allow(dead_code))]
+mod overrides;
+
 /// The machine-dependent values the planner and the bucket method read.
 #[derive(Clone, Copy)]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 pub(super) struct Calibration {
     /// The cost model starts here for parallel MSMs and above this for serial
     /// MSMs. Serial MSMs up to here use the measured Straus and bucket choices.
@@ -111,4 +134,13 @@ pub(super) const DEFAULT: Calibration = Calibration {
 };
 
 /// The calibration in use. Every target uses [`DEFAULT`].
+#[cfg(not(pasta_curves_calibration))]
 pub(super) const CALIBRATION: Calibration = DEFAULT;
+
+/// The calibration in use: the one in `PASTA_CURVES_CALIBRATION`, read at
+/// compile time.
+#[cfg(pasta_curves_calibration)]
+pub(super) const CALIBRATION: Calibration = match option_env!("PASTA_CURVES_CALIBRATION") {
+    Some(spec) => overrides::parse(spec),
+    None => panic!("`--cfg pasta_curves_calibration` needs PASTA_CURVES_CALIBRATION"),
+};
