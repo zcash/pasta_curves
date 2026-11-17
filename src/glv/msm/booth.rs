@@ -35,29 +35,27 @@
 //! # Reading guide
 //!
 //! [`checked_signed_magnitudes`] turns the halves `glv::decompose` returns into
-//! [`SignedMagnitude`]s, checking the bound [`GLV_COMPONENT_BITS`]. The bucket
+//! [`SignedMagnitude`]s, checking the bound [`HALF_BITS`]. The bucket
 //! backend then asks [`booth_digit`] for the digit of each of the
 //! [`window_count`] windows a half-scalar needs.
 
 #[cfg(doc)]
 use crate::glv::Decomposed;
+use crate::glv::HALF_BITS;
 
 #[cfg(test)]
 mod tests;
-
-/// Each GLV decomposition component has magnitude strictly below `2^127`.
-pub(super) const GLV_COMPONENT_BITS: usize = 127;
 
 /// The number of signed-Booth windows of width `window_bits` that the MSM
 /// evaluates for a GLV half-scalar, the highest one included.
 ///
 /// It suffices: the last window ends at bit
-/// `window_count(w) * w - 1 >= GLV_COMPONENT_BITS`, which is zero for a
+/// `window_count(w) * w - 1 >= HALF_BITS`, which is zero for a
 /// half-scalar below `2^127`, so no carry leaves it and the digits of windows
 /// `0..window_count(w)` sum to the half-scalar exactly (see the module
 /// documentation). Requires `window_bits >= 1`.
 pub(super) fn window_count(window_bits: usize) -> usize {
-    GLV_COMPONENT_BITS / window_bits + 1
+    HALF_BITS / window_bits + 1
 }
 
 /// A GLV half-scalar $(-1)^{\text{negative}} \cdot \text{magnitude}$, in the
@@ -86,7 +84,7 @@ impl From<(bool, u128)> for SignedMagnitude {
 pub(super) fn checked_signed_magnitudes(
     (first, second): ((bool, u128), (bool, u128)),
 ) -> Option<(SignedMagnitude, SignedMagnitude)> {
-    if first.1 >> GLV_COMPONENT_BITS == 0 && second.1 >> GLV_COMPONENT_BITS == 0 {
+    if first.1 >> HALF_BITS == 0 && second.1 >> HALF_BITS == 0 {
         Some((first.into(), second.into()))
     } else {
         None

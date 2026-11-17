@@ -734,6 +734,10 @@ where
     limbs
 }
 
+/// The magnitude of a decomposition half is below `2^HALF_BITS`: the bound
+/// [`decompose`] guarantees, on which the recodings of the halves rely.
+pub(crate) const HALF_BITS: usize = 127;
+
 /// GLV split: `k = k1 + k2 * lambda (mod n)`, each half returned as
 /// `(is_negative, magnitude)`.
 ///
@@ -741,8 +745,9 @@ where
 /// `|k2| <= (V1B_NEG + V2B) / 2 + 1`, where the `+ 1` covers `G1` and `G2`
 /// being 384-bit approximations of the exact rounding coefficients. On both
 /// curves that is below `2^126.3` for `k1` and `2^126.8` for `k2`, so strictly
-/// below `2^127`, the bound [`signed_halves`] and [`wnaf_digits`] rely on;
-/// `crate::glv_eisenstein` relies on the tighter one.
+/// below `2^127` ([`HALF_BITS`]), the bound [`signed_halves`], [`wnaf_digits`]
+/// and the MSM's Booth digits rely on; `crate::glv_eisenstein` relies on the
+/// tighter one.
 pub(crate) fn decompose<C>(k: &C::ScalarExt) -> ((bool, u128), (bool, u128))
 where
     C: GlvParams,
@@ -907,13 +912,13 @@ where
 
 /// Upper bound on the number of width-4 wNAF digits of a decomposition half:
 /// an n-bit magnitude yields at most n + 1 digits, and [`decompose`] bounds
-/// the halves below `2^127`.
-const MAX_WNAF_DIGITS: usize = 128;
+/// the halves below `2^HALF_BITS`.
+const MAX_WNAF_DIGITS: usize = HALF_BITS + 1;
 
 /// Width-4 wNAF digits of a u128 magnitude, lowest position first, with the
 /// half's overall sign folded into the digits when `negate` is set.
 fn wnaf_digits(a: u128, negate: bool) -> ([i8; MAX_WNAF_DIGITS], usize) {
-    debug_assert!(a >> 127 == 0, "magnitude must be at most 127 bits");
+    debug_assert!(a >> HALF_BITS == 0, "magnitude must be at most 127 bits");
     let mut digits = [0i8; MAX_WNAF_DIGITS];
     let mut n = 0;
     let mut k = a;

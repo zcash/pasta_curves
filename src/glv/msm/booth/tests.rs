@@ -4,8 +4,8 @@ use super::*;
 
 #[test]
 fn multiexp_component_guard_returns_none_out_of_bounds() {
-    let in_bounds = GLV_COMPONENT_BITS - 1;
-    let out_of_bounds = 1u128 << GLV_COMPONENT_BITS;
+    let in_bounds = HALF_BITS - 1;
+    let out_of_bounds = 1u128 << HALF_BITS;
 
     assert!(checked_signed_magnitudes(((false, 0), (true, 1))).is_some());
     assert!(checked_signed_magnitudes(((false, 1u128 << in_bounds), (false, 0))).is_some());
