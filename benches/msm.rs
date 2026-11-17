@@ -23,8 +23,8 @@ use pasta_curves::{pallas, vesta};
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 
-const SIZES: [usize; 17] = [
-    16, 17, 24, 25, 32, 64, 96, 127, 128, 192, 255, 256, 257, 1024, 4096, 16384, 65536,
+const SIZES: [usize; 19] = [
+    16, 17, 24, 25, 32, 64, 66, 67, 96, 127, 128, 192, 255, 256, 257, 1024, 4096, 16384, 65536,
 ];
 
 /// Above this size the naive baseline only adds run time.

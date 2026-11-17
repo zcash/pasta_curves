@@ -112,9 +112,9 @@ pub trait CurveExt:
     ///
     /// With `glv`, Pallas and Vesta use their GLV endomorphism to turn N
     /// full-width terms into 2N half-width terms, add bucket points in affine
-    /// form with one inversion per batch, and share one Strauss doubling chain
+    /// form with one inversion per batch, and share one Straus doubling chain
     /// for small sums. With `multicore`, large sums split independent windows
-    /// across threads and small sums split their terms into Strauss leaves.
+    /// across threads and small sums split their terms into Straus leaves.
     /// Without `glv`, and for other curves, the default implementation always
     /// declines.
     ///

@@ -15,6 +15,11 @@ and this project adheres to Rust's notion of
 - `multicore` feature flag, which enables `glv` and parallel MSM evaluation
   using Rayon.
 
+### Changed
+- GLV MSMs reuse window and affine-reduction scratch. With `multicore`, each
+  thread retains at most 8 MiB of scratch per field between calls, without
+  sharing checked-out buffers with nested work.
+
 ## [0.6.3] - 2026-11-16
 ### Added
 - An ARMv7E-M assembly backend for the `asm` feature flag on the

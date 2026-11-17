@@ -82,9 +82,7 @@
 
 use alloc::vec::Vec;
 
-use ff::PrimeField;
-#[cfg(test)]
-use ff::WithSmallOrderMulGroup;
+use ff::{PrimeField, WithSmallOrderMulGroup};
 use group::CurveAffine as _;
 
 use crate::arithmetic::{CurveAffine, CurveExt, VartimeField, mac, sbb};
@@ -93,6 +91,8 @@ use crate::{pallas, vesta};
 pub(crate) mod msm;
 
 mod private {
+    use ff::Field;
+
     use crate::arithmetic::{CurveAffine, CurveExt};
 
     /// The field of a curve's affine coordinates.
@@ -113,6 +113,16 @@ mod private {
         /// about 85ns against 4ns, and a windowed ladder does one such lookup
         /// per addition.
         fn affine_from_xy_unchecked(x: AffineBase<Self>, y: AffineBase<Self>) -> Self::AffineExt;
+
+        /// The coordinates $(x, y)$ of `point`, the identity read as $(0, 0)$:
+        /// the inverse of [`Sealed::affine_from_xy_unchecked`]. $(0, 0)$ is on
+        /// neither curve ($b = 5$), so the identity's encoding collides with no
+        /// point.
+        fn affine_xy(point: &Self::AffineExt) -> (AffineBase<Self>, AffineBase<Self>) {
+            Option::<crate::arithmetic::Coordinates<Self::AffineExt>>::from(point.coordinates())
+                .map(|p| (*p.x(), *p.y()))
+                .unwrap_or((AffineBase::<Self>::ZERO, AffineBase::<Self>::ZERO))
+        }
     }
 
     impl Sealed for crate::pallas::Point {
@@ -141,6 +151,24 @@ pub(crate) fn affine_from_xy_unchecked<C: GlvParams>(
         "reconstructed point is on curve"
     );
     point
+}
+
+/// The coordinates $(x, y)$ of `point`, the identity read as $(0, 0)$: the
+/// inverse of [`affine_from_xy_unchecked`].
+pub(crate) fn affine_xy<C>(point: &C::AffineExt) -> (private::AffineBase<C>, private::AffineBase<C>)
+where
+    C: GlvParams,
+{
+    <C as private::Sealed>::affine_xy(point)
+}
+
+/// The $x$-coordinate $\zeta x$ of $\phi(P)$, for $P$ with $x$-coordinate `x`
+/// (see the module documentation); its $y$-coordinate is $P$'s.
+pub(crate) fn phi_x<C>(x: private::AffineBase<C>) -> private::AffineBase<C>
+where
+    C: GlvParams,
+{
+    x * private::AffineBase::<C>::ZETA
 }
 
 /// How a GLV-split scalar is expanded into digit columns, together with the
@@ -734,6 +762,10 @@ where
     limbs
 }
 
+/// The magnitude of a decomposition half is below `2^HALF_BITS`: the bound
+/// [`decompose`] guarantees, on which the recodings of the halves rely.
+pub(crate) const HALF_BITS: usize = 127;
+
 /// GLV split: `k = k1 + k2 * lambda (mod n)`, each half returned as
 /// `(is_negative, magnitude)`.
 ///
@@ -741,8 +773,9 @@ where
 /// `|k2| <= (V1B_NEG + V2B) / 2 + 1`, where the `+ 1` covers `G1` and `G2`
 /// being 384-bit approximations of the exact rounding coefficients. On both
 /// curves that is below `2^126.3` for `k1` and `2^126.8` for `k2`, so strictly
-/// below `2^127`, the bound [`signed_halves`] and [`wnaf_digits`] rely on;
-/// `crate::glv_eisenstein` relies on the tighter one.
+/// below `2^127` ([`HALF_BITS`]), the bound [`signed_halves`], [`wnaf_digits`]
+/// and the MSM's Booth digits rely on; `crate::glv_eisenstein` relies on the
+/// tighter one.
 pub(crate) fn decompose<C>(k: &C::ScalarExt) -> ((bool, u128), (bool, u128))
 where
     C: GlvParams,
@@ -907,13 +940,13 @@ where
 
 /// Upper bound on the number of width-4 wNAF digits of a decomposition half:
 /// an n-bit magnitude yields at most n + 1 digits, and [`decompose`] bounds
-/// the halves below `2^127`.
-const MAX_WNAF_DIGITS: usize = 128;
+/// the halves below `2^HALF_BITS`.
+const MAX_WNAF_DIGITS: usize = HALF_BITS + 1;
 
 /// Width-4 wNAF digits of a u128 magnitude, lowest position first, with the
 /// half's overall sign folded into the digits when `negate` is set.
 fn wnaf_digits(a: u128, negate: bool) -> ([i8; MAX_WNAF_DIGITS], usize) {
-    debug_assert!(a >> 127 == 0, "magnitude must be at most 127 bits");
+    debug_assert!(a >> HALF_BITS == 0, "magnitude must be at most 127 bits");
     let mut digits = [0i8; MAX_WNAF_DIGITS];
     let mut n = 0;
     let mut k = a;

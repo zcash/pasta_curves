@@ -1,0 +1,293 @@
+//! Batched affine additions sharing one field inversion per tree level,
+//! failure-atomic so that a level can be retried with complete formulas.
+//!
+//! The points of every bucket of a window are added pairwise, level by level.
+//! All slopes of a level share one inversion: Montgomery's trick inverts the
+//! product of the denominators once and recovers each inverse from prefix
+//! products.
+//!
+//! Nothing existing fits. `ff` and `group` have no batched affine addition, and
+//! `ff::BatchInverter` is constant-time and skips zeros, whereas a level here
+//! must invert in variable time and fail as a whole when an equal or opposite
+//! pair makes a denominator zero, having written nothing, so that it can be
+//! retried with complete formulas. `crate::glv_eisenstein` batches affine
+//! additions too, but recovers exceptional lanes one by one.
+//!
+//! # Reading guide
+//!
+//! [`reduce_affine_buckets_reusing`] is the entry point. Each level records its
+//! additions as [`PendingAffineAddition`]s and finishes them all with
+//! [`batch_invert_and_add`], whose shared inversion runs
+//! [`BATCH_INVERSION_LANES`] independent multiplication chains. If it fails,
+//! the level restarts with `COMPLETE` set. [`ReduceScratch`] holds the buffers
+//! kept between calls, the output buckets included.
+
+use alloc::vec::Vec;
+
+use crate::arithmetic::VartimeField;
+
+#[cfg(test)]
+mod tests;
+
+/// An affine point on the curve, never the identity: identities are dropped.
+#[derive(Clone, Copy)]
+pub(super) struct AffinePoint<F> {
+    pub(super) x: F,
+    pub(super) y: F,
+}
+
+/// One addition of a level, waiting for the level's shared inversion.
+//
+// The left operand lives in its `points[output]` result slot. The prefix pass
+// scales `numerator` in place, so the backward pass can recover the slope
+// directly without keeping a separate inversion scratch field.
+pub(super) struct PendingAffineAddition<F> {
+    output: usize,
+    x_sum: F,
+    numerator: F,
+    denominator: F,
+}
+
+/// Independent multiplication lanes used by batch inversion.
+const BATCH_INVERSION_LANES: usize = 2;
+
+/// Batch-inverts affine denominators and immediately finishes the additions.
+///
+/// Each `output` identifies the slot containing the addition's left operand.
+/// The outputs must be distinct. Returns `None` if the product of the
+/// denominators is zero. In that case, this function has not written to
+/// `points`: the prefix pass changes only disposable pending numerators, and
+/// the output pass starts only after the product is successfully inverted.
+/// The reducer relies on this failure-atomic behavior to retry the level.
+fn batch_invert_and_add<F>(
+    additions: &mut [PendingAffineAddition<F>],
+    points: &mut [AffinePoint<F>],
+) -> Option<()>
+where
+    F: VartimeField,
+{
+    let Some((first, additions)) = additions.split_first_mut() else {
+        return Some(());
+    };
+
+    if additions.is_empty() {
+        let denominator_inverse = first.denominator.invert_vartime()?;
+        let left = points[first.output];
+        let slope = first.numerator * denominator_inverse;
+        let x = slope.square() - first.x_sum;
+        let y = slope * (left.x - x) - left.y;
+        points[first.output] = AffinePoint { x, y };
+        return Some(());
+    }
+
+    let (second, additions) = additions.split_first_mut().unwrap();
+
+    // Compute two prefix lanes in lockstep. This retains one field inversion
+    // for the entire batch while exposing independent multiplication chains.
+    // Seeding from the first denominator in each lane removes the initial
+    // multiplication by one. Pre-scale each numerator by its denominator's
+    // prefix product so the backward pass recovers the slope directly. This
+    // moves one multiplication off the dependent path before each square
+    // without changing the total multiplication count.
+    let mut lane_products = [first.denominator, second.denominator];
+    for pair in additions.chunks_mut(BATCH_INVERSION_LANES) {
+        for (addition, product) in pair.iter_mut().zip(&mut lane_products) {
+            addition.numerator *= *product;
+            *product *= addition.denominator;
+        }
+    }
+
+    // Invert both lane products with one inversion. A field has no zero
+    // divisors, so this product is zero exactly when at least one affine
+    // denominator is zero. No output point has been written yet; `?` therefore
+    // makes failure atomic with respect to `points`. Writes to
+    // pending numerators are discarded by the caller on failure.
+    let product = lane_products[0] * lane_products[1];
+    // This MSM is already variable-time with respect to scalar digits; batch
+    // inversion does not provide a constant-time guarantee.
+    let product_inverse = product.invert_vartime()?;
+    let mut lane_inverses = [
+        lane_products[1] * product_inverse,
+        lane_products[0] * product_inverse,
+    ];
+
+    // If the last pair is incomplete, consume its first lane before walking
+    // the complete pairs backward.
+    let complete_pairs = additions.len() / BATCH_INVERSION_LANES;
+    if additions.len() % BATCH_INVERSION_LANES != 0 {
+        let addition = &additions[additions.len() - 1];
+        let denominator = addition.denominator;
+        let slope = addition.numerator * lane_inverses[0];
+        lane_inverses[0] *= denominator;
+
+        let left = points[addition.output];
+        let x = slope.square() - addition.x_sum;
+        let y = slope * (left.x - x) - left.y;
+        points[addition.output] = AffinePoint { x, y };
+    }
+    for pair in additions[..complete_pairs * BATCH_INVERSION_LANES]
+        .chunks(BATCH_INVERSION_LANES)
+        .rev()
+    {
+        let first = &pair[0];
+        let second = &pair[1];
+        let first_slope = first.numerator * lane_inverses[0];
+        let second_slope = second.numerator * lane_inverses[1];
+        lane_inverses[0] *= first.denominator;
+        lane_inverses[1] *= second.denominator;
+
+        // Complete each affine chord addition while its pending record is
+        // already resident. Keep two independent field-operation lanes.
+        let first_left = points[first.output];
+        let second_left = points[second.output];
+        let first_x = first_slope.square() - first.x_sum;
+        let second_x = second_slope.square() - second.x_sum;
+        let first_y = first_slope * (first_left.x - first_x) - first_left.y;
+        let second_y = second_slope * (second_left.x - second_x) - second_left.y;
+        points[first.output] = AffinePoint {
+            x: first_x,
+            y: first_y,
+        };
+        points[second.output] = AffinePoint {
+            x: second_x,
+            y: second_y,
+        };
+    }
+
+    let first_left = points[first.output];
+    let second_left = points[second.output];
+    let first_slope = first.numerator * lane_inverses[0];
+    let second_slope = second.numerator * lane_inverses[1];
+    let first_x = first_slope.square() - first.x_sum;
+    let second_x = second_slope.square() - second.x_sum;
+    let first_y = first_slope * (first_left.x - first_x) - first_left.y;
+    let second_y = second_slope * (second_left.x - second_x) - second_left.y;
+    points[first.output] = AffinePoint {
+        x: first_x,
+        y: first_y,
+    };
+    points[second.output] = AffinePoint {
+        x: second_x,
+        y: second_y,
+    };
+    Some(())
+}
+
+/// The buffers [`reduce_affine_buckets_reusing`] keeps between calls. Points
+/// are compacted in place, so no second point buffer is needed.
+pub(super) struct ReduceScratch<F> {
+    /// The bucket boundaries of the next level, swapped with the current ones.
+    pub(super) next_offsets: Vec<usize>,
+    /// The additions of the current level.
+    pub(super) pending: Vec<PendingAffineAddition<F>>,
+    /// The reduced buckets, one entry per bucket, `None` for an empty one.
+    pub(super) buckets: Vec<Option<AffinePoint<F>>>,
+}
+
+impl<F> Default for ReduceScratch<F> {
+    fn default() -> Self {
+        Self {
+            next_offsets: Vec::new(),
+            pending: Vec::new(),
+            buckets: Vec::new(),
+        }
+    }
+}
+
+/// Reduces bucket `j`, the points `points[offsets[j]..offsets[j + 1]]`, to its
+/// sum in `scratch.buckets[j]` (`None` for the identity). Requires valid,
+/// nonidentity points. `points` and `offsets` are consumed, their allocations
+/// kept. Returns `None` only if the complete formulas divide by zero, which
+/// valid inputs never do.
+pub(super) fn reduce_affine_buckets_reusing<F, const COMPLETE: bool>(
+    points: &mut Vec<AffinePoint<F>>,
+    offsets: &mut Vec<usize>,
+    scratch: &mut ReduceScratch<F>,
+) -> Option<()>
+where
+    F: VartimeField,
+{
+    debug_assert!(!offsets.is_empty());
+    let ReduceScratch {
+        next_offsets,
+        pending,
+        buckets,
+    } = scratch;
+    next_offsets.clear();
+    next_offsets.reserve(offsets.len());
+    pending.clear();
+    pending.reserve(points.len() / 2);
+    while offsets.windows(2).any(|range| range[1] - range[0] > 1) {
+        pending.clear();
+        for range in offsets.windows(2) {
+            for input in (range[0]..range[1] - (range[1] - range[0]) % 2).step_by(2) {
+                let left = points[input];
+                let right = points[input + 1];
+                let dx = right.x - left.x;
+                let (numerator, denominator) = if COMPLETE && dx.is_zero_vartime() {
+                    // Equal x means equal or opposite points. Omit inverse
+                    // pairs, including order-two points, from the next level.
+                    if !(right.y - left.y).is_zero_vartime() || left.y.is_zero_vartime() {
+                        continue;
+                    }
+                    let square = left.x.square();
+                    (square.double() + square, left.y.double())
+                } else {
+                    (right.y - left.y, dx)
+                };
+                pending.push(PendingAffineAddition {
+                    output: input,
+                    x_sum: left.x + right.x,
+                    numerator,
+                    denominator,
+                });
+            }
+        }
+
+        if batch_invert_and_add(pending, points).is_none() {
+            if !COMPLETE {
+                return reduce_affine_buckets_reusing::<F, true>(points, offsets, scratch);
+            }
+            // Complete formulas have nonzero denominators for valid inputs.
+            // Decline rather than returning a partial MSM if that guard fails.
+            debug_assert!(false, "complete affine formulas divided by zero");
+            return None;
+        }
+
+        // Pending outputs identify surviving pairs; cancelled pairs have no
+        // record. A carried odd point survives unchanged. The write index is
+        // never ahead of the read index, so compaction cannot clobber a result.
+        next_offsets.clear();
+        next_offsets.push(0);
+        let mut additions = pending.iter().peekable();
+        let mut output = 0;
+        for range in offsets.windows(2) {
+            let end_pairs = range[1] - (range[1] - range[0]) % 2;
+            for input in (range[0]..end_pairs).step_by(2) {
+                if additions
+                    .peek()
+                    .is_some_and(|addition| addition.output == input)
+                {
+                    points[output] = points[input];
+                    output += 1;
+                    additions.next();
+                }
+            }
+            if end_pairs != range[1] {
+                points[output] = points[end_pairs];
+                output += 1;
+            }
+            next_offsets.push(output);
+        }
+        points.truncate(output);
+        core::mem::swap(offsets, next_offsets);
+    }
+
+    buckets.clear();
+    buckets.extend(
+        offsets
+            .windows(2)
+            .map(|range| (range[0] != range[1]).then(|| points[range[0]])),
+    );
+    Some(())
+}
