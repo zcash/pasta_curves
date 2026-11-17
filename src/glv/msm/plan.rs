@@ -181,21 +181,41 @@ const DEFAULT_MULTIEXP_WINDOW_THRESHOLDS: [u32; 19] = [
     3_584_912_846,
 ];
 
-/// The window width `best_multiexp` in `halo2_proofs` uses: 1 below 4 terms,
-/// 3 below 32, and `ceil(ln(terms))` above, read from
-/// [`DEFAULT_MULTIEXP_WINDOW_THRESHOLDS`]. `None` above `u32::MAX` terms.
+/// Below this many terms, `best_multiexp` uses [`TINY_MULTIEXP_WINDOW_BITS`].
+const TINY_MULTIEXP_TERMS: usize = 4;
+
+/// The window width `best_multiexp` uses below [`TINY_MULTIEXP_TERMS`] terms.
+const TINY_MULTIEXP_WINDOW_BITS: usize = 1;
+
+/// Below this many terms, and from [`TINY_MULTIEXP_TERMS`], `best_multiexp`
+/// uses [`SMALL_MULTIEXP_WINDOW_BITS`]; from here on, `ceil(ln(terms))`.
+const SMALL_MULTIEXP_TERMS: usize = 32;
+
+/// The window width `best_multiexp` uses below [`SMALL_MULTIEXP_TERMS`] terms.
+const SMALL_MULTIEXP_WINDOW_BITS: usize = 3;
+
+/// The width `ceil(ln(terms))` up to the first of
+/// [`DEFAULT_MULTIEXP_WINDOW_THRESHOLDS`], `e^4`; each later threshold adds
+/// one bit.
+const FIRST_LN_WINDOW_BITS: usize = 4;
+
+/// The window width `best_multiexp` in `halo2_proofs` uses:
+/// [`TINY_MULTIEXP_WINDOW_BITS`] below [`TINY_MULTIEXP_TERMS`],
+/// [`SMALL_MULTIEXP_WINDOW_BITS`] below [`SMALL_MULTIEXP_TERMS`], and
+/// `ceil(ln(terms))` above, read from [`DEFAULT_MULTIEXP_WINDOW_THRESHOLDS`].
+/// `None` above `u32::MAX` terms.
 fn default_multiexp_window_bits(terms: usize) -> Option<usize> {
-    if terms < 4 {
-        Some(1)
-    } else if terms < 32 {
-        Some(3)
+    if terms < TINY_MULTIEXP_TERMS {
+        Some(TINY_MULTIEXP_WINDOW_BITS)
+    } else if terms < SMALL_MULTIEXP_TERMS {
+        Some(SMALL_MULTIEXP_WINDOW_BITS)
     } else {
         let terms = u32::try_from(terms).ok()?;
         let threshold = DEFAULT_MULTIEXP_WINDOW_THRESHOLDS
             .iter()
             .position(|upper| terms <= *upper)
             .unwrap_or(DEFAULT_MULTIEXP_WINDOW_THRESHOLDS.len());
-        Some(4 + threshold)
+        Some(FIRST_LN_WINDOW_BITS + threshold)
     }
 }
 
