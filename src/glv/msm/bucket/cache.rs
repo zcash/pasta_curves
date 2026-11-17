@@ -113,7 +113,7 @@ where
     F: CachedField,
 {
     /// Returns the scratch to this thread's slot unless it grew past
-    /// [`MAX_RETAINED_BYTES`]. Nested work may already have returned other
+    /// `MAX_RETAINED_BYTES`. Nested work may already have returned other
     /// scratch for this field; keeping one per field, not one per nesting
     /// level, bounds the cache. During thread teardown the slot may be gone,
     /// and the scratch is simply dropped.
