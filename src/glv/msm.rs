@@ -33,6 +33,34 @@
 //! be faster. The bucket method splits the scalars as in [`crate::glv`],
 //! recodes the halves into signed digits ([`booth`]), and evaluates the
 //! windows.
+//!
+//! # Layers
+//!
+//! | layer                    | role                                   | module                 |
+//! |--------------------------|----------------------------------------|------------------------|
+//! | strategy                 | Straus, buckets, or the generic MSM    | [`plan`]               |
+//! | GLV split                | two halves below $2^{127}$ per scalar  | [`crate::glv`]         |
+//! | signed-Booth digits      | $2^{w-1}$ buckets per window           | [`booth`]              |
+//! | bucket method            | buckets, their sums, a running sum     | [`bucket`]             |
+//! | batched affine additions | one inversion per tree level           | `bucket::affine`       |
+//! | parallelism              | with `multicore`: per window, per leaf | [`bucket`], [`straus`] |
+//! | memory                   | bounded blocks, reused buffers, cache  | `bucket::cache`        |
+//!
+//! The generic MSM this falls back to (`best_multiexp` in `halo2_proofs`) is
+//! itself a signed-Booth bucket MSM. The gain over it comes from the GLV split,
+//! which halves the number of windows and so the per-window bucket setup, and
+//! from the batched affine additions, which make bucket sums cheaper than
+//! projective additions. The planner takes over only when its estimate says
+//! these win.
+//!
+//! The work is shared at three levels: one doubling chain across all windows
+//! (Horner's rule), a running sum within a window that weights each bucket
+//! without multiplying, and one inversion for all the divisions of a tree
+//! level. Straus's method shares the first level across terms directly, for
+//! inputs too small for buckets to pay off.
+//!
+//! Not covered: bases reused across calls are not precomputed, and the running
+//! sum stays in projective coordinates.
 
 mod booth;
 mod bucket;
