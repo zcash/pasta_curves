@@ -25,8 +25,26 @@ use pasta_curves::{pallas, vesta};
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 
-const SIZES: [usize; 19] = [
+/// Sizes around the planner's thresholds, and powers of two. The bench measures
+/// these and [`ZCASH_SIZES`].
+const GENERIC_SIZES: [usize; 19] = [
     16, 17, 24, 25, 32, 64, 66, 67, 96, 127, 128, 192, 255, 256, 257, 1024, 4096, 16384, 65536,
+];
+
+/// Sizes of the MSMs that Orchard proofs (k = 11, over Vesta) make, for a
+/// bundle of A actions and a batch of B bundles holding A actions in total.
+const ZCASH_SIZES: [usize; 9] = [
+    // The prover's inner-product argument: in each of its 11 rounds, two MSMs
+    // of half the remaining generators, 1,024 down to 1 (the sizes not above).
+    2, 8, 512,
+    // The prover's commitment to one polynomial: 2^11 generators and a blind.
+    2_049,
+    // The verifier's final MSM for one bundle, 2,127 + 23A terms: A = 1, and
+    // A = 2, the fewest actions a wallet builds.
+    2_150, 2_173,
+    // A batch of bundles, 2,094 + 33B + 23A terms: 32 bundles of 2 actions,
+    // 64 of 1, and 64 of 2.
+    4_622, 5_678, 7_150,
 ];
 
 /// Above this size the naive baseline only adds run time.
@@ -250,6 +268,11 @@ type Input<'a, C> = (
     &'a [<C as CurveExt>::AffineExt],
 );
 
+/// Every size the bench measures.
+fn sizes() -> impl Iterator<Item = usize> {
+    GENERIC_SIZES.into_iter().chain(ZCASH_SIZES)
+}
+
 /// `len` random scalars and affine points.
 fn inputs<C: CurveExt>(
     rng: &mut XorShiftRng,
@@ -273,7 +296,7 @@ fn rotate<S, P, R>(b: &mut Bencher<'_>, sets: &[(&[S], &[P])], f: impl Fn(&[S], 
 }
 
 fn msm_bench<C: CurveExt>(c: &mut Criterion, name: &str) {
-    let max = *SIZES.iter().max().unwrap();
+    let max = sizes().max().unwrap();
     let seed = seed();
     eprintln!(
         "msm/{name}: MSM_BENCH_SEED={:032x}",
@@ -287,7 +310,7 @@ fn msm_bench<C: CurveExt>(c: &mut Criterion, name: &str) {
 
     let mut group = c.benchmark_group(format!("msm/{name}"));
     group.sample_size(10);
-    for size in SIZES {
+    for size in sizes() {
         let sets: Vec<Input<'_, C>> = if size <= MAX_ROTATED_SIZE {
             rotated
                 .iter()
