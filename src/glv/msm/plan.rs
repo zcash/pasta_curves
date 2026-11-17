@@ -137,9 +137,9 @@ fn estimated_signed_booth_work(
     ))
 }
 
-/// Backend-specific work weights, in fifths of a doubling. Calibrated on
-/// Apple M4 and AMD Zen 4, 256–65,536 terms and 1–16 workers: GLV's
-/// batched affine visits cost less than the generic projective bucket visits.
+/// Backend-specific work weights, in fifths of a doubling: the cost of a point
+/// visit and of a bucket addition relative to an accumulator doubling. The
+/// values are part of the [`Calibration`].
 #[derive(Clone, Copy)]
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 pub(super) struct PlannerWeights {
