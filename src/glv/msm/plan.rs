@@ -50,7 +50,8 @@ pub(super) const SERIAL_STRAUS_MAX_TERMS: usize = 24;
 /// `SERIAL_STRAUS_MAX_TERMS` and `MIN_GLV_MULTIEXP_TERMS`, the fastest width
 /// measured on Pallas: 5 from 32 to 96 terms, 6 from 128 to 256 terms. The cost
 /// model counts a batched affine addition as a projective one, so it would
-/// decline these sizes although they are 28% to 50% faster than the generic MSM.
+/// decline these sizes although the bucket backend measures faster than the
+/// generic MSM there.
 fn serial_small_window_bits(terms: usize) -> usize {
     if terms < 128 { 5 } else { 6 }
 }

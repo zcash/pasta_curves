@@ -40,7 +40,9 @@ use maybe_rayon::prelude::*;
 use super::plan::SERIAL_STRAUS_MAX_TERMS;
 use crate::glv::{Decomposed, GlvParams, Table};
 
-/// Largest GLV-Straus leaf when MSMs are split across worker threads.
+/// Largest GLV-Straus leaf when MSMs are split across worker threads: the
+/// measured crossover above which one table stopped beating the bucket backend
+/// on one thread.
 const STRAUS_LEAF_TERMS: usize = 16;
 
 /// Smallest MSM worth splitting across worker jobs.
@@ -50,6 +52,9 @@ const MIN_PARALLEL_STRAUS_TERMS: usize = 3;
 /// Largest parallel MSM split into [`STRAUS_LEAF_TERMS`]-or-smaller Straus
 /// leaves. Above this conservative crossover, the generic or GLV bucket
 /// backends amortize their bucket setup more effectively.
+///
+/// Tuned for the halo2 IPA prover, whose last rounds commit to L and R with
+/// 66-term MSMs. `benches/msm.rs` brackets it with 66 and 67 terms.
 #[cfg(feature = "multicore")]
 const MAX_PARALLEL_STRAUS_TERMS: usize = 66;
 
@@ -133,8 +138,10 @@ where
         && num_threads > 1
     {
         // Bound small-MSM jobs to half the pool, rounded up, leaving room for
-        // concurrent caller work. Keep each leaf small instead of building
-        // one wide table for an entire worker's share.
+        // concurrent caller work: the IPA prover computes its L and R
+        // commitments at the same time, and each gets half. Keep each leaf
+        // small instead of building one wide table for an entire worker's
+        // share.
         let worker_jobs = num_threads.div_ceil(2).min(scalars.len());
         if worker_jobs == 1 {
             return Some(straus_multiexp_leaves::<C>(scalars, bases));

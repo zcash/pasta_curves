@@ -187,7 +187,10 @@ where
     }
 }
 
-/// Smallest number of terms a window reduces at a time.
+/// Smallest number of terms a window reduces at a time. It bounds a window's
+/// scratch, which would otherwise grow with the input and be multiplied by the
+/// windows in flight, at a small measured cost in time for MSMs that need
+/// several blocks, as `benches/msm.rs` does at 65,536 terms.
 const MIN_WINDOW_BLOCK_TERMS: usize = 1 << 14;
 
 /// Terms per bucket in a window block. Each block after the first carries one
