@@ -1,4 +1,4 @@
-//! Small sums: one Strauss doubling chain shared by all terms, using the
+//! Small sums: one Straus doubling chain shared by all terms, using the
 //! split-wNAF tables of `glv`, optionally split into parallel leaves.
 //!
 //! # The shared doubling chain
@@ -20,38 +20,38 @@
 //!
 //! # Reading guide
 //!
-//! [`planned_strauss_multiexp`] is the entry point. It decides whether Strauss
+//! [`planned_straus_multiexp`] is the entry point. It decides whether Straus
 //! applies, the constants being the measured crossovers, and runs either one
-//! [`strauss_multiexp`] or, with `multicore`, leaves of at most
-//! [`STRAUSS_LEAF_TERMS`] terms in parallel (`strauss_multiexp_leaves`).
+//! [`straus_multiexp`] or, with `multicore`, leaves of at most
+//! [`STRAUS_LEAF_TERMS`] terms in parallel (`straus_multiexp_leaves`).
 
 use alloc::vec::Vec;
 use group::CurveAffine as _;
 #[cfg(feature = "multicore")]
 use maybe_rayon::prelude::*;
 
-use super::plan::SERIAL_STRAUSS_MAX_TERMS;
+use super::plan::SERIAL_STRAUS_MAX_TERMS;
 use crate::glv::{Decomposed, GlvParams, Table};
 
-/// Largest GLV-Strauss leaf when MSMs are split across worker threads.
-const STRAUSS_LEAF_TERMS: usize = 16;
+/// Largest GLV-Straus leaf when MSMs are split across worker threads.
+const STRAUS_LEAF_TERMS: usize = 16;
 
 /// Smallest MSM worth splitting across worker jobs.
 #[cfg(feature = "multicore")]
-const MIN_PARALLEL_STRAUSS_TERMS: usize = 3;
+const MIN_PARALLEL_STRAUS_TERMS: usize = 3;
 
-/// Largest parallel MSM split into [`STRAUSS_LEAF_TERMS`]-or-smaller Strauss
+/// Largest parallel MSM split into [`STRAUS_LEAF_TERMS`]-or-smaller Straus
 /// leaves. Above this conservative crossover, the generic or GLV bucket
 /// backends amortize their bucket setup more effectively.
 #[cfg(feature = "multicore")]
-const MAX_PARALLEL_STRAUSS_TERMS: usize = 66;
+const MAX_PARALLEL_STRAUS_TERMS: usize = 66;
 
 /// Share the doubling ladder across all scalar/base pairs, reusing the
 /// upstream GLV decomposition and width-four split-wNAF tables unchanged.
 ///
 /// Returns $\sum_i k_i P_i$ exactly, for `scalars` and `bases` of equal length.
 /// Zero scalars and identity bases are skipped.
-fn strauss_multiexp<C>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C
+fn straus_multiexp<C>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C
 where
     C: GlvParams,
 {
@@ -91,29 +91,29 @@ where
 }
 
 #[cfg(feature = "multicore")]
-fn strauss_multiexp_leaves<C>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C
+fn straus_multiexp_leaves<C>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C
 where
     C: GlvParams,
 {
     scalars
-        .chunks(STRAUSS_LEAF_TERMS)
-        .zip(bases.chunks(STRAUSS_LEAF_TERMS))
-        .map(|(scalars, bases)| strauss_multiexp::<C>(scalars, bases))
+        .chunks(STRAUS_LEAF_TERMS)
+        .zip(bases.chunks(STRAUS_LEAF_TERMS))
+        .map(|(scalars, bases)| straus_multiexp::<C>(scalars, bases))
         .fold(C::identity(), |left, right| left + right)
 }
 
-/// Evaluates the sum with Strauss when the input is small enough, and declines
+/// Evaluates the sum with Straus when the input is small enough, and declines
 /// otherwise so that the caller can use the bucket backend.
 ///
 /// Returns `Some` of $\sum_i k_i P_i$ when:
 /// - with `multicore` and `num_threads > 1`, there are 3 to 66 terms: they are
-///   split into at most `ceil(num_threads / 2)` jobs of Strauss leaves of at
-///   most [`STRAUSS_LEAF_TERMS`] terms, computed in parallel and summed;
-/// - otherwise, there are at most [`SERIAL_STRAUSS_MAX_TERMS`] terms with one
-///   thread, or [`STRAUSS_LEAF_TERMS`] terms with more.
+///   split into at most `ceil(num_threads / 2)` jobs of Straus leaves of at
+///   most [`STRAUS_LEAF_TERMS`] terms, computed in parallel and summed;
+/// - otherwise, there are at most [`SERIAL_STRAUS_MAX_TERMS`] terms with one
+///   thread, or [`STRAUS_LEAF_TERMS`] terms with more.
 ///
 /// Returns `None` for larger inputs. Requires `scalars.len() == bases.len()`.
-pub(super) fn planned_strauss_multiexp<C>(
+pub(super) fn planned_straus_multiexp<C>(
     scalars: &[C::ScalarExt],
     bases: &[C::AffineExt],
     num_threads: usize,
@@ -122,7 +122,7 @@ where
     C: GlvParams,
 {
     #[cfg(feature = "multicore")]
-    if (MIN_PARALLEL_STRAUSS_TERMS..=MAX_PARALLEL_STRAUSS_TERMS).contains(&scalars.len())
+    if (MIN_PARALLEL_STRAUS_TERMS..=MAX_PARALLEL_STRAUS_TERMS).contains(&scalars.len())
         && num_threads > 1
     {
         // Bound small-MSM jobs to half the pool, rounded up, leaving room for
@@ -130,7 +130,7 @@ where
         // one wide table for an entire worker's share.
         let worker_jobs = num_threads.div_ceil(2).min(scalars.len());
         if worker_jobs == 1 {
-            return Some(strauss_multiexp_leaves::<C>(scalars, bases));
+            return Some(straus_multiexp_leaves::<C>(scalars, bases));
         }
         return Some(
             (0..worker_jobs)
@@ -138,19 +138,19 @@ where
                 .map(|job| {
                     let start = scalars.len() * job / worker_jobs;
                     let end = scalars.len() * (job + 1) / worker_jobs;
-                    strauss_multiexp_leaves::<C>(&scalars[start..end], &bases[start..end])
+                    straus_multiexp_leaves::<C>(&scalars[start..end], &bases[start..end])
                 })
                 .sum(),
         );
     }
 
     let max_terms = if num_threads <= 1 {
-        SERIAL_STRAUSS_MAX_TERMS
+        SERIAL_STRAUS_MAX_TERMS
     } else {
-        STRAUSS_LEAF_TERMS
+        STRAUS_LEAF_TERMS
     };
     if scalars.len() <= max_terms {
-        return Some(strauss_multiexp::<C>(scalars, bases));
+        return Some(straus_multiexp::<C>(scalars, bases));
     }
     None
 }

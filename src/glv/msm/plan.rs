@@ -3,15 +3,15 @@
 //!
 //! # Reading guide
 //!
-//! [`glv_multiexp_window_bits`] is the entry point, called once Strauss has
+//! [`glv_multiexp_window_bits`] is the entry point, called once Straus has
 //! declined. It takes one of two paths.
 //!
 //! **Measured, for small inputs:** up to [`MIN_GLV_MULTIEXP_TERMS`] terms on
 //! one thread, or below it on several. The cost model below is too coarse
 //! there (it prices a batched affine addition like a projective one), so the
 //! choices come from benchmarks: buckets of the width
-//! [`serial_small_window_bits`] gives above [`SERIAL_STRAUSS_MAX_TERMS`] (the
-//! largest input Strauss takes on one thread). On several threads the bucket
+//! [`serial_small_window_bits`] gives above [`SERIAL_STRAUS_MAX_TERMS`] (the
+//! largest input Straus takes on one thread). On several threads the bucket
 //! backend declines at these sizes.
 //!
 //! **Modelled, for large inputs:** [`estimated_signed_booth_work`] counts the
@@ -38,16 +38,16 @@ use crate::glv::GlvParams;
 mod tests;
 
 /// The cost model starts here for parallel MSMs and above this for serial MSMs.
-/// Serial MSMs through 256 terms use measured Strauss and bucket choices.
+/// Serial MSMs through 256 terms use measured Straus and bucket choices.
 const MIN_GLV_MULTIEXP_TERMS: usize = 256;
 
-/// Largest serial MSM evaluated as one GLV-Strauss table. Measured on Pallas
+/// Largest serial MSM evaluated as one GLV-Straus table. Measured on Pallas
 /// with `benches/msm.rs`: one table beats both the generic MSM and the bucket
 /// backend at 17 and 24 terms, and the bucket backend wins from 32 terms on.
-pub(super) const SERIAL_STRAUSS_MAX_TERMS: usize = 24;
+pub(super) const SERIAL_STRAUS_MAX_TERMS: usize = 24;
 
 /// Bucket-backend window width for serial MSMs between
-/// `SERIAL_STRAUSS_MAX_TERMS` and `MIN_GLV_MULTIEXP_TERMS`, the fastest width
+/// `SERIAL_STRAUS_MAX_TERMS` and `MIN_GLV_MULTIEXP_TERMS`, the fastest width
 /// measured on Pallas: 5 from 32 to 96 terms, 6 from 128 to 256 terms. The cost
 /// model counts a batched affine addition as a projective one, so it would
 /// decline these sizes although they are 28% to 50% faster than the generic MSM.
@@ -199,7 +199,7 @@ where
     C: GlvParams,
 {
     if terms < MIN_GLV_MULTIEXP_TERMS || (terms == MIN_GLV_MULTIEXP_TERMS && num_threads <= 1) {
-        return (num_threads <= 1 && terms > SERIAL_STRAUSS_MAX_TERMS)
+        return (num_threads <= 1 && terms > SERIAL_STRAUS_MAX_TERMS)
             .then(|| serial_small_window_bits(terms));
     }
     let generic = estimated_generic_work::<C>(terms, num_threads)?;

@@ -7,10 +7,10 @@
 //!
 //! With `glv`, the Pallas and Vesta endomorphisms lift N full-width terms to
 //! 2N half-width terms. Large sums use signed-Booth buckets with affine additions
-//! sharing one inversion per batch. Small sums share a Strauss doubling chain
+//! sharing one inversion per batch. Small sums share a Straus doubling chain
 //! using the existing split-wNAF tables. With `multicore`, large sums split
 //! independent windows across threads and small sums split their terms into
-//! Strauss leaves. WebAssembly without atomics stays serial. Without `glv`,
+//! Straus leaves. WebAssembly without atomics stays serial. Without `glv`,
 //! and for other curves, the default implementation always declines.
 //!
 //! Both scalars and bases must be public. Generic bucket MSMs also commonly
@@ -24,11 +24,11 @@
 //! # Reading guide
 //!
 //! [`try_multiexp`] is the entry point. Two methods share the work, because
-//! neither wins at every size: Strauss ([`strauss`]) pays one addition per
+//! neither wins at every size: Straus ([`straus`]) pays one addition per
 //! nonzero digit of every term but has almost no setup, while the bucket
 //! method ([`bucket`]) amortizes additions over many terms at the price of
-//! setting up its buckets. So `try_multiexp` offers the input to Strauss
-//! first; if Strauss declines, the planner ([`plan`]) picks a window width for
+//! setting up its buckets. So `try_multiexp` offers the input to Straus
+//! first; if Straus declines, the planner ([`plan`]) picks a window width for
 //! the bucket method, or declines when the caller's generic MSM is expected to
 //! be faster. The bucket method splits the scalars as in [`crate::glv`],
 //! recodes the halves into signed digits ([`booth`]), and evaluates the
@@ -37,14 +37,14 @@
 mod booth;
 mod bucket;
 mod plan;
-mod strauss;
+mod straus;
 
 use alloc::vec::Vec;
 
 use booth::checked_signed_magnitudes;
 use bucket::{CachedField, multiexp, multiexp_bases};
 use plan::{current_num_threads, glv_multiexp_window_bits};
-use strauss::planned_strauss_multiexp;
+use straus::planned_straus_multiexp;
 
 use super::{GlvParams, decompose, private::AffineBase};
 
@@ -59,7 +59,7 @@ where
         return None;
     }
     let num_threads = current_num_threads();
-    if let Some(result) = planned_strauss_multiexp::<C>(scalars, bases, num_threads) {
+    if let Some(result) = planned_straus_multiexp::<C>(scalars, bases, num_threads) {
         return Some(result);
     }
     let window_bits = glv_multiexp_window_bits::<C>(scalars.len(), num_threads)?;

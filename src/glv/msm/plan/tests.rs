@@ -3,7 +3,7 @@ use crate::{pallas, vesta};
 
 #[test]
 fn planner_boundaries() {
-    // Serial: Strauss up to SERIAL_STRAUSS_MAX_TERMS, then measured bucket widths.
+    // Serial: Straus up to SERIAL_STRAUS_MAX_TERMS, then measured bucket widths.
     assert_eq!(glv_multiexp_window_bits::<pallas::Point>(24, 1), None);
     assert_eq!(glv_multiexp_window_bits::<pallas::Point>(25, 1), Some(5));
     assert_eq!(glv_multiexp_window_bits::<pallas::Point>(127, 1), Some(5));
