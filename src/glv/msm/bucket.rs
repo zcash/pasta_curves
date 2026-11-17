@@ -60,7 +60,9 @@ use maybe_rayon::prelude::*;
 
 use super::booth::{SignedMagnitude, booth_digit, window_count};
 use crate::arithmetic::VartimeField;
-use crate::glv::{GlvParams, affine_from_xy_unchecked, affine_xy, phi_x, private::AffineBase};
+use crate::glv::{
+    GlvParams, HALVES, affine_from_xy_unchecked, affine_xy, phi_x, private::AffineBase,
+};
 use affine::{AffinePoint, ReduceScratch, reduce_affine_buckets_reusing};
 pub(crate) use cache::CachedField;
 use cache::Checkout;
@@ -68,7 +70,8 @@ use cache::Checkout;
 #[cfg(test)]
 mod tests;
 
-/// One nonzero digit of a window: component `component` goes into bucket
+/// One nonzero digit of a window: component `component`, that is half
+/// `component % HALVES` of base `component / HALVES`, goes into bucket
 /// `|signed_bucket| - 1`, negated when `signed_bucket < 0`.
 #[derive(Clone, Copy)]
 struct WindowAssignment {
@@ -118,7 +121,7 @@ fn window_assignments<F>(
 ) {
     let bucket_count = bucket_count(window_bits);
     assignments.clear();
-    assignments.reserve(bases.len().saturating_mul(2));
+    assignments.reserve(bases.len().saturating_mul(HALVES));
     counts.clear();
     counts.resize(bucket_count, 0);
 
@@ -133,7 +136,7 @@ fn window_assignments<F>(
                 let magnitude =
                     isize::try_from(digit.magnitude).expect("Booth digit magnitude fits in isize");
                 assignments.push(WindowAssignment {
-                    component: base_index * 2 + component_offset,
+                    component: base_index * HALVES + component_offset,
                     signed_bucket: if digit.negative {
                         -magnitude
                     } else {
@@ -355,13 +358,10 @@ where
             }
         }
         for &assignment in assignments.iter() {
-            let base_index = assignment.component / 2;
+            let base_index = assignment.component / HALVES;
             let base = bases[base_index];
-            let x = if assignment.component & 1 == 0 {
-                base.x
-            } else {
-                base.endo_x
-            };
+            let half = assignment.component % HALVES;
+            let x = if half == 0 { base.x } else { base.endo_x };
             let bucket = assignment.bucket();
             let position = positions[bucket];
             points[position] = AffinePoint {
