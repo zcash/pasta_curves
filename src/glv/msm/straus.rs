@@ -1,22 +1,29 @@
 //! Small sums: one Straus doubling chain shared by all terms, using the
 //! split-wNAF tables of `glv`, optionally split into parallel leaves.
 //!
-//! # The shared doubling chain
+//! # Straus's method
 //!
-//! The scalars are recoded ([`Decomposed`]) and the bases tabulated
-//! ([`Table`]) as in [`crate::glv`], where one multiplication $kP$ is Horner's
-//! rule over the digit columns: double, then add the column's table entries.
+//! A sum $S = \sum_i k_i P_i$ could be computed term by term, each with its own
+//! double-and-add ladder. Straus's method merges the ladders into one. Write
+//! each term as a polynomial with point coefficients,
+//! $p_i(x) = \sum_j d_{i,j} P_i x^j$, where the $d_{i,j}$ are the digits of
+//! $k_i$, so that $k_i P_i = p_i(2)$. Evaluating at $x = 2$ is additive in the
+//! coefficients, hence $S = \left(\sum_i p_i\right)(2)$: a single Horner
+//! evaluation of the sum polynomial, which doubles once per digit column and
+//! adds every term's contribution to that column. All terms share the
+//! doublings. With two terms, this is known as Shamir's trick.
 //!
-//! For a sum $\sum_i k_i P_i$ the doublings can be shared. Doubling is a group
-//! homomorphism, so running Horner's rule once on the column-wise sum of all
-//! terms' contributions gives the sum of the individual results: double once
-//! per column, then add every term's entries for that column. This is Straus's
-//! method (E. G. Straus, "Addition chains of vectors", Amer. Math. Monthly 71,
-//! 1964). It costs about 128 doublings in all instead of 128 per term, plus one
-//! addition per nonzero digit and the tables, which share one normalization.
+//! Here the scalars are recoded as width-4 wNAF digits ([`Decomposed`]) and
+//! each base gets a table of odd multiples ([`Table`]), as in [`crate::glv`].
+//! That costs about 128 doublings in all, then per term about one addition per
+//! nonzero digit (one digit in five on average, over two halves) and its table,
+//! all tables sharing one normalization. The cost grows with every term, while
+//! the bucket method pays a fixed setup per window and amortizes it over many
+//! terms, so Straus's method wins for few terms. The crossovers are the
+//! constants below.
 //!
-//! For few terms that beats the bucket method, whose setup does not amortize;
-//! the crossovers are the constants below.
+//! E. G. Straus, "Addition chains of vectors" (solution to Advanced Problem
+//! 5125, posed by R. Bellman), Amer. Math. Monthly 71 (1964), 806-808.
 //!
 //! # Reading guide
 //!
