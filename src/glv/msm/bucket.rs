@@ -13,8 +13,6 @@ use maybe_rayon::prelude::*;
 use super::booth::{GLV_COMPONENT_BITS, SignedMagnitude, booth_digit};
 use crate::arithmetic::{CurveAffine, VartimeField};
 use crate::glv::{GlvParams, affine_from_xy_unchecked, private::AffineBase};
-#[cfg(feature = "multicore")]
-use affine::PendingAffineAddition;
 use affine::{AffinePoint, ReduceScratch, reduce_affine_buckets_reusing};
 pub(crate) use cache::CachedField;
 use cache::Checkout;
@@ -140,17 +138,33 @@ impl<F> Default for WindowReducer<F> {
 
 #[cfg(feature = "multicore")]
 impl<F> WindowReducer<F> {
+    /// The heap memory these buffers keep between windows. The exhaustive
+    /// destructuring makes a new buffer fail to compile until it is counted.
     fn capacity_bytes(&self) -> usize {
-        use core::mem::size_of;
-        self.assignments.capacity() * size_of::<WindowAssignment>()
-            + (self.counts.capacity()
-                + self.offsets.capacity()
-                + self.positions.capacity()
-                + self.reduce.next_offsets.capacity())
-                * size_of::<usize>()
-            + self.points.capacity() * size_of::<AffinePoint<F>>()
-            + self.reduce.buckets.capacity() * size_of::<Option<AffinePoint<F>>>()
-            + self.reduce.pending.capacity() * size_of::<PendingAffineAddition<F>>()
+        fn bytes<T>(buffer: &Vec<T>) -> usize {
+            buffer.capacity() * core::mem::size_of::<T>()
+        }
+        let Self {
+            assignments,
+            counts,
+            offsets,
+            positions,
+            points,
+            reduce:
+                ReduceScratch {
+                    next_offsets,
+                    pending,
+                    buckets,
+                },
+        } = self;
+        bytes(assignments)
+            + bytes(counts)
+            + bytes(offsets)
+            + bytes(positions)
+            + bytes(points)
+            + bytes(next_offsets)
+            + bytes(pending)
+            + bytes(buckets)
     }
 }
 
