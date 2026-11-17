@@ -45,14 +45,30 @@ const MIN_GLV_MULTIEXP_TERMS: usize = 256;
 /// backend at 17 and 24 terms, and the bucket backend wins from 32 terms on.
 pub(super) const SERIAL_STRAUS_MAX_TERMS: usize = 24;
 
+/// Serial window width of the bucket backend below
+/// [`SERIAL_WIDE_WINDOW_MIN_TERMS`] terms, the fastest measured from 32 to 96.
+const SERIAL_NARROW_WINDOW_BITS: usize = 5;
+
+/// Serial window width of the bucket backend from
+/// [`SERIAL_WIDE_WINDOW_MIN_TERMS`] terms through [`MIN_GLV_MULTIEXP_TERMS`],
+/// the fastest measured from 128 to 256.
+const SERIAL_WIDE_WINDOW_BITS: usize = 6;
+
+/// Smallest serial MSM that takes [`SERIAL_WIDE_WINDOW_BITS`]: the measured
+/// switch point between the two widths.
+const SERIAL_WIDE_WINDOW_MIN_TERMS: usize = 128;
+
 /// Bucket-backend window width for serial MSMs between
 /// `SERIAL_STRAUS_MAX_TERMS` and `MIN_GLV_MULTIEXP_TERMS`, the fastest width
-/// measured on Pallas: 5 from 32 to 96 terms, 6 from 128 to 256 terms. The cost
-/// model counts a batched affine addition as a projective one, so it would
-/// decline these sizes although the bucket backend measures faster than the
-/// generic MSM there.
+/// measured on Pallas. The cost model counts a batched affine addition as a
+/// projective one, so it would decline these sizes although the bucket backend
+/// measures faster than the generic MSM there.
 fn serial_small_window_bits(terms: usize) -> usize {
-    if terms < 128 { 5 } else { 6 }
+    if terms < SERIAL_WIDE_WINDOW_MIN_TERMS {
+        SERIAL_NARROW_WINDOW_BITS
+    } else {
+        SERIAL_WIDE_WINDOW_BITS
+    }
 }
 
 /// Estimated critical-path work of a signed-Booth MSM, weighted by backend.
