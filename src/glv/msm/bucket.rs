@@ -59,6 +59,7 @@ use group::CurveAffine as _;
 use maybe_rayon::prelude::*;
 
 use super::booth::{SignedMagnitude, booth_digit, window_count};
+use super::calibration::{MIN_WINDOW_BLOCK_TERMS, WINDOW_BLOCK_TERMS_PER_BUCKET};
 use crate::arithmetic::VartimeField;
 use crate::glv::{
     GlvParams, HALVES, affine_from_xy_unchecked, affine_xy, phi_x, private::AffineBase,
@@ -178,17 +179,6 @@ where
         None => C::identity(),
     }
 }
-
-/// Smallest number of terms a window reduces at a time. It bounds a window's
-/// scratch, which would otherwise grow with the input and be multiplied by the
-/// windows in flight, at a small measured cost in time for MSMs that need
-/// several blocks, as `benches/msm.rs` does at 65,536 terms.
-const MIN_WINDOW_BLOCK_TERMS: usize = 1 << 14;
-
-/// Terms per bucket in a window block. Each block after the first carries one
-/// point per nonempty bucket, so this bounds the extra additions to about
-/// `1 / (2 * WINDOW_BLOCK_TERMS_PER_BUCKET)` of the block's points.
-const WINDOW_BLOCK_TERMS_PER_BUCKET: usize = 8;
 
 /// The buffers for filling and reducing one window's buckets, and the window
 /// algorithm that uses them. One reducer serves the windows a task evaluates

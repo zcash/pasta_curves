@@ -51,56 +51,23 @@
 
 use ff::PrimeField;
 
+use super::calibration::{
+    GENERIC_PLANNER_WEIGHTS, GLV_EXTRA_WINDOW_BITS, GLV_PLANNER_WEIGHTS, MIN_GLV_MULTIEXP_TERMS,
+    SERIAL_NARROW_WINDOW_BITS, SERIAL_STRAUS_MAX_TERMS, SERIAL_WIDE_WINDOW_BITS,
+    SERIAL_WIDE_WINDOW_MIN_TERMS, STRAUS_LEAF_TERMS,
+};
+#[cfg(feature = "multicore")]
+use super::calibration::{MAX_PARALLEL_STRAUS_TERMS, MIN_PARALLEL_STRAUS_TERMS};
 use crate::glv::{GlvParams, HALF_BITS, HALVES};
 
 #[cfg(test)]
 mod tests;
-
-/// The cost model starts here for parallel MSMs and above this for serial MSMs.
-/// Serial MSMs through 256 terms use measured Straus and bucket choices.
-const MIN_GLV_MULTIEXP_TERMS: usize = 256;
-
-/// Largest serial MSM evaluated as one GLV-Straus table. Measured on Pallas
-/// with `benches/msm.rs`: one table beats both the generic MSM and the bucket
-/// backend at 17 and 24 terms, and the bucket backend wins from 32 terms on.
-pub(super) const SERIAL_STRAUS_MAX_TERMS: usize = 24;
-
-/// Largest GLV-Straus leaf when MSMs are split across worker threads: the
-/// measured crossover above which one table stopped beating the bucket backend
-/// on one thread.
-pub(super) const STRAUS_LEAF_TERMS: usize = 16;
-
-/// Smallest MSM worth splitting across worker jobs.
-#[cfg(feature = "multicore")]
-pub(super) const MIN_PARALLEL_STRAUS_TERMS: usize = 3;
-
-/// Largest parallel MSM split into [`STRAUS_LEAF_TERMS`]-or-smaller Straus
-/// leaves. Above this conservative crossover, the generic or GLV bucket
-/// backends amortize their bucket setup more effectively.
-///
-/// Tuned for the halo2 IPA prover, whose last rounds commit to L and R with
-/// 66-term MSMs. `benches/msm.rs` brackets it with 66 and 67 terms.
-#[cfg(feature = "multicore")]
-pub(super) const MAX_PARALLEL_STRAUS_TERMS: usize = 66;
 
 /// The parallel Straus path splits into at most the pool's size divided by
 /// this, rounded up: the IPA prover computes its L and R commitments at the
 /// same time, and each gets an equal share.
 #[cfg(feature = "multicore")]
 pub(super) const STRAUS_POOL_SHARES: usize = 2;
-
-/// Serial window width of the bucket backend below
-/// [`SERIAL_WIDE_WINDOW_MIN_TERMS`] terms, the fastest measured from 32 to 96.
-const SERIAL_NARROW_WINDOW_BITS: usize = 5;
-
-/// Serial window width of the bucket backend from
-/// [`SERIAL_WIDE_WINDOW_MIN_TERMS`] terms through [`MIN_GLV_MULTIEXP_TERMS`],
-/// the fastest measured from 128 to 256.
-const SERIAL_WIDE_WINDOW_BITS: usize = 6;
-
-/// Smallest serial MSM that takes [`SERIAL_WIDE_WINDOW_BITS`]: the measured
-/// switch point between the two widths.
-const SERIAL_WIDE_WINDOW_MIN_TERMS: usize = 128;
 
 /// Bucket-backend window width for serial MSMs between
 /// `SERIAL_STRAUS_MAX_TERMS` and `MIN_GLV_MULTIEXP_TERMS`, the fastest width
@@ -180,24 +147,11 @@ fn estimated_signed_booth_work(
 /// Apple M4 and AMD Zen 4, 256–65,536 terms and 1–16 workers: GLV's
 /// batched affine visits cost less than the generic projective bucket visits.
 #[derive(Clone, Copy)]
-struct PlannerWeights {
-    point_visit: usize,
-    bucket_addition: usize,
-    doubling: usize,
+pub(super) struct PlannerWeights {
+    pub(super) point_visit: usize,
+    pub(super) bucket_addition: usize,
+    pub(super) doubling: usize,
 }
-
-/// The GLV ladder: affine batched point visits, projective bucket sums.
-const GLV_PLANNER_WEIGHTS: PlannerWeights = PlannerWeights {
-    point_visit: 5,
-    bucket_addition: 10,
-    doubling: 5,
-};
-
-const GENERIC_PLANNER_WEIGHTS: PlannerWeights = PlannerWeights {
-    point_visit: 7,
-    bucket_addition: 5,
-    doubling: 5,
-};
 
 /// Floors of `e^k` for `k = 4..=22`.
 ///
@@ -364,8 +318,6 @@ where
     let (glv, glv_window_bits) = best?;
     (glv <= generic).then_some(glv_window_bits)
 }
-
-const GLV_EXTRA_WINDOW_BITS: usize = 2;
 
 /// The number of threads the MSM may use: Rayon's with `multicore`, except on
 /// WebAssembly without atomics, and 1 otherwise.

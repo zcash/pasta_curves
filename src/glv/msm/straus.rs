@@ -37,7 +37,7 @@ use group::CurveAffine as _;
 use maybe_rayon::prelude::*;
 
 #[cfg(any(feature = "multicore", doc))]
-use super::plan::STRAUS_LEAF_TERMS;
+use super::calibration::STRAUS_LEAF_TERMS;
 use crate::glv::{Decomposed, GlvParams, Table};
 
 /// Share the doubling ladder across all scalar/base pairs, reusing the

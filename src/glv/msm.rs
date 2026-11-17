@@ -64,6 +64,7 @@
 
 mod booth;
 mod bucket;
+mod calibration;
 mod plan;
 mod straus;
 
