@@ -107,7 +107,7 @@ pub(super) struct BoothDigit {
 /// Returns $\pm d_k$, where $d_k$ is the digit of window `window` of
 /// `component.magnitude` defined in the module documentation, negated when
 /// `component.negative`. Requires `1 <= window_bits < usize::BITS` and
-/// `window * window_bits <= 128`; the MSM calls it for
+/// `window * window_bits <= u128::BITS`; the MSM calls it for
 /// `window < window_count(window_bits)` only.
 pub(super) fn booth_digit(
     component: SignedMagnitude,
@@ -116,7 +116,7 @@ pub(super) fn booth_digit(
 ) -> BoothDigit {
     let window_start = window * window_bits;
     let radix = 1usize << window_bits;
-    let value = if window_start < 128 {
+    let value = if window_start < u128::BITS as usize {
         // Only the low window_bits bits survive; widths are below usize::BITS.
         ((component.magnitude >> window_start) as usize) & (radix - 1)
     } else {
