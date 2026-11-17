@@ -16,10 +16,13 @@
 //! and each row is the median over the repetitions.
 //!
 //! Run it with
-//! `CALIBRATION_GRID=grid.csv cargo test --release --features multicore
+//! `CALIBRATION_GRID=~/grid.csv cargo test --release --features multicore
 //! glv::msm::calibration::grid -- --ignored --test-threads=1`. Optional:
 //! `CALIBRATION_REPS` (default 11), `CALIBRATION_SIZES` (comma-separated term
 //! counts) and `CALIBRATION_SEED` (32 hex digits).
+//!
+//! A grid describes the host it ran on, so grids are never committed: the test
+//! refuses a `CALIBRATION_GRID` inside the checkout.
 
 use alloc::vec::Vec;
 use core::hint::black_box;
@@ -130,6 +133,23 @@ fn methods(terms: usize, num_threads: usize) -> Vec<Method> {
     methods
 }
 
+/// Panics unless `path` lies outside the checkout, so that a grid cannot end
+/// up committed.
+fn assert_outside_checkout(path: &str) {
+    let path = std::path::Path::new(path);
+    let parent = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => std::path::Path::new("."),
+    };
+    let parent = std::fs::canonicalize(parent).expect("the directory of CALIBRATION_GRID exists");
+    let checkout = std::fs::canonicalize(env!("CARGO_MANIFEST_DIR")).expect("the checkout");
+    assert!(
+        !parent.starts_with(&checkout),
+        "CALIBRATION_GRID ({}) is inside the checkout; grids must stay outside it",
+        parent.display()
+    );
+}
+
 fn env_or<T: core::str::FromStr>(name: &str, default: T) -> T {
     std::env::var(name)
         .ok()
@@ -146,6 +166,7 @@ fn env_or<T: core::str::FromStr>(name: &str, default: T) -> T {
 #[ignore = "a calibration measurement, run by scripts/calibrate-msm.sh"]
 fn timing_grid() {
     let path = std::env::var("CALIBRATION_GRID").expect("CALIBRATION_GRID: the output CSV");
+    assert_outside_checkout(&path);
     let reps: usize = env_or("CALIBRATION_REPS", DEFAULT_REPS);
     let sizes: Vec<usize> = match std::env::var("CALIBRATION_SIZES") {
         Ok(list) => list
