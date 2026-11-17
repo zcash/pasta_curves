@@ -123,7 +123,10 @@ fn default_multiexp_window_bits(terms: usize) -> Option<usize> {
     }
 }
 
-fn scalar_repr_bits<C: GlvParams>() -> Option<usize> {
+fn scalar_repr_bits<C>() -> Option<usize>
+where
+    C: GlvParams,
+{
     <C::ScalarExt as PrimeField>::Repr::default()
         .as_ref()
         .len()
@@ -134,7 +137,10 @@ fn scalar_repr_bits<C: GlvParams>() -> Option<usize> {
 ///
 /// Compare the nine-bit schedule with its wider successor in serial mode.
 /// Keep the comparison narrow because this model omits cache behavior.
-fn multiexp_window_bits<C: GlvParams>(terms: usize, num_threads: usize) -> Option<usize> {
+fn multiexp_window_bits<C>(terms: usize, num_threads: usize) -> Option<usize>
+where
+    C: GlvParams,
+{
     let window_bits = default_multiexp_window_bits(terms)?;
     if num_threads != 1 || window_bits != 9 {
         return Some(window_bits);
@@ -155,10 +161,10 @@ fn multiexp_window_bits<C: GlvParams>(terms: usize, num_threads: usize) -> Optio
 
 /// Choose a GLV window only when its estimated work beats the generic MSM.
 /// Compare both the default width and its successor to account for worker waves.
-pub(super) fn glv_multiexp_window_bits<C: GlvParams>(
-    terms: usize,
-    num_threads: usize,
-) -> Option<usize> {
+pub(super) fn glv_multiexp_window_bits<C>(terms: usize, num_threads: usize) -> Option<usize>
+where
+    C: GlvParams,
+{
     if terms < MIN_GLV_MULTIEXP_TERMS || (terms == MIN_GLV_MULTIEXP_TERMS && num_threads <= 1) {
         return (num_threads <= 1 && terms > SERIAL_STRAUSS_MAX_TERMS)
             .then(|| serial_small_window_bits(terms));
@@ -170,7 +176,10 @@ pub(super) fn glv_multiexp_window_bits<C: GlvParams>(
 
 /// The generic Signed-Booth MSM's estimated work at its default width (see
 /// [`estimated_signed_booth_work`]).
-fn estimated_generic_work<C: GlvParams>(terms: usize, num_threads: usize) -> Option<BoothWork> {
+fn estimated_generic_work<C>(terms: usize, num_threads: usize) -> Option<BoothWork>
+where
+    C: GlvParams,
+{
     let window_bits = multiexp_window_bits::<C>(terms, num_threads)?;
     let scalar_bits = scalar_repr_bits::<C>()?;
     estimated_signed_booth_work(terms, scalar_bits, window_bits, num_threads)
@@ -178,10 +187,10 @@ fn estimated_generic_work<C: GlvParams>(terms: usize, num_threads: usize) -> Opt
 
 /// The Signed-Booth GLV backend's cheapest `(work, window width)` over the
 /// candidate widths `w` and `w + 1` (see [`glv_multiexp_window_bits`]).
-fn booth_multiexp_estimate<C: GlvParams>(
-    terms: usize,
-    num_threads: usize,
-) -> Option<(BoothWork, usize)> {
+fn booth_multiexp_estimate<C>(terms: usize, num_threads: usize) -> Option<(BoothWork, usize)>
+where
+    C: GlvParams,
+{
     let window_bits = multiexp_window_bits::<C>(terms, num_threads)?;
     let glv_terms = terms.checked_mul(2)?;
     let mut best: Option<(BoothWork, usize)> = None;

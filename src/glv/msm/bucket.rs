@@ -21,7 +21,10 @@ use cache::Checkout;
 mod tests;
 
 /// Reads affine coordinates, using the identity's zero representation.
-fn affine_xy<C: GlvParams>(point: &C::AffineExt) -> (AffineBase<C>, AffineBase<C>) {
+fn affine_xy<C>(point: &C::AffineExt) -> (AffineBase<C>, AffineBase<C>)
+where
+    C: GlvParams,
+{
     Option::<crate::arithmetic::Coordinates<C::AffineExt>>::from(point.coordinates())
         .map(|p| (*p.x(), *p.y()))
         .unwrap_or((AffineBase::<C>::ZERO, AffineBase::<C>::ZERO))
@@ -90,7 +93,10 @@ fn window_assignments<F>(
     }
 }
 
-fn sum_buckets<C: GlvParams>(buckets: &[Option<AffinePoint<AffineBase<C>>>]) -> C {
+fn sum_buckets<C>(buckets: &[Option<AffinePoint<AffineBase<C>>>]) -> C
+where
+    C: GlvParams,
+{
     let mut running = C::identity();
     let mut sum = C::identity();
     for bucket in buckets.iter().rev() {
@@ -291,10 +297,13 @@ where
 /// Combines the window sums, highest window first, by Horner's rule: one shift
 /// chain of `window_bits` doublings between windows, shared by all of them.
 /// Declines as soon as any window does.
-fn horner<C: GlvParams>(
+fn horner<C>(
     window_bits: usize,
     sums_from_highest: impl IntoIterator<Item = Option<C>>,
-) -> Option<C> {
+) -> Option<C>
+where
+    C: GlvParams,
+{
     let mut acc = C::identity();
     for (index, sum) in sums_from_highest.into_iter().enumerate() {
         if index != 0 {
@@ -307,12 +316,13 @@ fn horner<C: GlvParams>(
     Some(acc)
 }
 
-fn multiexp_serial<C: GlvParams>(
+fn multiexp_serial<C>(
     components: &[(SignedMagnitude, SignedMagnitude)],
     bases: &[MultiexpBase<AffineBase<C>>],
     window_bits: usize,
 ) -> Option<C>
 where
+    C: GlvParams,
     AffineBase<C>: CachedField,
 {
     let window_count = GLV_COMPONENT_BITS / window_bits + 1;
@@ -333,12 +343,13 @@ where
 /// before starting its next window, so consecutive windows on a thread reuse
 /// the same buffers.
 #[cfg(feature = "multicore")]
-fn multiexp_parallel<C: GlvParams>(
+fn multiexp_parallel<C>(
     components: &[(SignedMagnitude, SignedMagnitude)],
     bases: &[MultiexpBase<AffineBase<C>>],
     window_bits: usize,
 ) -> Option<C>
 where
+    C: GlvParams,
     AffineBase<C>: CachedField,
 {
     let window_count = GLV_COMPONENT_BITS / window_bits + 1;
@@ -353,13 +364,14 @@ where
     horner::<C>(window_bits, window_sums?.into_iter().rev().map(Some))
 }
 
-pub(super) fn multiexp<C: GlvParams>(
+pub(super) fn multiexp<C>(
     components: &[(SignedMagnitude, SignedMagnitude)],
     bases: &[MultiexpBase<AffineBase<C>>],
     window_bits: usize,
     num_threads: usize,
 ) -> Option<C>
 where
+    C: GlvParams,
     AffineBase<C>: CachedField,
 {
     debug_assert_eq!(components.len(), bases.len());
@@ -377,9 +389,10 @@ where
     acc
 }
 
-pub(super) fn multiexp_bases<C: GlvParams>(
-    bases: &[C::AffineExt],
-) -> Vec<MultiexpBase<AffineBase<C>>> {
+pub(super) fn multiexp_bases<C>(bases: &[C::AffineExt]) -> Vec<MultiexpBase<AffineBase<C>>>
+where
+    C: GlvParams,
+{
     bases
         .iter()
         .map(|base| {

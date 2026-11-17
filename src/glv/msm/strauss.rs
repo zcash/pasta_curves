@@ -24,7 +24,10 @@ const MAX_PARALLEL_STRAUSS_TERMS: usize = 66;
 
 /// Share the doubling ladder across all scalar/base pairs, reusing the
 /// upstream GLV decomposition and width-four split-wNAF tables unchanged.
-fn strauss_multiexp<C: GlvParams>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C {
+fn strauss_multiexp<C>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C
+where
+    C: GlvParams,
+{
     debug_assert_eq!(scalars.len(), bases.len());
 
     let mut decomposed = Vec::with_capacity(scalars.len());
@@ -61,7 +64,10 @@ fn strauss_multiexp<C: GlvParams>(scalars: &[C::ScalarExt], bases: &[C::AffineEx
 }
 
 #[cfg(feature = "multicore")]
-fn strauss_multiexp_leaves<C: GlvParams>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C {
+fn strauss_multiexp_leaves<C>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C
+where
+    C: GlvParams,
+{
     scalars
         .chunks(STRAUSS_LEAF_TERMS)
         .zip(bases.chunks(STRAUSS_LEAF_TERMS))
@@ -69,11 +75,14 @@ fn strauss_multiexp_leaves<C: GlvParams>(scalars: &[C::ScalarExt], bases: &[C::A
         .fold(C::identity(), |left, right| left + right)
 }
 
-pub(super) fn planned_strauss_multiexp<C: GlvParams>(
+pub(super) fn planned_strauss_multiexp<C>(
     scalars: &[C::ScalarExt],
     bases: &[C::AffineExt],
     num_threads: usize,
-) -> Option<C> {
+) -> Option<C>
+where
+    C: GlvParams,
+{
     #[cfg(feature = "multicore")]
     if (MIN_PARALLEL_STRAUSS_TERMS..=MAX_PARALLEL_STRAUSS_TERMS).contains(&scalars.len())
         && num_threads > 1

@@ -35,10 +35,13 @@ const BATCH_INVERSION_LANES: usize = 2;
 /// `points`: the prefix pass changes only disposable pending numerators, and
 /// the output pass starts only after the product is successfully inverted.
 /// The reducer relies on this failure-atomic behavior to retry the level.
-fn batch_invert_and_add<F: VartimeField>(
+fn batch_invert_and_add<F>(
     additions: &mut [PendingAffineAddition<F>],
     points: &mut [AffinePoint<F>],
-) -> Option<()> {
+) -> Option<()>
+where
+    F: VartimeField,
+{
     let Some((first, additions)) = additions.split_first_mut() else {
         return Some(());
     };
@@ -168,11 +171,14 @@ impl<F> Default for ReduceScratch<F> {
 /// Consumes the logical contents of caller-owned buffers but retains their
 /// allocations, and writes the reduced buckets into `scratch.buckets`. A failed
 /// incomplete level leaves its points and offsets intact.
-pub(super) fn reduce_affine_buckets_reusing<F: VartimeField, const COMPLETE: bool>(
+pub(super) fn reduce_affine_buckets_reusing<F, const COMPLETE: bool>(
     points: &mut Vec<AffinePoint<F>>,
     offsets: &mut Vec<usize>,
     scratch: &mut ReduceScratch<F>,
-) -> Option<()> {
+) -> Option<()>
+where
+    F: VartimeField,
+{
     debug_assert!(!offsets.is_empty());
     let ReduceScratch {
         next_offsets,

@@ -6,10 +6,13 @@ use crate::glv::{GlvParams, affine_from_xy_unchecked, private::AffineBase};
 use crate::{pallas, vesta};
 
 // Preserved pre-port reducer: an allocating, failure-atomic arithmetic oracle.
-fn original_reduce_affine_buckets<F: VartimeField, const COMPLETE: bool>(
+fn original_reduce_affine_buckets<F, const COMPLETE: bool>(
     mut points: Vec<AffinePoint<F>>,
     mut offsets: Vec<usize>,
-) -> Option<Vec<Option<AffinePoint<F>>>> {
+) -> Option<Vec<Option<AffinePoint<F>>>>
+where
+    F: VartimeField,
+{
     debug_assert!(!offsets.is_empty());
     let mut next_offsets = Vec::with_capacity(offsets.len());
     let mut pending = Vec::with_capacity(points.len() / 2);
@@ -133,11 +136,13 @@ fn batch_invert_and_add_two_lanes() {
     batch_invert_and_add_two_lanes_matches_individual::<crate::Fq>();
 }
 
-fn assert_affine_bucket_results_match_native<C: GlvParams>(
+fn assert_affine_bucket_results_match_native<C>(
     case: &str,
     reduced: Vec<Option<AffinePoint<AffineBase<C>>>>,
     source: &[Vec<C>],
-) {
+) where
+    C: GlvParams,
+{
     assert_eq!(reduced.len(), source.len());
     for (actual, bucket) in reduced.into_iter().zip(source) {
         let actual = match actual {
@@ -149,11 +154,13 @@ fn assert_affine_bucket_results_match_native<C: GlvParams>(
     }
 }
 
-fn assert_batch_affine_buckets_match_native<C: GlvParams>(
+fn assert_batch_affine_buckets_match_native<C>(
     case: &str,
     source: &[Vec<C>],
     scratch: &mut ReduceScratch<AffineBase<C>>,
-) {
+) where
+    C: GlvParams,
+{
     let mut points = Vec::new();
     let mut offsets = Vec::with_capacity(source.len() + 1);
     offsets.push(0);
@@ -181,7 +188,10 @@ fn assert_batch_affine_buckets_match_native<C: GlvParams>(
     assert_affine_bucket_results_match_native::<C>(case, reduced, source);
 }
 
-fn batch_affine_buckets_match_native<C: GlvParams>() {
+fn batch_affine_buckets_match_native<C>()
+where
+    C: GlvParams,
+{
     let generator = C::generator();
     let two = generator.double();
     let three = two + generator;

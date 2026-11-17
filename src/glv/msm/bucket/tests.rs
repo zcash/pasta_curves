@@ -17,8 +17,9 @@ fn reconstructed_vesta_points_must_be_on_curve() {
     affine_from_xy_unchecked::<vesta::Point>(crate::Fq::ONE, crate::Fq::ONE);
 }
 
-fn forced_window<C: GlvParams>(terms: usize, width: usize)
+fn forced_window<C>(terms: usize, width: usize)
 where
+    C: GlvParams,
     AffineBase<C>: CachedField,
 {
     let scalars = (0..terms)
@@ -82,7 +83,10 @@ fn all_window_widths() {
 /// Reducing a window in blocks, with each block's buckets carried into the
 /// next, gives the same buckets as one block. Equal and opposite bases make
 /// carried points double and cancel.
-fn blocks_match_single_block<C: GlvParams>() {
+fn blocks_match_single_block<C>()
+where
+    C: GlvParams,
+{
     let generator = C::generator();
     let scalars = (0..64u64)
         .map(|i| {
