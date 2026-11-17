@@ -17,10 +17,11 @@ fn reconstructed_vesta_points_must_be_on_curve() {
     affine_from_xy_unchecked::<vesta::Point>(crate::Fq::ONE, crate::Fq::ONE);
 }
 
-fn forced_window<C>(terms: usize, width: usize)
+/// Inputs for the window tests: zero and unit scalars among varied ones, and
+/// bases that are the identity, equal or opposite.
+fn exceptional_inputs<C>(terms: usize) -> (Vec<C::ScalarExt>, Vec<C::AffineExt>)
 where
     C: GlvParams,
-    AffineBase<C>: CachedField,
 {
     let scalars = (0..terms)
         .map(|i| {
@@ -48,6 +49,15 @@ where
             .to_affine_vartime()
         })
         .collect::<Vec<_>>();
+    (scalars, bases)
+}
+
+fn forced_window<C>(terms: usize, width: usize)
+where
+    C: GlvParams,
+    AffineBase<C>: CachedField,
+{
+    let (scalars, bases) = exceptional_inputs::<C>(terms);
     let expected = scalars
         .iter()
         .zip(&bases)
@@ -87,23 +97,7 @@ fn blocks_match_single_block<C>()
 where
     C: GlvParams,
 {
-    let generator = C::generator();
-    let scalars = (0..64u64)
-        .map(|i| {
-            (C::ScalarExt::from(i + 0x9e3779b97f4a7c15).square() + C::ScalarExt::from(i)).square()
-        })
-        .collect::<Vec<_>>();
-    let bases = (0..64)
-        .map(|i| {
-            match i % 4 {
-                0 => C::identity(),
-                1 => generator,
-                2 => -generator,
-                _ => generator.double(),
-            }
-            .to_affine_vartime()
-        })
-        .collect::<Vec<_>>();
+    let (scalars, bases) = exceptional_inputs::<C>(64);
     let components = scalars
         .iter()
         .map(decompose::<C>)
