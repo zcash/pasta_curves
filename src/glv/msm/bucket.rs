@@ -54,30 +54,19 @@ mod affine;
 mod cache;
 
 use alloc::vec::Vec;
-use ff::{Field, WithSmallOrderMulGroup};
 use group::CurveAffine as _;
 #[cfg(feature = "multicore")]
 use maybe_rayon::prelude::*;
 
 use super::booth::{SignedMagnitude, booth_digit, window_count};
-use crate::arithmetic::{CurveAffine, VartimeField};
-use crate::glv::{GlvParams, affine_from_xy_unchecked, private::AffineBase};
+use crate::arithmetic::VartimeField;
+use crate::glv::{GlvParams, affine_from_xy_unchecked, affine_xy, phi_x, private::AffineBase};
 use affine::{AffinePoint, ReduceScratch, reduce_affine_buckets_reusing};
 pub(crate) use cache::CachedField;
 use cache::Checkout;
 
 #[cfg(test)]
 mod tests;
-
-/// Reads affine coordinates, using the identity's zero representation.
-fn affine_xy<C>(point: &C::AffineExt) -> (AffineBase<C>, AffineBase<C>)
-where
-    C: GlvParams,
-{
-    Option::<crate::arithmetic::Coordinates<C::AffineExt>>::from(point.coordinates())
-        .map(|p| (*p.x(), *p.y()))
-        .unwrap_or((AffineBase::<C>::ZERO, AffineBase::<C>::ZERO))
-}
 
 /// One nonzero digit of a window: component `component` goes into bucket
 /// `|signed_bucket| - 1`, negated when `signed_bucket < 0`.
@@ -512,7 +501,7 @@ where
             let (x, y) = affine_xy::<C>(base);
             MultiexpBase {
                 x,
-                endo_x: x * AffineBase::<C>::ZETA,
+                endo_x: phi_x::<C>(x),
                 y,
                 identity: bool::from(base.is_identity()),
             }

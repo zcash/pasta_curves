@@ -1,3 +1,5 @@
+use ff::Field;
+
 use super::*;
 use crate::glv::decompose;
 use crate::glv::msm::booth::checked_signed_magnitudes;

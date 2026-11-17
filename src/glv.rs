@@ -82,9 +82,7 @@
 
 use alloc::vec::Vec;
 
-use ff::PrimeField;
-#[cfg(test)]
-use ff::WithSmallOrderMulGroup;
+use ff::{PrimeField, WithSmallOrderMulGroup};
 use group::CurveAffine as _;
 
 use crate::arithmetic::{CurveAffine, CurveExt, VartimeField, mac, sbb};
@@ -93,6 +91,8 @@ use crate::{pallas, vesta};
 pub(crate) mod msm;
 
 mod private {
+    use ff::Field;
+
     use crate::arithmetic::{CurveAffine, CurveExt};
 
     /// The field of a curve's affine coordinates.
@@ -113,6 +113,16 @@ mod private {
         /// about 85ns against 4ns, and a windowed ladder does one such lookup
         /// per addition.
         fn affine_from_xy_unchecked(x: AffineBase<Self>, y: AffineBase<Self>) -> Self::AffineExt;
+
+        /// The coordinates $(x, y)$ of `point`, the identity read as $(0, 0)$:
+        /// the inverse of [`Sealed::affine_from_xy_unchecked`]. $(0, 0)$ is on
+        /// neither curve ($b = 5$), so the identity's encoding collides with no
+        /// point.
+        fn affine_xy(point: &Self::AffineExt) -> (AffineBase<Self>, AffineBase<Self>) {
+            Option::<crate::arithmetic::Coordinates<Self::AffineExt>>::from(point.coordinates())
+                .map(|p| (*p.x(), *p.y()))
+                .unwrap_or((AffineBase::<Self>::ZERO, AffineBase::<Self>::ZERO))
+        }
     }
 
     impl Sealed for crate::pallas::Point {
@@ -141,6 +151,24 @@ pub(crate) fn affine_from_xy_unchecked<C: GlvParams>(
         "reconstructed point is on curve"
     );
     point
+}
+
+/// The coordinates $(x, y)$ of `point`, the identity read as $(0, 0)$: the
+/// inverse of [`affine_from_xy_unchecked`].
+pub(crate) fn affine_xy<C>(point: &C::AffineExt) -> (private::AffineBase<C>, private::AffineBase<C>)
+where
+    C: GlvParams,
+{
+    <C as private::Sealed>::affine_xy(point)
+}
+
+/// The $x$-coordinate $\zeta x$ of $\phi(P)$, for $P$ with $x$-coordinate `x`
+/// (see the module documentation); its $y$-coordinate is $P$'s.
+pub(crate) fn phi_x<C>(x: private::AffineBase<C>) -> private::AffineBase<C>
+where
+    C: GlvParams,
+{
+    x * private::AffineBase::<C>::ZETA
 }
 
 /// How a GLV-split scalar is expanded into digit columns, together with the
