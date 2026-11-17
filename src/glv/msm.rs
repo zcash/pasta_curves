@@ -58,7 +58,7 @@ const STRAUSS_LEAF_TERMS: usize = 16;
 /// Largest serial MSM evaluated as one GLV-Strauss table. Measured on Pallas
 /// with `benches/msm.rs`: one table beats both the generic MSM and the bucket
 /// backend at 17 and 24 terms, and the bucket backend wins from 32 terms on.
-const SERIAL_STRAUSS_MAX_TERMS: usize = 24;
+pub(super) const SERIAL_STRAUSS_MAX_TERMS: usize = 24;
 
 /// Bucket-backend window width for serial MSMs between
 /// `SERIAL_STRAUSS_MAX_TERMS` and `MIN_GLV_MULTIEXP_TERMS`, the fastest width
@@ -210,7 +210,10 @@ fn multiexp_window_bits<C: GlvParams>(terms: usize, num_threads: usize) -> Optio
 
 /// Choose a GLV window only when its estimated work beats the generic MSM.
 /// Compare both the default width and its successor to account for worker waves.
-fn glv_multiexp_window_bits<C: GlvParams>(terms: usize, num_threads: usize) -> Option<usize> {
+pub(super) fn glv_multiexp_window_bits<C: GlvParams>(
+    terms: usize,
+    num_threads: usize,
+) -> Option<usize> {
     if terms < MIN_GLV_MULTIEXP_TERMS || (terms == MIN_GLV_MULTIEXP_TERMS && num_threads <= 1) {
         return (num_threads <= 1 && terms > SERIAL_STRAUSS_MAX_TERMS)
             .then(|| serial_small_window_bits(terms));
@@ -249,7 +252,7 @@ fn booth_multiexp_estimate<C: GlvParams>(
     best
 }
 
-fn current_num_threads() -> usize {
+pub(super) fn current_num_threads() -> usize {
     #[cfg(all(
         feature = "multicore",
         not(all(target_arch = "wasm32", not(target_feature = "atomics")))
@@ -313,7 +316,7 @@ fn strauss_multiexp_leaves<C: GlvParams>(scalars: &[C::ScalarExt], bases: &[C::A
         .fold(C::identity(), |left, right| left + right)
 }
 
-fn planned_strauss_multiexp<C: GlvParams>(
+pub(super) fn planned_strauss_multiexp<C: GlvParams>(
     scalars: &[C::ScalarExt],
     bases: &[C::AffineExt],
     num_threads: usize,
@@ -353,7 +356,7 @@ fn planned_strauss_multiexp<C: GlvParams>(
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct SignedMagnitude {
+pub(super) struct SignedMagnitude {
     negative: bool,
     magnitude: u128,
 }
@@ -372,7 +375,7 @@ impl From<(bool, u128)> for SignedMagnitude {
 ///
 /// The large MSM does not construct a [`Decomposed`], so check the bound
 /// before extracting digits. Declining lets the caller retain its generic MSM.
-fn checked_signed_magnitudes(
+pub(super) fn checked_signed_magnitudes(
     (first, second): ((bool, u128), (bool, u128)),
 ) -> Option<(SignedMagnitude, SignedMagnitude)> {
     if first.1 >> GLV_COMPONENT_BITS == 0 && second.1 >> GLV_COMPONENT_BITS == 0 {
@@ -383,9 +386,9 @@ fn checked_signed_magnitudes(
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct BoothDigit {
-    magnitude: usize,
-    negative: bool,
+pub(super) struct BoothDigit {
+    pub(super) magnitude: usize,
+    pub(super) negative: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -395,7 +398,7 @@ struct WindowAssignment {
 }
 
 #[derive(Clone, Copy)]
-struct MultiexpBase<F> {
+pub(super) struct MultiexpBase<F> {
     x: F,
     endo_x: F,
     y: F,
@@ -413,7 +416,11 @@ impl WindowAssignment {
 }
 
 /// Extracts one signed-Booth digit and folds in the component's overall sign.
-fn booth_digit(component: SignedMagnitude, window_bits: usize, window: usize) -> BoothDigit {
+pub(super) fn booth_digit(
+    component: SignedMagnitude,
+    window_bits: usize,
+    window: usize,
+) -> BoothDigit {
     let window_start = window * window_bits;
     let radix = 1usize << window_bits;
     let value = if window_start < 128 {
@@ -450,7 +457,7 @@ pub(super) struct AffinePoint<F> {
 // The left operand lives in its `points[output]` result slot. The prefix pass
 // scales `numerator` in place, so the backward pass can recover the slope
 // directly without keeping a separate inversion scratch field.
-struct PendingAffineAddition<F> {
+pub(super) struct PendingAffineAddition<F> {
     output: usize,
     x_sum: F,
     numerator: F,
@@ -622,9 +629,9 @@ fn window_assignments<C>(
 
 /// The existing failure-atomic reducer compacts points in place, so unlike
 /// the source implementation's staged reducer it needs no second point buffer.
-struct ReduceScratch<F> {
-    next_offsets: Vec<usize>,
-    pending: Vec<PendingAffineAddition<F>>,
+pub(super) struct ReduceScratch<F> {
+    pub(super) next_offsets: Vec<usize>,
+    pub(super) pending: Vec<PendingAffineAddition<F>>,
 }
 
 impl<F> Default for ReduceScratch<F> {
@@ -638,7 +645,7 @@ impl<F> Default for ReduceScratch<F> {
 
 /// Consumes the logical contents of caller-owned buffers but retains their
 /// allocations. A failed incomplete level leaves its points and offsets intact.
-fn reduce_affine_buckets_reusing<F: VartimeField, const COMPLETE: bool>(
+pub(super) fn reduce_affine_buckets_reusing<F: VartimeField, const COMPLETE: bool>(
     points: &mut Vec<AffinePoint<F>>,
     offsets: &mut Vec<usize>,
     scratch: &mut ReduceScratch<F>,
@@ -1016,7 +1023,7 @@ fn multiexp_parallel<C: GlvParams>(
     Some(acc)
 }
 
-fn multiexp<C: GlvParams>(
+pub(super) fn multiexp<C: GlvParams>(
     components: &[(SignedMagnitude, SignedMagnitude)],
     bases: &[MultiexpBase<AffineBase<C>>],
     window_bits: usize,
@@ -1037,7 +1044,9 @@ fn multiexp<C: GlvParams>(
     acc
 }
 
-fn multiexp_bases<C: GlvParams>(bases: &[C::AffineExt]) -> Vec<MultiexpBase<AffineBase<C>>> {
+pub(super) fn multiexp_bases<C: GlvParams>(
+    bases: &[C::AffineExt],
+) -> Vec<MultiexpBase<AffineBase<C>>> {
     bases
         .iter()
         .map(|base| {
