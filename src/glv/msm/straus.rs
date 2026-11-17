@@ -28,19 +28,17 @@
 //!
 //! # Reading guide
 //!
-//! [`planned_straus_multiexp`] is the entry point. It decides whether Straus
-//! applies, the constants being the measured crossovers, and runs either one
-//! [`straus_multiexp`] or, with `multicore`, leaves of at most
-//! [`STRAUS_LEAF_TERMS`] terms in parallel (`straus_multiexp_leaves`).
+//! The planner decides whether Straus applies. [`straus_multiexp`] then runs
+//! one table, or, with `multicore`, `straus_multiexp_jobs` runs leaves of at
+//! most [`STRAUS_LEAF_TERMS`] terms in parallel (`straus_multiexp_leaves`).
 
 use alloc::vec::Vec;
 use group::CurveAffine as _;
 #[cfg(feature = "multicore")]
 use maybe_rayon::prelude::*;
 
-#[cfg(feature = "multicore")]
-use super::plan::{MAX_PARALLEL_STRAUS_TERMS, MIN_PARALLEL_STRAUS_TERMS, STRAUS_POOL_SHARES};
-use super::plan::{SERIAL_STRAUS_MAX_TERMS, STRAUS_LEAF_TERMS};
+#[cfg(any(feature = "multicore", doc))]
+use super::plan::STRAUS_LEAF_TERMS;
 use crate::glv::{Decomposed, GlvParams, Recoding, Table, Wnaf4};
 
 /// Share the doubling ladder across all scalar/base pairs, reusing the
@@ -48,7 +46,7 @@ use crate::glv::{Decomposed, GlvParams, Recoding, Table, Wnaf4};
 ///
 /// Returns $\sum_i k_i P_i$ exactly, for `scalars` and `bases` of equal length.
 /// Zero scalars and identity bases are skipped.
-fn straus_multiexp<C>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C
+pub(super) fn straus_multiexp<C>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> C
 where
     C: GlvParams,
 {
@@ -84,57 +82,28 @@ where
         .fold(C::identity(), |left, right| left + right)
 }
 
-/// Evaluates the sum with Straus when the input is small enough, and declines
-/// otherwise so that the caller can use the bucket backend.
-///
-/// Returns `Some` of $\sum_i k_i P_i$ when:
-/// - with `multicore` and `num_threads > 1`, there are
-///   `MIN_PARALLEL_STRAUS_TERMS` to `MAX_PARALLEL_STRAUS_TERMS` terms: they
-///   are split into at most `ceil(num_threads / STRAUS_POOL_SHARES)` jobs of
-///   Straus leaves of at most [`STRAUS_LEAF_TERMS`] terms, computed in
-///   parallel and summed;
-/// - otherwise, there are at most [`SERIAL_STRAUS_MAX_TERMS`] terms with one
-///   thread, or [`STRAUS_LEAF_TERMS`] terms with more.
-///
-/// Returns `None` for larger inputs. Requires `scalars.len() == bases.len()`.
-pub(super) fn planned_straus_multiexp<C>(
+/// Returns $\sum_i k_i P_i$, the terms split into `jobs` contiguous jobs run in
+/// parallel and summed, each a run of Straus leaves of at most
+/// [`STRAUS_LEAF_TERMS`] terms; with one job, the leaves run on this thread.
+/// Requires `scalars.len() == bases.len()` and `1 <= jobs <= scalars.len()`.
+#[cfg(feature = "multicore")]
+pub(super) fn straus_multiexp_jobs<C>(
     scalars: &[C::ScalarExt],
     bases: &[C::AffineExt],
-    num_threads: usize,
-) -> Option<C>
+    jobs: usize,
+) -> C
 where
     C: GlvParams,
 {
-    #[cfg(feature = "multicore")]
-    if (MIN_PARALLEL_STRAUS_TERMS..=MAX_PARALLEL_STRAUS_TERMS).contains(&scalars.len())
-        && num_threads > 1
-    {
-        // Bound small-MSM jobs to a share of the pool (STRAUS_POOL_SHARES),
-        // leaving room for concurrent caller work. Keep each leaf small
-        // instead of building one wide table for an entire worker's share.
-        let worker_jobs = num_threads.div_ceil(STRAUS_POOL_SHARES).min(scalars.len());
-        if worker_jobs == 1 {
-            return Some(straus_multiexp_leaves::<C>(scalars, bases));
-        }
-        return Some(
-            (0..worker_jobs)
-                .into_par_iter()
-                .map(|job| {
-                    let start = scalars.len() * job / worker_jobs;
-                    let end = scalars.len() * (job + 1) / worker_jobs;
-                    straus_multiexp_leaves::<C>(&scalars[start..end], &bases[start..end])
-                })
-                .sum(),
-        );
+    if jobs == 1 {
+        return straus_multiexp_leaves::<C>(scalars, bases);
     }
-
-    let max_terms = if num_threads <= 1 {
-        SERIAL_STRAUS_MAX_TERMS
-    } else {
-        STRAUS_LEAF_TERMS
-    };
-    if scalars.len() <= max_terms {
-        return Some(straus_multiexp::<C>(scalars, bases));
-    }
-    None
+    (0..jobs)
+        .into_par_iter()
+        .map(|job| {
+            let start = scalars.len() * job / jobs;
+            let end = scalars.len() * (job + 1) / jobs;
+            straus_multiexp_leaves::<C>(&scalars[start..end], &bases[start..end])
+        })
+        .sum()
 }

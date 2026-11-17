@@ -70,8 +70,10 @@ use alloc::vec::Vec;
 
 use super::booth;
 use bucket::{CachedField, multiexp, multiexp_bases};
-use plan::{current_num_threads, glv_multiexp_window_bits};
-use straus::planned_straus_multiexp;
+use plan::{Plan, current_num_threads};
+use straus::straus_multiexp;
+#[cfg(feature = "multicore")]
+use straus::straus_multiexp_jobs;
 
 pub(super) use bucket::{AffinePoint, reduce_affine_buckets};
 
@@ -88,10 +90,15 @@ where
         return None;
     }
     let num_threads = current_num_threads();
-    if let Some(result) = planned_straus_multiexp::<C>(scalars, bases, num_threads) {
-        return Some(result);
-    }
-    let window_bits = glv_multiexp_window_bits::<C>(scalars.len(), num_threads)?;
+    let window_bits = match plan::plan::<C>(scalars.len(), num_threads) {
+        Plan::Straus => return Some(straus_multiexp::<C>(scalars, bases)),
+        #[cfg(feature = "multicore")]
+        Plan::StrausLeaves { jobs } => {
+            return Some(straus_multiexp_jobs::<C>(scalars, bases, jobs));
+        }
+        Plan::Buckets { window_bits } => window_bits,
+        Plan::Decline => return None,
+    };
     let components = scalars
         .iter()
         .map(decompose::<C>)

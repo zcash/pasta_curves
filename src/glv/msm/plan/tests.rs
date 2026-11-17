@@ -4,7 +4,7 @@ use crate::{pallas, vesta};
 #[test]
 fn planner_boundaries() {
     // Serial: Straus up to SERIAL_STRAUS_MAX_TERMS, then measured bucket widths.
-    assert_eq!(glv_multiexp_window_bits::<pallas::Point>(24, 1), None);
+    assert_eq!(plan::<pallas::Point>(24, 1), Plan::Straus);
     assert_eq!(glv_multiexp_window_bits::<pallas::Point>(25, 1), Some(5));
     assert_eq!(glv_multiexp_window_bits::<pallas::Point>(127, 1), Some(5));
     assert_eq!(glv_multiexp_window_bits::<pallas::Point>(128, 1), Some(6));
@@ -100,4 +100,55 @@ fn weighted_planner_matches_calibrated_cells() {
         estimated_signed_booth_work(2048, 256, 0, 1, GENERIC_PLANNER_WEIGHTS),
         None
     );
+}
+
+/// The routes at the boundaries of the decision table in the module
+/// documentation, on one thread and, with `multicore`, on several.
+#[test]
+fn plan_routes_the_boundary_sizes() {
+    fn check(terms: usize, threads: usize, expected: Plan) {
+        assert_eq!(
+            plan::<pallas::Point>(terms, threads),
+            expected,
+            "{terms} terms on {threads} threads, Pallas"
+        );
+        assert_eq!(
+            plan::<vesta::Point>(terms, threads),
+            expected,
+            "{terms} terms on {threads} threads, Vesta"
+        );
+    }
+
+    for terms in [0, 1, 2, 3, 16, 17, 24] {
+        check(terms, 1, Plan::Straus);
+    }
+    for (terms, window_bits) in [
+        (25, 5),
+        (66, 5),
+        (67, 5),
+        (127, 5),
+        (128, 6),
+        (255, 6),
+        (256, 6),
+        (257, 6),
+    ] {
+        check(terms, 1, Plan::Buckets { window_bits });
+    }
+
+    #[cfg(feature = "multicore")]
+    for (threads, max_jobs, window_bits) in [(2, 1, 6), (8, 4, 6), (16, 8, 8)] {
+        for terms in [0, 1, 2] {
+            check(terms, threads, Plan::Straus);
+        }
+        for terms in [3, 16, 17, 24, 25, 66] {
+            let jobs = max_jobs.min(terms);
+            check(terms, threads, Plan::StrausLeaves { jobs });
+        }
+        for terms in [67, 127, 128, 255] {
+            check(terms, threads, Plan::Decline);
+        }
+        for terms in [256, 257] {
+            check(terms, threads, Plan::Buckets { window_bits });
+        }
+    }
 }
