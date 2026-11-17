@@ -27,12 +27,12 @@
 //! neither wins at every size: Straus ([`straus`]) pays one addition per
 //! nonzero digit of every term but has almost no setup, while the bucket
 //! method ([`bucket`]) amortizes additions over many terms at the price of
-//! setting up its buckets. So `try_multiexp` offers the input to Straus
-//! first; if Straus declines, the planner ([`plan`]) picks a window width for
-//! the bucket method, or declines when the caller's generic MSM is expected to
-//! be faster. The bucket method splits the scalars as in [`crate::glv`],
-//! recodes the halves into signed digits ([`booth`]), and evaluates the
-//! windows.
+//! setting up its buckets. So `try_multiexp` asks the planner ([`plan`]) for a
+//! `Plan` and matches on it: Straus for small inputs, the bucket method at the
+//! planned window width, or a decline when the caller's generic MSM is
+//! expected to be faster. The bucket method splits the scalars as in
+//! [`crate::glv`], recodes the halves into signed digits ([`booth`]), and
+//! evaluates the windows.
 //!
 //! # Layers
 //!
