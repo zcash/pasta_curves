@@ -859,6 +859,10 @@ where
 /// [`decompose`] guarantees, on which the recodings of the halves rely.
 pub(crate) const HALF_BITS: usize = 127;
 
+/// The halves [`decompose`] splits a scalar into: `k1` for $P$ and `k2` for
+/// $\phi(P)$.
+pub(crate) const HALVES: usize = 2;
+
 /// GLV split: `k = k1 + k2 * lambda (mod n)`, each half returned as
 /// `(is_negative, magnitude)`.
 ///

@@ -31,7 +31,7 @@
 
 use ff::PrimeField;
 
-use crate::glv::{GlvParams, HALF_BITS};
+use crate::glv::{GlvParams, HALF_BITS, HALVES};
 
 #[cfg(test)]
 mod tests;
@@ -302,7 +302,7 @@ where
         num_threads,
         GENERIC_PLANNER_WEIGHTS,
     )?;
-    let glv_terms = terms.checked_mul(2)?;
+    let glv_terms = terms.checked_mul(HALVES)?;
     let mut best: Option<(BoothWork, usize)> = None;
     for candidate in window_bits..=window_bits.checked_add(GLV_EXTRA_WINDOW_BITS)? {
         if let Some(work) = estimated_signed_booth_work(
