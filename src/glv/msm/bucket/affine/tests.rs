@@ -5,84 +5,6 @@ use super::*;
 use crate::glv::{GlvParams, affine_from_xy_unchecked, private::AffineBase};
 use crate::{pallas, vesta};
 
-// Preserved pre-port reducer: an allocating, failure-atomic arithmetic oracle.
-fn original_reduce_affine_buckets<F, const COMPLETE: bool>(
-    mut points: Vec<AffinePoint<F>>,
-    mut offsets: Vec<usize>,
-) -> Option<Vec<Option<AffinePoint<F>>>>
-where
-    F: VartimeField,
-{
-    debug_assert!(!offsets.is_empty());
-    let mut next_offsets = Vec::with_capacity(offsets.len());
-    let mut pending = Vec::with_capacity(points.len() / 2);
-
-    while offsets.windows(2).any(|range| range[1] - range[0] > 1) {
-        pending.clear();
-        for range in offsets.windows(2) {
-            for input in (range[0]..range[1] - (range[1] - range[0]) % 2).step_by(2) {
-                let left = points[input];
-                let right = points[input + 1];
-                let dx = right.x - left.x;
-                let (numerator, denominator) = if COMPLETE && dx.is_zero_vartime() {
-                    if !(right.y - left.y).is_zero_vartime() || left.y.is_zero_vartime() {
-                        continue;
-                    }
-                    let square = left.x.square();
-                    (square.double() + square, left.y.double())
-                } else {
-                    (right.y - left.y, dx)
-                };
-                pending.push(PendingAffineAddition {
-                    output: input,
-                    x_sum: left.x + right.x,
-                    numerator,
-                    denominator,
-                });
-            }
-        }
-
-        if batch_invert_and_add(&mut pending, &mut points).is_none() {
-            if !COMPLETE {
-                return original_reduce_affine_buckets::<F, true>(points, offsets);
-            }
-            return None;
-        }
-
-        next_offsets.clear();
-        next_offsets.push(0);
-        let mut additions = pending.iter().peekable();
-        let mut output = 0;
-        for range in offsets.windows(2) {
-            let end_pairs = range[1] - (range[1] - range[0]) % 2;
-            for input in (range[0]..end_pairs).step_by(2) {
-                if additions
-                    .peek()
-                    .is_some_and(|addition| addition.output == input)
-                {
-                    points[output] = points[input];
-                    output += 1;
-                    additions.next();
-                }
-            }
-            if end_pairs != range[1] {
-                points[output] = points[end_pairs];
-                output += 1;
-            }
-            next_offsets.push(output);
-        }
-        points.truncate(output);
-        core::mem::swap(&mut offsets, &mut next_offsets);
-    }
-
-    Some(
-        offsets
-            .windows(2)
-            .map(|range| (range[0] != range[1]).then(|| points[range[0]]))
-            .collect(),
-    )
-}
-
 fn batch_invert_and_add_two_lanes_matches_individual<F>()
 where
     F: VartimeField + From<u64>,
@@ -173,18 +95,11 @@ fn assert_batch_affine_buckets_match_native<C>(
         offsets.push(points.len());
     }
 
-    let original = original_reduce_affine_buckets::<_, false>(points.clone(), offsets.clone())
-        .unwrap_or_else(|| panic!("original reducer must succeed in case {case}"));
     reduce_affine_buckets_reusing::<_, false>(&mut points, &mut offsets, scratch)
         .unwrap_or_else(|| panic!("valid curve points must reduce in case {case}"));
+    // Affine coordinates are unique and an empty bucket is `None`, so equality
+    // with the plain sum of each bucket pins the reduced points exactly.
     let reduced = scratch.buckets.clone();
-    for (actual, expected) in reduced.iter().zip(&original) {
-        assert_eq!(
-            actual.map(|point| (point.x, point.y)),
-            expected.map(|point| (point.x, point.y)),
-            "reused reducer differs from original in case {case}"
-        );
-    }
     assert_affine_bucket_results_match_native::<C>(case, reduced, source);
 }
 
