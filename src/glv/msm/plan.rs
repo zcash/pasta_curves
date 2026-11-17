@@ -71,6 +71,10 @@ fn serial_small_window_bits(terms: usize) -> usize {
     }
 }
 
+/// Additions per bucket when a window sums its buckets with a running sum: one
+/// into the running sum, one into the window's total.
+const BUCKET_SUM_ADDITIONS: usize = 2;
+
 /// Estimated critical-path work of a signed-Booth MSM, weighted by backend.
 /// Values compare plans but do not predict time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -97,7 +101,11 @@ fn estimated_signed_booth_work(
 
     if num_threads <= 1 {
         let work = visit(terms.checked_mul(windows)?)?
-            .checked_add(bucket_adds(buckets.checked_mul(windows)?.checked_mul(2)?)?)?
+            .checked_add(bucket_adds(
+                buckets
+                    .checked_mul(windows)?
+                    .checked_mul(BUCKET_SUM_ADDITIONS)?,
+            )?)?
             .checked_add(doublings(
                 window_bits.checked_mul(windows.checked_sub(1)?)?,
             )?)?;
@@ -106,7 +114,8 @@ fn estimated_signed_booth_work(
 
     let workers = num_threads.min(windows);
     let waves = windows.div_ceil(workers);
-    let per_window = visit(terms)?.checked_add(bucket_adds(buckets.checked_mul(2)?)?)?;
+    let per_window =
+        visit(terms)?.checked_add(bucket_adds(buckets.checked_mul(BUCKET_SUM_ADDITIONS)?)?)?;
     let mut shift_doublings = 0usize;
     let mut window = windows.checked_sub(1)?;
     for _ in 0..waves {
