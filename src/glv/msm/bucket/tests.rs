@@ -17,7 +17,10 @@ fn reconstructed_vesta_points_must_be_on_curve() {
     affine_from_xy_unchecked::<vesta::Point>(crate::Fq::ONE, crate::Fq::ONE);
 }
 
-fn forced_window<C: GlvParams>(terms: usize, width: usize) {
+fn forced_window<C: GlvParams>(terms: usize, width: usize)
+where
+    AffineBase<C>: CachedField,
+{
     let scalars = (0..terms)
         .map(|i| {
             let i = u64::try_from(i).unwrap();
@@ -181,26 +184,26 @@ fn nested_parallel_scratch_is_independent() {
             .build()
             .unwrap();
         pool.install(|| {
-            with_window_scratch::<crate::Fp, _>(|outer| {
-                outer.counts.extend([123, 456]);
-                let outer_pointer = outer.counts.as_ptr().addr();
-                maybe_rayon::join(
-                    || {
-                        with_window_scratch::<crate::Fp, _>(|nested| {
-                            assert_ne!(nested.counts.as_ptr().addr(), outer_pointer);
-                            nested.counts.clear();
-                            nested.counts.push(789);
-                            forced_window::<pallas::Point>(65, 4);
-                            assert_eq!(nested.counts, [789]);
-                        });
-                    },
-                    || {
-                        forced_window::<vesta::Point>(17, 3);
-                        forced_window::<pallas::Point>(33, 6);
-                    },
-                );
-                assert_eq!(outer.counts, [123, 456]);
-            });
+            let mut outer = Checkout::<crate::Fp>::take();
+            outer.counts.clear();
+            outer.counts.extend([123, 456]);
+            let outer_pointer = outer.counts.as_ptr().addr();
+            maybe_rayon::join(
+                || {
+                    let mut nested = Checkout::<crate::Fp>::take();
+                    assert_ne!(nested.counts.as_ptr().addr(), outer_pointer);
+                    nested.counts.clear();
+                    nested.counts.push(789);
+                    forced_window::<pallas::Point>(65, 4);
+                    assert_eq!(nested.counts, [789]);
+                },
+                || {
+                    forced_window::<vesta::Point>(17, 3);
+                    forced_window::<pallas::Point>(33, 6);
+                },
+            );
+            assert_eq!(outer.counts, [123, 456]);
+            drop(outer);
             forced_window::<pallas::Point>(5, 2);
             forced_window::<vesta::Point>(0, 8);
         });
@@ -212,20 +215,21 @@ fn nested_parallel_scratch_is_independent() {
 fn tls_scratch_reuses_capacity_and_drops_oversized_buffers() {
     // Isolate this cache from other tests and the test runner's worker threads.
     std::thread::spawn(|| {
-        let capacity = with_window_scratch::<crate::Fp, _>(|scratch| {
+        let capacity = {
+            let mut scratch = Checkout::<crate::Fp>::take();
             scratch.assignments.reserve(128);
             scratch.assignments.capacity()
-        });
-        with_window_scratch::<crate::Fp, _>(|scratch| {
+        };
+        {
+            let mut scratch = Checkout::<crate::Fp>::take();
             assert_eq!(scratch.assignments.capacity(), capacity);
-            scratch.assignments.reserve(
-                MAX_CACHED_WINDOW_SCRATCH_BYTES / core::mem::size_of::<WindowAssignment>() + 1,
-            );
-            assert!(scratch.capacity_bytes() > MAX_CACHED_WINDOW_SCRATCH_BYTES);
-        });
-        with_window_scratch::<crate::Fp, _>(|scratch| {
-            assert_eq!(scratch.capacity_bytes(), 0);
-        });
+            scratch
+                .assignments
+                .reserve(cache::MAX_RETAINED_BYTES / core::mem::size_of::<WindowAssignment>() + 1);
+            assert!(scratch.capacity_bytes() > cache::MAX_RETAINED_BYTES);
+        }
+        let scratch = Checkout::<crate::Fp>::take();
+        assert_eq!(scratch.capacity_bytes(), 0);
     })
     .join()
     .unwrap();

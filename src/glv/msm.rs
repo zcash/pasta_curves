@@ -29,18 +29,21 @@ mod strauss;
 use alloc::vec::Vec;
 
 use booth::checked_signed_magnitudes;
-use bucket::{multiexp, multiexp_bases};
+use bucket::{CachedField, multiexp, multiexp_bases};
 use plan::{current_num_threads, glv_multiexp_window_bits};
 use strauss::planned_strauss_multiexp;
 
-use super::{GlvParams, decompose};
+use super::{GlvParams, decompose, private::AffineBase};
 
 /// Declines unprofitable input shapes and failed arithmetic guards so callers
 /// can retain their generic MSM. Mismatched lengths also decline.
 pub(crate) fn try_multiexp<C: GlvParams>(
     scalars: &[C::ScalarExt],
     bases: &[C::AffineExt],
-) -> Option<C> {
+) -> Option<C>
+where
+    AffineBase<C>: CachedField,
+{
     if scalars.len() != bases.len() {
         return None;
     }

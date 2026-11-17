@@ -2,6 +2,7 @@
 //! additions, then combined across windows.
 
 mod affine;
+mod cache;
 
 use alloc::vec::Vec;
 use ff::{Field, WithSmallOrderMulGroup};
@@ -10,18 +11,16 @@ use group::CurveAffine as _;
 use maybe_rayon::prelude::*;
 
 use super::booth::{GLV_COMPONENT_BITS, SignedMagnitude, booth_digit};
-use crate::arithmetic::{CurveAffine, VartimeField};
+use crate::arithmetic::CurveAffine;
 use crate::glv::{GlvParams, affine_from_xy_unchecked, private::AffineBase};
 #[cfg(feature = "multicore")]
 use affine::PendingAffineAddition;
 use affine::{AffinePoint, ReduceScratch, reduce_affine_buckets_reusing};
+pub(crate) use cache::CachedField;
+use cache::Checkout;
 
 #[cfg(test)]
 mod tests;
-
-// The crate otherwise stays no_std; only the threaded backend needs TLS.
-#[cfg(feature = "multicore")]
-extern crate std;
 
 /// Reads affine coordinates, using the identity's zero representation.
 fn affine_xy<C: GlvParams>(point: &C::AffineExt) -> (AffineBase<C>, AffineBase<C>) {
@@ -116,8 +115,9 @@ const MIN_WINDOW_BLOCK_TERMS: usize = 1 << 14;
 const WINDOW_BLOCK_TERMS_PER_BUCKET: usize = 8;
 
 /// Buffers for filling and reducing one window's buckets, reused across the
-/// windows a task evaluates (see [`ReduceScratch`]).
-struct WindowScratch<F> {
+/// windows a task evaluates (see [`ReduceScratch`]) and, with `multicore`,
+/// across calls on the same thread (see [`cache`]).
+pub(crate) struct WindowScratch<F> {
     assignments: Vec<WindowAssignment>,
     counts: Vec<usize>,
     offsets: Vec<usize>,
@@ -151,53 +151,6 @@ impl<F> WindowScratch<F> {
                 * size_of::<usize>()
             + self.points.capacity() * size_of::<AffinePoint<F>>()
             + self.reduce.pending.capacity() * size_of::<PendingAffineAddition<F>>()
-    }
-}
-
-/// Oversized prover scratch is dropped rather than retained on a worker.
-#[cfg(feature = "multicore")]
-const MAX_CACHED_WINDOW_SCRATCH_BYTES: usize = 8 << 20;
-
-/// Remove scratch from TLS before calling `f`: nested Rayon work on this
-/// thread must get independent buffers, not borrow the checked-out scratch.
-fn with_window_scratch<F: VartimeField, R>(f: impl FnOnce(&mut WindowScratch<F>) -> R) -> R {
-    #[cfg(feature = "multicore")]
-    {
-        use alloc::boxed::Box;
-        use core::any::Any;
-        use core::cell::RefCell;
-        std::thread_local! {
-            static CACHE: RefCell<Vec<Box<dyn Any>>> = const { RefCell::new(Vec::new()) };
-        }
-        let cached = CACHE.with(|cache| {
-            let mut cache = cache.borrow_mut();
-            let index = cache
-                .iter()
-                .position(|entry| entry.is::<WindowScratch<F>>())?;
-            cache.swap_remove(index).downcast::<WindowScratch<F>>().ok()
-        });
-        let mut scratch = cached.unwrap_or_default();
-        let result = f(&mut scratch);
-        if scratch.capacity_bytes() <= MAX_CACHED_WINDOW_SCRATCH_BYTES {
-            CACHE.with(|cache| {
-                let mut cache = cache.borrow_mut();
-                // Nested work may have returned another scratch for this
-                // field. Retain only one object per field, not one per nesting.
-                if let Some(index) = cache
-                    .iter()
-                    .position(|entry| entry.is::<WindowScratch<F>>())
-                {
-                    cache[index] = scratch;
-                } else {
-                    cache.push(scratch);
-                }
-            });
-        }
-        result
-    }
-    #[cfg(not(feature = "multicore"))]
-    {
-        f(&mut WindowScratch::default())
     }
 }
 
@@ -346,17 +299,19 @@ fn multiexp_serial<C: GlvParams>(
     components: &[(SignedMagnitude, SignedMagnitude)],
     bases: &[MultiexpBase<AffineBase<C>>],
     window_bits: usize,
-) -> Option<C> {
+) -> Option<C>
+where
+    AffineBase<C>: CachedField,
+{
     let window_count = GLV_COMPONENT_BITS / window_bits + 1;
-    with_window_scratch(|scratch| {
-        horner::<C>(
-            window_bits,
-            (0..window_count).rev().map(|window| {
-                let buckets = fill_window::<C>(components, bases, window_bits, window, scratch)?;
-                Some(sum_buckets::<C>(&buckets))
-            }),
-        )
-    })
+    let mut scratch = Checkout::<AffineBase<C>>::take();
+    horner::<C>(
+        window_bits,
+        (0..window_count).rev().map(|window| {
+            let buckets = fill_window::<C>(components, bases, window_bits, window, &mut scratch)?;
+            Some(sum_buckets::<C>(&buckets))
+        }),
+    )
 }
 
 /// Evaluates each signed-Booth window as its own Rayon task, then combines the
@@ -370,15 +325,17 @@ fn multiexp_parallel<C: GlvParams>(
     components: &[(SignedMagnitude, SignedMagnitude)],
     bases: &[MultiexpBase<AffineBase<C>>],
     window_bits: usize,
-) -> Option<C> {
+) -> Option<C>
+where
+    AffineBase<C>: CachedField,
+{
     let window_count = GLV_COMPONENT_BITS / window_bits + 1;
     let window_sums: Option<Vec<C>> = (0..window_count)
         .into_par_iter()
         .map(|window| {
-            with_window_scratch(|scratch| {
-                let buckets = fill_window::<C>(components, bases, window_bits, window, scratch)?;
-                Some(sum_buckets::<C>(&buckets))
-            })
+            let mut scratch = Checkout::<AffineBase<C>>::take();
+            let buckets = fill_window::<C>(components, bases, window_bits, window, &mut scratch)?;
+            Some(sum_buckets::<C>(&buckets))
         })
         .collect();
     horner::<C>(window_bits, window_sums?.into_iter().rev().map(Some))
@@ -389,7 +346,10 @@ pub(super) fn multiexp<C: GlvParams>(
     bases: &[MultiexpBase<AffineBase<C>>],
     window_bits: usize,
     num_threads: usize,
-) -> Option<C> {
+) -> Option<C>
+where
+    AffineBase<C>: CachedField,
+{
     debug_assert_eq!(components.len(), bases.len());
 
     #[cfg(not(feature = "multicore"))]
