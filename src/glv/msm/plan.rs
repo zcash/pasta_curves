@@ -1,5 +1,33 @@
 //! The planner: estimates the work of the signed-Booth bucket MSM against the
 //! generic MSM a caller falls back to, and chooses a window width or declines.
+//!
+//! # Reading guide
+//!
+//! [`glv_multiexp_window_bits`] is the entry point, called once Strauss has
+//! declined. It takes one of two paths.
+//!
+//! **Measured, for small inputs:** up to [`MIN_GLV_MULTIEXP_TERMS`] terms on
+//! one thread, or below it on several. The cost model below is too coarse
+//! there (it prices a batched affine addition like a projective one), so the
+//! choices come from benchmarks: buckets of the width
+//! [`serial_small_window_bits`] gives above [`SERIAL_STRAUSS_MAX_TERMS`] (the
+//! largest input Strauss takes on one thread). On several threads the bucket
+//! backend declines at these sizes.
+//!
+//! **Modelled, for large inputs:** [`estimated_signed_booth_work`] counts the
+//! point operations on the critical path ([`BoothWork`]) of both competitors:
+//!
+//! - the generic MSM the caller falls back to ([`estimated_generic_work`]):
+//!   $n$ full-width terms of [`scalar_repr_bits`] bits, at the width
+//!   [`multiexp_window_bits`] picks from the schedule of `halo2_proofs`'
+//!   `best_multiexp` ([`default_multiexp_window_bits`]);
+//! - the bucket backend ([`booth_multiexp_estimate`]): $2n$ half-width
+//!   components at that width and the next.
+//!
+//! The backend runs only when it is estimated cheaper. The counts compare
+//! plans; they do not predict time.
+//!
+//! [`current_num_threads`] is the thread count all of this plans for.
 
 use ff::PrimeField;
 
@@ -108,6 +136,9 @@ const DEFAULT_MULTIEXP_WINDOW_THRESHOLDS: [u32; 19] = [
     3_584_912_846,
 ];
 
+/// The window width `best_multiexp` in `halo2_proofs` uses: 1 below 4 terms,
+/// 3 below 32, and `ceil(ln(terms))` above, read from
+/// [`DEFAULT_MULTIEXP_WINDOW_THRESHOLDS`]. `None` above `u32::MAX` terms.
 fn default_multiexp_window_bits(terms: usize) -> Option<usize> {
     if terms < 4 {
         Some(1)
@@ -123,6 +154,8 @@ fn default_multiexp_window_bits(terms: usize) -> Option<usize> {
     }
 }
 
+/// The bit length of a scalar's byte encoding (256 for the Pasta scalars), the
+/// width the generic MSM recodes.
 fn scalar_repr_bits<C>() -> Option<usize>
 where
     C: GlvParams,
@@ -174,7 +207,7 @@ where
     (glv < generic).then_some(glv_window_bits)
 }
 
-/// The generic Signed-Booth MSM's estimated work at its default width (see
+/// The generic signed-Booth MSM's estimated work at its default width (see
 /// [`estimated_signed_booth_work`]).
 fn estimated_generic_work<C>(terms: usize, num_threads: usize) -> Option<BoothWork>
 where
@@ -185,7 +218,7 @@ where
     estimated_signed_booth_work(terms, scalar_bits, window_bits, num_threads)
 }
 
-/// The Signed-Booth GLV backend's cheapest `(work, window width)` over the
+/// The signed-Booth GLV backend's cheapest `(work, window width)` over the
 /// candidate widths `w` and `w + 1` (see [`glv_multiexp_window_bits`]).
 fn booth_multiexp_estimate<C>(terms: usize, num_threads: usize) -> Option<(BoothWork, usize)>
 where
@@ -206,6 +239,8 @@ where
     best
 }
 
+/// The number of threads the MSM may use: Rayon's with `multicore`, except on
+/// WebAssembly without atomics, and 1 otherwise.
 pub(super) fn current_num_threads() -> usize {
     #[cfg(all(
         feature = "multicore",
