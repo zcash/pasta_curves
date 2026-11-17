@@ -8,7 +8,7 @@
 
 use core::ops::{Deref, DerefMut};
 
-use super::WindowScratch;
+use super::WindowReducer;
 use crate::arithmetic::VartimeField;
 
 // The crate otherwise stays no_std; only the per-thread slots need it.
@@ -28,16 +28,16 @@ pub(super) const MAX_RETAINED_BYTES: usize = 8 << 20;
 pub(crate) trait CachedField: VartimeField {
     /// This thread's slot: the scratch kept between calls, if any.
     #[cfg(feature = "multicore")]
-    fn slot() -> &'static std::thread::LocalKey<RefCell<Option<WindowScratch<Self>>>>;
+    fn slot() -> &'static std::thread::LocalKey<RefCell<Option<WindowReducer<Self>>>>;
 }
 
 macro_rules! cached_field {
     ($field:ty) => {
         impl CachedField for $field {
             #[cfg(feature = "multicore")]
-            fn slot() -> &'static std::thread::LocalKey<RefCell<Option<WindowScratch<Self>>>> {
+            fn slot() -> &'static std::thread::LocalKey<RefCell<Option<WindowReducer<Self>>>> {
                 std::thread_local! {
-                    static SLOT: RefCell<Option<WindowScratch<$field>>> =
+                    static SLOT: RefCell<Option<WindowReducer<$field>>> =
                         const { RefCell::new(None) };
                 }
                 &SLOT
@@ -60,7 +60,7 @@ where
     F: CachedField,
 {
     // `None` only during `drop`, which moves the scratch back to the slot.
-    scratch: Option<WindowScratch<F>>,
+    scratch: Option<WindowReducer<F>>,
 }
 
 impl<F> Checkout<F>
@@ -77,7 +77,7 @@ where
             .flatten()
             .unwrap_or_default();
         #[cfg(not(feature = "multicore"))]
-        let scratch = WindowScratch::default();
+        let scratch = WindowReducer::default();
         Self {
             scratch: Some(scratch),
         }
@@ -88,7 +88,7 @@ impl<F> Deref for Checkout<F>
 where
     F: CachedField,
 {
-    type Target = WindowScratch<F>;
+    type Target = WindowReducer<F>;
 
     fn deref(&self) -> &Self::Target {
         self.scratch

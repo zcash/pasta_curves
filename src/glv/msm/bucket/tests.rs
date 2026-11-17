@@ -120,29 +120,17 @@ fn blocks_match_single_block<C: GlvParams>() {
     for width in [1, 3, 6] {
         for window in 0..GLV_COMPONENT_BITS / width + 1 {
             let whole = as_points(
-                fill_window_in_blocks::<C>(
-                    &components,
-                    &bases,
-                    width,
-                    window,
-                    components.len(),
-                    &mut WindowScratch::default(),
-                )
-                .unwrap()
-                .to_vec(),
+                WindowReducer::default()
+                    .fill_window_in_blocks(&components, &bases, width, window, components.len())
+                    .unwrap()
+                    .to_vec(),
             );
             for block_terms in [1, 2, 3, 5, 16, 63] {
                 let blocked = as_points(
-                    fill_window_in_blocks::<C>(
-                        &components,
-                        &bases,
-                        width,
-                        window,
-                        block_terms,
-                        &mut WindowScratch::default(),
-                    )
-                    .unwrap()
-                    .to_vec(),
+                    WindowReducer::default()
+                        .fill_window_in_blocks(&components, &bases, width, window, block_terms)
+                        .unwrap()
+                        .to_vec(),
                 );
                 assert_eq!(
                     blocked, whole,
