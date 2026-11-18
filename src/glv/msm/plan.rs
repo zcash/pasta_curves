@@ -194,7 +194,8 @@ const SMALL_MULTIEXP_WINDOW_BITS: usize = 3;
 /// one bit.
 const FIRST_LN_WINDOW_BITS: usize = 4;
 
-/// The window width `best_multiexp` in `halo2_proofs` uses:
+/// The window width `best_multiexp` uses, as in `halo2_proofs` 0.4.0,
+/// unchanged on its main as of `7465edf9`:
 /// [`TINY_MULTIEXP_WINDOW_BITS`] below [`TINY_MULTIEXP_TERMS`],
 /// [`SMALL_MULTIEXP_WINDOW_BITS`] below [`SMALL_MULTIEXP_TERMS`], and
 /// `ceil(ln(terms))` above, read from [`DEFAULT_MULTIEXP_WINDOW_THRESHOLDS`].
