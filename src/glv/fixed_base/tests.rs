@@ -5,7 +5,7 @@ use group::CurveAffine as _;
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 
-use super::{Booth7, GlvParams, WINDOWS};
+use super::{Booth7, BoothTable, FixedBaseSum, GlvParams, MAGNITUDES, WINDOWS};
 use crate::arithmetic::CurveExt;
 use crate::glv::Recoding;
 use crate::{pallas, vesta};
@@ -146,6 +146,45 @@ where
 fn fixed_base_sum_batch_matches_single() {
     check_batch::<pallas::Point>();
     check_batch::<vesta::Point>();
+}
+
+/// The bytes a prepared table holds per base: `WINDOWS` tables of
+/// `MAGNITUDES` affine points.
+const BYTES_PER_BASE: usize = 77_824;
+
+/// Pins the memory of prepared tables for the shapes callers use, so that a
+/// change of window width or layout shows up as a test failure rather than as
+/// a silent change of footprint.
+fn check_table_size<C: GlvParams>() {
+    assert_eq!(
+        WINDOWS * MAGNITUDES * core::mem::size_of::<C::AffineExt>(),
+        BYTES_PER_BASE,
+    );
+    assert_eq!(
+        core::mem::size_of::<BoothTable<C>>(),
+        MAGNITUDES * core::mem::size_of::<C::AffineExt>(),
+        "a table holds its points with no padding",
+    );
+
+    // Orchard's instance commitment sums over seven bases: prepare them and
+    // measure what is actually allocated.
+    let mut rng = XorShiftRng::seed_from_u64(0x7a62);
+    let bases: Vec<C::AffineExt> = (0..7).map(|_| C::random(&mut rng).to_affine()).collect();
+    let table = FixedBaseSum::<C, Booth7>::new(&bases);
+    assert_eq!(table.tables.len(), bases.len() * WINDOWS);
+    let bytes = table.tables.capacity() * core::mem::size_of::<BoothTable<C>>();
+    assert_eq!(bytes, 544_768, "seven bases, 532 KiB");
+    assert_eq!(bytes, 7 * BYTES_PER_BASE);
+
+    // Preparing halo2's 2^11 generators with W and U, the 2,050 bases of an
+    // Orchard verifier's MSM, would hold 152 MiB; computed, not allocated.
+    assert_eq!(2_050 * BYTES_PER_BASE, 159_539_200);
+}
+
+#[test]
+fn fixed_base_table_size() {
+    check_table_size::<pallas::Point>();
+    check_table_size::<vesta::Point>();
 }
 
 #[test]
