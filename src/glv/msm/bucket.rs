@@ -58,8 +58,8 @@ use group::CurveAffine as _;
 #[cfg(feature = "multicore")]
 use maybe_rayon::prelude::*;
 
-use super::booth::{SignedMagnitude, booth_digit, window_count};
 use crate::arithmetic::VartimeField;
+use crate::glv::booth::{SignedMagnitude, booth_digit, window_count};
 use crate::glv::{GlvParams, affine_from_xy_unchecked, affine_xy, phi_x, private::AffineBase};
 pub(in crate::glv) use affine::{AffinePoint, reduce_affine_buckets};
 use affine::{ReduceScratch, reduce_affine_buckets_reusing};

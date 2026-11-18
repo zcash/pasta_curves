@@ -88,6 +88,8 @@ use group::CurveAffine as _;
 use crate::arithmetic::{CurveAffine, CurveExt, VartimeField, mac, sbb};
 use crate::{pallas, vesta};
 
+mod booth;
+
 pub(crate) mod fixed_base;
 
 pub(crate) mod msm;
