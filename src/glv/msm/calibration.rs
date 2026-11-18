@@ -36,7 +36,8 @@
 //!
 //! Building with `--cfg pasta_curves_calibration` replaces the calibration in
 //! use with the one in the environment variable `PASTA_CURVES_CALIBRATION`,
-//! read at compile time (see [`overrides`] for the syntax). The values stay
+//! read at compile time: comma-separated `field=value` pairs, as below, where
+//! a weight is `point_visit/bucket_addition/doubling`. The values stay
 //! constants, and cargo rebuilds the crate when the variable changes. Against a
 //! baseline saved without the override, `benches/msm.rs` compares them:
 //!
@@ -54,7 +55,9 @@
 
 use super::plan::PlannerWeights;
 
-#[cfg_attr(not(any(test, pasta_curves_calibration)), allow(dead_code))]
+// Only builds that read an override contain the parser; tests check it
+// without the flag.
+#[cfg(any(test, pasta_curves_calibration))]
 mod overrides;
 
 /// The machine-dependent values the planner and the bucket method read.
