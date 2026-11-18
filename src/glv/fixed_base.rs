@@ -27,14 +27,14 @@
 use alloc::{boxed::Box, vec, vec::Vec};
 use core::fmt;
 
-use ff::{Field, WithSmallOrderMulGroup};
+use ff::Field;
 
 use super::{
-    GlvParams, HALF_BITS, affine_from_xy_unchecked, affine_xy,
+    GlvParams, HALF_BITS, Recoding, affine_from_xy_unchecked, affine_xy,
     booth::{SignedMagnitude, booth_digit, window_count},
     decompose,
     msm::{AffinePoint, reduce_affine_buckets},
-    private::AffineBase,
+    phi_x,
 };
 use crate::arithmetic::PreparedFixedBaseSum;
 
@@ -63,6 +63,108 @@ const WINDOWS: usize = window_count(WINDOW_BITS);
 /// tree level. Larger batches are split.
 const REDUCE_SUMS: usize = 8;
 
+/// The recoding of the prepared fixed-base sums: both GLV halves of a scalar
+/// in signed-Booth digits of [`WINDOW_BITS`] bits (`glv::booth`), radix
+/// $2^{\mathrm{WINDOW\_BITS}}$.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Booth7;
+
+impl Booth7 {
+    /// Decomposes `k` and recodes both halves.
+    fn recode<C: GlvParams>(k: &C::ScalarExt) -> (SignedMagnitude, SignedMagnitude) {
+        let (first, second) = decompose::<C>(k);
+        // The digits of `WINDOWS` windows sum to a half only below
+        // `2^HALF_BITS`, which `glv::decompose` guarantees.
+        debug_assert!(
+            first.1 >> HALF_BITS == 0 && second.1 >> HALF_BITS == 0,
+            "a GLV half is 2^127 or larger"
+        );
+        (first.into(), second.into())
+    }
+}
+
+/// The [`Booth7`] table of a point $Q$: $m Q$ for $m \in 1..=$[`MAGNITUDES`].
+/// The second half's digits index the same entries through $\phi$, applied on
+/// lookup, which halves the table.
+pub(super) struct BoothTable<C: GlvParams> {
+    multiples: [C::AffineExt; MAGNITUDES],
+}
+
+impl<C: GlvParams> BoothTable<C> {
+    /// The tables of many points, sharing one batch normalization.
+    fn batch(points: &[C]) -> Vec<Self> {
+        let mut projective = Vec::with_capacity(points.len() * MAGNITUDES);
+        for point in points {
+            let mut multiple = *point;
+            for _ in 0..MAGNITUDES {
+                projective.push(multiple);
+                multiple += point;
+            }
+        }
+        let mut affine = vec![C::AffineExt::default(); projective.len()];
+        C::batch_normalize_vartime(&projective, &mut affine);
+        affine
+            .chunks_exact(MAGNITUDES)
+            .map(|multiples| BoothTable {
+                multiples: multiples.try_into().expect("MAGNITUDES multiples"),
+            })
+            .collect()
+    }
+}
+
+impl<C: GlvParams> Recoding<C> for Booth7 {
+    type Digits = (SignedMagnitude, SignedMagnitude);
+    type Table = BoothTable<C>;
+    const COLUMN_BITS: usize = WINDOW_BITS;
+
+    #[cfg(test)]
+    fn recode(k: &C::ScalarExt) -> Self::Digits {
+        Booth7::recode::<C>(k)
+    }
+
+    #[cfg(test)]
+    fn table(p: &C) -> Self::Table {
+        let mut tables = BoothTable::batch(core::slice::from_ref(p));
+        tables.pop().expect("one point, one table")
+    }
+
+    #[cfg(test)]
+    fn batch_tables(points: &[C]) -> Vec<Self::Table> {
+        BoothTable::batch(points)
+    }
+
+    /// Every recoding has [`WINDOWS`] columns: a half below `2^HALF_BITS`
+    /// needs them all in the worst case, and zero digits cost nothing.
+    fn columns(_digits: &Self::Digits) -> usize {
+        WINDOWS
+    }
+
+    fn column_terms(
+        table: &Self::Table,
+        digits: &Self::Digits,
+        i: usize,
+        mut f: impl FnMut(C::AffineExt, bool),
+    ) {
+        if i >= WINDOWS {
+            return;
+        }
+        for (half, endo) in [(digits.0, false), (digits.1, true)] {
+            let digit = booth_digit(half, WINDOW_BITS, i);
+            if digit.magnitude == 0 {
+                continue;
+            }
+            let point = table.multiples[digit.magnitude - 1];
+            let point = if endo {
+                let (x, y) = affine_xy::<C>(&point);
+                affine_from_xy_unchecked::<C>(phi_x::<C>(x), y)
+            } else {
+                point
+            };
+            f(point, digit.negative);
+        }
+    }
+}
+
 /// Builds a [`PreparedFixedBaseSum`] over `bases`.
 pub(crate) fn prepare_fixed_base_sum<C: GlvParams>(
     bases: &[C::AffineExt],
@@ -70,70 +172,39 @@ pub(crate) fn prepare_fixed_base_sum<C: GlvParams>(
     Box::new(FixedBaseSum::<C>::new(bases))
 }
 
-/// The positioned multiples of each base, laid out by base, then window,
-/// then magnitude.
+/// One [`BoothTable`] per base and window: window $j$'s table holds the
+/// multiples of $2^{j \cdot \mathrm{WINDOW\_BITS}} P$, laid out by base, then
+/// window. The [`Booth7`] digit of window $j$ then indexes its own table, and
+/// the sum needs no doublings.
 struct FixedBaseSum<C: GlvParams> {
     bases: usize,
-    points: Vec<C::AffineExt>,
+    tables: Vec<BoothTable<C>>,
 }
 
 impl<C: GlvParams> fmt::Debug for FixedBaseSum<C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FixedBaseSum")
             .field("bases", &self.bases)
-            .field("points", &self.points.len())
+            .field("points", &(self.tables.len() * MAGNITUDES))
             .finish()
     }
 }
 
 impl<C: GlvParams> FixedBaseSum<C> {
     fn new(bases: &[C::AffineExt]) -> Self {
-        let mut projective = Vec::with_capacity(bases.len() * WINDOWS * MAGNITUDES);
+        let mut positioned = Vec::with_capacity(bases.len() * WINDOWS);
         for base in bases {
             let mut shifted = C::from(*base);
             for _ in 0..WINDOWS {
-                let mut multiple = shifted;
-                for _ in 0..MAGNITUDES {
-                    projective.push(multiple);
-                    multiple += shifted;
-                }
+                positioned.push(shifted);
                 for _ in 0..WINDOW_BITS {
                     shifted = shifted.double();
                 }
             }
         }
-        let mut points = vec![C::AffineExt::default(); projective.len()];
-        C::batch_normalize_vartime(&projective, &mut points);
         FixedBaseSum {
             bases: bases.len(),
-            points,
-        }
-    }
-
-    /// Calls `f(point, negate)` for each nonzero signed-Booth digit of
-    /// `half * P_base`, or of `phi` of it when `endo`. The term is `-point`
-    /// when `negate` is set.
-    fn for_each_term(
-        &self,
-        base: usize,
-        half: SignedMagnitude,
-        endo: bool,
-        mut f: impl FnMut(C::AffineExt, bool),
-    ) {
-        let windows = &self.points[base * WINDOWS * MAGNITUDES..][..WINDOWS * MAGNITUDES];
-        for window in 0..WINDOWS {
-            let digit = booth_digit(half, WINDOW_BITS, window);
-            if digit.magnitude == 0 {
-                continue;
-            }
-            let point = windows[window * MAGNITUDES + digit.magnitude - 1];
-            let point = if endo {
-                let (x, y) = affine_xy::<C>(&point);
-                affine_from_xy_unchecked::<C>(x * AffineBase::<C>::ZETA, y)
-            } else {
-                point
-            };
-            f(point, digit.negative);
+            tables: BoothTable::batch(&positioned),
         }
     }
 
@@ -144,15 +215,11 @@ impl<C: GlvParams> FixedBaseSum<C> {
             "at most one scalar per prepared base"
         );
         for (base, scalar) in scalars.iter().enumerate() {
-            let (first, second) = decompose::<C>(scalar);
-            // The digits of `WINDOWS` windows sum to a half only below
-            // `2^HALF_BITS`, which `glv::decompose` guarantees.
-            debug_assert!(
-                first.1 >> HALF_BITS == 0 && second.1 >> HALF_BITS == 0,
-                "a GLV half is 2^127 or larger"
-            );
-            self.for_each_term(base, first.into(), false, &mut f);
-            self.for_each_term(base, second.into(), true, &mut f);
+            let digits = Booth7::recode::<C>(scalar);
+            let tables = &self.tables[base * WINDOWS..][..WINDOWS];
+            for (window, table) in tables.iter().enumerate() {
+                <Booth7 as Recoding<C>>::column_terms(table, &digits, window, &mut f);
+            }
         }
     }
 }

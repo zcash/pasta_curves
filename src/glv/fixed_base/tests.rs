@@ -5,8 +5,9 @@ use group::CurveAffine as _;
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 
-use super::{GlvParams, WINDOWS};
+use super::{Booth7, GlvParams, WINDOWS};
 use crate::arithmetic::CurveExt;
+use crate::glv::Recoding;
 use crate::{pallas, vesta};
 
 fn check<C: GlvParams>()
@@ -53,17 +54,27 @@ where
     // Exercise carries through every signed window independently of the
     // GLV decomposition's distribution of half-scalars.
     let positioned = super::FixedBaseSum::<C>::new(&bases[..1]);
+    let zero = (false, 0u128).into();
     for half in [63, 64, 65, (1u128 << 127) - 1, u128::MAX] {
         for negative in [false, true] {
             for endo in [false, true] {
+                let signed = (negative, half).into();
+                let digits = if endo { (zero, signed) } else { (signed, zero) };
                 let mut actual = C::identity();
-                positioned.for_each_term(0, (negative, half).into(), endo, |point, negate| {
-                    if negate {
-                        actual -= point;
-                    } else {
-                        actual += point;
-                    }
-                });
+                for (window, table) in positioned.tables.iter().enumerate() {
+                    <Booth7 as Recoding<C>>::column_terms(
+                        table,
+                        &digits,
+                        window,
+                        |point, negate| {
+                            if negate {
+                                actual -= point;
+                            } else {
+                                actual += point;
+                            }
+                        },
+                    );
+                }
                 let mut expected = bases[0] * C::ScalarExt::from_u128(half);
                 if endo {
                     expected = expected.endo();
@@ -139,4 +150,49 @@ fn fixed_base_sum_rejects_extra_scalars() {
     let table = pallas::Point::try_prepare_fixed_base_sum(&[pallas::Affine::generator()])
         .expect("Pasta has a fixed-base backend");
     let _ = table.sum_vartime(&[pallas::Scalar::ONE, pallas::Scalar::ONE]);
+}
+
+/// The shared `Recoding` laws, for the fixed-base sums' signed-Booth
+/// recoding.
+mod pbt {
+    use group::Group;
+    use proptest::prelude::*;
+
+    use super::super::Booth7;
+    use crate::glv::{conformance as law, conformance::scalar_strategy};
+
+    macro_rules! booth_pbt {
+        ($mod_name:ident, $curve:ty) => {
+            mod $mod_name {
+                use super::*;
+
+                type Scalar = <$curve as crate::arithmetic::CurveExt>::ScalarExt;
+
+                proptest! {
+                    #[test]
+                    fn recoding_laws(
+                        s in scalar_strategy::<Scalar>(),
+                        a in scalar_strategy::<Scalar>(),
+                        b in scalar_strategy::<Scalar>(),
+                    ) {
+                        use ff::Field;
+                        let p = <$curve>::generator() * (s + Scalar::ONE);
+                        let ps = [p, p.double(), p + <$curve>::generator()];
+                        law::agrees_with_mul::<$curve, Booth7>(&p, &a);
+                        law::additive_in_scalar::<$curve, Booth7>(&p, &a, &b);
+                        law::zero_and_negation::<$curve, Booth7>(&p, &a);
+                        law::batch_matches_solo::<$curve, Booth7>(&ps, &a);
+                        law::recoding_is_reusable::<$curve, Booth7>(&ps, &a);
+                        law::sum_of_products_matches_muls::<$curve, Booth7>(
+                            &ps,
+                            &[a, b, Scalar::from(3)],
+                        );
+                    }
+                }
+            }
+        };
+    }
+
+    booth_pbt!(pallas, crate::pallas::Point);
+    booth_pbt!(vesta, crate::vesta::Point);
 }
