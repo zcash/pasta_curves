@@ -224,6 +224,10 @@ where
     /// The precomputed multiples of `P` that the digits index.
     type Table;
 
+    /// Doublings between consecutive digit columns: the digits are in radix
+    /// `2^COLUMN_BITS`.
+    const COLUMN_BITS: usize;
+
     /// Recodes a scalar, independently of any point.
     /// Only the conformance suite calls this: production code reaches the
     /// same operation through the inherent method.
@@ -257,17 +261,20 @@ where
     /// Walks the ladder: the point the digits name, against that table.
     ///
     /// This is Horner's rule, right to left, and it is the same fold for
-    /// every recoding: an accumulator doubled once per column, with that
-    /// column's contribution added in. Only [`Recoding::add_column`] differs,
-    /// so the loop is provided here rather than written per implementation.
+    /// every recoding: an accumulator doubled [`Recoding::COLUMN_BITS`] times
+    /// per column, with that column's contribution added in. Only
+    /// [`Recoding::add_column`] differs, so the loop is provided here rather
+    /// than written per implementation.
     fn mul(table: &Self::Table, digits: &Self::Digits) -> C {
         let len = Self::columns(digits);
         let mut acc = C::identity();
         for i in (0..len).rev() {
             // `acc` is still the identity on the first iteration; skip the
-            // wasted doubling.
+            // wasted doublings.
             if i + 1 < len {
-                acc = acc.double();
+                for _ in 0..Self::COLUMN_BITS {
+                    acc = acc.double();
+                }
             }
             Self::add_column(table, digits, i, &mut acc);
         }
@@ -547,6 +554,7 @@ where
 {
     type Digits = Decomposed<C>;
     type Table = Table<C>;
+    const COLUMN_BITS: usize = 1;
 
     #[cfg(test)]
     fn recode(k: &C::ScalarExt) -> Self::Digits {

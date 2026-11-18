@@ -174,6 +174,7 @@ where
 {
     type Digits = Recoded<C>;
     type Table = Table<C>;
+    const COLUMN_BITS: usize = 1;
 
     #[cfg(test)]
     fn recode(k: &C::ScalarExt) -> Self::Digits {
