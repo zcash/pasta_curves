@@ -238,11 +238,14 @@ where
         acc
     }
 
-    fn sum_batch_vartime(&self, scalars: &[&[C::ScalarExt]]) -> Vec<C> {
-        scalars
+    fn sum_batch_vartime(&self, scalars: &[&[C::ScalarExt]], output: &mut [C]) {
+        assert_eq!(scalars.len(), output.len(), "one output per sum");
+        for (scalars, output) in scalars
             .chunks(REDUCE_SUMS)
-            .flat_map(|chunk| self.reduce_sums(chunk))
-            .collect()
+            .zip(output.chunks_mut(REDUCE_SUMS))
+        {
+            self.reduce_sums(scalars, output);
+        }
     }
 }
 
@@ -252,8 +255,9 @@ where
     R: Recoding<C>,
     R::Table: Send + Sync,
 {
-    /// Reduces the sums of `scalars` together; see [`REDUCE_SUMS`].
-    fn reduce_sums(&self, scalars: &[&[C::ScalarExt]]) -> Vec<C> {
+    /// Reduces the sums of `scalars` together into `output`, one per sum; see
+    /// [`REDUCE_SUMS`].
+    fn reduce_sums(&self, scalars: &[&[C::ScalarExt]], output: &mut [C]) {
         // One bucket per sum, laid out contiguously for the reducer.
         let mut points =
             Vec::with_capacity(scalars.iter().map(|s| s.len()).sum::<usize>() * 2 * WINDOWS);
@@ -275,17 +279,22 @@ where
             offsets.push(points.len());
         }
         match reduce_affine_buckets(points, offsets) {
-            Some(sums) => sums
-                .into_iter()
-                .map(|sum| match sum {
-                    Some(p) => C::from(affine_from_xy_unchecked::<C>(p.x, p.y)),
-                    None => C::identity(),
-                })
-                .collect(),
+            Some(sums) => {
+                for (output, sum) in output.iter_mut().zip(sums) {
+                    *output = match sum {
+                        Some(p) => C::from(affine_from_xy_unchecked::<C>(p.x, p.y)),
+                        None => C::identity(),
+                    };
+                }
+            }
             // The reducer declines only if its complete formulas meet a zero
             // denominator, which valid points rule out and which it asserts
             // against in debug builds; stay correct anyway.
-            None => scalars.iter().map(|s| self.sum_vartime(s)).collect(),
+            None => {
+                for (output, scalars) in output.iter_mut().zip(scalars) {
+                    *output = self.sum_vartime(scalars);
+                }
+            }
         }
     }
 }

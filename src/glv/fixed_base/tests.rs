@@ -24,7 +24,9 @@ where
     let empty = C::try_prepare_fixed_base_sum(&[]).expect("Pasta supports empty fixed-base sums");
     assert_eq!(empty.num_bases(), 0);
     assert_eq!(empty.sum_vartime(&[]), C::identity());
-    assert_eq!(empty.sum_batch_vartime(&[&[], &[]]), [C::identity(); 2]);
+    let mut output = [C::generator(); 2];
+    empty.sum_batch_vartime(&[&[], &[]], &mut output);
+    assert_eq!(output, [C::identity(); 2]);
 
     let mut edges = Vec::from([
         C::ScalarExt::ZERO,
@@ -134,7 +136,9 @@ where
         for (scalars, expected) in slices.iter().zip(&expected) {
             assert_eq!(table.sum_vartime(scalars), *expected);
         }
-        assert_eq!(table.sum_batch_vartime(&slices), expected, "{count} sums");
+        let mut output = Vec::from_iter(core::iter::repeat_n(C::generator(), count));
+        table.sum_batch_vartime(&slices, &mut output);
+        assert_eq!(output, expected, "{count} sums");
     }
 }
 
@@ -142,6 +146,15 @@ where
 fn fixed_base_sum_batch_matches_single() {
     check_batch::<pallas::Point>();
     check_batch::<vesta::Point>();
+}
+
+#[test]
+#[should_panic(expected = "one output per sum")]
+fn fixed_base_sum_batch_rejects_mismatched_output() {
+    let table = pallas::Point::try_prepare_fixed_base_sum(&[pallas::Affine::generator()])
+        .expect("Pasta has a fixed-base backend");
+    let mut output = [pallas::Point::from(pallas::Affine::generator()); 1];
+    table.sum_batch_vartime(&[&[], &[]], &mut output);
 }
 
 #[test]

@@ -593,10 +593,9 @@ pub(crate) mod conformance {
         let prepared = crate::glv::fixed_base::FixedBaseSum::<C, R>::new(&affine);
         let expected: C = points.iter().zip(scalars).map(|(p, k)| *p * *k).sum();
         assert_eq!(prepared.sum_vartime(scalars), expected);
-        assert_eq!(
-            prepared.sum_batch_vartime(&[scalars, &scalars[..1], &[]]),
-            alloc::vec![expected, points[0] * scalars[0], C::identity()],
-        );
+        let mut output = [C::generator(); 3];
+        prepared.sum_batch_vartime(&[scalars, &scalars[..1], &[]], &mut output);
+        assert_eq!(output, [expected, points[0] * scalars[0], C::identity()]);
     }
 
     /// A recoding is a function of `k` alone, so it survives reuse across

@@ -209,16 +209,19 @@ pub trait PreparedFixedBaseSum<C: CurveExt>: core::fmt::Debug + Send + Sync {
     /// Panics if there are more scalars than prepared bases.
     fn sum_vartime(&self, scalars: &[C::ScalarExt]) -> C;
 
-    /// Evaluates each independent sum in order, optionally sharing work.
-    ///
-    /// Returns exactly one result per input vector, each as
-    /// [`Self::sum_vartime`] would.
+    /// Evaluates each independent sum in order, writing the sum of
+    /// `scalars[i]` to `output[i]` as [`Self::sum_vartime`] would compute it,
+    /// optionally sharing work across the sums.
     ///
     /// # Panics
     ///
-    /// Panics if any vector has more scalars than prepared bases.
-    fn sum_batch_vartime(&self, scalars: &[&[C::ScalarExt]]) -> alloc::vec::Vec<C> {
-        scalars.iter().map(|s| self.sum_vartime(s)).collect()
+    /// Panics if `scalars` and `output` have different lengths, or if any
+    /// vector has more scalars than prepared bases.
+    fn sum_batch_vartime(&self, scalars: &[&[C::ScalarExt]], output: &mut [C]) {
+        assert_eq!(scalars.len(), output.len(), "one output per sum");
+        for (scalars, output) in scalars.iter().zip(output.iter_mut()) {
+            *output = self.sum_vartime(scalars);
+        }
     }
 }
 
