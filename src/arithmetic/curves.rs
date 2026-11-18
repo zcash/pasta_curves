@@ -201,16 +201,22 @@ pub trait PreparedFixedBaseSum<C: CurveExt>: core::fmt::Debug + Send + Sync {
     /// The number of prepared bases.
     fn bases(&self) -> usize;
 
-    /// Computes the sum pairing each scalar with its prepared base.
+    /// Computes the sum pairing each scalar with its prepared base, in order.
+    /// Omitted trailing scalars are zero.
     ///
-    /// Omitted trailing scalars are zero. Panics if there are more scalars
-    /// than prepared bases.
+    /// # Panics
+    ///
+    /// Panics if there are more scalars than prepared bases.
     fn sum_vartime(&self, scalars: &[C::ScalarExt]) -> C;
 
     /// Evaluates each independent sum in order, optionally sharing work.
     ///
-    /// Returns exactly one result per input vector. Each vector has the same
-    /// length bound and public-input requirement as [`Self::sum_vartime`].
+    /// Returns exactly one result per input vector, each as
+    /// [`Self::sum_vartime`] would.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any vector has more scalars than prepared bases.
     fn sum_batch_vartime(&self, scalars: &[&[C::ScalarExt]]) -> alloc::vec::Vec<C> {
         scalars.iter().map(|s| self.sum_vartime(s)).collect()
     }
