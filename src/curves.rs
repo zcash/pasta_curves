@@ -1256,8 +1256,9 @@ macro_rules! impl_projective_curve_ext {
 }
 
 macro_rules! impl_affine_unchecked_ctor {
-    // Only the public curves get the constructor: on the crate-private
-    // isogenous curves nothing would call it, and it would be dead code.
+    // Only the public curves get the constructor and its inverse `raw_xy`: on
+    // the crate-private isogenous curves nothing would call them, and they
+    // would be dead code.
     ($name_affine:ident, $base:ident, with_unchecked_ctor) => {
         impl $name_affine {
             /// Constructs an affine point from coordinates without checking that
@@ -1279,6 +1280,13 @@ macro_rules! impl_affine_unchecked_ctor {
             /// `arithmetic::CurveAffine::is_on_curve`.
             pub const fn from_xy_unchecked(x: $base, y: $base) -> Self {
                 $name_affine { x, y }
+            }
+
+            /// The stored coordinates, the identity read as `(0, 0)`: the
+            /// inverse of `from_xy_unchecked`.
+            #[cfg(feature = "glv")]
+            pub(crate) const fn raw_xy(&self) -> ($base, $base) {
+                (self.x, self.y)
             }
         }
     };
@@ -1736,5 +1744,56 @@ mod tests {
         assert!(bool::from(
             EpAffine::from_xy(Fp::one(), Fp::one()).is_none()
         ));
+    }
+
+    /// `raw_xy` and `from_xy_unchecked` are inverse bijections between the
+    /// affine values and pairs of base field elements: one way on points of
+    /// the curve, including the identity, and the other way on any pair, on
+    /// the curve or not.
+    #[cfg(feature = "glv")]
+    mod raw_xy_pbt {
+        use group::Group;
+        use proptest::prelude::*;
+
+        use super::*;
+        use crate::glv::conformance::scalar_strategy;
+
+        macro_rules! raw_xy_inverse {
+            ($mod_name:ident, $curve:ty, $affine:ty, $base:ty) => {
+                mod $mod_name {
+                    use super::*;
+
+                    type Scalar = <$curve as CurveExt>::ScalarExt;
+
+                    #[test]
+                    fn identity_round_trips() {
+                        let identity = <$affine>::identity();
+                        assert_eq!(identity.raw_xy(), (<$base>::zero(), <$base>::zero()));
+                        let (x, y) = identity.raw_xy();
+                        assert!(<$affine>::from_xy_unchecked(x, y) == identity);
+                    }
+
+                    proptest! {
+                        #[test]
+                        fn from_xy_unchecked_inverts_raw_xy(k in scalar_strategy::<Scalar>()) {
+                            let p = (<$curve>::generator() * k).to_affine();
+                            let (x, y) = p.raw_xy();
+                            prop_assert!(<$affine>::from_xy_unchecked(x, y) == p);
+                        }
+
+                        #[test]
+                        fn raw_xy_inverts_from_xy_unchecked(
+                            x in scalar_strategy::<$base>(),
+                            y in scalar_strategy::<$base>(),
+                        ) {
+                            prop_assert_eq!(<$affine>::from_xy_unchecked(x, y).raw_xy(), (x, y));
+                        }
+                    }
+                }
+            };
+        }
+
+        raw_xy_inverse!(pallas, Ep, EpAffine, Fp);
+        raw_xy_inverse!(vesta, Eq, EqAffine, Fq);
     }
 }
