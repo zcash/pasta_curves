@@ -228,22 +228,21 @@ where
     /// `2^COLUMN_BITS`.
     const COLUMN_BITS: usize;
 
+    /// The most columns a recoding can have: [`Recoding::columns`] never
+    /// exceeds it. A positioned table (`glv::fixed_base`) prepares this many
+    /// tables per point.
+    const MAX_COLUMNS: usize;
+
     /// Recodes a scalar, independently of any point.
-    /// Only the conformance suite calls this: production code reaches the
-    /// same operation through the inherent method.
-    #[cfg(test)]
     fn recode(k: &C::ScalarExt) -> Self::Digits;
 
     /// Builds the table for one point.
     /// Only the conformance suite calls this: production code reaches the
-    /// same operation through the inherent method.
+    /// same operation through the inherent method, or [`Recoding::batch_tables`].
     #[cfg(test)]
     fn table(p: &C) -> Self::Table;
 
     /// Builds tables for many points, sharing one field inversion.
-    /// Only the conformance suite calls this: production code reaches the
-    /// same operation through the inherent method.
-    #[cfg(test)]
     fn batch_tables(points: &[C]) -> Vec<Self::Table>;
 
     /// Number of digit columns in a recoding.
@@ -577,6 +576,29 @@ pub(crate) mod conformance {
         assert!(bool::from(R::sum_of_products(&[], &[]).is_identity()));
     }
 
+    /// Precomputing the positions spends Horner's doublings once, on
+    /// preparation, and never changes a sum: a positioned table (one table per
+    /// column, `glv::fixed_base`) gives the sum of the terms' `mul`s, alone or
+    /// batched, with omitted trailing scalars zero. Requires one scalar per
+    /// point, at least one.
+    pub(crate) fn positioned_matches_muls<C, R>(points: &[C], scalars: &[C::ScalarExt])
+    where
+        C: GlvParams,
+        R: Recoding<C>,
+        R::Table: Send + Sync,
+    {
+        use crate::arithmetic::PreparedFixedBaseSum;
+
+        let affine: alloc::vec::Vec<_> = points.iter().map(|p| p.to_affine()).collect();
+        let prepared = crate::glv::fixed_base::FixedBaseSum::<C, R>::new(&affine);
+        let expected: C = points.iter().zip(scalars).map(|(p, k)| *p * *k).sum();
+        assert_eq!(prepared.sum_vartime(scalars), expected);
+        assert_eq!(
+            prepared.sum_batch_vartime(&[scalars, &scalars[..1], &[]]),
+            alloc::vec![expected, points[0] * scalars[0], C::identity()],
+        );
+    }
+
     /// A recoding is a function of `k` alone, so it survives reuse across
     /// points. This is what makes `Recoded`/`Decomposed` worth exposing.
     pub(crate) fn recoding_is_reusable<C, R>(points: &[C], k: &C::ScalarExt)
@@ -603,8 +625,8 @@ where
     type Digits = Decomposed<C>;
     type Table = Table<C>;
     const COLUMN_BITS: usize = 1;
+    const MAX_COLUMNS: usize = MAX_WNAF_DIGITS;
 
-    #[cfg(test)]
     fn recode(k: &C::ScalarExt) -> Self::Digits {
         Decomposed::new(k)
     }
@@ -614,7 +636,6 @@ where
         Table::new(p)
     }
 
-    #[cfg(test)]
     fn batch_tables(points: &[C]) -> Vec<Self::Table> {
         Table::batch(points)
     }
@@ -2053,6 +2074,10 @@ pub(crate) mod tests {
                             law::batch_matches_solo::<$curve, Wnaf4>(&ps, &a);
                             law::recoding_is_reusable::<$curve, Wnaf4>(&ps, &a);
                             law::sum_of_products_matches_muls::<$curve, Wnaf4>(
+                                &ps,
+                                &[a, b, Scalar::from(3)],
+                            );
+                            law::positioned_matches_muls::<$curve, Wnaf4>(
                                 &ps,
                                 &[a, b, Scalar::from(3)],
                             );

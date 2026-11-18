@@ -69,20 +69,6 @@ const REDUCE_SUMS: usize = 8;
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Booth7;
 
-impl Booth7 {
-    /// Decomposes `k` and recodes both halves.
-    fn recode<C: GlvParams>(k: &C::ScalarExt) -> (SignedMagnitude, SignedMagnitude) {
-        let (first, second) = decompose::<C>(k);
-        // The digits of `WINDOWS` windows sum to a half only below
-        // `2^HALF_BITS`, which `glv::decompose` guarantees.
-        debug_assert!(
-            first.1 >> HALF_BITS == 0 && second.1 >> HALF_BITS == 0,
-            "a GLV half is 2^127 or larger"
-        );
-        (first.into(), second.into())
-    }
-}
-
 /// The [`Booth7`] table of a point $Q$: $m Q$ for $m \in 1..=$[`MAGNITUDES`].
 /// The second half's digits index the same entries through $\phi$, applied on
 /// lookup, which halves the table.
@@ -116,10 +102,17 @@ impl<C: GlvParams> Recoding<C> for Booth7 {
     type Digits = (SignedMagnitude, SignedMagnitude);
     type Table = BoothTable<C>;
     const COLUMN_BITS: usize = WINDOW_BITS;
+    const MAX_COLUMNS: usize = WINDOWS;
 
-    #[cfg(test)]
     fn recode(k: &C::ScalarExt) -> Self::Digits {
-        Booth7::recode::<C>(k)
+        let (first, second) = decompose::<C>(k);
+        // The digits of `WINDOWS` windows sum to a half only below
+        // `2^HALF_BITS`, which `glv::decompose` guarantees.
+        debug_assert!(
+            first.1 >> HALF_BITS == 0 && second.1 >> HALF_BITS == 0,
+            "a GLV half is 2^127 or larger"
+        );
+        (first.into(), second.into())
     }
 
     #[cfg(test)]
@@ -128,7 +121,6 @@ impl<C: GlvParams> Recoding<C> for Booth7 {
         tables.pop().expect("one point, one table")
     }
 
-    #[cfg(test)]
     fn batch_tables(points: &[C]) -> Vec<Self::Table> {
         BoothTable::batch(points)
     }
@@ -169,42 +161,43 @@ impl<C: GlvParams> Recoding<C> for Booth7 {
 pub(crate) fn prepare_fixed_base_sum<C: GlvParams>(
     bases: &[C::AffineExt],
 ) -> Box<dyn PreparedFixedBaseSum<C>> {
-    Box::new(FixedBaseSum::<C>::new(bases))
+    Box::new(FixedBaseSum::<C, Booth7>::new(bases))
 }
 
-/// One [`BoothTable`] per base and window: window $j$'s table holds the
-/// multiples of $2^{j \cdot \mathrm{WINDOW\_BITS}} P$, laid out by base, then
-/// window. The [`Booth7`] digit of window $j$ then indexes its own table, and
-/// the sum needs no doublings.
-struct FixedBaseSum<C: GlvParams> {
+/// A positioned evaluation of the recoding `R`: per base $P$, one `R` table
+/// per column, column $j$'s over $2^{j \cdot \mathrm{COLUMN\_BITS}} P$, laid
+/// out by base, then column. Column $j$'s digit then indexes its own table,
+/// so the sum needs none of Horner's doublings: they were spent once, on
+/// preparation. Pasta's backend is `FixedBaseSum<C, Booth7>`.
+pub(super) struct FixedBaseSum<C: GlvParams, R: Recoding<C>> {
     bases: usize,
-    tables: Vec<BoothTable<C>>,
+    tables: Vec<R::Table>,
 }
 
-impl<C: GlvParams> fmt::Debug for FixedBaseSum<C> {
+impl<C: GlvParams, R: Recoding<C>> fmt::Debug for FixedBaseSum<C, R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FixedBaseSum")
             .field("bases", &self.bases)
-            .field("points", &(self.tables.len() * MAGNITUDES))
+            .field("tables", &self.tables.len())
             .finish()
     }
 }
 
-impl<C: GlvParams> FixedBaseSum<C> {
-    fn new(bases: &[C::AffineExt]) -> Self {
-        let mut positioned = Vec::with_capacity(bases.len() * WINDOWS);
+impl<C: GlvParams, R: Recoding<C>> FixedBaseSum<C, R> {
+    pub(super) fn new(bases: &[C::AffineExt]) -> Self {
+        let mut positioned = Vec::with_capacity(bases.len() * R::MAX_COLUMNS);
         for base in bases {
             let mut shifted = C::from(*base);
-            for _ in 0..WINDOWS {
+            for _ in 0..R::MAX_COLUMNS {
                 positioned.push(shifted);
-                for _ in 0..WINDOW_BITS {
+                for _ in 0..R::COLUMN_BITS {
                     shifted = shifted.double();
                 }
             }
         }
         FixedBaseSum {
             bases: bases.len(),
-            tables: BoothTable::batch(&positioned),
+            tables: R::batch_tables(&positioned),
         }
     }
 
@@ -215,16 +208,22 @@ impl<C: GlvParams> FixedBaseSum<C> {
             "at most one scalar per prepared base"
         );
         for (base, scalar) in scalars.iter().enumerate() {
-            let digits = Booth7::recode::<C>(scalar);
-            let tables = &self.tables[base * WINDOWS..][..WINDOWS];
-            for (window, table) in tables.iter().enumerate() {
-                <Booth7 as Recoding<C>>::column_terms(table, &digits, window, &mut f);
+            let digits = R::recode(scalar);
+            debug_assert!(R::columns(&digits) <= R::MAX_COLUMNS);
+            let tables = &self.tables[base * R::MAX_COLUMNS..][..R::MAX_COLUMNS];
+            for (column, table) in tables.iter().enumerate().take(R::columns(&digits)) {
+                R::column_terms(table, &digits, column, &mut f);
             }
         }
     }
 }
 
-impl<C: GlvParams> PreparedFixedBaseSum<C> for FixedBaseSum<C> {
+impl<C, R> PreparedFixedBaseSum<C> for FixedBaseSum<C, R>
+where
+    C: GlvParams,
+    R: Recoding<C>,
+    R::Table: Send + Sync,
+{
     fn bases(&self) -> usize {
         self.bases
     }
@@ -249,7 +248,12 @@ impl<C: GlvParams> PreparedFixedBaseSum<C> for FixedBaseSum<C> {
     }
 }
 
-impl<C: GlvParams> FixedBaseSum<C> {
+impl<C, R> FixedBaseSum<C, R>
+where
+    C: GlvParams,
+    R: Recoding<C>,
+    R::Table: Send + Sync,
+{
     /// Reduces the sums of `scalars` together; see [`REDUCE_SUMS`].
     fn reduce_sums(&self, scalars: &[&[C::ScalarExt]]) -> Vec<C> {
         // One bucket per sum, laid out contiguously for the reducer.

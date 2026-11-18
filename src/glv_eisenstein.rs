@@ -175,8 +175,8 @@ where
     type Digits = Recoded<C>;
     type Table = Table<C>;
     const COLUMN_BITS: usize = 1;
+    const MAX_COLUMNS: usize = MAX_DIGITS;
 
-    #[cfg(test)]
     fn recode(k: &C::ScalarExt) -> Self::Digits {
         Recoded::new(k)
     }
@@ -186,7 +186,6 @@ where
         Table::new(p)
     }
 
-    #[cfg(test)]
     fn batch_tables(points: &[C]) -> Vec<Self::Table> {
         Table::batch(points)
     }
@@ -1940,6 +1939,10 @@ mod tests {
                             law::batch_matches_solo::<$curve, EisensteinNaf3>(&ps, &a);
                             law::recoding_is_reusable::<$curve, EisensteinNaf3>(&ps, &a);
                             law::sum_of_products_matches_muls::<$curve, EisensteinNaf3>(
+                                &ps,
+                                &[a, b, Scalar::from(3)],
+                            );
+                            law::positioned_matches_muls::<$curve, EisensteinNaf3>(
                                 &ps,
                                 &[a, b, Scalar::from(3)],
                             );

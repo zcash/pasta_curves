@@ -53,7 +53,7 @@ where
 
     // Exercise carries through every signed window independently of the
     // GLV decomposition's distribution of half-scalars.
-    let positioned = super::FixedBaseSum::<C>::new(&bases[..1]);
+    let positioned = super::FixedBaseSum::<C, Booth7>::new(&bases[..1]);
     let zero = (false, 0u128).into();
     for half in [63, 64, 65, (1u128 << 127) - 1, u128::MAX] {
         for negative in [false, true] {
@@ -184,6 +184,10 @@ mod pbt {
                         law::batch_matches_solo::<$curve, Booth7>(&ps, &a);
                         law::recoding_is_reusable::<$curve, Booth7>(&ps, &a);
                         law::sum_of_products_matches_muls::<$curve, Booth7>(
+                            &ps,
+                            &[a, b, Scalar::from(3)],
+                        );
+                        law::positioned_matches_muls::<$curve, Booth7>(
                             &ps,
                             &[a, b, Scalar::from(3)],
                         );
