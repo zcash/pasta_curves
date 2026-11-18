@@ -176,8 +176,10 @@ fn check_table_size<C: GlvParams>() {
     assert_eq!(bytes, 544_768, "seven bases, 532 KiB");
     assert_eq!(bytes, 7 * BYTES_PER_BASE);
 
-    // Preparing halo2's 2^11 generators with W and U, the 2,050 bases of an
-    // Orchard verifier's MSM, would hold 152 MiB; computed, not allocated.
+    // Positioned tables over halo2's 2^11 generators with W and U, the 2,050
+    // bases of an Orchard verifier's MSM, would hold 152 MiB; computed, not
+    // allocated. Preparing that many bases builds a comb instead (see the
+    // comb's size test).
     assert_eq!(2_050 * BYTES_PER_BASE, 159_539_200);
 }
 
