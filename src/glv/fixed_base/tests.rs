@@ -57,7 +57,7 @@ where
         for negative in [false, true] {
             for endo in [false, true] {
                 let mut actual = C::identity();
-                positioned.for_each_term(0, negative, half, endo, |point, negate| {
+                positioned.for_each_term(0, (negative, half).into(), endo, |point, negate| {
                     if negate {
                         actual -= point;
                     } else {

@@ -2,8 +2,9 @@
 //!
 //! Each scalar is split by GLV into two signed halves of at most
 //! [`HALF_BITS`] bits, $k = k_1 + k_2\lambda$, and each half is
-//! recoded into signed digits of [`WINDOW_BITS`] bits. The table stores, for
-//! every base $P$ and window $w$, the positive multiples
+//! recoded into signed-Booth digits of [`WINDOW_BITS`] bits, as in the MSM
+//! (`glv::booth`). The table stores, for every base $P$ and window $w$, the
+//! positive multiples
 //! $m \cdot 2^{w \cdot \mathrm{WINDOW\_BITS}} P$ for
 //! $m \in 1..=2^{\mathrm{WINDOW\_BITS} - 1}$, already shifted into position,
 //! so evaluation needs no doublings:
@@ -29,7 +30,9 @@ use core::fmt;
 use ff::{Field, WithSmallOrderMulGroup};
 
 use super::{
-    GlvParams, HALF_BITS, affine_from_xy_unchecked, affine_xy, decompose,
+    GlvParams, HALF_BITS, affine_from_xy_unchecked, affine_xy,
+    booth::{SignedMagnitude, booth_digit, window_count},
+    decompose,
     msm::{AffinePoint, reduce_affine_buckets},
     private::AffineBase,
 };
@@ -47,9 +50,8 @@ const WINDOW_BITS: usize = 7;
 /// Positive digit magnitudes per window, `1..=2^(WINDOW_BITS - 1)`.
 const MAGNITUDES: usize = 1 << (WINDOW_BITS - 1);
 
-/// Windows per half-scalar. A half has at most [`HALF_BITS`] bits,
-/// and signed recoding can carry into one more window.
-const WINDOWS: usize = HALF_BITS / WINDOW_BITS + 1;
+/// Windows per half-scalar ([`window_count`]).
+const WINDOWS: usize = window_count(WINDOW_BITS);
 
 /// Sums reduced together by one call to the affine bucket reducer.
 ///
@@ -108,50 +110,31 @@ impl<C: GlvParams> FixedBaseSum<C> {
         }
     }
 
-    /// Calls `f(point, negate)` for each nonzero signed digit of
-    /// `[(-1)^negative * half] * P_base`, or of `phi` of it when `endo`. The
-    /// term is `-point` when `negate` is set.
+    /// Calls `f(point, negate)` for each nonzero signed-Booth digit of
+    /// `half * P_base`, or of `phi` of it when `endo`. The term is `-point`
+    /// when `negate` is set.
     fn for_each_term(
         &self,
         base: usize,
-        negative: bool,
-        half: u128,
+        half: SignedMagnitude,
         endo: bool,
         mut f: impl FnMut(C::AffineExt, bool),
     ) {
         let windows = &self.points[base * WINDOWS * MAGNITUDES..][..WINDOWS * MAGNITUDES];
-        let mut carry = 0u128;
         for window in 0..WINDOWS {
-            let shift = window * WINDOW_BITS;
-            let bits = if shift < 128 {
-                (half >> shift) & ((1 << WINDOW_BITS) - 1)
-            } else {
-                0
-            };
-            let mut value = bits + carry;
-            // Signed digits in -2^(b-1)..=2^(b-1): values above the midpoint
-            // borrow from the next window.
-            let digit_negative = value > MAGNITUDES as u128;
-            if digit_negative {
-                value = (1 << WINDOW_BITS) - value;
-                carry = 1;
-            } else {
-                carry = 0;
-            }
-            if value == 0 {
+            let digit = booth_digit(half, WINDOW_BITS, window);
+            if digit.magnitude == 0 {
                 continue;
             }
-            // `value` is at most `MAGNITUDES`, so the cast is lossless.
-            let point = windows[window * MAGNITUDES + value as usize - 1];
+            let point = windows[window * MAGNITUDES + digit.magnitude - 1];
             let point = if endo {
                 let (x, y) = affine_xy::<C>(&point);
                 affine_from_xy_unchecked::<C>(x * AffineBase::<C>::ZETA, y)
             } else {
                 point
             };
-            f(point, negative ^ digit_negative);
+            f(point, digit.negative);
         }
-        debug_assert_eq!(carry, 0, "a half fits in WINDOWS signed windows");
     }
 
     /// Calls `f(point, negate)` for every term of `sum_i [k_i] P_i`.
@@ -161,9 +144,15 @@ impl<C: GlvParams> FixedBaseSum<C> {
             "at most one scalar per prepared base"
         );
         for (base, scalar) in scalars.iter().enumerate() {
-            let ((negative1, half1), (negative2, half2)) = decompose::<C>(scalar);
-            self.for_each_term(base, negative1, half1, false, &mut f);
-            self.for_each_term(base, negative2, half2, true, &mut f);
+            let (first, second) = decompose::<C>(scalar);
+            // The digits of `WINDOWS` windows sum to a half only below
+            // `2^HALF_BITS`, which `glv::decompose` guarantees.
+            debug_assert!(
+                first.1 >> HALF_BITS == 0 && second.1 >> HALF_BITS == 0,
+                "a GLV half is 2^127 or larger"
+            );
+            self.for_each_term(base, first.into(), false, &mut f);
+            self.for_each_term(base, second.into(), true, &mut f);
         }
     }
 }
