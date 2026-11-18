@@ -979,16 +979,6 @@ macro_rules! new_curve_impl {
 
         }
 
-        #[cfg(feature = "glv")]
-        impl $name_affine {
-            /// Stored coordinates, including the identity's `(0, 0)` representation.
-            // The isogenous curves share this macro but never read their coordinates this way.
-            #[allow(dead_code)]
-            pub(crate) const fn raw_xy(&self) -> ($base, $base) {
-                (self.x, self.y)
-            }
-        }
-
         impl GroupEncoding for $name_affine {
             type Repr = [u8; 32];
 
@@ -1266,8 +1256,9 @@ macro_rules! impl_projective_curve_ext {
 }
 
 macro_rules! impl_affine_unchecked_ctor {
-    // Only the public curves get the constructor: on the crate-private
-    // isogenous curves nothing would call it, and it would be dead code.
+    // Only the public curves get the constructor and its inverse `raw_xy`: on
+    // the crate-private isogenous curves nothing would call them, and they
+    // would be dead code.
     ($name_affine:ident, $base:ident, with_unchecked_ctor) => {
         impl $name_affine {
             /// Constructs an affine point from coordinates without checking that
@@ -1289,6 +1280,13 @@ macro_rules! impl_affine_unchecked_ctor {
             /// `arithmetic::CurveAffine::is_on_curve`.
             pub const fn from_xy_unchecked(x: $base, y: $base) -> Self {
                 $name_affine { x, y }
+            }
+
+            /// The stored coordinates, the identity read as `(0, 0)`: the
+            /// inverse of `from_xy_unchecked`.
+            #[cfg(feature = "glv")]
+            pub(crate) const fn raw_xy(&self) -> ($base, $base) {
+                (self.x, self.y)
             }
         }
     };
