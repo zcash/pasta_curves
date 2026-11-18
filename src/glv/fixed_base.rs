@@ -222,7 +222,7 @@ where
     R: Recoding<C>,
     R::Table: Send + Sync,
 {
-    fn bases(&self) -> usize {
+    fn num_bases(&self) -> usize {
         self.bases
     }
 

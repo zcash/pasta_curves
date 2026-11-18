@@ -199,7 +199,7 @@ pub trait CurveExt:
 #[cfg(feature = "alloc")]
 pub trait PreparedFixedBaseSum<C: CurveExt>: core::fmt::Debug + Send + Sync {
     /// The number of prepared bases.
-    fn bases(&self) -> usize;
+    fn num_bases(&self) -> usize;
 
     /// Computes the sum pairing each scalar with its prepared base, in order.
     /// Omitted trailing scalars are zero.

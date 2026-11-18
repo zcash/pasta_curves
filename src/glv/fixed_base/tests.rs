@@ -20,9 +20,9 @@ where
         .chain(core::iter::once(C::identity().to_affine()))
         .collect();
     let table = C::try_prepare_fixed_base_sum(&bases).expect("Pasta has a fixed-base backend");
-    assert_eq!(table.bases(), bases.len());
+    assert_eq!(table.num_bases(), bases.len());
     let empty = C::try_prepare_fixed_base_sum(&[]).expect("Pasta supports empty fixed-base sums");
-    assert_eq!(empty.bases(), 0);
+    assert_eq!(empty.num_bases(), 0);
     assert_eq!(empty.sum_vartime(&[]), C::identity());
     assert_eq!(empty.sum_batch_vartime(&[&[], &[]]), [C::identity(); 2]);
 
