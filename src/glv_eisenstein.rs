@@ -195,10 +195,16 @@ where
         digits.len
     }
 
-    fn add_column(table: &Self::Table, digits: &Self::Digits, i: usize, acc: &mut C) {
+    fn column_terms(
+        table: &Self::Table,
+        digits: &Self::Digits,
+        i: usize,
+        mut f: impl FnMut(C::AffineExt, bool),
+    ) {
+        // The unit, sign included, is applied by the table lookup itself.
         let d = digits.digits[i];
         if d != ZERO_DIGIT {
-            *acc += table.digit_point(d);
+            f(table.digit_point(d), false);
         }
     }
 }

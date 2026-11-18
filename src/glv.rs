@@ -253,10 +253,32 @@ where
     #[doc(hidden)]
     fn columns(digits: &Self::Digits) -> usize;
 
-    /// Adds column `i`'s contribution to the accumulator, which is nothing at
-    /// all for a zero column, and for every `i >= columns(digits)`.
+    /// Calls `f(point, negate)` for each term of column `i`'s contribution,
+    /// which is `-point` when `negate` is set: nothing at all for a zero
+    /// column, and for every `i >= columns(digits)`.
+    ///
+    /// The points, rather than their sum, so that a caller can also reduce
+    /// many columns' terms together with batched affine additions.
     #[doc(hidden)]
-    fn add_column(table: &Self::Table, digits: &Self::Digits, i: usize, acc: &mut C);
+    fn column_terms(
+        table: &Self::Table,
+        digits: &Self::Digits,
+        i: usize,
+        f: impl FnMut(C::AffineExt, bool),
+    );
+
+    /// Adds column `i`'s contribution ([`Recoding::column_terms`]) to the
+    /// accumulator.
+    #[doc(hidden)]
+    fn add_column(table: &Self::Table, digits: &Self::Digits, i: usize, acc: &mut C) {
+        Self::column_terms(table, digits, i, |point, negate| {
+            if negate {
+                *acc -= point;
+            } else {
+                *acc += point;
+            }
+        });
+    }
 
     /// Walks the ladder: the point the digits name, against that table. The
     /// one-term case of [`Recoding::sum_of_products`].
@@ -601,9 +623,22 @@ where
         digits.len
     }
 
-    fn add_column(table: &Self::Table, digits: &Self::Digits, i: usize, acc: &mut C) {
-        Table::add_digit(acc, &table.t1, digits.digits1[i]);
-        Table::add_digit(acc, &table.t2, digits.digits2[i]);
+    fn column_terms(
+        table: &Self::Table,
+        digits: &Self::Digits,
+        i: usize,
+        mut f: impl FnMut(C::AffineExt, bool),
+    ) {
+        for (multiples, d) in [
+            (&table.t1, digits.digits1[i]),
+            (&table.t2, digits.digits2[i]),
+        ] {
+            // `multiples` holds `{1, 3, 5, 7}` times the half's base, and `d`
+            // is a signed odd wNAF digit.
+            if d != 0 {
+                f(multiples[(d.unsigned_abs() / 2) as usize], d < 0);
+            }
+        }
     }
 }
 
@@ -923,18 +958,6 @@ where
     /// (tested).
     pub fn mul_decomposed(&self, k: &Decomposed<C>) -> C {
         <Wnaf4 as Recoding<C>>::mul(self, k)
-    }
-
-    /// Adds `d * B` to `acc`, where `table` holds `{1, 3, 5, 7} * B` and `d`
-    /// is a signed odd wNAF digit (zero adds nothing).
-    fn add_digit(acc: &mut C, table: &[C::AffineExt; 4], d: i8) {
-        if d != 0 {
-            let mut a = table[(d.unsigned_abs() / 2) as usize];
-            if d < 0 {
-                a = -a;
-            }
-            *acc += a;
-        }
     }
 }
 
