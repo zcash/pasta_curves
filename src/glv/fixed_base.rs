@@ -42,9 +42,8 @@ use crate::arithmetic::PreparedFixedBaseSum;
 ///
 /// Seven bits keep the table at about 76 KiB per base (19 windows of 64
 /// points). Wider windows mean fewer additions per half-scalar (19 at 7 bits,
-/// 22 at 6) for twice the table per extra bit.
-/// Measured on Zen 4 for Orchard's seven bases, 7 bits committed instances
-/// 1.36x faster than the old fixed-window path, against 1.20x at 6 bits.
+/// 22 at 6) for twice the table per extra bit; for Orchard's seven bases, 7
+/// bits measured faster than 6.
 const WINDOW_BITS: usize = 7;
 
 /// Positive digit magnitudes per window, `1..=2^(WINDOW_BITS - 1)`.
@@ -56,11 +55,10 @@ const WINDOWS: usize = window_count(WINDOW_BITS);
 /// Sums reduced together by one call to the affine bucket reducer.
 ///
 /// Each Orchard-shaped sum holds about 270 points (17 KiB), so a reduction
-/// over many sums outgrows the core's L2 cache; on Zen 4, 64 or 128 sums per
-/// call ran about a third slower per sum than 8 to 32. Caps of 8, 16 and 32
-/// measured the same, so the smallest keeps the working set (about 136 KiB)
-/// furthest from cache limits; it costs only one more shared inversion per
-/// tree level. Larger batches are split.
+/// over many sums outgrows a core's L2 cache, and larger calls ran slower per
+/// sum. Caps of 8, 16 and 32 measured the same, so the smallest keeps the
+/// working set (about 136 KiB) furthest from cache limits; it costs only one
+/// more shared inversion per tree level. Larger batches are split.
 const REDUCE_SUMS: usize = 8;
 
 /// The recoding of the prepared fixed-base sums: both GLV halves of a scalar
