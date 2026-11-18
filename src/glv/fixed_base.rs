@@ -283,7 +283,8 @@ where
                 })
                 .collect(),
             // The reducer declines only if its complete formulas meet a zero
-            // denominator, which valid points rule out; stay correct anyway.
+            // denominator, which valid points rule out and which it asserts
+            // against in debug builds; stay correct anyway.
             None => scalars.iter().map(|s| self.sum_vartime(s)).collect(),
         }
     }
