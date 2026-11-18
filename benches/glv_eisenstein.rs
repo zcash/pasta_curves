@@ -134,6 +134,38 @@ fn entry_points<C: GlvParams>(c: &mut Criterion, name: &str) {
     }
 
     group.finish();
+
+    // The full grid of N points against a few scalars, with one affine
+    // product per (point, scalar) out. `batch_mul_scalars` shares each
+    // point's doublings among the scalars; the arm beside it is what the
+    // grid costs without that, one `batch_mul` per scalar.
+    let mut group = c.benchmark_group(format!("{name} Eisenstein batch several scalars"));
+    for scalars in [1usize, 2, 4] {
+        let ks: Vec<C::ScalarExt> = (1..=scalars as u64)
+            .map(|i| (k + C::ScalarExt::from(i)).square())
+            .collect();
+        for size in [10usize, 50, 100] {
+            let points: Vec<C> = (1..=size as u64)
+                .map(|i| C::generator() * (k + C::ScalarExt::from(i)))
+                .collect();
+            let id = format!("{size} points, {scalars} scalars");
+            group.bench_with_input(BenchmarkId::new("batch_mul_scalars", &id), &size, |b, _| {
+                b.iter(|| glv_eisenstein::batch_mul_scalars(&points, &ks))
+            });
+            group.bench_with_input(
+                BenchmarkId::new("batch_mul per scalar", &id),
+                &size,
+                |b, _| {
+                    b.iter(|| {
+                        ks.iter()
+                            .map(|k| glv_eisenstein::batch_mul(&points, k))
+                            .collect::<Vec<_>>()
+                    })
+                },
+            );
+        }
+    }
+    group.finish();
 }
 
 criterion_group!(benches, criterion_benchmark);
