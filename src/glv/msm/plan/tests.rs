@@ -11,37 +11,30 @@ const UNIT_PLANNER_WEIGHTS: PlannerWeights = PlannerWeights {
 
 #[test]
 fn planner_boundaries() {
-    // Serial: Straus up to serial_straus_max_terms, then measured bucket widths.
-    assert_eq!(plan_with::<pallas::Point>(24, 1, &DEFAULT), Plan::Straus);
-    assert_eq!(
-        glv_multiexp_window_bits::<pallas::Point>(25, 1, &DEFAULT),
-        Some(5)
-    );
-    assert_eq!(
-        glv_multiexp_window_bits::<pallas::Point>(127, 1, &DEFAULT),
-        Some(5)
-    );
-    assert_eq!(
-        glv_multiexp_window_bits::<pallas::Point>(128, 1, &DEFAULT),
-        Some(6)
-    );
-    assert_eq!(
-        glv_multiexp_window_bits::<pallas::Point>(255, 1, &DEFAULT),
-        Some(6)
-    );
-    assert_eq!(
-        glv_multiexp_window_bits::<pallas::Point>(256, 1, &DEFAULT),
-        Some(6)
-    );
-    assert_eq!(
-        glv_multiexp_window_bits::<vesta::Point>(256, 1, &DEFAULT),
-        Some(6)
-    );
+    // Serial: Straus up to serial_straus_max_terms, the measured width up to
+    // min_glv_multiexp_terms, then the cost model.
+    assert_eq!(plan_with::<pallas::Point>(25, 1, &DEFAULT), Plan::Straus);
+    for (terms, width) in [(26, 5), (64, 5), (65, 5), (128, 5), (255, 6), (256, 6)] {
+        assert_eq!(
+            glv_multiexp_window_bits::<pallas::Point>(terms, 1, &DEFAULT),
+            Some(width),
+            "{terms} terms, Pallas"
+        );
+        assert_eq!(
+            glv_multiexp_window_bits::<vesta::Point>(terms, 1, &DEFAULT),
+            Some(width),
+            "{terms} terms, Vesta"
+        );
+    }
     assert!(glv_multiexp_window_bits::<pallas::Point>(2048, 1, &DEFAULT).is_some());
-    // Parallel: below min_glv_multiexp_terms the planner still declines.
+    // Parallel: below min_glv_multiexp_terms the planner declines.
     assert_eq!(
-        glv_multiexp_window_bits::<pallas::Point>(255, 2, &DEFAULT),
+        glv_multiexp_window_bits::<pallas::Point>(63, 2, &DEFAULT),
         None
+    );
+    assert_eq!(
+        glv_multiexp_window_bits::<pallas::Point>(64, 2, &DEFAULT),
+        Some(5)
     );
     assert_eq!(default_multiexp_window_bits(31), Some(3));
     assert_eq!(default_multiexp_window_bits(32), Some(4));
@@ -75,7 +68,7 @@ fn planner_boundaries() {
 fn weighted_planner_matches_calibrated_cells() {
     for (terms, threads, expected) in [
         (255, 1, Some(6)),
-        (255, 8, None),
+        (255, 8, Some(6)),
         (7_150, 6, Some(11)),
         (7_150, 12, Some(11)),
         (2_049, 12, Some(8)),
@@ -149,15 +142,15 @@ fn plan_routes_the_boundary_sizes() {
         );
     }
 
-    for terms in [0, 1, 2, 3, 16, 17, 24] {
+    for terms in [0, 1, 2, 3, 16, 17, 24, 25] {
         check(terms, 1, Plan::Straus);
     }
     for (terms, window_bits) in [
-        (25, 5),
-        (66, 5),
-        (67, 5),
+        (26, 5),
+        (64, 5),
+        (65, 5),
         (127, 5),
-        (128, 6),
+        (128, 5),
         (255, 6),
         (256, 6),
         (257, 6),
@@ -166,17 +159,26 @@ fn plan_routes_the_boundary_sizes() {
     }
 
     #[cfg(feature = "multicore")]
-    for (threads, max_jobs, window_bits) in [(2, 1, 6), (8, 4, 6), (16, 8, 8)] {
+    for (threads, max_jobs, small_window_bits, window_bits) in
+        [(2, 1, 5, 6), (8, 4, 6, 6), (16, 8, 5, 8)]
+    {
         for terms in [0, 1, 2] {
             check(terms, threads, Plan::Straus);
         }
-        for terms in [3, 16, 17, 24, 25, 66] {
+        for terms in [3, 16, 17, 24, 25, 48] {
             let jobs = max_jobs.min(terms);
             check(terms, threads, Plan::StrausLeaves { jobs });
         }
-        for terms in [67, 127, 128, 255] {
+        for terms in [49, 63] {
             check(terms, threads, Plan::Decline);
         }
+        check(
+            64,
+            threads,
+            Plan::Buckets {
+                window_bits: small_window_bits,
+            },
+        );
         for terms in [256, 257] {
             check(terms, threads, Plan::Buckets { window_bits });
         }

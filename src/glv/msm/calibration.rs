@@ -105,16 +105,15 @@ pub(super) struct Calibration {
     pub(super) window_block_terms_per_bucket: usize,
 }
 
-/// The values the weighted planner was introduced with, used on every target
-/// without a calibration of its own.
+/// The calibration of every target without one of its own.
 pub(super) const DEFAULT: Calibration = Calibration {
-    min_glv_multiexp_terms: 256,
-    serial_straus_max_terms: 24,
+    min_glv_multiexp_terms: 64,
+    serial_straus_max_terms: 25,
     straus_leaf_terms: 16,
     #[cfg(feature = "multicore")]
     min_parallel_straus_terms: 3,
     #[cfg(feature = "multicore")]
-    max_parallel_straus_terms: 66,
+    max_parallel_straus_terms: 48,
     serial_narrow_window_bits: 5,
     serial_wide_window_bits: 6,
     serial_wide_window_min_terms: 128,
