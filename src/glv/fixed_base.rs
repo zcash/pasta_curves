@@ -35,6 +35,7 @@ use super::{
     decompose,
     msm::{AffinePoint, reduce_affine_buckets},
     phi_x,
+    private::AffineBase,
 };
 use crate::arithmetic::PreparedFixedBaseSum;
 
@@ -265,28 +266,12 @@ where
         offsets.push(0);
         for scalars in scalars {
             self.for_each_sum_term(scalars, |point, negate| {
-                let (x, y) = affine_xy::<C>(&point);
-                // Table entries of an identity base are the identity, encoded
-                // as (0, 0). The reducer requires non-identity points, and
-                // they contribute nothing.
-                if !(x.is_zero_vartime() && y.is_zero_vartime()) {
-                    points.push(AffinePoint {
-                        x,
-                        y: if negate { -y } else { y },
-                    });
-                }
+                push_term::<C>(&mut points, point, negate);
             });
             offsets.push(points.len());
         }
-        match reduce_affine_buckets(points, offsets) {
-            Some(sums) => {
-                for (output, sum) in output.iter_mut().zip(sums) {
-                    *output = match sum {
-                        Some(p) => C::from(affine_from_xy_unchecked::<C>(p.x, p.y)),
-                        None => C::identity(),
-                    };
-                }
-            }
+        match bucket_sums::<C>(points, offsets) {
+            Some(sums) => output.copy_from_slice(&sums),
             // The reducer declines only if its complete formulas meet a zero
             // denominator, which valid points rule out and which it asserts
             // against in debug builds; stay correct anyway.
@@ -297,6 +282,41 @@ where
             }
         }
     }
+}
+
+/// Appends `point`, negated when `negate`, to the current bucket of a batched
+/// affine reduction. Table entries of an identity base are the identity,
+/// encoded as (0, 0); the reducer requires non-identity points, and they
+/// contribute nothing, so they are skipped.
+fn push_term<C: GlvParams>(
+    points: &mut Vec<AffinePoint<AffineBase<C>>>,
+    point: C::AffineExt,
+    negate: bool,
+) {
+    let (x, y) = affine_xy::<C>(&point);
+    if !(x.is_zero_vartime() && y.is_zero_vartime()) {
+        points.push(AffinePoint {
+            x,
+            y: if negate { -y } else { y },
+        });
+    }
+}
+
+/// The sums of the buckets `points[offsets[j]..offsets[j + 1]]`, one shared
+/// inversion per tree level, or `None` if the reducer declines.
+fn bucket_sums<C: GlvParams>(
+    points: Vec<AffinePoint<AffineBase<C>>>,
+    offsets: Vec<usize>,
+) -> Option<Vec<C>> {
+    let sums = reduce_affine_buckets(points, offsets)?;
+    Some(
+        sums.into_iter()
+            .map(|sum| match sum {
+                Some(p) => C::from(affine_from_xy_unchecked::<C>(p.x, p.y)),
+                None => C::identity(),
+            })
+            .collect(),
+    )
 }
 
 #[cfg(test)]
