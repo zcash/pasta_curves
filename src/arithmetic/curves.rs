@@ -154,7 +154,9 @@ pub trait CurveExt:
     ///
     /// # Security
     ///
-    /// Evaluation is variable-time in the scalars, which must be public.
+    /// Preparation may run in variable time with respect to the bases, and
+    /// evaluation with respect to the scalars. **The bases and the scalars
+    /// must all be public.**
     fn try_prepare_fixed_base_sum(
         _bases: &[Self::AffineExt],
     ) -> Option<Box<dyn PreparedFixedBaseSum<Self>>> {
@@ -192,7 +194,8 @@ pub trait CurveExt:
 /// A prepared sum over fixed bases, obtained from
 /// [`CurveExt::try_prepare_fixed_base_sum`].
 ///
-/// All evaluation methods are variable-time and require public scalars.
+/// All evaluation methods may run in variable time; the bases and the scalars
+/// must be public.
 #[cfg(feature = "alloc")]
 pub trait PreparedFixedBaseSum<C: CurveExt>: core::fmt::Debug + Send + Sync {
     /// The number of prepared bases.
@@ -201,7 +204,7 @@ pub trait PreparedFixedBaseSum<C: CurveExt>: core::fmt::Debug + Send + Sync {
     /// Computes the sum pairing each scalar with its prepared base.
     ///
     /// Omitted trailing scalars are zero. Panics if there are more scalars
-    /// than prepared bases. Scalars must be public.
+    /// than prepared bases.
     fn sum_vartime(&self, scalars: &[C::ScalarExt]) -> C;
 
     /// Evaluates each independent sum in order, optionally sharing work.
