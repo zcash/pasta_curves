@@ -14,7 +14,8 @@
 //! doublings. With two terms, this is known as Shamir's trick.
 //!
 //! Here the scalars are recoded as width-4 wNAF digits ([`Decomposed`]) and
-//! each base gets a table of odd multiples ([`Table`]), as in [`crate::glv`].
+//! each base gets a table of odd multiples ([`Table`]), as in [`crate::glv`];
+//! the fold itself is [`Recoding::sum_of_products`].
 //! That costs about 128 doublings in all, then per term about one addition per
 //! nonzero digit (one digit in five on average, over two halves) and its table,
 //! all tables sharing one normalization. The cost grows with every term, while
@@ -38,7 +39,7 @@ use group::CurveAffine as _;
 use maybe_rayon::prelude::*;
 
 use super::plan::SERIAL_STRAUS_MAX_TERMS;
-use crate::glv::{Decomposed, GlvParams, Table};
+use crate::glv::{Decomposed, GlvParams, Recoding, Table, Wnaf4};
 
 /// Largest GLV-Straus leaf when MSMs are split across worker threads: the
 /// measured crossover above which one table stopped beating the bucket backend
@@ -84,22 +85,7 @@ where
     }
 
     let tables = Table::batch(&points);
-    let columns = decomposed
-        .iter()
-        .map(|scalar| scalar.len)
-        .max()
-        .expect("at least one nonzero scalar");
-    let mut acc = C::identity();
-    for column in (0..columns).rev() {
-        if column + 1 < columns {
-            acc = acc.double();
-        }
-        for (scalar, table) in decomposed.iter().zip(&tables) {
-            Table::add_digit(&mut acc, &table.t1, scalar.digits1[column]);
-            Table::add_digit(&mut acc, &table.t2, scalar.digits2[column]);
-        }
-    }
-    acc
+    <Wnaf4 as Recoding<C>>::sum_of_products(&tables, &decomposed)
 }
 
 #[cfg(feature = "multicore")]

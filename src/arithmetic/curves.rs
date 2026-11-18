@@ -147,6 +147,22 @@ pub trait CurveExt:
         None
     }
 
+    /// Attempts to prepare a doubling-free sum over fixed public bases.
+    ///
+    /// Implementations without a suitable backend return `None`; callers must
+    /// retain a generic fallback.
+    ///
+    /// # Security
+    ///
+    /// Preparation may run in variable time with respect to the bases, and
+    /// evaluation with respect to the scalars. **The bases and the scalars
+    /// must all be public.**
+    fn try_prepare_fixed_base_sum(
+        _bases: &[Self::AffineExt],
+    ) -> Option<Box<dyn PreparedFixedBaseSum<Self>>> {
+        None
+    }
+
     /// Multiplies every point in `points` by the same `scalar`, writing the
     /// corresponding products to `output`.
     ///
@@ -171,6 +187,40 @@ pub trait CurveExt:
         assert_eq!(points.len(), output.len());
         for (point, output) in points.iter().zip(output.iter_mut()) {
             *output = *point * scalar;
+        }
+    }
+}
+
+/// A prepared sum over fixed bases, obtained from
+/// [`CurveExt::try_prepare_fixed_base_sum`].
+///
+/// All evaluation methods may run in variable time; the bases and the scalars
+/// must be public.
+#[cfg(feature = "alloc")]
+pub trait PreparedFixedBaseSum<C: CurveExt>: core::fmt::Debug + Send + Sync {
+    /// The number of prepared bases.
+    fn num_bases(&self) -> usize;
+
+    /// Computes the sum pairing each scalar with its prepared base, in order.
+    /// Omitted trailing scalars are zero.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there are more scalars than prepared bases.
+    fn sum_vartime(&self, scalars: &[C::ScalarExt]) -> C;
+
+    /// Evaluates each independent sum in order, writing the sum of
+    /// `scalars[i]` to `output[i]` as [`Self::sum_vartime`] would compute it,
+    /// optionally sharing work across the sums.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `scalars` and `output` have different lengths, or if any
+    /// vector has more scalars than prepared bases.
+    fn sum_batch_vartime(&self, scalars: &[&[C::ScalarExt]], output: &mut [C]) {
+        assert_eq!(scalars.len(), output.len(), "one output per sum");
+        for (scalars, output) in scalars.iter().zip(output.iter_mut()) {
+            *output = self.sum_vartime(scalars);
         }
     }
 }
@@ -301,75 +351,4 @@ impl<C: CurveAffine> ConditionallySelectable for Coordinates<C> {
 }
 
 #[cfg(all(test, feature = "alloc"))]
-mod tests {
-    use super::*;
-    use crate::{pallas, vesta};
-    use ff::{Field, PrimeField, WithSmallOrderMulGroup};
-    use group::CurveAffine;
-
-    const BATCH_SIZES: [usize; 15] = [0, 1, 2, 3, 7, 8, 15, 16, 17, 63, 64, 65, 127, 128, 129];
-
-    fn batch_mul_same_scalar_matches_native<C: CurveExt>() {
-        let full_width = (C::ScalarExt::from(0x9E37_79B9_7F4A_7C15u64).square()
-            + C::ScalarExt::from(0x0123_4567_89AB_CDEFu64))
-        .square();
-        let scalars = [
-            C::ScalarExt::ZERO,
-            C::ScalarExt::ONE,
-            -C::ScalarExt::ONE,
-            C::ScalarExt::from(2),
-            C::ScalarExt::ZETA,
-            -C::ScalarExt::ZETA,
-            C::ScalarExt::ZETA + C::ScalarExt::ONE,
-            C::ScalarExt::from(u64::MAX),
-            C::ScalarExt::from_u128((1u128 << 127) - 1),
-            C::ScalarExt::from_u128(1u128 << 127),
-            full_width,
-        ];
-
-        for size in BATCH_SIZES {
-            let projective: alloc::vec::Vec<C> = (0..size)
-                .map(|i| {
-                    if size > 2 && i == size / 2 {
-                        C::identity()
-                    } else {
-                        C::generator()
-                            * (C::ScalarExt::from(i as u64 + 1).square()
-                                + C::ScalarExt::from(0xDEAD_BEEFu64))
-                    }
-                })
-                .collect();
-            let points: alloc::vec::Vec<C::AffineExt> =
-                projective.iter().copied().map(C::AffineExt::from).collect();
-            let mut output = alloc::vec![C::identity(); size];
-
-            for scalar in scalars {
-                C::batch_mul_same_scalar_vartime(&points, &scalar, &mut output);
-                for ((point, output), expected) in
-                    points.iter().zip(output.iter()).zip(projective.iter())
-                {
-                    assert_eq!(*output, *point * scalar);
-                    assert_eq!(*output, *expected * scalar);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn batch_mul_same_scalar_pallas() {
-        batch_mul_same_scalar_matches_native::<pallas::Point>();
-    }
-
-    #[test]
-    fn batch_mul_same_scalar_vesta() {
-        batch_mul_same_scalar_matches_native::<vesta::Point>();
-    }
-
-    #[test]
-    #[should_panic]
-    fn batch_mul_same_scalar_length_mismatch_panics() {
-        let points = [pallas::Affine::generator()];
-        let mut output = [];
-        pallas::Point::batch_mul_same_scalar_vartime(&points, &pallas::Scalar::ONE, &mut output);
-    }
-}
+mod tests;

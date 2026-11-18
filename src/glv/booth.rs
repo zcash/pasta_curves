@@ -1,10 +1,10 @@
 //! Signed-Booth recoding of the GLV half-scalars into window digits.
 //!
-//! The bucket MSM evaluates every half-scalar $m$ window by window, in base
-//! $2^w$. A plain base-$2^w$ digit lies in $[0, 2^w)$ and would need $2^w - 1$
-//! buckets. Signed digits halve that: because $-Q$ costs nothing on a curve
-//! (negate $y$), a digit $d$ with $|d| \le 2^{w-1}$ needs only the $2^{w-1}$
-//! buckets indexed by $|d|$.
+//! The bucket MSM and the prepared fixed-base sums evaluate every half-scalar
+//! $m$ window by window, in base $2^w$. A plain base-$2^w$ digit lies in
+//! $[0, 2^w)$ and would need $2^w - 1$ buckets. Signed digits halve that:
+//! because $-Q$ costs nothing on a curve (negate $y$), a digit $d$ with
+//! $|d| \le 2^{w-1}$ needs only the $2^{w-1}$ buckets indexed by $|d|$.
 //!
 //! # The recoding
 //!
@@ -54,7 +54,7 @@ mod tests;
 /// half-scalar below `2^127`, so no carry leaves it and the digits of windows
 /// `0..window_count(w)` sum to the half-scalar exactly (see the module
 /// documentation). Requires `window_bits >= 1`.
-pub(super) fn window_count(window_bits: usize) -> usize {
+pub(super) const fn window_count(window_bits: usize) -> usize {
     HALF_BITS / window_bits + 1
 }
 

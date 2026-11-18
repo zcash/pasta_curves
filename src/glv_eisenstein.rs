@@ -174,8 +174,9 @@ where
 {
     type Digits = Recoded<C>;
     type Table = Table<C>;
+    const COLUMN_BITS: usize = 1;
+    const MAX_COLUMNS: usize = MAX_DIGITS;
 
-    #[cfg(test)]
     fn recode(k: &C::ScalarExt) -> Self::Digits {
         Recoded::new(k)
     }
@@ -185,7 +186,6 @@ where
         Table::new(p)
     }
 
-    #[cfg(test)]
     fn batch_tables(points: &[C]) -> Vec<Self::Table> {
         Table::batch(points)
     }
@@ -194,10 +194,16 @@ where
         digits.len
     }
 
-    fn add_column(table: &Self::Table, digits: &Self::Digits, i: usize, acc: &mut C) {
+    fn column_terms(
+        table: &Self::Table,
+        digits: &Self::Digits,
+        i: usize,
+        mut f: impl FnMut(C::AffineExt, bool),
+    ) {
+        // The unit, sign included, is applied by the table lookup itself.
         let d = digits.digits[i];
         if d != ZERO_DIGIT {
-            *acc += table.digit_point(d);
+            f(table.digit_point(d), false);
         }
     }
 }
@@ -1932,6 +1938,14 @@ mod tests {
                             law::zero_and_negation::<$curve, EisensteinNaf3>(&p, &a);
                             law::batch_matches_solo::<$curve, EisensteinNaf3>(&ps, &a);
                             law::recoding_is_reusable::<$curve, EisensteinNaf3>(&ps, &a);
+                            law::sum_of_products_matches_muls::<$curve, EisensteinNaf3>(
+                                &ps,
+                                &[a, b, Scalar::from(3)],
+                            );
+                            law::positioned_matches_muls::<$curve, EisensteinNaf3>(
+                                &ps,
+                                &[a, b, Scalar::from(3)],
+                            );
                             law::plural_matches_singular::<$curve>(
                                 &ps,
                                 &[a, b, a + b],

@@ -62,17 +62,18 @@
 //! Not covered: bases reused across calls are not precomputed, and the running
 //! sum stays in projective coordinates.
 
-mod booth;
 mod bucket;
 mod plan;
 mod straus;
 
 use alloc::vec::Vec;
 
-use booth::checked_signed_magnitudes;
+use super::booth;
 use bucket::{CachedField, multiexp, multiexp_bases};
 use plan::{current_num_threads, glv_multiexp_window_bits};
 use straus::planned_straus_multiexp;
+
+pub(super) use bucket::{AffinePoint, reduce_affine_buckets};
 
 use super::{GlvParams, decompose, private::AffineBase};
 
@@ -94,7 +95,7 @@ where
     let components = scalars
         .iter()
         .map(decompose::<C>)
-        .map(checked_signed_magnitudes)
+        .map(booth::checked_signed_magnitudes)
         .collect::<Option<Vec<_>>>();
     // `glv::decompose` keeps both halves below 2^127, so this never declines;
     // if that bound broke, release builds would still fall back safely.

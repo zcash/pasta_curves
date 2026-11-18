@@ -88,6 +88,10 @@ use group::CurveAffine as _;
 use crate::arithmetic::{CurveAffine, CurveExt, VartimeField, mac, sbb};
 use crate::{pallas, vesta};
 
+mod booth;
+
+pub(crate) mod fixed_base;
+
 pub(crate) mod msm;
 
 mod private {
@@ -220,22 +224,25 @@ where
     /// The precomputed multiples of `P` that the digits index.
     type Table;
 
+    /// Doublings between consecutive digit columns: the digits are in radix
+    /// `2^COLUMN_BITS`.
+    const COLUMN_BITS: usize;
+
+    /// The most columns a recoding can have: [`Recoding::columns`] never
+    /// exceeds it. A positioned table (`glv::fixed_base`) prepares this many
+    /// tables per point.
+    const MAX_COLUMNS: usize;
+
     /// Recodes a scalar, independently of any point.
-    /// Only the conformance suite calls this: production code reaches the
-    /// same operation through the inherent method.
-    #[cfg(test)]
     fn recode(k: &C::ScalarExt) -> Self::Digits;
 
     /// Builds the table for one point.
     /// Only the conformance suite calls this: production code reaches the
-    /// same operation through the inherent method.
+    /// same operation through the inherent method, or [`Recoding::batch_tables`].
     #[cfg(test)]
     fn table(p: &C) -> Self::Table;
 
     /// Builds tables for many points, sharing one field inversion.
-    /// Only the conformance suite calls this: production code reaches the
-    /// same operation through the inherent method.
-    #[cfg(test)]
     fn batch_tables(points: &[C]) -> Vec<Self::Table>;
 
     /// Number of digit columns in a recoding.
@@ -245,27 +252,63 @@ where
     #[doc(hidden)]
     fn columns(digits: &Self::Digits) -> usize;
 
-    /// Adds column `i`'s contribution to the accumulator, which is nothing at
-    /// all for a zero column.
+    /// Calls `f(point, negate)` for each term of column `i`'s contribution,
+    /// which is `-point` when `negate` is set: nothing at all for a zero
+    /// column, and for every `i >= columns(digits)`.
+    ///
+    /// The points, rather than their sum, so that a caller can also reduce
+    /// many columns' terms together with batched affine additions.
     #[doc(hidden)]
-    fn add_column(table: &Self::Table, digits: &Self::Digits, i: usize, acc: &mut C);
+    fn column_terms(
+        table: &Self::Table,
+        digits: &Self::Digits,
+        i: usize,
+        f: impl FnMut(C::AffineExt, bool),
+    );
 
-    /// Walks the ladder: the point the digits name, against that table.
+    /// Adds column `i`'s contribution ([`Recoding::column_terms`]) to the
+    /// accumulator.
+    #[doc(hidden)]
+    fn add_column(table: &Self::Table, digits: &Self::Digits, i: usize, acc: &mut C) {
+        Self::column_terms(table, digits, i, |point, negate| {
+            if negate {
+                *acc -= point;
+            } else {
+                *acc += point;
+            }
+        });
+    }
+
+    /// Walks the ladder: the point the digits name, against that table. The
+    /// one-term case of [`Recoding::sum_of_products`].
+    fn mul(table: &Self::Table, digits: &Self::Digits) -> C {
+        Self::sum_of_products(core::slice::from_ref(table), core::slice::from_ref(digits))
+    }
+
+    /// $\sum_i k_i P_i$, the `i`-th table encoding $P_i$ and the `i`-th
+    /// recoding $k_i$. Requires `tables.len() == digits.len()`.
     ///
     /// This is Horner's rule, right to left, and it is the same fold for
-    /// every recoding: an accumulator doubled once per column, with that
-    /// column's contribution added in. Only [`Recoding::add_column`] differs,
-    /// so the loop is provided here rather than written per implementation.
-    fn mul(table: &Self::Table, digits: &Self::Digits) -> C {
-        let len = Self::columns(digits);
+    /// every recoding: an accumulator doubled [`Recoding::COLUMN_BITS`] times
+    /// per column, with every term's contribution to that column added in, so
+    /// all terms share the doublings (Straus's method). Only
+    /// [`Recoding::add_column`] differs, so the loop is provided here rather
+    /// than written per implementation.
+    fn sum_of_products(tables: &[Self::Table], digits: &[Self::Digits]) -> C {
+        debug_assert_eq!(tables.len(), digits.len());
+        let len = digits.iter().map(Self::columns).max().unwrap_or(0);
         let mut acc = C::identity();
         for i in (0..len).rev() {
             // `acc` is still the identity on the first iteration; skip the
-            // wasted doubling.
+            // wasted doublings.
             if i + 1 < len {
-                acc = acc.double();
+                for _ in 0..Self::COLUMN_BITS {
+                    acc = acc.double();
+                }
             }
-            Self::add_column(table, digits, i, &mut acc);
+            for (table, digits) in tables.iter().zip(digits) {
+                Self::add_column(table, digits, i, &mut acc);
+            }
         }
         acc
     }
@@ -518,6 +561,43 @@ pub(crate) mod conformance {
         }
     }
 
+    /// Sharing the doublings across terms is a different order of the same
+    /// additions, never a different sum: `sum_of_products` is the sum of the
+    /// terms' `mul`s, also when the terms recode to different lengths.
+    pub(crate) fn sum_of_products_matches_muls<C, R>(points: &[C], scalars: &[C::ScalarExt])
+    where
+        C: GlvParams,
+        R: Recoding<C>,
+    {
+        let tables: alloc::vec::Vec<_> = points.iter().map(R::table).collect();
+        let digits: alloc::vec::Vec<_> = scalars.iter().map(R::recode).collect();
+        let expected: C = points.iter().zip(scalars).map(|(p, k)| *p * *k).sum();
+        assert_eq!(R::sum_of_products(&tables, &digits), expected);
+        assert!(bool::from(R::sum_of_products(&[], &[]).is_identity()));
+    }
+
+    /// Precomputing the positions spends Horner's doublings once, on
+    /// preparation, and never changes a sum: a positioned table (one table per
+    /// column, `glv::fixed_base`) gives the sum of the terms' `mul`s, alone or
+    /// batched, with omitted trailing scalars zero. Requires one scalar per
+    /// point, at least one.
+    pub(crate) fn positioned_matches_muls<C, R>(points: &[C], scalars: &[C::ScalarExt])
+    where
+        C: GlvParams,
+        R: Recoding<C>,
+        R::Table: Send + Sync,
+    {
+        use crate::arithmetic::PreparedFixedBaseSum;
+
+        let affine: alloc::vec::Vec<_> = points.iter().map(|p| p.to_affine()).collect();
+        let prepared = crate::glv::fixed_base::FixedBaseSum::<C, R>::new(&affine);
+        let expected: C = points.iter().zip(scalars).map(|(p, k)| *p * *k).sum();
+        assert_eq!(prepared.sum_vartime(scalars), expected);
+        let mut output = [C::generator(); 3];
+        prepared.sum_batch_vartime(&[scalars, &scalars[..1], &[]], &mut output);
+        assert_eq!(output, [expected, points[0] * scalars[0], C::identity()]);
+    }
+
     /// A recoding is a function of `k` alone, so it survives reuse across
     /// points. This is what makes `Recoded`/`Decomposed` worth exposing.
     pub(crate) fn recoding_is_reusable<C, R>(points: &[C], k: &C::ScalarExt)
@@ -543,8 +623,9 @@ where
 {
     type Digits = Decomposed<C>;
     type Table = Table<C>;
+    const COLUMN_BITS: usize = 1;
+    const MAX_COLUMNS: usize = MAX_WNAF_DIGITS;
 
-    #[cfg(test)]
     fn recode(k: &C::ScalarExt) -> Self::Digits {
         Decomposed::new(k)
     }
@@ -554,7 +635,6 @@ where
         Table::new(p)
     }
 
-    #[cfg(test)]
     fn batch_tables(points: &[C]) -> Vec<Self::Table> {
         Table::batch(points)
     }
@@ -563,9 +643,22 @@ where
         digits.len
     }
 
-    fn add_column(table: &Self::Table, digits: &Self::Digits, i: usize, acc: &mut C) {
-        Table::add_digit(acc, &table.t1, digits.digits1[i]);
-        Table::add_digit(acc, &table.t2, digits.digits2[i]);
+    fn column_terms(
+        table: &Self::Table,
+        digits: &Self::Digits,
+        i: usize,
+        mut f: impl FnMut(C::AffineExt, bool),
+    ) {
+        for (multiples, d) in [
+            (&table.t1, digits.digits1[i]),
+            (&table.t2, digits.digits2[i]),
+        ] {
+            // `multiples` holds `{1, 3, 5, 7}` times the half's base, and `d`
+            // is a signed odd wNAF digit.
+            if d != 0 {
+                f(multiples[(d.unsigned_abs() / 2) as usize], d < 0);
+            }
+        }
     }
 }
 
@@ -885,18 +978,6 @@ where
     /// (tested).
     pub fn mul_decomposed(&self, k: &Decomposed<C>) -> C {
         <Wnaf4 as Recoding<C>>::mul(self, k)
-    }
-
-    /// Adds `d * B` to `acc`, where `table` holds `{1, 3, 5, 7} * B` and `d`
-    /// is a signed odd wNAF digit (zero adds nothing).
-    fn add_digit(acc: &mut C, table: &[C::AffineExt; 4], d: i8) {
-        if d != 0 {
-            let mut a = table[(d.unsigned_abs() / 2) as usize];
-            if d < 0 {
-                a = -a;
-            }
-            *acc += a;
-        }
     }
 }
 
@@ -1991,6 +2072,14 @@ pub(crate) mod tests {
                             law::zero_and_negation::<$curve, Wnaf4>(&p, &a);
                             law::batch_matches_solo::<$curve, Wnaf4>(&ps, &a);
                             law::recoding_is_reusable::<$curve, Wnaf4>(&ps, &a);
+                            law::sum_of_products_matches_muls::<$curve, Wnaf4>(
+                                &ps,
+                                &[a, b, Scalar::from(3)],
+                            );
+                            law::positioned_matches_muls::<$curve, Wnaf4>(
+                                &ps,
+                                &[a, b, Scalar::from(3)],
+                            );
                             law::plural_matches_singular::<$curve>(
                                 &ps,
                                 &[a, b, a + b],
