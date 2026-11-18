@@ -254,19 +254,28 @@ where
     fn columns(digits: &Self::Digits) -> usize;
 
     /// Adds column `i`'s contribution to the accumulator, which is nothing at
-    /// all for a zero column.
+    /// all for a zero column, and for every `i >= columns(digits)`.
     #[doc(hidden)]
     fn add_column(table: &Self::Table, digits: &Self::Digits, i: usize, acc: &mut C);
 
-    /// Walks the ladder: the point the digits name, against that table.
+    /// Walks the ladder: the point the digits name, against that table. The
+    /// one-term case of [`Recoding::sum_of_products`].
+    fn mul(table: &Self::Table, digits: &Self::Digits) -> C {
+        Self::sum_of_products(core::slice::from_ref(table), core::slice::from_ref(digits))
+    }
+
+    /// $\sum_i k_i P_i$, the `i`-th table encoding $P_i$ and the `i`-th
+    /// recoding $k_i$. Requires `tables.len() == digits.len()`.
     ///
     /// This is Horner's rule, right to left, and it is the same fold for
     /// every recoding: an accumulator doubled [`Recoding::COLUMN_BITS`] times
-    /// per column, with that column's contribution added in. Only
+    /// per column, with every term's contribution to that column added in, so
+    /// all terms share the doublings (Straus's method). Only
     /// [`Recoding::add_column`] differs, so the loop is provided here rather
     /// than written per implementation.
-    fn mul(table: &Self::Table, digits: &Self::Digits) -> C {
-        let len = Self::columns(digits);
+    fn sum_of_products(tables: &[Self::Table], digits: &[Self::Digits]) -> C {
+        debug_assert_eq!(tables.len(), digits.len());
+        let len = digits.iter().map(Self::columns).max().unwrap_or(0);
         let mut acc = C::identity();
         for i in (0..len).rev() {
             // `acc` is still the identity on the first iteration; skip the
@@ -276,7 +285,9 @@ where
                     acc = acc.double();
                 }
             }
-            Self::add_column(table, digits, i, &mut acc);
+            for (table, digits) in tables.iter().zip(digits) {
+                Self::add_column(table, digits, i, &mut acc);
+            }
         }
         acc
     }
@@ -527,6 +538,21 @@ pub(crate) mod conformance {
         for (got, (p, k)) in got.iter().zip(&pairs) {
             assert_eq!(*got, (*p * *k).to_affine());
         }
+    }
+
+    /// Sharing the doublings across terms is a different order of the same
+    /// additions, never a different sum: `sum_of_products` is the sum of the
+    /// terms' `mul`s, also when the terms recode to different lengths.
+    pub(crate) fn sum_of_products_matches_muls<C, R>(points: &[C], scalars: &[C::ScalarExt])
+    where
+        C: GlvParams,
+        R: Recoding<C>,
+    {
+        let tables: alloc::vec::Vec<_> = points.iter().map(R::table).collect();
+        let digits: alloc::vec::Vec<_> = scalars.iter().map(R::recode).collect();
+        let expected: C = points.iter().zip(scalars).map(|(p, k)| *p * *k).sum();
+        assert_eq!(R::sum_of_products(&tables, &digits), expected);
+        assert!(bool::from(R::sum_of_products(&[], &[]).is_identity()));
     }
 
     /// A recoding is a function of `k` alone, so it survives reuse across
@@ -2003,6 +2029,10 @@ pub(crate) mod tests {
                             law::zero_and_negation::<$curve, Wnaf4>(&p, &a);
                             law::batch_matches_solo::<$curve, Wnaf4>(&ps, &a);
                             law::recoding_is_reusable::<$curve, Wnaf4>(&ps, &a);
+                            law::sum_of_products_matches_muls::<$curve, Wnaf4>(
+                                &ps,
+                                &[a, b, Scalar::from(3)],
+                            );
                             law::plural_matches_singular::<$curve>(
                                 &ps,
                                 &[a, b, a + b],

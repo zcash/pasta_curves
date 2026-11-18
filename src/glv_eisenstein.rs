@@ -1933,6 +1933,10 @@ mod tests {
                             law::zero_and_negation::<$curve, EisensteinNaf3>(&p, &a);
                             law::batch_matches_solo::<$curve, EisensteinNaf3>(&ps, &a);
                             law::recoding_is_reusable::<$curve, EisensteinNaf3>(&ps, &a);
+                            law::sum_of_products_matches_muls::<$curve, EisensteinNaf3>(
+                                &ps,
+                                &[a, b, Scalar::from(3)],
+                            );
                             law::plural_matches_singular::<$curve>(
                                 &ps,
                                 &[a, b, a + b],
