@@ -150,7 +150,7 @@ pub trait CurveExt:
     /// Attempts to prepare a doubling-free sum over fixed public bases.
     ///
     /// Implementations without a suitable backend return `None`; callers must
-    /// retain a generic fallback. Pasta tables retain about 76 KiB per base.
+    /// retain a generic fallback.
     ///
     /// # Security
     ///
