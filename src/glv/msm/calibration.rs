@@ -82,8 +82,12 @@ pub(super) struct Calibration {
     pub(super) serial_narrow_window_bits: usize,
     /// Serial window width of the bucket method from
     /// `serial_wide_window_min_terms` terms through `min_glv_multiexp_terms`.
+    /// That range is empty in [`DEFAULT`], so this width only matters for an
+    /// override that sets `serial_wide_window_min_terms` at or below
+    /// `min_glv_multiexp_terms`.
     pub(super) serial_wide_window_bits: usize,
-    /// Smallest serial MSM that takes `serial_wide_window_bits`.
+    /// Smallest serial MSM that takes `serial_wide_window_bits`. Above
+    /// `min_glv_multiexp_terms` the cost model chooses the width instead.
     pub(super) serial_wide_window_min_terms: usize,
     /// The cost of the GLV bucket method's operations: batched affine point
     /// visits and projective bucket sums.
