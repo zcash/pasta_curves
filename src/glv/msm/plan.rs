@@ -65,9 +65,8 @@ pub(super) const STRAUS_POOL_SHARES: usize = 2;
 
 /// Bucket-backend window width for serial MSMs between the Straus crossover
 /// and `c.min_glv_multiexp_terms`, the fastest width measured. The cost model
-/// counts a batched affine addition as a projective one, so it would decline
-/// these sizes although the bucket backend measures faster than the generic MSM
-/// there.
+/// [`estimated_signed_booth_work`] leaves out the GLV setup, which these sizes
+/// do not amortize, so the planner uses measured widths here instead.
 fn serial_small_window_bits(terms: usize, c: &Calibration) -> usize {
     if terms < c.serial_wide_window_min_terms {
         c.serial_narrow_window_bits
