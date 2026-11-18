@@ -27,12 +27,12 @@
 //! neither wins at every size: Straus ([`straus`]) pays one addition per
 //! nonzero digit of every term but has almost no setup, while the bucket
 //! method ([`bucket`]) amortizes additions over many terms at the price of
-//! setting up its buckets. So `try_multiexp` offers the input to Straus
-//! first; if Straus declines, the planner ([`plan`]) picks a window width for
-//! the bucket method, or declines when the caller's generic MSM is expected to
-//! be faster. The bucket method splits the scalars as in [`crate::glv`],
-//! recodes the halves into signed digits ([`booth`]), and evaluates the
-//! windows.
+//! setting up its buckets. So `try_multiexp` asks the planner ([`plan`]) for a
+//! `Plan` and matches on it: Straus for small inputs, the bucket method at the
+//! planned window width, or a decline when the caller's generic MSM is
+//! expected to be faster. The bucket method splits the scalars as in
+//! [`crate::glv`], recodes the halves into signed digits ([`booth`]), and
+//! evaluates the windows.
 //!
 //! # Layers
 //!
@@ -63,6 +63,7 @@
 //! sum stays in projective coordinates.
 
 mod bucket;
+mod calibration;
 mod plan;
 mod straus;
 
@@ -70,8 +71,10 @@ use alloc::vec::Vec;
 
 use super::booth;
 use bucket::{CachedField, multiexp, multiexp_bases};
-use plan::{current_num_threads, glv_multiexp_window_bits};
-use straus::planned_straus_multiexp;
+use plan::{Plan, current_num_threads};
+use straus::straus_multiexp;
+#[cfg(feature = "multicore")]
+use straus::straus_multiexp_jobs;
 
 pub(super) use bucket::{AffinePoint, reduce_affine_buckets};
 
@@ -88,10 +91,15 @@ where
         return None;
     }
     let num_threads = current_num_threads();
-    if let Some(result) = planned_straus_multiexp::<C>(scalars, bases, num_threads) {
-        return Some(result);
-    }
-    let window_bits = glv_multiexp_window_bits::<C>(scalars.len(), num_threads)?;
+    let window_bits = match plan::plan::<C>(scalars.len(), num_threads) {
+        Plan::Straus => return Some(straus_multiexp::<C>(scalars, bases)),
+        #[cfg(feature = "multicore")]
+        Plan::StrausLeaves { jobs } => {
+            return Some(straus_multiexp_jobs::<C>(scalars, bases, jobs));
+        }
+        Plan::Buckets { window_bits } => window_bits,
+        Plan::Decline => return None,
+    };
     let components = scalars
         .iter()
         .map(decompose::<C>)

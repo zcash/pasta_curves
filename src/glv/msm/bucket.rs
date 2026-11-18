@@ -45,7 +45,8 @@
 //! It runs the windows with [`multiexp_serial`] or, with `multicore`,
 //! `multiexp_parallel`, and combines them with [`horner`]. A [`WindowReducer`]
 //! computes each window: [`WindowReducer::fill_window`] splits it into blocks
-//! ([`MIN_WINDOW_BLOCK_TERMS`], [`WINDOW_BLOCK_TERMS_PER_BUCKET`]),
+//! (the calibration's `min_window_block_terms` and
+//! `window_block_terms_per_bucket`),
 //! [`WindowReducer::fill_block`] assigns the digits to buckets
 //! ([`window_assignments`]) and reduces them ([`affine`]), and [`sum_buckets`]
 //! turns the buckets into the window sum. Reducers come from [`cache`].
@@ -58,9 +59,12 @@ use group::CurveAffine as _;
 #[cfg(feature = "multicore")]
 use maybe_rayon::prelude::*;
 
+use super::calibration::CALIBRATION;
 use crate::arithmetic::VartimeField;
 use crate::glv::booth::{SignedMagnitude, booth_digit, window_count};
-use crate::glv::{GlvParams, affine_from_xy_unchecked, affine_xy, phi_x, private::AffineBase};
+use crate::glv::{
+    GlvParams, HALVES, affine_from_xy_unchecked, affine_xy, phi_x, private::AffineBase,
+};
 pub(in crate::glv) use affine::{AffinePoint, reduce_affine_buckets};
 use affine::{ReduceScratch, reduce_affine_buckets_reusing};
 pub(crate) use cache::CachedField;
@@ -69,7 +73,8 @@ use cache::Checkout;
 #[cfg(test)]
 mod tests;
 
-/// One nonzero digit of a window: component `component` goes into bucket
+/// One nonzero digit of a window: component `component`, that is half
+/// `component % HALVES` of base `component / HALVES`, goes into bucket
 /// `|signed_bucket| - 1`, negated when `signed_bucket < 0`.
 #[derive(Clone, Copy)]
 struct WindowAssignment {
@@ -119,7 +124,7 @@ fn window_assignments<F>(
 ) {
     let bucket_count = bucket_count(window_bits);
     assignments.clear();
-    assignments.reserve(bases.len().saturating_mul(2));
+    assignments.reserve(bases.len().saturating_mul(HALVES));
     counts.clear();
     counts.resize(bucket_count, 0);
 
@@ -134,7 +139,7 @@ fn window_assignments<F>(
                 let magnitude =
                     isize::try_from(digit.magnitude).expect("Booth digit magnitude fits in isize");
                 assignments.push(WindowAssignment {
-                    component: base_index * 2 + component_offset,
+                    component: base_index * HALVES + component_offset,
                     signed_bucket: if digit.negative {
                         -magnitude
                     } else {
@@ -176,17 +181,6 @@ where
         None => C::identity(),
     }
 }
-
-/// Smallest number of terms a window reduces at a time. It bounds a window's
-/// scratch, which would otherwise grow with the input and be multiplied by the
-/// windows in flight, at a small measured cost in time for MSMs that need
-/// several blocks, as `benches/msm.rs` does at 65,536 terms.
-const MIN_WINDOW_BLOCK_TERMS: usize = 1 << 14;
-
-/// Terms per bucket in a window block. Each block after the first carries one
-/// point per nonempty bucket, so this bounds the extra additions to about
-/// `1 / (2 * WINDOW_BLOCK_TERMS_PER_BUCKET)` of the block's points.
-const WINDOW_BLOCK_TERMS_PER_BUCKET: usize = 8;
 
 /// The buffers for filling and reducing one window's buckets, and the window
 /// algorithm that uses them. One reducer serves the windows a task evaluates
@@ -276,8 +270,9 @@ where
         window: usize,
     ) -> Option<&[Option<AffinePoint<F>>]> {
         let bucket_count = bucket_count(window_bits);
-        let block_terms =
-            MIN_WINDOW_BLOCK_TERMS.max(bucket_count.saturating_mul(WINDOW_BLOCK_TERMS_PER_BUCKET));
+        let block_terms = CALIBRATION
+            .min_window_block_terms
+            .max(bucket_count.saturating_mul(CALIBRATION.window_block_terms_per_bucket));
         self.fill_window_in_blocks(components, bases, window_bits, window, block_terms)
     }
 
@@ -356,13 +351,10 @@ where
             }
         }
         for &assignment in assignments.iter() {
-            let base_index = assignment.component / 2;
+            let base_index = assignment.component / HALVES;
             let base = bases[base_index];
-            let x = if assignment.component & 1 == 0 {
-                base.x
-            } else {
-                base.endo_x
-            };
+            let half = assignment.component % HALVES;
+            let x = if half == 0 { base.x } else { base.endo_x };
             let bucket = assignment.bucket();
             let position = positions[bucket];
             points[position] = AffinePoint {

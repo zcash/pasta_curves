@@ -1,97 +1,125 @@
-//! The planner: estimates the work of the signed-Booth bucket MSM against the
-//! generic MSM a caller falls back to, and chooses a window width or declines.
+//! The planner: decides how an MSM is evaluated, from its numbers of terms
+//! and threads alone.
+//!
+//! # Decisions
+//!
+//! [`plan`] returns a [`Plan`], in this order, the bounds being the fields of
+//! the calibration in use ([`CALIBRATION`]):
+//!
+//! | threads | terms                                         | plan                       |
+//! |---------|-----------------------------------------------|----------------------------|
+//! | > 1     | `min_parallel_straus_terms` to `max_parallel_straus_terms` | `StrausLeaves` |
+//! | 1       | up to `serial_straus_max_terms`               | `Straus`                   |
+//! | > 1     | up to `straus_leaf_terms`                     | `Straus`                   |
+//! | 1       | up to `min_glv_multiexp_terms`                | `Buckets`, serial widths   |
+//! | > 1     | below `min_glv_multiexp_terms`                | `Decline`                  |
+//! | any     | above                                         | modelled `Buckets` or `Decline` |
+//!
+//! `StrausLeaves` takes `ceil(threads / STRAUS_POOL_SHARES).min(terms)` jobs;
+//! the serial widths are `serial_narrow_window_bits` below
+//! `serial_wide_window_min_terms` terms and `serial_wide_window_bits` from
+//! there. Several threads arise only with `multicore`.
 //!
 //! # Reading guide
 //!
-//! [`glv_multiexp_window_bits`] is the entry point, called once Straus has
-//! declined. It takes one of two paths.
+//! [`plan`] is the entry point; [`plan_with`] takes the calibration as an
+//! argument. It first gives small inputs to Straus, at the measured crossovers
+//! of the calibration and `STRAUS_POOL_SHARES`. Otherwise
+//! [`glv_multiexp_window_bits`] picks the bucket width, or declines, on one of
+//! two paths.
 //!
-//! **Measured, for small inputs:** up to [`MIN_GLV_MULTIEXP_TERMS`] terms on
-//! one thread, or below it on several. The cost model below is too coarse
-//! there (it prices a batched affine addition like a projective one), so the
-//! choices come from benchmarks: buckets of the width
-//! [`serial_small_window_bits`] gives above [`SERIAL_STRAUS_MAX_TERMS`] (the
-//! largest input Straus takes on one thread). On several threads the bucket
+//! **Measured, for small inputs:** up to `min_glv_multiexp_terms` terms on
+//! one thread, or below it on several. On one thread the width is the one
+//! [`serial_small_window_bits`] gives, from benchmarks; on several the bucket
 //! backend declines at these sizes.
 //!
-//! **Modelled, for large inputs:** [`estimated_signed_booth_work`] counts the
-//! point operations on the critical path ([`BoothWork`]) of both competitors:
+//! **Modelled, for large inputs:** [`estimated_signed_booth_work`] estimates
+//! the work on the critical path ([`BoothWork`]) of both competitors, each
+//! operation weighted by its cost in that backend ([`PlannerWeights`]):
 //!
-//! - the generic MSM the caller falls back to ([`estimated_generic_work`]):
-//!   $n$ full-width terms of [`scalar_repr_bits`] bits, at the width
-//!   [`multiexp_window_bits`] picks from the schedule of `halo2_proofs`'
-//!   `best_multiexp` ([`default_multiexp_window_bits`]);
-//! - the bucket backend ([`booth_multiexp_estimate`]): $2n$ half-width
-//!   components at that width and the next.
+//! - the generic MSM the caller falls back to (`generic_weights`):
+//!   $n$ full-width terms of [`scalar_repr_bits`] bits, at the width it runs,
+//!   from the schedule of `halo2_proofs`' `best_multiexp`
+//!   ([`default_multiexp_window_bits`]);
+//! - the bucket backend (`glv_weights`): $2n$ half-width components, at that
+//!   width and up to `glv_extra_window_bits` more, keeping the cheapest.
 //!
-//! The backend runs only when it is estimated cheaper. The counts compare
-//! plans; they do not predict time.
+//! The backend runs when its estimate is no worse than the generic MSM's. The
+//! estimates compare plans; they do not predict time.
 //!
 //! [`current_num_threads`] is the thread count all of this plans for.
 
 use ff::PrimeField;
 
-use crate::glv::{GlvParams, HALF_BITS};
+use super::calibration::{CALIBRATION, Calibration};
+use crate::glv::{GlvParams, HALF_BITS, HALVES};
 
 #[cfg(test)]
 mod tests;
 
-/// The cost model starts here for parallel MSMs and above this for serial MSMs.
-/// Serial MSMs through 256 terms use measured Straus and bucket choices.
-const MIN_GLV_MULTIEXP_TERMS: usize = 256;
+/// The parallel Straus path splits into at most the pool's size divided by
+/// this, rounded up: the IPA prover computes its L and R commitments at the
+/// same time, and each gets an equal share.
+#[cfg(feature = "multicore")]
+pub(super) const STRAUS_POOL_SHARES: usize = 2;
 
-/// Largest serial MSM evaluated as one GLV-Straus table. Measured on Pallas
-/// with `benches/msm.rs`: one table beats both the generic MSM and the bucket
-/// backend at 17 and 24 terms, and the bucket backend wins from 32 terms on.
-pub(super) const SERIAL_STRAUS_MAX_TERMS: usize = 24;
-
-/// Bucket-backend window width for serial MSMs between
-/// `SERIAL_STRAUS_MAX_TERMS` and `MIN_GLV_MULTIEXP_TERMS`, the fastest width
-/// measured on Pallas: 5 from 32 to 96 terms, 6 from 128 to 256 terms. The cost
-/// model counts a batched affine addition as a projective one, so it would
-/// decline these sizes although the bucket backend measures faster than the
-/// generic MSM there.
-fn serial_small_window_bits(terms: usize) -> usize {
-    if terms < 128 { 5 } else { 6 }
+/// Bucket-backend window width for serial MSMs between the Straus crossover
+/// and `c.min_glv_multiexp_terms`, the fastest width measured. The cost model
+/// [`estimated_signed_booth_work`] leaves out the GLV setup, which these sizes
+/// do not amortize, so the planner uses measured widths here instead.
+fn serial_small_window_bits(terms: usize, c: &Calibration) -> usize {
+    if terms < c.serial_wide_window_min_terms {
+        c.serial_narrow_window_bits
+    } else {
+        c.serial_wide_window_bits
+    }
 }
 
-/// Estimated work of a signed-Booth MSM, in point operations on its critical
-/// path. Every operation counts the same, so values compare two plans but do
-/// not predict time.
+/// Additions per bucket when a window sums its buckets with a running sum: one
+/// into the running sum, one into the window's total.
+const BUCKET_SUM_ADDITIONS: usize = 2;
+
+/// Estimated critical-path work of a signed-Booth MSM, weighted by backend.
+/// Values compare plans but do not predict time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct BoothWork(usize);
 
 /// The serial work model counts total point/window visits, bucket additions,
 /// and accumulator doublings. The parallel model estimates the corresponding
 /// critical-worker cost when windows have independent accumulators. Both omit
-/// GLV setup costs; [`MIN_GLV_MULTIEXP_TERMS`] handles their small-MSM
+/// GLV setup costs; `min_glv_multiexp_terms` handles their small-MSM
 /// amortization separately. Returns `None` on overflow or a zero width.
 fn estimated_signed_booth_work(
     terms: usize,
     scalar_bits: usize,
     window_bits: usize,
     num_threads: usize,
+    weights: PlannerWeights,
 ) -> Option<BoothWork> {
     let windows = scalar_bits.checked_div(window_bits)?.checked_add(1)?;
     let bucket_shift = u32::try_from(window_bits.checked_sub(1)?).ok()?;
     let buckets = 1usize.checked_shl(bucket_shift)?;
+    let visit = |count: usize| count.checked_mul(weights.point_visit);
+    let bucket_adds = |count: usize| count.checked_mul(weights.bucket_addition);
+    let doublings = |count: usize| count.checked_mul(weights.doubling);
 
     if num_threads <= 1 {
-        let point_visits = terms.checked_mul(windows)?;
-        let bucket_additions = buckets.checked_mul(windows)?.checked_mul(2)?;
-        let doublings = window_bits.checked_mul(windows.checked_sub(1)?)?;
-        return Some(BoothWork(
-            point_visits
-                .checked_add(bucket_additions)?
-                .checked_add(doublings)?,
-        ));
+        let work = visit(terms.checked_mul(windows)?)?
+            .checked_add(bucket_adds(
+                buckets
+                    .checked_mul(windows)?
+                    .checked_mul(BUCKET_SUM_ADDITIONS)?,
+            )?)?
+            .checked_add(doublings(
+                window_bits.checked_mul(windows.checked_sub(1)?)?,
+            )?)?;
+        return Some(BoothWork(work));
     }
 
-    // Parallel windows have independent accumulators. Estimate the critical
-    // worker's full-window work and the shifts of its highest-cost windows.
     let workers = num_threads.min(windows);
     let waves = windows.div_ceil(workers);
-    let per_window = terms.checked_add(buckets.checked_mul(2)?)?;
+    let per_window =
+        visit(terms)?.checked_add(bucket_adds(buckets.checked_mul(BUCKET_SUM_ADDITIONS)?)?)?;
     let mut shift_doublings = 0usize;
     let mut window = windows.checked_sub(1)?;
     for _ in 0..waves {
@@ -104,8 +132,19 @@ fn estimated_signed_booth_work(
     Some(BoothWork(
         per_window
             .checked_mul(waves)?
-            .checked_add(shift_doublings)?,
+            .checked_add(doublings(shift_doublings)?)?,
     ))
+}
+
+/// Backend-specific work weights, in fifths of a doubling: the cost of a point
+/// visit and of a bucket addition relative to an accumulator doubling. The
+/// values are part of the [`Calibration`].
+#[derive(Clone, Copy)]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
+pub(super) struct PlannerWeights {
+    pub(super) point_visit: usize,
+    pub(super) bucket_addition: usize,
+    pub(super) doubling: usize,
 }
 
 /// Floors of `e^k` for `k = 4..=22`.
@@ -136,21 +175,42 @@ const DEFAULT_MULTIEXP_WINDOW_THRESHOLDS: [u32; 19] = [
     3_584_912_846,
 ];
 
-/// The window width `best_multiexp` in `halo2_proofs` uses: 1 below 4 terms,
-/// 3 below 32, and `ceil(ln(terms))` above, read from
-/// [`DEFAULT_MULTIEXP_WINDOW_THRESHOLDS`]. `None` above `u32::MAX` terms.
+/// Below this many terms, `best_multiexp` uses [`TINY_MULTIEXP_WINDOW_BITS`].
+const TINY_MULTIEXP_TERMS: usize = 4;
+
+/// The window width `best_multiexp` uses below [`TINY_MULTIEXP_TERMS`] terms.
+const TINY_MULTIEXP_WINDOW_BITS: usize = 1;
+
+/// Below this many terms, and from [`TINY_MULTIEXP_TERMS`], `best_multiexp`
+/// uses [`SMALL_MULTIEXP_WINDOW_BITS`]; from here on, `ceil(ln(terms))`.
+const SMALL_MULTIEXP_TERMS: usize = 32;
+
+/// The window width `best_multiexp` uses below [`SMALL_MULTIEXP_TERMS`] terms.
+const SMALL_MULTIEXP_WINDOW_BITS: usize = 3;
+
+/// The width `ceil(ln(terms))` up to the first of
+/// [`DEFAULT_MULTIEXP_WINDOW_THRESHOLDS`], `e^4`; each later threshold adds
+/// one bit.
+const FIRST_LN_WINDOW_BITS: usize = 4;
+
+/// The window width `best_multiexp` uses, as in `halo2_proofs` 0.4.0,
+/// unchanged on its main as of `7465edf9`:
+/// [`TINY_MULTIEXP_WINDOW_BITS`] below [`TINY_MULTIEXP_TERMS`],
+/// [`SMALL_MULTIEXP_WINDOW_BITS`] below [`SMALL_MULTIEXP_TERMS`], and
+/// `ceil(ln(terms))` above, read from [`DEFAULT_MULTIEXP_WINDOW_THRESHOLDS`].
+/// `None` above `u32::MAX` terms.
 fn default_multiexp_window_bits(terms: usize) -> Option<usize> {
-    if terms < 4 {
-        Some(1)
-    } else if terms < 32 {
-        Some(3)
+    if terms < TINY_MULTIEXP_TERMS {
+        Some(TINY_MULTIEXP_WINDOW_BITS)
+    } else if terms < SMALL_MULTIEXP_TERMS {
+        Some(SMALL_MULTIEXP_WINDOW_BITS)
     } else {
         let terms = u32::try_from(terms).ok()?;
         let threshold = DEFAULT_MULTIEXP_WINDOW_THRESHOLDS
             .iter()
             .position(|upper| terms <= *upper)
             .unwrap_or(DEFAULT_MULTIEXP_WINDOW_THRESHOLDS.len());
-        Some(4 + threshold)
+        Some(FIRST_LN_WINDOW_BITS + threshold)
     }
 }
 
@@ -163,80 +223,103 @@ where
     <C::ScalarExt as PrimeField>::Repr::default()
         .as_ref()
         .len()
-        .checked_mul(8)
+        .checked_mul(u8::BITS as usize)
 }
 
-/// Selects the backend's signed-window width.
-///
-/// Compare the nine-bit schedule with its wider successor in serial mode.
-/// Keep the comparison narrow because this model omits cache behavior.
-fn multiexp_window_bits<C>(terms: usize, num_threads: usize) -> Option<usize>
+/// How [`super::try_multiexp`] evaluates an MSM, decided by [`plan`] from the
+/// numbers of terms and threads alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Plan {
+    /// One GLV-Straus table over all terms.
+    Straus,
+    /// GLV-Straus leaves of at most [`Calibration::straus_leaf_terms`] terms, split into
+    /// `jobs` parallel jobs, run on the calling thread when `jobs` is 1.
+    #[cfg(feature = "multicore")]
+    StrausLeaves {
+        /// The number of jobs, at least 1 and at most the number of terms.
+        jobs: usize,
+    },
+    /// The signed-Booth bucket backend at this window width.
+    Buckets {
+        /// The width of the signed-Booth windows.
+        window_bits: usize,
+    },
+    /// Not profitable here: the caller keeps its generic MSM.
+    Decline,
+}
+
+/// Decides how to evaluate an MSM of `terms` terms on `num_threads` threads,
+/// with the calibration in use ([`CALIBRATION`]).
+pub(super) fn plan<C>(terms: usize, num_threads: usize) -> Plan
 where
     C: GlvParams,
 {
+    plan_with::<C>(terms, num_threads, &CALIBRATION)
+}
+
+/// [`plan`] with the calibration `c`.
+fn plan_with<C>(terms: usize, num_threads: usize, c: &Calibration) -> Plan
+where
+    C: GlvParams,
+{
+    #[cfg(feature = "multicore")]
+    if num_threads > 1
+        && (c.min_parallel_straus_terms..=c.max_parallel_straus_terms).contains(&terms)
+    {
+        // Bound small-MSM jobs to a share of the pool (STRAUS_POOL_SHARES),
+        // leaving room for concurrent caller work. Keep each leaf small
+        // instead of building one wide table for an entire worker's share.
+        return Plan::StrausLeaves {
+            jobs: num_threads.div_ceil(STRAUS_POOL_SHARES).min(terms),
+        };
+    }
+    let straus_max_terms = if num_threads <= 1 {
+        c.serial_straus_max_terms
+    } else {
+        c.straus_leaf_terms
+    };
+    if terms <= straus_max_terms {
+        return Plan::Straus;
+    }
+    match glv_multiexp_window_bits::<C>(terms, num_threads, c) {
+        Some(window_bits) => Plan::Buckets { window_bits },
+        None => Plan::Decline,
+    }
+}
+
+/// Choose the cheapest weighted GLV width when it is no worse than generic.
+/// Half-width components can favor up to two bits beyond the generic width.
+/// Called by [`plan`] once Straus has declined.
+fn glv_multiexp_window_bits<C>(terms: usize, num_threads: usize, c: &Calibration) -> Option<usize>
+where
+    C: GlvParams,
+{
+    let min_terms = c.min_glv_multiexp_terms;
+    if terms < min_terms || (terms == min_terms && num_threads <= 1) {
+        return (num_threads <= 1).then(|| serial_small_window_bits(terms, c));
+    }
+
     let window_bits = default_multiexp_window_bits(terms)?;
-    if num_threads != 1 || window_bits != 9 {
-        return Some(window_bits);
-    }
-
-    let scalar_bits = scalar_repr_bits::<C>()?;
-    let next_window_bits = window_bits.checked_add(1)?;
-    let current = estimated_signed_booth_work(terms, scalar_bits, window_bits, num_threads);
-    let next = estimated_signed_booth_work(terms, scalar_bits, next_window_bits, num_threads);
-    Some(
-        if matches!((current, next), (Some(current), Some(next)) if next < current) {
-            next_window_bits
-        } else {
-            window_bits
-        },
-    )
-}
-
-/// Choose a GLV window only when its estimated work beats the generic MSM.
-/// Compare both the default width and its successor to account for worker waves.
-pub(super) fn glv_multiexp_window_bits<C>(terms: usize, num_threads: usize) -> Option<usize>
-where
-    C: GlvParams,
-{
-    if terms < MIN_GLV_MULTIEXP_TERMS || (terms == MIN_GLV_MULTIEXP_TERMS && num_threads <= 1) {
-        return (num_threads <= 1 && terms > SERIAL_STRAUS_MAX_TERMS)
-            .then(|| serial_small_window_bits(terms));
-    }
-    let generic = estimated_generic_work::<C>(terms, num_threads)?;
-    let (glv, glv_window_bits) = booth_multiexp_estimate::<C>(terms, num_threads)?;
-    (glv < generic).then_some(glv_window_bits)
-}
-
-/// The generic signed-Booth MSM's estimated work at its default width (see
-/// [`estimated_signed_booth_work`]).
-fn estimated_generic_work<C>(terms: usize, num_threads: usize) -> Option<BoothWork>
-where
-    C: GlvParams,
-{
-    let window_bits = multiexp_window_bits::<C>(terms, num_threads)?;
-    let scalar_bits = scalar_repr_bits::<C>()?;
-    estimated_signed_booth_work(terms, scalar_bits, window_bits, num_threads)
-}
-
-/// The signed-Booth GLV backend's cheapest `(work, window width)` over the
-/// candidate widths `w` and `w + 1` (see [`glv_multiexp_window_bits`]).
-fn booth_multiexp_estimate<C>(terms: usize, num_threads: usize) -> Option<(BoothWork, usize)>
-where
-    C: GlvParams,
-{
-    let window_bits = multiexp_window_bits::<C>(terms, num_threads)?;
-    let glv_terms = terms.checked_mul(2)?;
+    let generic = estimated_signed_booth_work(
+        terms,
+        scalar_repr_bits::<C>()?,
+        window_bits,
+        num_threads,
+        c.generic_weights,
+    )?;
+    let glv_terms = terms.checked_mul(HALVES)?;
     let mut best: Option<(BoothWork, usize)> = None;
-    for candidate in window_bits..=window_bits.checked_add(1)? {
+    for candidate in window_bits..=window_bits.checked_add(c.glv_extra_window_bits)? {
         if let Some(work) =
-            estimated_signed_booth_work(glv_terms, HALF_BITS, candidate, num_threads)
+            estimated_signed_booth_work(glv_terms, HALF_BITS, candidate, num_threads, c.glv_weights)
         {
             if best.is_none_or(|(best_work, _)| work < best_work) {
                 best = Some((work, candidate));
             }
         }
     }
-    best
+    let (glv, glv_window_bits) = best?;
+    (glv <= generic).then_some(glv_window_bits)
 }
 
 /// The number of threads the MSM may use: Rayon's with `multicore`, except on

@@ -28,9 +28,13 @@ targets = []
 # `--cfg pasta_curves_noasm` compiles the assembly backend out, even if `asm` is
 # enabled; see `src/asm/README.md`. The emulated ARM test target also uses a
 # cfg to select the same backend without changing the bare-metal gate.
+# `--cfg pasta_curves_calibration` takes the MSM's calibration from the
+# `PASTA_CURVES_CALIBRATION` environment variable at compile time; see
+# `src/glv/msm/calibration.rs`.
 unexpected_cfgs = { level = "warn", check-cfg = [
     'cfg(pasta_curves_noasm)',
     'cfg(pasta_curves_armv7em_test)',
+    'cfg(pasta_curves_calibration)',
 ] }
 
 [dev-dependencies]
