@@ -1158,9 +1158,9 @@ where
 /// scalars. So it overtakes one [`batch_mul`] per scalar from two scalars on,
 /// and its lead grows with their number. A single scalar is handed to
 /// [`batch_mul`], and a grid too small to pay for the shared inversions (see
-/// the `batch_mul_scalars`
-/// calibration's `eisenstein_min_products`, 16 by default) is evaluated with one [`Table`] per point,
-/// built together, and one projective ladder per product.
+/// the `batch_mul_scalars` calibration's `eisenstein_min_products`, 13
+/// products by default) is evaluated with one [`Table`] per point, built
+/// together, and one projective ladder per product.
 ///
 /// Identity points and zero scalars are handled, and may be mixed in freely.
 /// Like the rest of this module, this is variable-time in the scalars and the

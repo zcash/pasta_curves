@@ -95,9 +95,9 @@ pub(crate) struct Calibration {
 
 /// The calibration of every target without one of its own.
 pub(crate) const DEFAULT: Calibration = Calibration {
-    glv_min_products: 16,
+    glv_min_products: 13,
     #[cfg(feature = "glv-eisenstein")]
-    eisenstein_min_products: 16,
+    eisenstein_min_products: 13,
     #[cfg(feature = "multicore")]
     min_block_products: 8,
     #[cfg(feature = "multicore")]

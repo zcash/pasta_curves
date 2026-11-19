@@ -1415,9 +1415,9 @@ where
 /// MSM's affine bucket reducer sums all the buckets of the grid at once, with
 /// one shared inversion per level of its pairwise trees. So it overtakes one
 /// [`batch_mul`] per scalar from two scalars on. A single scalar is handed to
-/// [`batch_mul`], and a grid of fewer than 16 products (by default; the
-/// threshold depends on the machine) is evaluated with one
-/// [`Table`] per point and a ladder per product.
+/// [`batch_mul`], and a grid of fewer than 13 products (by default; the
+/// threshold depends on the machine) is evaluated with one [`Table`] per
+/// point and a ladder per product.
 ///
 /// Identity points and zero scalars are handled. Like the rest of this
 /// module, this is variable-time in the scalars and the points: both must be
