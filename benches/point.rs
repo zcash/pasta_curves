@@ -1,9 +1,12 @@
 //! Benchmarks for point operations.
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use ff::Field;
 
 use pasta_curves::arithmetic::CurveExt;
 use pasta_curves::{pallas, vesta};
+use rand::SeedableRng;
+use rand_xorshift::XorShiftRng;
 
 fn criterion_benchmark(c: &mut Criterion) {
     point_bench::<pallas::Point>(c, "Pallas");
@@ -21,6 +24,19 @@ fn point_bench<C: CurveExt>(c: &mut Criterion, name: &str) {
     group.bench_function("point addition", |bencher| bencher.iter(|| a + b));
 
     group.bench_function("point subtraction", |bencher| bencher.iter(|| a - b));
+
+    // Use a deterministic full-width scalar and a nontrivial projective
+    // representative; prepare both input forms outside the timed region.
+    let mut rng = XorShiftRng::from_seed([0x53; 16]);
+    let scalar = C::Scalar::random(&mut rng);
+    let point = a * C::Scalar::random(&mut rng);
+    let affine = point.to_affine();
+    group.bench_function("point scalar multiplication", |bencher| {
+        bencher.iter(|| black_box(point) * black_box(scalar));
+    });
+    group.bench_function("affine scalar multiplication", |bencher| {
+        bencher.iter(|| black_box(affine) * black_box(scalar));
+    });
 
     group.bench_function("point to_bytes", |bencher| bencher.iter(|| a.to_bytes()));
 

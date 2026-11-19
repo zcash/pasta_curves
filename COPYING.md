@@ -21,4 +21,6 @@ this crates or other sources, are preserved below. For precise attributions, see
 the commits introducing the code.
 
 - Copyright (c) The Zakura Contributors
+- Copyright (c) Jack Grigg
+- Copyright (c) Daira-Emma Hopwood
 

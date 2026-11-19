@@ -37,6 +37,9 @@ mod test_fields;
 mod macros;
 mod curves;
 mod fields;
+// Keep this in sync with if_homogeneous_mul!; ARM tests still exercise the formulas.
+#[cfg(any(not(target_arch = "arm"), test))]
+mod scalar_mul;
 
 pub mod arithmetic;
 #[cfg(feature = "deferred")]
