@@ -1,4 +1,4 @@
-use super::{multiply, to_radix_3};
+use super::{PADDED_TRITS, TRITS, multiply, to_radix_3};
 use crate::curves::projective::Projective;
 use crate::curves::projective::tests::assert_same;
 use ff::{Field, PrimeField};
@@ -7,7 +7,7 @@ use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 use subtle::ConditionallySelectable;
 
-fn check_reconstruction(by: &[u8; 32]) -> [u8; 162] {
+fn check_reconstruction(by: &[u8; 32]) -> [u8; PADDED_TRITS] {
     let digits = to_radix_3(by);
     let mut reconstructed = [0u8; 32];
     for &digit in digits.iter().rev() {
@@ -32,10 +32,10 @@ fn recoder_boundaries_and_neighbors() {
     check_reconstruction(&[0xff; 32]);
     let mut top_bit = [0; 32];
     top_bit[31] = 0x80;
-    assert_eq!(check_reconstruction(&top_bit), [0; 162]);
+    assert_eq!(check_reconstruction(&top_bit), [0; PADDED_TRITS]);
     let mut power = [0u8; 32];
     power[0] = 1;
-    for exponent in 0..161 {
+    for exponent in 0..TRITS {
         let digits = check_reconstruction(&power);
         assert_eq!(digits[exponent], 1);
         assert_eq!(digits.iter().map(|&d| u32::from(d)).sum::<u32>(), 1);
