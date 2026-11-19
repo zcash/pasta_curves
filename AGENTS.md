@@ -483,7 +483,7 @@ and `sage`. The individual jobs are:
 - **`no-std`** — builds `--no-default-features` for `thumbv6m-none-eabi`,
   `wasm32-unknown-unknown`, and `wasm32-wasi`.
 - **`bitrot`** — builds the benchmarks (`--benches --all-features`).
-- **`sage`**: runs the five scripts in `sage/` under the pinned SageMath
+- **`sage`**: runs the six scripts in `sage/` under the pinned SageMath
   (`uv run --locked`), one step each: `glv_constants.sage` (the GLV short basis
   and Babai rounding constants), `glv_boundary_scalars.sage` (the
   `*_BOUNDARY_SCALAR` witnesses, re-verifying every property the Rust tests
@@ -492,8 +492,11 @@ and `sage`. The individual jobs are:
   `MAX_DIGITS` bound, and the ladder run on both curves),
   `glv_test_vectors.sage` (the known-answer `k * G` vectors that both
   recodings are tested against, `PALLAS_VECTORS`, `VESTA_VECTORS` and their
-  batch counterparts in `src/glv.rs`), and `msm_window_thresholds.sage` (the
-  interval-derived generic-MSM window thresholds). The scripts assert
+  batch counterparts in `src/glv.rs`), `msm_window_thresholds.sage` (the
+  interval-derived generic-MSM window thresholds), and `radix27_tripling.sage`
+  (the 3-isogenies and the isomorphism whose composition is the tripling of the
+  projective model, and the maps between Jacobian and projective coordinates,
+  symbolically for every `y^2 = x^3 + b` and on both curves). The scripts assert
   their own derivations and print the constants in the shape of the Rust
   source; CI does not diff that output against `src/`, which the in-crate
   `constants` test covers instead.

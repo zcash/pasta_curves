@@ -142,6 +142,8 @@ jobs:
         run: uv run --locked sage glv_test_vectors.sage
       - name: Verify the MSM window thresholds
         run: uv run --locked sage msm_window_thresholds.sage
+      - name: Verify the radix-27 tripling and the coordinate maps
+        run: uv run --locked sage radix27_tripling.sage
 
   book:
     name: Book tests
