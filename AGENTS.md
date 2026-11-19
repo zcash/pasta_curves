@@ -427,9 +427,10 @@ specifics:
   `arithmetic/` submodules generate the repetitive per-field and per-curve
   implementations; changes to arithmetic usually belong in the macro/shared code so both
   curves stay in sync.
-- **Curve code is split by model.** `src/curves.rs` documents the curves and their models
-  and invokes `new_curve_impl!` for Pallas, Vesta and the isogenous curves used for
-  hashing; the code of each model lives in its own file under `src/curves/`:
+- **Curve code is split by model.** `src/curves.rs` documents the curves and their models,
+  holds the dispatch of the curves' `Mul` impls, and invokes `new_curve_impl!` for Pallas,
+  Vesta and the isogenous curves used for hashing; the code of each model lives in its own
+  file under `src/curves/`:
   - `params.rs`: each curve's parameters (a, b, curve ID) as a type implementing
     `CurveParams`, which every model reads;
   - `affine.rs`: the affine chart, the public affine point type (`new_affine_impl!`);
@@ -442,7 +443,6 @@ specifics:
     between the public point types and the projective model);
   - `iso.rs`: the constants of the maps of hashing to the curves, the simplified SWU
     map to the isogenous curves and the 3-isogenies from them;
-  - `scalar_mul.rs`: the dispatch of the curves' `Mul` impls.
 
   A new model gets its own file, its equation and weights in its documentation, and its
   maps to the existing models in `maps.rs`. The public `arithmetic` module holds the
