@@ -14,7 +14,7 @@
 use ff::Field;
 use subtle::{ConditionallySelectable, ConstantTimeEq};
 
-use crate::curves::projective::Projective;
+use crate::curves::projective::{PASTA_B, Projective};
 
 /// The base of the recoding: the scalar is written in ternary.
 const TERNARY: u8 = 3;
@@ -52,7 +52,10 @@ const _: () = assert!(LIMBS * 32 == 256);
 
 /// Returns `by` times `p`, for the low 255 bits of the little-endian `by`,
 /// with a fixed sequence of operations.
-pub(crate) fn multiply<F: Field>(p: &Projective<F>, by: &[u8; 32]) -> Projective<F> {
+pub(crate) fn multiply<F: Field>(
+    p: &Projective<F, PASTA_B>,
+    by: &[u8; 32],
+) -> Projective<F, PASTA_B> {
     let digits = to_radix_3(by);
     // Multiples 1P through 26P. Each pair doubles an earlier entry and
     // adds P, using complete formulas even when P is the identity.
@@ -126,19 +129,19 @@ macro_rules! if_projective_mul {
 
 macro_rules! mul_curve_specific {
     ($name:ident, $base:ident, special_a0_b5, jacobian, $point:expr, $scalar:expr) => {{
-        let point = crate::curves::projective::Projective::<$base>::from_jacobian(
-            $point.x, $point.y, $point.z,
-        );
+        let point = crate::curves::projective::Projective::<
+            $base,
+            { crate::curves::projective::PASTA_B },
+        >::from_jacobian($point.x, $point.y, $point.z);
         let (x, y, z) =
             crate::curves::scalar_mul::multiply(&point, &$scalar.to_repr()).to_jacobian();
         $name { x, y, z }
     }};
     ($name:ident, $base:ident, special_a0_b5, affine, $point:expr, $scalar:expr) => {{
-        let point = crate::curves::projective::Projective::<$base>::from_affine(
-            $point.x,
-            $point.y,
-            $point.is_identity(),
-        );
+        let point = crate::curves::projective::Projective::<
+            $base,
+            { crate::curves::projective::PASTA_B },
+        >::from_affine($point.x, $point.y, $point.is_identity());
         let (x, y, z) =
             crate::curves::scalar_mul::multiply(&point, &$scalar.to_repr()).to_jacobian();
         $name { x, y, z }

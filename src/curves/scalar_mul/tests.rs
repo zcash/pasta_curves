@@ -1,6 +1,6 @@
 use super::{PADDED_TRITS, TRITS, multiply, to_radix_3};
-use crate::curves::projective::Projective;
 use crate::curves::projective::tests::assert_same;
+use crate::curves::projective::{PASTA_B, Projective};
 use ff::{Field, PrimeField};
 use group::{Curve, CurveAffine, Group};
 use rand::SeedableRng;
@@ -97,7 +97,7 @@ macro_rules! curve_tests {
 
             #[test]
             fn identity_times_any_scalar_is_identity() {
-                let identity = Projective::<$field>::identity();
+                let identity = Projective::<$field, PASTA_B>::identity();
                 for (x, y) in [
                     (<$field>::ZERO, <$field>::ZERO),
                     (<$field>::ONE, <$field>::ONE),

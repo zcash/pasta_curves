@@ -171,7 +171,7 @@ mod projective {
 
     use super::super::projective::Projective;
 
-    impl<F: Field> Projective<F> {
+    impl<F: Field, const B: i64> Projective<F, B> {
         pub(crate) fn from_jacobian(x: F, y: F, z: F) -> Self {
             let z2 = z.square();
             let p = Self {

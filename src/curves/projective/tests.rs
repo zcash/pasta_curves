@@ -1,4 +1,7 @@
-use super::{B, Projective, U, times_3b, times_b, times_minus_27b, times_u, times_u3};
+use super::{
+    IMAGE_B, IMAGE2_B, PASTA_B, Projective, U, times_3b, times_b, times_minus_27b, times_u,
+    times_u3,
+};
 use ff::Field;
 use group::{Curve, CurveAffine, Group};
 use proptest::prelude::*;
@@ -12,7 +15,10 @@ fn point<G: Group>(seed: [u8; 16]) -> G {
 
 // The original six-product cross-product tail of RCB Algorithm 7 is retained
 // here as an independent reference for the five-product formula.
-fn six_product_add<F: Field>(p: &Projective<F>, q: &Projective<F>) -> Projective<F> {
+fn six_product_add<F: Field>(
+    p: &Projective<F, PASTA_B>,
+    q: &Projective<F, PASTA_B>,
+) -> Projective<F, PASTA_B> {
     let t0 = p.x * q.x;
     let t1 = p.y * q.y;
     let t2 = p.z * q.z;
@@ -37,7 +43,7 @@ fn six_product_add<F: Field>(p: &Projective<F>, q: &Projective<F>) -> Projective
 
 // The tripling as first written, with both isogenies inlined, kept as a reference
 // that the factored form computes the same coordinates.
-fn inlined_triple<F: Field>(p: &Projective<F>) -> Projective<F> {
+fn inlined_triple<F: Field>(p: &Projective<F, PASTA_B>) -> Projective<F, PASTA_B> {
     // Two complete degree-three isogenies and the isomorphism returning
     // to the original curve. Here bz² means 5z².
     let y2 = p.y.square();
@@ -69,13 +75,19 @@ fn inlined_triple<F: Field>(p: &Projective<F>) -> Projective<F> {
     }
 }
 
-/// Whether `p` lies on $Y^2 Z = X^3 + b Z^3$.
-fn on_curve<F: Field>(p: &Projective<F>, b: F) -> bool {
-    p.y.square() * p.z == p.x.square() * p.x + b * p.z.square() * p.z
+/// Whether `p` lies on $Y^2 Z = X^3 + B Z^3$, the curve its type names.
+fn on_curve<F: Field + From<u64>, const B: i64>(p: &Projective<F, B>) -> bool {
+    p.y.square() * p.z == p.x.square() * p.x + field::<F>(B) * p.z.square() * p.z
+}
+
+/// The field element of a signed integer.
+fn field<F: Field + From<u64>>(v: i64) -> F {
+    let magnitude = F::from(v.unsigned_abs());
+    if v < 0 { -magnitude } else { magnitude }
 }
 
 /// Whether `p` and `q` are the same projective point.
-pub(crate) fn assert_same<F: Field>(p: Projective<F>, q: Projective<F>) {
+pub(crate) fn assert_same<F: Field, const B: i64>(p: Projective<F, B>, q: Projective<F, B>) {
     assert_eq!(bool::from(p.z.is_zero()), bool::from(q.z.is_zero()));
     if !bool::from(p.z.is_zero()) {
         assert!(bool::from((p.x * q.z).ct_eq(&(q.x * p.z))));
@@ -87,8 +99,8 @@ pub(crate) fn assert_same<F: Field>(p: Projective<F>, q: Projective<F>) {
 /// point type, so the radix-27 table costs what its coordinates do.
 #[test]
 fn projective_points_are_96_bytes() {
-    assert_eq!(core::mem::size_of::<Projective<crate::Fp>>(), 96);
-    assert_eq!(core::mem::size_of::<Projective<crate::Fq>>(), 96);
+    assert_eq!(core::mem::size_of::<Projective<crate::Fp, PASTA_B>>(), 96);
+    assert_eq!(core::mem::size_of::<Projective<crate::Fq, PASTA_B>>(), 96);
 }
 
 /// Each addition chain multiplies by the constant its name and documentation
@@ -96,11 +108,11 @@ fn projective_points_are_96_bytes() {
 fn check_small_multiples<F: Field + From<u64>>() {
     let mut x = F::from(0x1234_5678);
     for _ in 0..8 {
-        assert_eq!(times_b(x), x * F::from(B));
-        assert_eq!(times_3b(x), x * F::from(3 * B));
-        assert_eq!(times_minus_27b(x), -(x * F::from(27 * B)));
-        assert_eq!(times_u(x), x * F::from(U));
-        assert_eq!(times_u3(x), x * F::from(U.pow(3)));
+        assert_eq!(times_b(x), x * field::<F>(PASTA_B));
+        assert_eq!(times_3b(x), x * field::<F>(3 * PASTA_B));
+        assert_eq!(times_minus_27b(x), x * field::<F>(IMAGE_B));
+        assert_eq!(times_u(x), x * field::<F>(U));
+        assert_eq!(times_u3(x), x * field::<F>(U.pow(3)));
         x = x.square() + F::ONE;
     }
 }
@@ -116,14 +128,14 @@ macro_rules! curve_tests {
         pub(crate) mod $name {
             use super::*;
 
-            pub(crate) fn h(p: $affine) -> Projective<$field> {
+            pub(crate) fn h(p: $affine) -> Projective<$field, PASTA_B> {
                 let (x, y) = p.raw_xy();
                 Projective::from_affine(x, y, p.is_identity())
             }
 
             /// The point in the projective model, through the map from Jacobian
             /// coordinates.
-            fn from_point(p: $point) -> Projective<$field> {
+            fn from_point(p: $point) -> Projective<$field, PASTA_B> {
                 Projective::from_jacobian(p.x, p.y, p.z)
             }
 
@@ -154,7 +166,7 @@ macro_rules! curve_tests {
                 ) {
                     let (p, q) = (point::<$point>(a), point::<$point>(b));
                     let (hp, hq) = (from_point(p), from_point(q));
-                    let identity = Projective::<$field>::identity();
+                    let identity = Projective::<$field, PASTA_B>::identity();
                     assert_same(hp.add(&hq), from_point(p + q));
                     assert_same(hp.double(), from_point(p.double()));
                     assert_same(hp.triple(), from_point(p.double() + p));
@@ -167,7 +179,7 @@ macro_rules! curve_tests {
 
             #[test]
             fn complete_formulas_and_coordinates() {
-                let identity = Projective::<$field>::identity();
+                let identity = Projective::<$field, PASTA_B>::identity();
                 let g = <$point>::generator();
                 let p = h(g.to_affine());
                 let q = h(g.double().to_affine());
@@ -213,17 +225,14 @@ macro_rules! curve_tests {
             }
             #[test]
             fn tripling_factors_through_the_3_isogeny() {
-                let five = <$field>::from(B);
-                let image = -(five * <$field>::from(27));
-                let twisted = five * <$field>::from(U.pow(6));
                 let g = <$point>::generator();
                 for point in [<$point>::identity(), g, -g, g.double(), g.double() + g] {
                     let p = h(point.to_affine());
-                    let once = p.isogeny_3(|x| x * five);
-                    assert!(on_curve(&once, image));
-                    let twice = once.isogeny_3(|x| x * image);
-                    assert!(on_curve(&twice, twisted));
-                    assert!(on_curve(&twice.iota(), five));
+                    let once: Projective<$field, IMAGE_B> = p.isogeny_3();
+                    assert!(on_curve(&once));
+                    let twice: Projective<$field, IMAGE2_B> = once.isogeny_3();
+                    assert!(on_curve(&twice));
+                    assert!(on_curve(&twice.iota()));
                     let (t, r) = (p.triple(), inlined_triple(&p));
                     assert_eq!((t.x, t.y, t.z), (r.x, r.y, r.z));
                 }
