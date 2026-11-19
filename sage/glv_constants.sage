@@ -1,4 +1,4 @@
-# Derives the GLV constants declared in `src/glv.rs` (the `GlvParams`
+# Derives the GLV constants declared in `src/glv.rs` (the `GlvConstants`
 # implementations for `pallas::Point` and `vesta::Point`) from the curve
 # definitions alone, and prints them in the exact shape of the Rust
 # source so the two can be diffed.
@@ -26,7 +26,7 @@ Gv = Vesta(-1, 2)
 
 # `round(a / b)` (half away from zero for positive operands), in exact
 # integer arithmetic. This is the same rounding `round_mul_shift` in
-# `src/glv.rs` implements by adding 2^383 and truncating.
+# `src/glv/decomposition.rs` implements by adding 2^383 and truncating.
 def iround(a, b):
     return (2 * a + b) // (2 * b)
 
@@ -70,8 +70,9 @@ def lagrange_gauss(u, v):
         v = (v[0] - m * u[0], v[1] - m * u[1])
 
 
-# The `GlvParams` constants for group order `n` and scalar-field cube
-# root `lam`, as the tuple (V1A, V1B_NEG, V2A, V2B, G1, G2).
+# The `GlvConstants` values for group order `n` and scalar-field cube
+# root `lam`, using the legacy parameter names internally:
+# (V1A, V1B_NEG, V2A, V2B, G1, G2).
 def glv_params(n, lam):
     u, v = lagrange_gauss((n, 0), ((-lam) % n, 1))
     # Canonicalize the reduced basis to the crate's sign convention:
@@ -107,12 +108,12 @@ def rust_limbs(x, count, indent):
 
 def print_impl(curve, n, lam):
     V1A, V1B_NEG, V2A, V2B, G1, G2 = glv_params(n, lam)
-    print("impl GlvParams for %s::Point {" % curve)
-    print("    const V1A: u128 = %#x;" % V1A)
-    print("    const V1B_NEG: u128 = %#x;" % V1B_NEG)
-    print("    const V2A: u128 = %#x;" % V2A)
-    print("    const V2B: u128 = %#x;" % V2B)
-    for name, g in [("G1", G1), ("G2", G2)]:
+    print("impl GlvConstants for %s::Point {" % curve)
+    print("    const BASIS_1_A: u128 = %#x;" % V1A)
+    print("    const BASIS_1_B_ABS: u128 = %#x;" % V1B_NEG)
+    print("    const BASIS_2_A: u128 = %#x;" % V2A)
+    print("    const BASIS_2_B: u128 = %#x;" % V2B)
+    for name, g in [("ROUNDING_COEFF_1", G1), ("ROUNDING_COEFF_2", G2)]:
         print("    const %s: [u64; 5] = [" % name)
         print(rust_limbs(g, 5, 8))
         print("    ];")

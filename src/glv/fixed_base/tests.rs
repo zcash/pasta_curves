@@ -1,15 +1,20 @@
 use alloc::vec::Vec;
 
+#[cfg(feature = "glv")]
 use ff::{Field, FromUniformBytes, PrimeField};
+#[cfg(feature = "glv")]
 use group::CurveAffine as _;
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 
 use super::{Booth7, BoothTable, FixedBaseSum, GlvParams, MAGNITUDES, WINDOWS};
+#[cfg(feature = "glv")]
 use crate::arithmetic::CurveExt;
+#[cfg(feature = "glv")]
 use crate::glv::Recoding;
 use crate::{pallas, vesta};
 
+#[cfg(feature = "glv")]
 fn check<C: GlvParams>()
 where
     C::ScalarExt: FromUniformBytes<64>,
@@ -90,6 +95,7 @@ where
     }
 }
 
+#[cfg(feature = "glv")]
 #[test]
 fn fixed_base_sum_matches_native_mul() {
     check::<pallas::Point>();
@@ -98,6 +104,7 @@ fn fixed_base_sum_matches_native_mul() {
 
 /// The batched sums equal the per-sum ones, including identity bases,
 /// zero and short scalar vectors, and pairs that hit the equal-x fallback.
+#[cfg(feature = "glv")]
 fn check_batch<C: GlvParams>()
 where
     C::ScalarExt: FromUniformBytes<64>,
@@ -142,6 +149,7 @@ where
     }
 }
 
+#[cfg(feature = "glv")]
 #[test]
 fn fixed_base_sum_batch_matches_single() {
     check_batch::<pallas::Point>();
@@ -187,6 +195,7 @@ fn fixed_base_table_size() {
     check_table_size::<vesta::Point>();
 }
 
+#[cfg(feature = "glv")]
 #[test]
 #[should_panic(expected = "one output per sum")]
 fn fixed_base_sum_batch_rejects_mismatched_output() {
@@ -196,6 +205,7 @@ fn fixed_base_sum_batch_rejects_mismatched_output() {
     table.sum_batch_vartime(&[&[], &[]], &mut output);
 }
 
+#[cfg(feature = "glv")]
 #[test]
 #[should_panic(expected = "at most one scalar per prepared base")]
 fn fixed_base_sum_rejects_extra_scalars() {

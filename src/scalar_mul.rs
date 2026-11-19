@@ -1,11 +1,16 @@
 //! Private complete formulas for scalar multiplication on the native curves.
 //!
 //! The homogeneous addition and tripling adapt the algorithms in
-//! https://eprint.iacr.org/2026/2667 and the MIT/Apache-2.0 implementation
+//! <https://eprint.iacr.org/2026/2667> and the MIT/Apache-2.0 implementation
 //! in zkcrypto/bls12_381. Public point arithmetic keeps its Jacobian representation.
 
 use ff::Field;
-use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
+use subtle::{Choice, ConditionallySelectable};
+
+#[cfg(test)]
+use subtle::ConstantTimeEq;
+
+mod tau;
 
 #[derive(Clone, Copy)]
 pub(crate) struct Homogeneous<F: Field> {
@@ -145,6 +150,7 @@ impl<F: Field> Homogeneous<F> {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn multiply(&self, by: &[u8; 32]) -> Self {
         let digits = to_radix_3(by);
         // Multiples 1P through 26P. Each pair doubles an earlier entry and
@@ -185,6 +191,7 @@ impl<F: Field> ConditionallySelectable for Homogeneous<F> {
 /// Recodes the low 255 bits of a little-endian scalar into 161 little-endian
 /// ternary digits. The final zero digit makes the length divisible by three.
 /// The high bit is ignored, as in the previous group multiply implementations.
+#[cfg(test)]
 pub(crate) fn to_radix_3(by: &[u8; 32]) -> [u8; 162] {
     let mut limbs = [0u32; 8];
     for i in 0..8 {

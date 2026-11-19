@@ -1,3 +1,4 @@
+#[cfg(feature = "glv")]
 use ff::{Field, PrimeField};
 
 use super::*;
@@ -13,6 +14,7 @@ fn multiexp_component_guard_returns_none_out_of_bounds() {
     assert!(checked_signed_magnitudes(((false, 0), (true, out_of_bounds))).is_none());
 }
 
+#[cfg(feature = "glv")]
 #[test]
 fn booth_digits_reconstruct_components() {
     for width in 1..=16 {

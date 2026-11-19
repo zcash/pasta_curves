@@ -5,8 +5,9 @@ alone, the magic constants that appear in the crate's source, printing
 them in the exact shape of the Rust code so the two can be diffed:
 
 - `glv_constants.sage` — the GLV short-basis and Babai-rounding
-  constants in the `GlvParams` implementations in `src/glv.rs`
-  (`V1A`, `V1B_NEG`, `V2A`, `V2B`, `G1`, `G2`, for both curves).
+  constants in the `GlvConstants` implementations in `src/glv.rs`
+  (`BASIS_1_A`, `BASIS_1_B_ABS`, `BASIS_2_A`, `BASIS_2_B`,
+  `ROUNDING_COEFF_1`, `ROUNDING_COEFF_2`, for both curves).
 - `glv_boundary_scalars.sage` — the `*_BOUNDARY_SCALAR` witnesses used
   by the `babai_boundary_*` and `native_vs_glv_boundary_*` regression
   tests in `src/glv.rs`.
@@ -24,6 +25,12 @@ them in the exact shape of the Rust code so the two can be diffed:
   end to end by running the resulting ladder on Pallas and Vesta, and the
   norm bound showing that the batch-affine ladder has no exceptional case
   but the identity.
+- `tau_recoding.sage` — the regular tau-adic scalar multiplication in
+  `src/scalar_mul/tau.rs`: digit representatives and residue selection,
+  preservation of nondivisibility, exact division by tau cubed, and the
+  fixed 54-round bound for both Pasta scalar decompositions. It checks
+  reconstruction using the same 384-bit rounding as the Rust split and
+  bounds the signed coordinates used by the recoder.
 - `msm_window_thresholds.sage`: the `DEFAULT_MULTIEXP_WINDOW_THRESHOLDS`
   table in `src/glv/msm.rs`, the floors of `e^k` that encode the generic
   MSM's `ceil(ln(terms))` window schedule. It computes them with interval
