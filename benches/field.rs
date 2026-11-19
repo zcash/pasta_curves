@@ -10,6 +10,9 @@ use rand_xorshift::XorShiftRng;
 use ff::{FromUniformBytes, PrimeField};
 use pasta_curves::{Fp, Fq, arithmetic::VartimeField};
 
+#[cfg(feature = "deferred")]
+use pasta_curves::deferred::DeferredField;
+
 #[cfg(feature = "alloc")]
 use {criterion::BatchSize, ff::BatchInvert, pasta_curves::arithmetic::VartimeBatchInvert};
 
@@ -134,9 +137,49 @@ where
     }
 }
 
+/// An inner product of `n` pairs, with one Montgomery reduction per product
+/// and with the `deferred` accumulator's single reduction at the end.
+#[cfg(feature = "deferred")]
+fn inner_product_bench<F, M>(group: &mut BenchmarkGroup<'_, M>)
+where
+    F: PrimeField + DeferredField,
+    M: Measurement,
+{
+    let mut rng = rng();
+    for n in [2, 4, 16, 64] {
+        let a: Vec<F> = (0..n).map(|_| F::random(&mut rng)).collect();
+        let b: Vec<F> = (0..n).map(|_| F::random(&mut rng)).collect();
+        group.bench_function(format!("inner_product/{n}"), |bencher| {
+            bencher.iter(|| {
+                criterion::black_box(&a)
+                    .iter()
+                    .zip(criterion::black_box(&b))
+                    .fold(F::ZERO, |acc, (x, y)| acc + *x * y)
+            });
+        });
+        group.bench_function(format!("inner_product deferred/{n}"), |bencher| {
+            bencher.iter(|| {
+                let mut acc = F::Accumulator::default();
+                for (x, y) in criterion::black_box(&a)
+                    .iter()
+                    .zip(criterion::black_box(&b))
+                {
+                    F::mul_accumulate(&mut acc, x, y);
+                }
+                F::reduce(acc)
+            });
+        });
+    }
+}
+
 fn criterion_benchmark(c: &mut Criterion) {
     field_bench::<Fp>(c, "Fp");
     field_bench::<Fq>(c, "Fq");
+    #[cfg(feature = "deferred")]
+    {
+        inner_product_bench::<Fp, _>(&mut c.benchmark_group("Fp"));
+        inner_product_bench::<Fq, _>(&mut c.benchmark_group("Fq"));
+    }
 }
 
 criterion_group!(benches, criterion_benchmark);
