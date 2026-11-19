@@ -71,13 +71,6 @@ macro_rules! new_jacobian_impl {
             z: $base,
         }
 
-        impl $name {
-            #[cfg(feature = "alloc")]
-            fn is_identity_vartime(&self) -> bool {
-                self.z.is_zero_vartime()
-            }
-        }
-
         impl group::Group for $name {
             type Scalar = $scalar;
 
@@ -195,120 +188,7 @@ macro_rules! new_jacobian_impl {
             }
 
             fn batch_normalize_vartime(p: &[Self], q: &mut [Self::Affine]) {
-                assert_eq!(p.len(), q.len());
-
-                // Two chains hide multiplication latency for larger batches.
-                // Below this length, the two-lane variant's fixed overhead
-                // and lane bookkeeping outweigh the dependency-chain split.
-                const TWO_LANE_MIN: usize = 32;
-
-                if p.len() < TWO_LANE_MIN {
-                    let Some((first_p, p)) = p.split_first() else {
-                        return;
-                    };
-                    let (first_q, q) = q.split_first_mut().unwrap();
-                    let first_skip = first_p.is_identity_vartime();
-                    let mut acc = if first_skip { $base::one() } else { first_p.z };
-                    for (p, q) in p.iter().zip(q.iter_mut()) {
-                        // We use the `x` field of $name_affine to store the
-                        // product of previous z-coordinates seen.
-                        q.x = acc;
-
-                        // We will end up skipping all identities in p
-                        if !p.is_identity_vartime() {
-                            acc *= p.z;
-                        }
-                    }
-
-                    // This is the inverse, as all z-coordinates are nonzero and
-                    // the ones that are not are skipped.
-                    acc = acc.invert_vartime().unwrap();
-
-                    for (p, q) in p.iter().rev().zip(q.iter_mut().rev()) {
-                        if p.is_identity_vartime() {
-                            *q = $name_affine::identity();
-                            continue;
-                        }
-
-                        // Compute tmp = 1/z
-                        let tmp = q.x * acc;
-
-                        // Cancel out z-coordinate in denominator of `acc`
-                        acc *= p.z;
-
-                        // Set the coordinates to the correct value
-                        let tmp2 = Field::square(&tmp);
-                        let tmp3 = tmp2 * tmp;
-
-                        q.x = p.x * tmp2;
-                        q.y = p.y * tmp3;
-                    }
-
-                    // The first prefix is one, and the accumulator is dead
-                    // after producing its inverse, so both multiplications
-                    // at this endpoint can be omitted.
-                    if first_skip {
-                        *first_q = $name_affine::identity();
-                    } else {
-                        let tmp2 = Field::square(&acc);
-                        let tmp3 = tmp2 * acc;
-                        first_q.x = first_p.x * tmp2;
-                        first_q.y = first_p.y * tmp3;
-                    }
-                    return;
-                }
-
-                // Even- and odd-indexed points form independent prefix-product
-                // and back-substitution chains, sharing a single field inversion.
-                let (first_p, p) = p.split_at(2);
-                let (first_q, q) = q.split_at_mut(2);
-                let first_skip = [
-                    first_p[0].is_identity_vartime(),
-                    first_p[1].is_identity_vartime(),
-                ];
-                let mut acc = [
-                    if first_skip[0] { $base::one() } else { first_p[0].z },
-                    if first_skip[1] { $base::one() } else { first_p[1].z },
-                ];
-                for (i, (p, q)) in p.iter().zip(q.iter_mut()).enumerate() {
-                    // Store each lane's prefix in the output's unused x coordinate.
-                    q.x = acc[i & 1];
-                    if !p.is_identity_vartime() {
-                        acc[i & 1] *= p.z;
-                    }
-                }
-
-                // Join the lane products, invert once, and recover the inverse
-                // of each lane's product.
-                let inverse = (acc[0] * acc[1]).invert_vartime().unwrap();
-                let mut acc = [inverse * acc[1], inverse * acc[0]];
-
-                for (i, (p, q)) in p.iter().zip(q.iter_mut()).enumerate().rev() {
-                    let lane = i & 1;
-                    if p.is_identity_vartime() {
-                        *q = $name_affine::identity();
-                        continue;
-                    }
-                    let tmp = q.x * acc[lane];
-                    acc[lane] *= p.z;
-                    let tmp2 = Field::square(&tmp);
-                    let tmp3 = tmp2 * tmp;
-                    q.x = p.x * tmp2;
-                    q.y = p.y * tmp3;
-                }
-
-                for lane in 0..2 {
-                    // The first prefix in each lane is one, and its final
-                    // accumulator update is dead.
-                    if first_skip[lane] {
-                        first_q[lane] = $name_affine::identity();
-                    } else {
-                        let tmp2 = Field::square(&acc[lane]);
-                        let tmp3 = tmp2 * acc[lane];
-                        first_q[lane].x = first_p[lane].x * tmp2;
-                        first_q[lane].y = first_p[lane].y * tmp3;
-                    }
-                }
+                crate::inversion::batch::invert_vartime(p, q);
             }
 
             impl_batch_mul_same_scalar_vartime!($same_scalar_mul, $name);

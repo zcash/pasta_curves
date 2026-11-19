@@ -1,14 +1,14 @@
 //! The maps between the Jacobian and affine models: `to_affine` and the batch
-//! normalizations, constant-time and variable-time.
+//! normalizations, constant-time and variable-time, which run the batch inversion
+//! of `inversion::batch`.
 
 use crate::arithmetic::CurveExt;
 use crate::curves::{Ep, Eq};
+use ff::Field;
 use group::CurveAffine as _;
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 use std::vec::Vec;
-
-mod normalization;
 
 fn check_vartime_normalization<C: CurveExt>(points: &[C]) {
     for point in points {
@@ -44,7 +44,9 @@ fn check_curve_normalization<C: CurveExt>() {
         0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc,
         0xe5,
     ]);
-    for len in [1, 2, 3, 7, 16, 31] {
+    // Lengths on both sides of the batch inversion's switch to two chains,
+    // whose placement of identities `inversion::batch` tests.
+    for len in [1, 2, 3, 7, 16, 31, 32, 33, 65] {
         let points: Vec<C> = (0..len)
             .map(|i| {
                 if i % 3 == 0 {
@@ -55,6 +57,24 @@ fn check_curve_normalization<C: CurveExt>() {
             })
             .collect();
         check_vartime_normalization(&points);
+
+        // Representatives of one point with z = 0, 1, -1 (the largest field
+        // element) and a random z normalize to the same affine point.
+        let (x, y, _) = generator.to_affine().to_curve().jacobian_coordinates();
+        let scales = [
+            C::Base::ZERO,
+            C::Base::ONE,
+            -C::Base::ONE,
+            C::Base::random(&mut rng),
+        ];
+        let scaled: Vec<C> = (0..len)
+            .map(|i| {
+                let z = scales[i % scales.len()];
+                let z2 = z.square();
+                C::new_jacobian(x * z2, y * z2 * z, z).unwrap()
+            })
+            .collect();
+        check_vartime_normalization(&scaled);
     }
 }
 

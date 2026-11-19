@@ -11,6 +11,9 @@
 
 use crate::limbs::Limbs;
 
+// The batch inversion of the batch normalizations, constant-time and variable-time.
+pub(crate) mod batch;
+
 // The variable-time inversion of the field types (`invert_vartime`), by 62-bit
 // divsteps, for public inputs.
 pub(crate) mod vartime;
