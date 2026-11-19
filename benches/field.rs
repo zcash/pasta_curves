@@ -4,10 +4,10 @@ use criterion::{
     BenchmarkGroup, Criterion, criterion_group, criterion_main, measurement::Measurement,
 };
 
-use rand::SeedableRng;
+use rand::{Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 
-use ff::PrimeField;
+use ff::{FromUniformBytes, PrimeField};
 use pasta_curves::{Fp, Fq, arithmetic::VartimeField};
 
 #[cfg(feature = "alloc")]
@@ -46,7 +46,7 @@ fn cycle<M, T, R>(
 
 fn field_bench<F>(c: &mut Criterion, name: &str)
 where
-    F: PrimeField + VartimeField,
+    F: PrimeField + VartimeField + FromUniformBytes<64>,
 {
     let mut group = c.benchmark_group(name);
     let element = |rng: &mut XorShiftRng| F::random(rng);
@@ -93,6 +93,17 @@ where
         "from_repr",
         |rng| F::random(rng).to_repr(),
         |repr| F::from_repr(*repr),
+    );
+    // The reduction of 64 uniform bytes, as in hashing to a scalar.
+    cycle(
+        &mut group,
+        "from_uniform_bytes",
+        |rng| {
+            let mut bytes = [0u8; 64];
+            rng.fill_bytes(&mut bytes);
+            bytes
+        },
+        |bytes| F::from_uniform_bytes(bytes),
     );
 }
 
