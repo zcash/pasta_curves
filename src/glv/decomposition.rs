@@ -39,7 +39,7 @@ where
 /// Constant-time GLV split into signed coefficients for native multiplication.
 /// Both coefficients fit strictly within `(-2^127, 2^127)` for every canonical
 /// scalar. The signed conversion has no scalar-dependent branching or checks.
-#[allow(dead_code)] // Used by native scalar multiplication once its GLV ladder is enabled.
+#[cfg(any(not(target_arch = "arm"), test))]
 #[inline]
 pub(crate) fn decompose_signed<C>(k: &C::Scalar) -> (i128, i128)
 where

@@ -97,6 +97,8 @@ mod booth;
 
 mod decomposition;
 
+#[cfg(any(not(target_arch = "arm"), test))]
+pub(crate) use decomposition::decompose_signed;
 #[cfg(feature = "glv")]
 pub(crate) use decomposition::{HALF_BITS, HALVES, decompose};
 

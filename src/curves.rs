@@ -1100,7 +1100,7 @@ macro_rules! mul_curve_specific {
     ($name:ident, $base:ident, special_a0_b5, projective, $point:expr, $scalar:expr) => {{
         let point =
             crate::scalar_mul::Homogeneous::<$base>::from_jacobian($point.x, $point.y, $point.z);
-        let (x, y, z) = point.multiply(&$scalar.to_repr()).to_jacobian();
+        let (x, y, z) = point.multiply_tau::<$name>($scalar).to_jacobian();
         $name { x, y, z }
     }};
     ($name:ident, $base:ident, special_a0_b5, affine, $point:expr, $scalar:expr) => {{
@@ -1109,7 +1109,7 @@ macro_rules! mul_curve_specific {
             $point.y,
             $point.is_identity(),
         );
-        let (x, y, z) = point.multiply(&$scalar.to_repr()).to_jacobian();
+        let (x, y, z) = point.multiply_tau::<$name>($scalar).to_jacobian();
         $name { x, y, z }
     }};
     ($name:ident, $base:ident, general, $coord:ident, $point:expr, $scalar:expr) => {{
