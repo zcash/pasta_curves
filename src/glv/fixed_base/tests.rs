@@ -148,6 +148,138 @@ fn fixed_base_sum_batch_matches_single() {
     check_batch::<vesta::Point>();
 }
 
+fn check_dispatch<C: GlvParams>()
+where
+    C::ScalarExt: FromUniformBytes<64>,
+{
+    use crate::arithmetic::PreparedFixedBaseSum;
+
+    let mut rng = XorShiftRng::seed_from_u64(0x702);
+    let bases: Vec<_> = (0..7)
+        .map(|_| C::random(&mut rng).to_affine())
+        .chain(core::iter::once(C::identity().to_affine()))
+        .collect();
+    let table = FixedBaseSum::<C, Booth7>::new_prepared(&bases);
+    #[cfg(all(
+        feature = "asm",
+        feature = "sqrt-table",
+        target_arch = "x86_64",
+        not(pasta_curves_noasm)
+    ))]
+    let mut table = table;
+    let columns: Vec<Vec<_>> = (0..19)
+        .map(|i| {
+            (0..(i % (bases.len() + 1)))
+                .map(|_| C::ScalarExt::random(&mut rng))
+                .collect()
+        })
+        .collect();
+    let slices: Vec<_> = columns.iter().map(Vec::as_slice).collect();
+    let expected: Vec<C> = columns
+        .iter()
+        .map(|scalars| scalars.iter().zip(&bases).map(|(k, p)| *p * k).sum())
+        .collect();
+    let mut output = alloc::vec![C::identity(); slices.len()];
+    table.sum_batch_vartime(&slices, &mut output);
+    assert_eq!(output, expected);
+
+    #[cfg(all(
+        feature = "asm",
+        feature = "sqrt-table",
+        target_arch = "x86_64",
+        not(pasta_curves_noasm)
+    ))]
+    {
+        assert_eq!(
+            table.points29.is_some(),
+            crate::arithmetic::avx2_sqrt::available(),
+        );
+        // Simulate a CPU without AVX2 without changing the global detector.
+        table.points29 = None;
+    }
+    // This also covers feature-disabled and noasm builds.
+    table.sum_batch_vartime(&slices, &mut output);
+    assert_eq!(output, expected);
+}
+
+#[test]
+fn fixed_base_runtime_and_feature_disabled_fallback() {
+    check_dispatch::<pallas::Point>();
+    check_dispatch::<vesta::Point>();
+}
+
+#[cfg(all(
+    feature = "asm",
+    feature = "sqrt-table",
+    target_arch = "x86_64",
+    not(pasta_curves_noasm)
+))]
+fn check_radix29_reducer<C: GlvParams>() {
+    use crate::arithmetic::avx2_chord::Point29;
+    use crate::glv::{affine_from_xy_unchecked, affine_xy};
+
+    let mut rng = XorShiftRng::seed_from_u64(0x70229);
+    let p = C::random(&mut rng).to_affine();
+    let mut q = C::random(&mut rng).to_affine();
+    while affine_xy::<C>(&p).0 == affine_xy::<C>(&q).0 {
+        q = C::random(&mut rng).to_affine();
+    }
+    // Straddle 32 additions and keep odd vector and scalar tree tails.
+    for len in [0, 1, 2, 3, 61, 62, 63, 64, 65, 66, 67, 129, 257] {
+        for exceptional in 0..5 {
+            let mut inputs: Vec<_> = (0..len).map(|_| C::random(&mut rng).to_affine()).collect();
+            if len >= 4 {
+                match exceptional {
+                    1 => inputs[..2].copy_from_slice(&[p, p]),
+                    2 => inputs[..2].copy_from_slice(&[p, -p]),
+                    3 => inputs[..4].copy_from_slice(&[p, q, p, q]),
+                    4 => inputs[..4].copy_from_slice(&[p, q, -p, -q]),
+                    _ => {}
+                }
+            }
+            let expected: C = inputs.iter().map(|p| C::from(*p)).sum();
+            let points = inputs
+                .iter()
+                .map(|point| {
+                    let (x, y) = affine_xy::<C>(point);
+                    Point29 {
+                        x: C::to29(&x),
+                        y: C::to29(&y),
+                    }
+                })
+                .collect();
+            let sums =
+                crate::glv::msm::reduce_affine_buckets29::<C>(points, Vec::from([0, 0, len, len]))
+                    .expect("valid points have complete affine sums");
+            let actual: Vec<_> = sums
+                .into_iter()
+                .map(|sum| {
+                    sum.map_or_else(C::identity, |sum| {
+                        C::from(affine_from_xy_unchecked::<C>(sum.x, sum.y))
+                    })
+                })
+                .collect();
+            assert_eq!(
+                actual,
+                [C::identity(), expected, C::identity()],
+                "len={len}, case={exceptional}"
+            );
+        }
+    }
+}
+
+#[test]
+#[cfg(all(
+    feature = "asm",
+    feature = "sqrt-table",
+    target_arch = "x86_64",
+    not(pasta_curves_noasm)
+))]
+fn fixed_base_common_radix29_thresholds_and_exceptions() {
+    check_radix29_reducer::<pallas::Point>();
+    check_radix29_reducer::<vesta::Point>();
+}
+
 /// The bytes a prepared table holds per base: `WINDOWS` tables of
 /// `MAGNITUDES` affine points.
 const BYTES_PER_BASE: usize = 77_824;

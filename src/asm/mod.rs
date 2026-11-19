@@ -28,7 +28,9 @@
 //! names the result.
 //!
 //! Nothing is assembled at build time: the blocks are compiled by the Rust
-//! toolchain, so no C toolchain is needed, and the module adds no dependency.
+//! toolchain, so no C toolchain is needed. On x86-64, `asm` also enables
+//! `cpufeatures` for AVX2 helper dispatch. Hosted targets detect AVX2 at runtime;
+//! SGX, freestanding and UEFI targets require compile-time AVX2 guarantees.
 //!
 //! # Timing
 //!

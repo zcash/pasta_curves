@@ -349,7 +349,9 @@ Defined in `Cargo.toml`; `default = ["bits", "sqrt-table"]`.
 - `alloc` — enables heap-allocating functionality (`arithmetic::{CurveAffine, CurveExt}`,
   hash-to-curve, etc.); pulls in `blake2b_simd` and `group/alloc`. Many other features
   imply it.
-- `asm` — enables the inline assembly backend optimisations.
+- `asm` — enables the inline assembly backend optimisations; pulls in `cpufeatures`
+  on x86-64 for AVX2 dispatch. Hosted targets detect AVX2 at runtime; SGX,
+  freestanding and UEFI targets require compile-time AVX2 guarantees.
 - `bits` — enables the `ff/bits` integration (`PrimeFieldBits`). *(default)*
 - `sqrt-table` — large precomputed tables (on the heap) that speed up square roots;
   implies `alloc`, pulls in `lazy_static`. *(default)*

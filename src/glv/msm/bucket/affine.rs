@@ -304,3 +304,75 @@ where
     );
     Some(())
 }
+
+/// Reduces prepared public-point buckets through AVX2, retrying exceptional
+/// levels with complete scalar formulas before returning a result.
+#[cfg(feature = "asm")]
+#[cfg(feature = "sqrt-table")]
+#[cfg(target_arch = "x86_64")]
+#[cfg(not(pasta_curves_noasm))]
+pub(in crate::glv) fn reduce_affine_buckets29<C>(
+    mut points: Vec<crate::arithmetic::avx2_chord::Point29>,
+    mut offsets: Vec<usize>,
+) -> Option<Vec<Option<AffinePoint<crate::glv::private::AffineBase<C>>>>>
+where
+    C: crate::glv::GlvParams,
+{
+    use crate::arithmetic::avx2_chord::{ChordScratch, Point29};
+    use crate::glv::private::AffineBase;
+
+    debug_assert!(!offsets.is_empty());
+    let mut next = Vec::new();
+    let mut next_offsets = Vec::new();
+    let mut pairs = Vec::new();
+    let mut chord = ChordScratch::default();
+    let exceptional = loop {
+        pairs.clear();
+        next.clear();
+        next_offsets.clear();
+        next_offsets.push(0);
+        for range in offsets.windows(2) {
+            let mut input = range[0];
+            while input + 1 < range[1] {
+                pairs.push((input, input + 1, next.len()));
+                next.push(Point29::default());
+                input += 2;
+            }
+            if input < range[1] {
+                next.push(points[input]);
+            }
+            next_offsets.push(next.len());
+        }
+        if pairs.len() < 32 {
+            break false;
+        }
+        if C::chord_level29(pairs.len(), |i| pairs[i], &points, &mut next, &mut chord).is_none() {
+            // A failed level has written nothing to `points`.
+            break true;
+        }
+        core::mem::swap(&mut points, &mut next);
+        core::mem::swap(&mut offsets, &mut next_offsets);
+    };
+    let mut affine = points
+        .iter()
+        .map(|p| AffinePoint {
+            x: C::from29(&p.x),
+            y: C::from29(&p.y),
+        })
+        .collect();
+    let mut scratch = ReduceScratch::<AffineBase<C>>::default();
+    if exceptional {
+        reduce_affine_buckets_reusing::<AffineBase<C>, true>(
+            &mut affine,
+            &mut offsets,
+            &mut scratch,
+        )?;
+    } else {
+        reduce_affine_buckets_reusing::<AffineBase<C>, false>(
+            &mut affine,
+            &mut offsets,
+            &mut scratch,
+        )?;
+    }
+    Some(scratch.buckets)
+}

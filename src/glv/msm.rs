@@ -76,6 +76,11 @@ use straus::straus_multiexp;
 #[cfg(feature = "multicore")]
 use straus::straus_multiexp_jobs;
 
+#[cfg(feature = "asm")]
+#[cfg(feature = "sqrt-table")]
+#[cfg(target_arch = "x86_64")]
+#[cfg(not(pasta_curves_noasm))]
+pub(in crate::glv) use bucket::reduce_affine_buckets29;
 pub(super) use bucket::{AffinePoint, reduce_affine_buckets};
 
 use super::{GlvParams, decompose, private::AffineBase};

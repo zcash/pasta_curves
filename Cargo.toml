@@ -106,10 +106,13 @@ zeroize = { version = "1", optional = true, default-features = false }
 serde_crate = { version = "1.0.16", optional = true, default-features = false, features = ["alloc"], package = "serde" }
 hex = { version = "0.4", optional = true, default-features = false, features = ["alloc", "serde"] }
 
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+cpufeatures = { version = "0.3.1", optional = true, default-features = false }
+
 [features]
 default = ["bits", "sqrt-table"]
 alloc = ["group/alloc", "blake2b_simd"]
-asm = []
+asm = ["dep:cpufeatures"]
 bits = ["ff/bits"]
 glv = ["alloc"]
 glv-eisenstein = ["glv"]

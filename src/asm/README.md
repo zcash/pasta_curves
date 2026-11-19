@@ -66,7 +66,9 @@ under `if_asm_unsupported!`; the first expands to its items exactly where the mo
 and the second exactly where it does not. `pasta_curves::BACKEND` names the result for diagnostics.
 
 Nothing is assembled at build time: the blocks are compiled by the Rust toolchain, so no C
-toolchain is needed, and the module adds no dependency.
+toolchain is needed. On x86-64, the `asm` feature also enables `cpufeatures` for AVX2 helper
+dispatch. Hosted targets detect AVX2 at runtime; SGX, freestanding and UEFI targets require
+compile-time AVX2 guarantees.
 
 The blocks have no data-dependent branch or memory access, and a release build runs nothing
 else. So the routines' timing should not depend on their operands, unless behaviour of the Rust

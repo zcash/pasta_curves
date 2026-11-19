@@ -159,7 +159,38 @@ impl<C: GlvParams> Recoding<C> for Booth7 {
 pub(crate) fn prepare_fixed_base_sum<C: GlvParams>(
     bases: &[C::AffineExt],
 ) -> Box<dyn PreparedFixedBaseSum<C>> {
-    Box::new(FixedBaseSum::<C, Booth7>::new(bases))
+    Box::new(FixedBaseSum::<C, Booth7>::new_prepared(bases))
+}
+
+impl<C: GlvParams> FixedBaseSum<C, Booth7> {
+    /// Builds the public Booth table, caching radix-29 entries only where AVX2 runs.
+    fn new_prepared(bases: &[C::AffineExt]) -> Self {
+        let prepared = Self::new(bases);
+        #[cfg(feature = "asm")]
+        #[cfg(feature = "sqrt-table")]
+        #[cfg(target_arch = "x86_64")]
+        #[cfg(not(pasta_curves_noasm))]
+        let mut prepared = prepared;
+        #[cfg(feature = "asm")]
+        #[cfg(feature = "sqrt-table")]
+        #[cfg(target_arch = "x86_64")]
+        #[cfg(not(pasta_curves_noasm))]
+        {
+            prepared.points29 = crate::arithmetic::avx2_sqrt::available().then(|| {
+                prepared
+                    .tables
+                    .iter()
+                    .flat_map(|table| table.multiples.iter())
+                    .map(|point| {
+                        let (x, y) = affine_xy::<C>(point);
+                        let y29 = C::to29(&y);
+                        [C::to29(&x), C::to29(&phi_x::<C>(x)), y29, C::neg29(&y29)]
+                    })
+                    .collect()
+            });
+        }
+        prepared
+    }
 }
 
 /// A positioned evaluation of the recoding `R`: per base $P$, one `R` table
@@ -170,6 +201,12 @@ pub(crate) fn prepare_fixed_base_sum<C: GlvParams>(
 pub(super) struct FixedBaseSum<C: GlvParams, R: Recoding<C>> {
     bases: usize,
     tables: Vec<R::Table>,
+    /// Cached radix-2^29 Booth entries on hosts where AVX2 is available.
+    #[cfg(feature = "asm")]
+    #[cfg(feature = "sqrt-table")]
+    #[cfg(target_arch = "x86_64")]
+    #[cfg(not(pasta_curves_noasm))]
+    points29: Option<Vec<[crate::arithmetic::avx2_chord::Limbs29; 4]>>,
 }
 
 impl<C: GlvParams, R: Recoding<C>> fmt::Debug for FixedBaseSum<C, R> {
@@ -196,6 +233,11 @@ impl<C: GlvParams, R: Recoding<C>> FixedBaseSum<C, R> {
         FixedBaseSum {
             bases: bases.len(),
             tables: R::batch_tables(&positioned),
+            #[cfg(feature = "asm")]
+            #[cfg(feature = "sqrt-table")]
+            #[cfg(target_arch = "x86_64")]
+            #[cfg(not(pasta_curves_noasm))]
+            points29: None,
         }
     }
 
@@ -255,9 +297,77 @@ where
     R: Recoding<C>,
     R::Table: Send + Sync,
 {
+    /// Reduces prepared Booth terms through AVX2, retaining the scalar path
+    /// for exceptional points that the vector chord formulas cannot add.
+    #[cfg(feature = "asm")]
+    #[cfg(feature = "sqrt-table")]
+    #[cfg(target_arch = "x86_64")]
+    #[cfg(not(pasta_curves_noasm))]
+    fn reduce_sums29(
+        &self,
+        scalars: &[&[C::ScalarExt]],
+        output: &mut [C],
+        table: &[[crate::arithmetic::avx2_chord::Limbs29; 4]],
+    ) {
+        use crate::arithmetic::avx2_chord::Point29;
+        let mut points =
+            Vec::with_capacity(scalars.iter().map(|s| s.len()).sum::<usize>() * 2 * WINDOWS);
+        let mut offsets = Vec::with_capacity(scalars.len() + 1);
+        offsets.push(0);
+        for scalars in scalars {
+            assert!(
+                scalars.len() <= self.bases,
+                "at most one scalar per prepared base"
+            );
+            for (base, scalar) in scalars.iter().enumerate() {
+                let digits = <Booth7 as Recoding<C>>::recode(scalar);
+                for column in 0..WINDOWS {
+                    for (half, endo) in [(digits.0, false), (digits.1, true)] {
+                        let digit = booth_digit(half, WINDOW_BITS, column);
+                        if digit.magnitude == 0 {
+                            continue;
+                        }
+                        let index = (base * WINDOWS + column) * MAGNITUDES + digit.magnitude - 1;
+                        let [x, endo_x, y, neg_y] = &table[index];
+                        if x.0.iter().chain(&y.0).all(|&limb| limb == 0) {
+                            continue;
+                        }
+                        points.push(Point29 {
+                            x: if endo { *endo_x } else { *x },
+                            y: if digit.negative { *neg_y } else { *y },
+                        });
+                    }
+                }
+            }
+            offsets.push(points.len());
+        }
+        match super::msm::reduce_affine_buckets29::<C>(points, offsets) {
+            Some(sums) => {
+                for (output, sum) in output.iter_mut().zip(sums) {
+                    *output = match sum {
+                        Some(p) => C::from(affine_from_xy_unchecked::<C>(p.x, p.y)),
+                        None => C::identity(),
+                    };
+                }
+            }
+            None => {
+                for (output, scalars) in output.iter_mut().zip(scalars) {
+                    *output = self.sum_vartime(scalars);
+                }
+            }
+        }
+    }
+
     /// Reduces the sums of `scalars` together into `output`, one per sum; see
     /// [`REDUCE_SUMS`].
     fn reduce_sums(&self, scalars: &[&[C::ScalarExt]], output: &mut [C]) {
+        #[cfg(feature = "asm")]
+        #[cfg(feature = "sqrt-table")]
+        #[cfg(target_arch = "x86_64")]
+        #[cfg(not(pasta_curves_noasm))]
+        if let Some(table) = &self.points29 {
+            return self.reduce_sums29(scalars, output, table);
+        }
         // One bucket per sum, laid out contiguously for the reducer.
         let mut points =
             Vec::with_capacity(scalars.iter().map(|s| s.len()).sum::<usize>() * 2 * WINDOWS);
