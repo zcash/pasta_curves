@@ -1,7 +1,18 @@
 //! The affine model.
 
-use crate::curves::{EpAffine, EqAffine, IsoEpAffine, IsoEqAffine};
+use crate::curves::params::{CurveParams, Pallas, Vesta};
+use crate::curves::{Ep, EpAffine, Eq, EqAffine, IsoEpAffine, IsoEqAffine};
 use core::mem::size_of;
+use ff::Field;
+use group::{Curve, CurveAffine as _, Group, GroupEncoding};
+use proptest::prelude::*;
+use rand::SeedableRng;
+use rand_xorshift::XorShiftRng;
+
+/// A random point, from a seed that proptest draws and shrinks.
+fn point<G: Group>(seed: [u8; 16]) -> G {
+    G::random(&mut XorShiftRng::from_seed(seed))
+}
 
 /// Two base field elements of 32 bytes, with no padding, so that tables of
 /// points cost what their coordinates do.
@@ -27,6 +38,65 @@ fn affine_points_zeroize_to_identity() {
     q.zeroize();
     assert!(bool::from(q.is_identity()));
 }
+
+macro_rules! model_tests {
+    ($name:ident, $point:ty, $affine:ty, $params:ty) => {
+        mod $name {
+            use super::*;
+
+            type Affine = $affine;
+            type Base = <$params as CurveParams>::Base;
+
+            /// Whether `p` satisfies $y^2 = x^3 + b$.
+            fn on_curve(p: &Affine) -> bool {
+                p.y.square() == p.x.square() * p.x + <$params as CurveParams>::B
+            }
+
+            proptest! {
+                /// The affine point of a Jacobian point is on the curve and maps
+                /// back to it; negation is $(x, -y)$; adding two affine points
+                /// agrees with the Jacobian sum.
+                #[test]
+                fn chart_negation_and_addition(a in any::<[u8; 16]>(), b in any::<[u8; 16]>()) {
+                    let (p, q) = (point::<$point>(a), point::<$point>(b));
+                    let (pa, qa): (Affine, Affine) = (p.to_affine(), q.to_affine());
+                    prop_assert!(on_curve(&pa));
+                    prop_assert_eq!(<$point>::from(pa), p);
+                    let neg = -pa;
+                    prop_assert_eq!((neg.x, neg.y), (pa.x, -pa.y));
+                    prop_assert_eq!(pa + qa, p + q);
+                }
+
+                /// The compressed encoding round-trips, and a point and its opposite
+                /// differ only in the sign bit.
+                #[test]
+                fn encoding_round_trips(a in any::<[u8; 16]>()) {
+                    let pa: Affine = point::<$point>(a).to_affine();
+                    let bytes = pa.to_bytes();
+                    prop_assert_eq!(Affine::from_bytes(&bytes).unwrap(), pa);
+                    let mut flipped = bytes;
+                    flipped[31] ^= 0x80;
+                    prop_assert_eq!((-pa).to_bytes(), flipped);
+                }
+            }
+
+            /// The identity is stored as $(0, 0)$, which is not on the curve
+            /// because $b \neq 0$, and is encoded as zero.
+            #[test]
+            fn identity_is_stored_as_the_origin() {
+                let o = Affine::identity();
+                assert_eq!((o.x, o.y), (Base::ZERO, Base::ZERO));
+                assert!(!on_curve(&o));
+                assert_eq!(o.to_bytes(), [0; 32]);
+                assert_eq!(Affine::from_bytes(&[0; 32]).unwrap(), o);
+                assert_eq!(<$point>::from(o), <$point>::identity());
+            }
+        }
+    };
+}
+
+model_tests!(pallas, Ep, EpAffine, Pallas);
+model_tests!(vesta, Eq, EqAffine, Vesta);
 
 /// The unchecked constructor and its inverse `raw_xy`, against the checked
 /// `from_xy`.
