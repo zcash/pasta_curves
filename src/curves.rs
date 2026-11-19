@@ -23,6 +23,10 @@ use ff::WithSmallOrderMulGroup;
 
 use super::{Fp, Fq};
 
+// Keep this in sync with if_homogeneous_mul!; ARM tests still exercise the formulas.
+#[cfg(any(not(target_arch = "arm"), test))]
+pub(crate) mod projective;
+
 #[cfg(feature = "alloc")]
 use crate::arithmetic::{Coordinates, CurveAffine, CurveExt, CurveExtUnchecked, VartimeField};
 
@@ -1108,18 +1112,19 @@ impl EqAffine {
 
 macro_rules! mul_curve_specific {
     ($name:ident, $base:ident, special_a0_b5, jacobian, $point:expr, $scalar:expr) => {{
-        let point =
-            crate::scalar_mul::Homogeneous::<$base>::from_jacobian($point.x, $point.y, $point.z);
-        let (x, y, z) = point.multiply(&$scalar.to_repr()).to_jacobian();
+        let point = crate::curves::projective::Projective::<$base>::from_jacobian(
+            $point.x, $point.y, $point.z,
+        );
+        let (x, y, z) = crate::scalar_mul::multiply(&point, &$scalar.to_repr()).to_jacobian();
         $name { x, y, z }
     }};
     ($name:ident, $base:ident, special_a0_b5, affine, $point:expr, $scalar:expr) => {{
-        let point = crate::scalar_mul::Homogeneous::<$base>::from_affine(
+        let point = crate::curves::projective::Projective::<$base>::from_affine(
             $point.x,
             $point.y,
             $point.is_identity(),
         );
-        let (x, y, z) = point.multiply(&$scalar.to_repr()).to_jacobian();
+        let (x, y, z) = crate::scalar_mul::multiply(&point, &$scalar.to_repr()).to_jacobian();
         $name { x, y, z }
     }};
     ($name:ident, $base:ident, general, $coord:ident, $point:expr, $scalar:expr) => {{
