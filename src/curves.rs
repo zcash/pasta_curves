@@ -45,7 +45,8 @@
 //!
 //! # Maps between the models
 //!
-//! In `maps.rs`, with the isogenies from the curves used for hashing:
+//! In `maps.rs`, and in `iso.rs` for the isogenies from the curves used for
+//! hashing:
 //!
 //! - Jacobian to projective: $(X : Y : Z) \mapsto (X Z : Y : Z^3)$, the three
 //!   monomials of weighted degree 3. It is defined at $O$, which it sends to
@@ -92,6 +93,7 @@ mod affine;
 mod jacobian;
 #[macro_use]
 mod maps;
+mod iso;
 pub(crate) mod params;
 
 pub(crate) mod projective;
