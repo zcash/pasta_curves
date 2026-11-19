@@ -5,7 +5,39 @@ use ff::{Field, FromUniformBytes, PrimeField};
 use static_assertions::const_assert;
 use subtle::ConstantTimeEq;
 
+use alloc::boxed::Box;
+
 use crate::arithmetic::{CurveExt, CurveExtUnchecked};
+
+/// A hash to the curve `C`, as [`CurveExt::hash_to_curve`] returns it.
+pub(crate) type Hasher<'a, C> = Box<dyn Fn(&[u8]) -> C + 'a>;
+
+/// The hash to the curve `C` through the curve `I` isogenous to it: hashes the
+/// message to two field elements, maps each to `I` with the simplified SWU map
+/// (constants `theta` and `z`), adds the two points, and maps the sum to `C` by
+/// the isogeny with coefficients `isogeny`. This is what
+/// [`CurveExt::hash_to_curve`] returns for Pallas and Vesta.
+pub(crate) fn hash_to_curve<'a, F, C, I>(
+    domain_prefix: &'a str,
+    theta: F,
+    z: F,
+    isogeny: &'a [F; 13],
+) -> Hasher<'a, C>
+where
+    F: PrimeField + FromUniformBytes<64>,
+    C: CurveExt<Base = F> + CurveExtUnchecked<Base = F>,
+    I: CurveExt<Base = F> + CurveExtUnchecked<Base = F>,
+{
+    Box::new(move |message| {
+        let mut us = [F::ZERO; 2];
+        hash_to_field(C::CURVE_ID, domain_prefix, message, &mut us);
+        let q0 = map_to_curve_simple_swu::<F, C, I>(&us[0], theta, z);
+        let q1 = map_to_curve_simple_swu::<F, C, I>(&us[1], theta, z);
+        let r = q0 + &q1;
+        debug_assert!(bool::from(r.is_on_curve()));
+        iso_map::<F, C, I>(&r, isogeny)
+    })
+}
 
 /// Hashes over a message and writes the output to all of `buf`.
 pub fn hash_to_field<F: FromUniformBytes<64>>(

@@ -653,25 +653,12 @@ macro_rules! impl_jacobian_curve_specific {
 macro_rules! impl_jacobian_curve_ext {
     ($name:ident, $iso:ident, $base:ident, special_a0_b5) => {
         fn hash_to_curve<'a>(domain_prefix: &'a str) -> Box<dyn Fn(&[u8]) -> Self + 'a> {
-            use super::hashtocurve;
-
-            Box::new(move |message| {
-                let mut us = [Field::ZERO; 2];
-                hashtocurve::hash_to_field($name::CURVE_ID, domain_prefix, message, &mut us);
-                let q0 = hashtocurve::map_to_curve_simple_swu::<$base, $name, $iso>(
-                    &us[0],
-                    $name::THETA,
-                    $name::Z,
-                );
-                let q1 = hashtocurve::map_to_curve_simple_swu::<$base, $name, $iso>(
-                    &us[1],
-                    $name::THETA,
-                    $name::Z,
-                );
-                let r = q0 + &q1;
-                debug_assert!(bool::from(r.is_on_curve()));
-                hashtocurve::iso_map::<$base, $name, $iso>(&r, &$name::ISOGENY_CONSTANTS)
-            })
+            super::hashtocurve::hash_to_curve::<$base, $name, $iso>(
+                domain_prefix,
+                $name::THETA,
+                $name::Z,
+                &$name::ISOGENY_CONSTANTS,
+            )
         }
 
         /// Apply the curve endomorphism by multiplying the x-coordinate
