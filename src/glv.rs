@@ -92,6 +92,10 @@ mod booth;
 
 pub(crate) mod fixed_base;
 
+// The shared-doubling evaluation of `batch_mul_scalars`.
+#[cfg_attr(not(feature = "glv-eisenstein"), allow(dead_code))]
+pub(crate) mod grid;
+
 pub(crate) mod msm;
 
 mod private {
