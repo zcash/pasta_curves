@@ -71,7 +71,8 @@ use alloc::vec::Vec;
 
 use super::booth;
 use bucket::{CachedField, multiexp, multiexp_bases};
-use plan::{Plan, current_num_threads};
+use plan::Plan;
+pub(crate) use plan::current_num_threads;
 use straus::straus_multiexp;
 #[cfg(feature = "multicore")]
 use straus::straus_multiexp_jobs;

@@ -324,7 +324,7 @@ where
 
 /// The number of threads the MSM may use: Rayon's with `multicore`, except on
 /// WebAssembly without atomics, and 1 otherwise.
-pub(super) fn current_num_threads() -> usize {
+pub(crate) fn current_num_threads() -> usize {
     #[cfg(all(
         feature = "multicore",
         not(all(target_arch = "wasm32", not(target_feature = "atomics")))

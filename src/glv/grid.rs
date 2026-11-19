@@ -23,10 +23,12 @@ use alloc::{vec, vec::Vec};
 use ff::Field;
 use group::CurveAffine as _;
 
-use super::msm::{AffinePoint, reduce_affine_buckets};
+use super::msm::{AffinePoint, current_num_threads, reduce_affine_buckets};
 use super::private::AffineBase;
 use super::{GlvParams, Recoding, affine_from_xy_unchecked, affine_xy, normalize_vartime, phi_x};
 use crate::arithmetic::{VartimeBatchInvert, VartimeField};
+#[cfg(feature = "multicore")]
+use maybe_rayon::prelude::*;
 
 /// A sum of points, or `None` for the identity, as the bucket reducer returns
 /// it.
@@ -163,12 +165,106 @@ where
         return out;
     }
 
+    // Each scalar's terms, by representative: (column, rotation, negative),
+    // and where each representative's terms start. They depend on the scalar
+    // alone, so every lane reuses them.
+    let mut terms = Vec::with_capacity(m);
+    let mut starts = Vec::with_capacity(m);
+    for k in digits {
+        let mut t = Vec::new();
+        for col in 0..len {
+            R::terms(k, col, |rep, rotation, negative| {
+                t.push((rep, col, rotation, negative))
+            });
+        }
+        t.sort_by_key(|&(rep, ..)| rep);
+        let mut start = vec![0; R::REPS + 1];
+        for &(rep, ..) in &t {
+            start[rep + 1] += 1;
+        }
+        for j in 0..R::REPS {
+            start[j + 1] += start[j];
+        }
+        terms.push(t);
+        starts.push(start);
+    }
+
+    // One block of lanes per thread: every block spends its own inversions,
+    // so a single thread evaluates the grid as one block.
+    let threads = current_num_threads();
+    let block = if threads > 1 {
+        // A second block per thread when both stay large enough.
+        let blocks = if lanes.len() >= 2 * threads * MIN_BALANCED_BLOCK_LANES {
+            2 * threads
+        } else {
+            threads
+        };
+        lanes
+            .len()
+            .div_ceil(blocks)
+            .max(MIN_BLOCK_PRODUCTS.div_ceil(m))
+    } else {
+        lanes.len()
+    };
+    let evaluate = |block: &[usize]| {
+        let lane_points: Vec<C> = block.iter().map(|&i| points[i]).collect();
+        evaluate_block::<C, R>(&lane_points, &terms, &starts, len)
+    };
+    #[cfg(feature = "multicore")]
+    let products: Vec<Vec<Sum<AffineBase<C>>>> = if threads > 1 {
+        lanes.par_chunks(block).map(evaluate).collect()
+    } else {
+        lanes.chunks(block).map(evaluate).collect()
+    };
+    #[cfg(not(feature = "multicore"))]
+    let products: Vec<Vec<Sum<AffineBase<C>>>> = lanes.chunks(block).map(evaluate).collect();
+
+    // Each block wrote only its own lanes' products, so the result does not
+    // depend on the number of threads.
+    for (block_lanes, products) in lanes.chunks(block).zip(&products) {
+        for (l, &i) in block_lanes.iter().enumerate() {
+            for s in 0..m {
+                if let Some(p) = products[l * m + s] {
+                    out[i * m + s] = affine_from_xy_unchecked::<C>(p.x, p.y);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The fewest points in a block for the grid to be split into two blocks per
+/// thread rather than one: Rayon's work stealing then balances threads that
+/// run at different speeds, such as performance and efficiency cores, but
+/// each extra block pays its own inversions, which only a block of many
+/// points makes up for.
+const MIN_BALANCED_BLOCK_LANES: usize = 16;
+
+/// The fewest products in a block when the grid is split between threads:
+/// below it a block's own inversions, the same whatever its size, outweigh
+/// what its thread saves. A block holds at least `MIN_BLOCK_PRODUCTS / m`
+/// points for `m` scalars, so the more scalars, the fewer points it needs.
+const MIN_BLOCK_PRODUCTS: usize = 8;
+
+/// The products of `points`, none the identity, by every scalar, given each
+/// scalar's terms and where each representative's terms start: the product
+/// of `points[l]` and scalar `s` at `l * m + s`, for `m` scalars.
+#[allow(clippy::type_complexity)]
+fn evaluate_block<C, R>(
+    points: &[C],
+    terms: &[Vec<(usize, usize, usize, bool)>],
+    starts: &[Vec<usize>],
+    len: usize,
+) -> Vec<Sum<AffineBase<C>>>
+where
+    C: GlvParams,
+    R: OrbitRecoding<C>,
+{
     // The multiples 2^col P of every lane's point, column by column: affine
     // doublings sharing one inversion per column, as the ladders do. `chain`
-    // holds column col of lane l at `col * lanes.len() + l`.
-    let nl = lanes.len();
-    let lane_points: Vec<C> = lanes.iter().map(|&i| points[i]).collect();
-    let mut cur: Vec<AffinePoint<AffineBase<C>>> = normalize_vartime(&lane_points)
+    // holds column col of lane l at `col * points.len() + l`.
+    let nl = points.len();
+    let mut cur: Vec<AffinePoint<AffineBase<C>>> = normalize_vartime(points)
         .iter()
         .map(|a| {
             let (x, y) = affine_xy::<C>(a);
@@ -197,37 +293,13 @@ where
         }
     }
 
-    // Each scalar's terms, by representative: (column, rotation, negative),
-    // and where each representative's terms start. They depend on the scalar
-    // alone, so every lane reuses them.
-    let mut terms = Vec::with_capacity(m);
-    let mut starts = Vec::with_capacity(m);
-    for k in digits {
-        let mut t = Vec::new();
-        for col in 0..len {
-            R::terms(k, col, |rep, rotation, negative| {
-                t.push((rep, col, rotation, negative))
-            });
-        }
-        t.sort_by_key(|&(rep, ..)| rep);
-        let mut start = vec![0; R::REPS + 1];
-        for &(rep, ..) in &t {
-            start[rep + 1] += 1;
-        }
-        for j in 0..R::REPS {
-            start[j + 1] += start[j];
-        }
-        terms.push(t);
-        starts.push(start);
-    }
-
     // The terms of the bucket of lane l, scalar s and representative j, one
     // bucket after another in that order.
     let mut bucket_points = Vec::new();
-    let mut offsets = Vec::with_capacity(lanes.len() * m * R::REPS + 1);
+    let mut offsets = Vec::with_capacity(nl * terms.len() * R::REPS + 1);
     offsets.push(0);
     for l in 0..nl {
-        for (t, start) in terms.iter().zip(&starts) {
+        for (t, start) in terms.iter().zip(starts) {
             for &(_, col, rotation, negative) in t {
                 let AffinePoint { x, y } = chain[col * nl + l];
                 let x = match rotation {
@@ -244,14 +316,5 @@ where
         }
     }
     let buckets = reduce_affine_buckets(bucket_points, offsets).expect("complete affine formulas");
-
-    let products = R::combine_buckets(&buckets);
-    for (l, &i) in lanes.iter().enumerate() {
-        for s in 0..m {
-            if let Some(p) = products[l * m + s] {
-                out[i * m + s] = affine_from_xy_unchecked::<C>(p.x, p.y);
-            }
-        }
-    }
-    out
+    R::combine_buckets(&buckets)
 }
