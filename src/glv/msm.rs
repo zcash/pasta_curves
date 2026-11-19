@@ -70,23 +70,23 @@ mod straus;
 use alloc::vec::Vec;
 
 use super::booth;
-use bucket::{CachedField, multiexp, multiexp_bases};
+use bucket::{CachedAffine, multiexp, multiexp_bases};
 use plan::Plan;
 pub(crate) use plan::current_num_threads;
 use straus::straus_multiexp;
 #[cfg(feature = "multicore")]
 use straus::straus_multiexp_jobs;
 
-pub(crate) use bucket::{AffinePoint, reduce_affine_buckets};
+pub(crate) use bucket::reduce_affine_buckets;
 
-use super::{GlvParams, decompose, private::AffineBase};
+use super::{GlvParams, decompose};
 
 /// Declines unprofitable input shapes and failed arithmetic guards so callers
 /// can retain their generic MSM. Mismatched lengths also decline.
 pub(crate) fn try_multiexp<C>(scalars: &[C::ScalarExt], bases: &[C::AffineExt]) -> Option<C>
 where
     C: GlvParams,
-    AffineBase<C>: CachedField,
+    C::AffineExt: CachedAffine,
 {
     if scalars.len() != bases.len() {
         return None;

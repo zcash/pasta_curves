@@ -569,7 +569,7 @@ pub(crate) mod conformance {
         C: GlvParams,
         R: super::grid::OrbitRecoding<C>,
     {
-        use super::msm::AffinePoint;
+        use crate::arithmetic::Coordinates;
         use alloc::vec::Vec;
         use ff::Field as _;
         use group::CurveAffine as _;
@@ -590,7 +590,7 @@ pub(crate) mod conformance {
                 match b {
                     Some(b) => {
                         let (x, y) = super::affine_xy::<C>(b);
-                        buckets.push(Some(AffinePoint { x, y }));
+                        buckets.push(Some(Coordinates { x, y }));
                         sum += weigh(j, C::from(*b));
                     }
                     None => buckets.push(None),
@@ -921,10 +921,8 @@ where
     /// halves, the last summing $T_0 + V + V$; then one more adds the rotated
     /// second half. The `wnaf_bucket_combination` test checks the result
     /// against the odd multiples.
-    fn combine_buckets(
-        buckets: &[grid::Sum<private::AffineBase<C>>],
-    ) -> Vec<grid::Sum<private::AffineBase<C>>> {
-        let b: [Vec<grid::Sum<private::AffineBase<C>>>; 8] =
+    fn combine_buckets(buckets: &[grid::Sum<C::AffineExt>]) -> Vec<grid::Sum<C::AffineExt>> {
+        let b: [Vec<grid::Sum<C::AffineExt>>; 8] =
             core::array::from_fn(|j| buckets.chunks_exact(8).map(|product| product[j]).collect());
         // T_3 = B_3 is a leaf; the second half's names end in an underscore.
         let [t2, t2_] = grid::add_columns([(&b[2], &b[3]), (&b[6], &b[7])]);

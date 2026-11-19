@@ -2,14 +2,14 @@
 //!
 //! Scratch is checked out for the duration of a task and returned when its
 //! [`Checkout`] drops. With `multicore`, each thread keeps one scratch per
-//! field between calls, so repeated MSMs on a Rayon worker reuse its buffers.
+//! curve between calls, so repeated MSMs on a Rayon worker reuse its buffers.
 //! Without `multicore`, a checkout is fresh scratch that is dropped after the
 //! call, and this module needs no `std`.
 
 use core::ops::{Deref, DerefMut};
 
 use super::WindowReducer;
-use crate::arithmetic::VartimeField;
+use crate::arithmetic::{CurveAffine, VartimeField};
 
 // The crate otherwise stays no_std; only the per-thread slots need it.
 #[cfg(feature = "multicore")]
@@ -23,21 +23,22 @@ use core::cell::RefCell;
 #[cfg(feature = "multicore")]
 pub(super) const MAX_RETAINED_BYTES: usize = 8 << 20;
 
-/// A field whose window scratch can be cached. Each field has its own typed
-/// thread-local slot; the two Pasta base fields are the only implementors.
-pub(crate) trait CachedField: VartimeField {
+/// A curve whose window scratch can be cached, given by its affine type. Each
+/// curve has its own typed thread-local slot; the affine types of Pallas and
+/// Vesta are the only implementors.
+pub(crate) trait CachedAffine: CurveAffine<Base: VartimeField> {
     /// This thread's slot: the scratch kept between calls, if any.
     #[cfg(feature = "multicore")]
     fn slot() -> &'static std::thread::LocalKey<RefCell<Option<WindowReducer<Self>>>>;
 }
 
-macro_rules! cached_field {
-    ($field:ty) => {
-        impl CachedField for $field {
+macro_rules! cached_affine {
+    ($affine:ty) => {
+        impl CachedAffine for $affine {
             #[cfg(feature = "multicore")]
             fn slot() -> &'static std::thread::LocalKey<RefCell<Option<WindowReducer<Self>>>> {
                 std::thread_local! {
-                    static SLOT: RefCell<Option<WindowReducer<$field>>> =
+                    static SLOT: RefCell<Option<WindowReducer<$affine>>> =
                         const { RefCell::new(None) };
                 }
                 &SLOT
@@ -46,8 +47,8 @@ macro_rules! cached_field {
     };
 }
 
-cached_field!(crate::Fp);
-cached_field!(crate::Fq);
+cached_affine!(crate::pallas::Affine);
+cached_affine!(crate::vesta::Affine);
 
 /// Scratch checked out of this thread's slot.
 ///
@@ -55,23 +56,23 @@ cached_field!(crate::Fq);
 /// thread meanwhile, such as a Rayon job stolen while this one waits, takes
 /// fresh scratch instead of these buffers. Ownership makes that independence
 /// structural rather than a protocol callers must follow.
-pub(super) struct Checkout<F>
+pub(super) struct Checkout<A>
 where
-    F: CachedField,
+    A: CachedAffine,
 {
     // `None` only during `drop`, which moves the scratch back to the slot.
-    scratch: Option<WindowReducer<F>>,
+    scratch: Option<WindowReducer<A>>,
 }
 
-impl<F> Checkout<F>
+impl<A> Checkout<A>
 where
-    F: CachedField,
+    A: CachedAffine,
 {
     /// Takes this thread's cached scratch, or fresh scratch if the slot is
     /// empty or `multicore` is disabled.
     pub(super) fn take() -> Self {
         #[cfg(feature = "multicore")]
-        let scratch = F::slot()
+        let scratch = A::slot()
             .try_with(|slot| slot.borrow_mut().take())
             .ok()
             .flatten()
@@ -84,11 +85,11 @@ where
     }
 }
 
-impl<F> Deref for Checkout<F>
+impl<A> Deref for Checkout<A>
 where
-    F: CachedField,
+    A: CachedAffine,
 {
-    type Target = WindowReducer<F>;
+    type Target = WindowReducer<A>;
 
     fn deref(&self) -> &Self::Target {
         self.scratch
@@ -97,9 +98,9 @@ where
     }
 }
 
-impl<F> DerefMut for Checkout<F>
+impl<A> DerefMut for Checkout<A>
 where
-    F: CachedField,
+    A: CachedAffine,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.scratch
@@ -108,9 +109,9 @@ where
     }
 }
 
-impl<F> Drop for Checkout<F>
+impl<A> Drop for Checkout<A>
 where
-    F: CachedField,
+    A: CachedAffine,
 {
     /// Returns the scratch to this thread's slot unless it grew past
     /// `MAX_RETAINED_BYTES`. Nested work may already have returned other
@@ -121,7 +122,7 @@ where
         #[cfg(feature = "multicore")]
         if let Some(scratch) = self.scratch.take() {
             if scratch.capacity_bytes() <= MAX_RETAINED_BYTES {
-                let _ = F::slot().try_with(|slot| *slot.borrow_mut() = Some(scratch));
+                let _ = A::slot().try_with(|slot| *slot.borrow_mut() = Some(scratch));
             }
         }
     }

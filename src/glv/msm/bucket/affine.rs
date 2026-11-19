@@ -24,17 +24,12 @@
 
 use alloc::vec::Vec;
 
-use crate::arithmetic::VartimeField;
+use ff::Field as _;
+
+use crate::arithmetic::{Coordinates, CurveAffine, VartimeField};
 
 #[cfg(test)]
 mod tests;
-
-/// An affine point on the curve, never the identity: identities are dropped.
-#[derive(Clone, Copy)]
-pub(crate) struct AffinePoint<F> {
-    pub(crate) x: F,
-    pub(crate) y: F,
-}
 
 /// One addition of a level, waiting for the level's shared inversion.
 //
@@ -59,12 +54,12 @@ const BATCH_INVERSION_LANES: usize = 2;
 /// `points`: the prefix pass changes only disposable pending numerators, and
 /// the output pass starts only after the product is successfully inverted.
 /// The reducer relies on this failure-atomic behavior to retry the level.
-fn batch_invert_and_add<F>(
-    additions: &mut [PendingAffineAddition<F>],
-    points: &mut [AffinePoint<F>],
+fn batch_invert_and_add<A>(
+    additions: &mut [PendingAffineAddition<A::Base>],
+    points: &mut [Coordinates<A>],
 ) -> Option<()>
 where
-    F: VartimeField,
+    A: CurveAffine<Base: VartimeField>,
 {
     let Some((first, additions)) = additions.split_first_mut() else {
         return Some(());
@@ -76,7 +71,7 @@ where
         let slope = first.numerator * denominator_inverse;
         let x = slope.square() - first.x_sum;
         let y = slope * (left.x - x) - left.y;
-        points[first.output] = AffinePoint { x, y };
+        points[first.output] = Coordinates { x, y };
         return Some(());
     }
 
@@ -123,7 +118,7 @@ where
         let left = points[addition.output];
         let x = slope.square() - addition.x_sum;
         let y = slope * (left.x - x) - left.y;
-        points[addition.output] = AffinePoint { x, y };
+        points[addition.output] = Coordinates { x, y };
     }
     for pair in additions[..complete_pairs * BATCH_INVERSION_LANES]
         .chunks(BATCH_INVERSION_LANES)
@@ -144,11 +139,11 @@ where
         let second_x = second_slope.square() - second.x_sum;
         let first_y = first_slope * (first_left.x - first_x) - first_left.y;
         let second_y = second_slope * (second_left.x - second_x) - second_left.y;
-        points[first.output] = AffinePoint {
+        points[first.output] = Coordinates {
             x: first_x,
             y: first_y,
         };
-        points[second.output] = AffinePoint {
+        points[second.output] = Coordinates {
             x: second_x,
             y: second_y,
         };
@@ -162,11 +157,11 @@ where
     let second_x = second_slope.square() - second.x_sum;
     let first_y = first_slope * (first_left.x - first_x) - first_left.y;
     let second_y = second_slope * (second_left.x - second_x) - second_left.y;
-    points[first.output] = AffinePoint {
+    points[first.output] = Coordinates {
         x: first_x,
         y: first_y,
     };
-    points[second.output] = AffinePoint {
+    points[second.output] = Coordinates {
         x: second_x,
         y: second_y,
     };
@@ -177,27 +172,30 @@ where
 /// to its sum (`None` for the identity), with fresh buffers; see
 /// [`reduce_affine_buckets_reusing`] for the requirements. Returns `None`
 /// only if the complete formulas divide by zero, which valid inputs never do.
-pub(crate) fn reduce_affine_buckets<F: VartimeField>(
-    mut points: Vec<AffinePoint<F>>,
+pub(crate) fn reduce_affine_buckets<A>(
+    mut points: Vec<Coordinates<A>>,
     mut offsets: Vec<usize>,
-) -> Option<Vec<Option<AffinePoint<F>>>> {
+) -> Option<Vec<Option<Coordinates<A>>>>
+where
+    A: CurveAffine<Base: VartimeField>,
+{
     let mut scratch = ReduceScratch::default();
-    reduce_affine_buckets_reusing::<F, false>(&mut points, &mut offsets, &mut scratch)?;
+    reduce_affine_buckets_reusing::<A, false>(&mut points, &mut offsets, &mut scratch)?;
     Some(scratch.buckets)
 }
 
 /// The buffers [`reduce_affine_buckets_reusing`] keeps between calls. Points
 /// are compacted in place, so no second point buffer is needed.
-pub(super) struct ReduceScratch<F> {
+pub(super) struct ReduceScratch<A: CurveAffine> {
     /// The bucket boundaries of the next level, swapped with the current ones.
     pub(super) next_offsets: Vec<usize>,
     /// The additions of the current level.
-    pub(super) pending: Vec<PendingAffineAddition<F>>,
+    pub(super) pending: Vec<PendingAffineAddition<A::Base>>,
     /// The reduced buckets, one entry per bucket, `None` for an empty one.
-    pub(super) buckets: Vec<Option<AffinePoint<F>>>,
+    pub(super) buckets: Vec<Option<Coordinates<A>>>,
 }
 
-impl<F> Default for ReduceScratch<F> {
+impl<A: CurveAffine> Default for ReduceScratch<A> {
     fn default() -> Self {
         Self {
             next_offsets: Vec::new(),
@@ -212,13 +210,13 @@ impl<F> Default for ReduceScratch<F> {
 /// nonidentity points. `points` and `offsets` are consumed, their allocations
 /// kept. Returns `None` only if the complete formulas divide by zero, which
 /// valid inputs never do.
-pub(super) fn reduce_affine_buckets_reusing<F, const COMPLETE: bool>(
-    points: &mut Vec<AffinePoint<F>>,
+pub(super) fn reduce_affine_buckets_reusing<A, const COMPLETE: bool>(
+    points: &mut Vec<Coordinates<A>>,
     offsets: &mut Vec<usize>,
-    scratch: &mut ReduceScratch<F>,
+    scratch: &mut ReduceScratch<A>,
 ) -> Option<()>
 where
-    F: VartimeField,
+    A: CurveAffine<Base: VartimeField>,
 {
     debug_assert!(!offsets.is_empty());
     let ReduceScratch {
@@ -259,7 +257,7 @@ where
 
         if batch_invert_and_add(pending, points).is_none() {
             if !COMPLETE {
-                return reduce_affine_buckets_reusing::<F, true>(points, offsets, scratch);
+                return reduce_affine_buckets_reusing::<A, true>(points, offsets, scratch);
             }
             // Complete formulas have nonzero denominators for valid inputs.
             // Decline rather than returning a partial MSM if that guard fails.

@@ -164,7 +164,6 @@ use crate::{
     glv::{
         GlvParams, Recoding, affine_from_xy_unchecked, decompose,
         grid::{self, OrbitRecoding, Sum},
-        msm::AffinePoint,
         normalize_vartime,
     },
 };
@@ -1230,8 +1229,8 @@ where
     /// The 14 additions run in 7 rounds that share an inversion each. The
     /// `bucket_combination_matches_representatives` test checks the result
     /// against [`REPS`].
-    fn combine_buckets(buckets: &[Sum<AffineBase<C>>]) -> Vec<Sum<AffineBase<C>>> {
-        let b: [Vec<Sum<AffineBase<C>>>; REP_COUNT] = core::array::from_fn(|j| {
+    fn combine_buckets(buckets: &[Sum<C::AffineExt>]) -> Vec<Sum<C::AffineExt>> {
+        let b: [Vec<Sum<C::AffineExt>>; REP_COUNT] = core::array::from_fn(|j| {
             buckets
                 .chunks_exact(REP_COUNT)
                 .map(|product| product[j])
@@ -1252,8 +1251,8 @@ where
 }
 
 /// $-P$, for a sum of the bucket reducer.
-fn neg<F: Field>(p: Sum<F>) -> Sum<F> {
-    p.map(|p| AffinePoint { x: p.x, y: -p.y })
+fn neg<A: CurveAffine>(p: Sum<A>) -> Sum<A> {
+    p.map(|p| Coordinates { x: p.x, y: -p.y })
 }
 
 #[cfg(test)]

@@ -57,7 +57,7 @@ where
 fn forced_window<C>(terms: usize, width: usize)
 where
     C: GlvParams,
-    AffineBase<C>: CachedField,
+    C::AffineExt: CachedAffine,
 {
     let (scalars, bases) = exceptional_inputs::<C>(terms);
     let expected = scalars
@@ -107,7 +107,7 @@ where
         .collect::<Option<Vec<_>>>()
         .unwrap();
     let bases = multiexp_bases::<C>(&bases);
-    let as_points = |buckets: Vec<Option<AffinePoint<AffineBase<C>>>>| {
+    let as_points = |buckets: Vec<Option<Coordinates<C::AffineExt>>>| {
         buckets
             .into_iter()
             .map(bucket_point::<C>)
@@ -171,13 +171,13 @@ fn nested_parallel_scratch_is_independent() {
             .build()
             .unwrap();
         pool.install(|| {
-            let mut outer = Checkout::<crate::Fp>::take();
+            let mut outer = Checkout::<crate::pallas::Affine>::take();
             outer.counts.clear();
             outer.counts.extend([123, 456]);
             let outer_pointer = outer.counts.as_ptr().addr();
             maybe_rayon::join(
                 || {
-                    let mut nested = Checkout::<crate::Fp>::take();
+                    let mut nested = Checkout::<crate::pallas::Affine>::take();
                     assert_ne!(nested.counts.as_ptr().addr(), outer_pointer);
                     nested.counts.clear();
                     nested.counts.push(789);
@@ -203,19 +203,19 @@ fn tls_scratch_reuses_capacity_and_drops_oversized_buffers() {
     // Isolate this cache from other tests and the test runner's worker threads.
     std::thread::spawn(|| {
         let capacity = {
-            let mut scratch = Checkout::<crate::Fp>::take();
+            let mut scratch = Checkout::<crate::pallas::Affine>::take();
             scratch.assignments.reserve(128);
             scratch.assignments.capacity()
         };
         {
-            let mut scratch = Checkout::<crate::Fp>::take();
+            let mut scratch = Checkout::<crate::pallas::Affine>::take();
             assert_eq!(scratch.assignments.capacity(), capacity);
             scratch
                 .assignments
                 .reserve(cache::MAX_RETAINED_BYTES / core::mem::size_of::<WindowAssignment>() + 1);
             assert!(scratch.capacity_bytes() > cache::MAX_RETAINED_BYTES);
         }
-        let scratch = Checkout::<crate::Fp>::take();
+        let scratch = Checkout::<crate::pallas::Affine>::take();
         assert_eq!(scratch.capacity_bytes(), 0);
     })
     .join()

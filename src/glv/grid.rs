@@ -23,16 +23,16 @@ use alloc::{vec, vec::Vec};
 use ff::Field;
 use group::CurveAffine as _;
 
-use super::msm::{AffinePoint, current_num_threads, reduce_affine_buckets};
+use super::msm::{current_num_threads, reduce_affine_buckets};
 use super::private::AffineBase;
 use super::{GlvParams, Recoding, affine_from_xy_unchecked, affine_xy, normalize_vartime, phi_x};
-use crate::arithmetic::{VartimeField, batch_invert_vartime_slice};
+use crate::arithmetic::{Coordinates, CurveAffine, VartimeField, batch_invert_vartime_slice};
 #[cfg(feature = "multicore")]
 use maybe_rayon::prelude::*;
 
 /// A sum of points, or `None` for the identity, as the bucket reducer returns
 /// it.
-pub(crate) type Sum<F> = Option<AffinePoint<F>>;
+pub(crate) type Sum<A> = Option<Coordinates<A>>;
 
 /// A [`Recoding`] whose digits read as a unit times one of
 /// [`OrbitRecoding::REPS`] representatives, which is what [`mul_grid`] needs.
@@ -56,15 +56,15 @@ where
 
     /// $\sum_j r_j B_j$ for every product, `buckets` holding the
     /// [`OrbitRecoding::REPS`] buckets of one product after those of another.
-    fn combine_buckets(buckets: &[Sum<AffineBase<C>>]) -> Vec<Sum<AffineBase<C>>>;
+    fn combine_buckets(buckets: &[Sum<C::AffineExt>]) -> Vec<Sum<C::AffineExt>>;
 }
 
 /// The sum of each group of points, all groups sharing the reducer's
 /// inversions.
-fn sum_each<F, G>(groups: impl IntoIterator<Item = G>) -> Vec<Sum<F>>
+fn sum_each<A, G>(groups: impl IntoIterator<Item = G>) -> Vec<Sum<A>>
 where
-    F: VartimeField,
-    G: IntoIterator<Item = Sum<F>>,
+    A: CurveAffine<Base: VartimeField>,
+    G: IntoIterator<Item = Sum<A>>,
 {
     let mut points = Vec::new();
     let mut offsets = vec![0];
@@ -76,13 +76,13 @@ where
 }
 
 /// Two equally long columns of sums, to be added entry by entry.
-pub(crate) type Columns<'a, F> = (&'a [Sum<F>], &'a [Sum<F>]);
+pub(crate) type Columns<'a, A> = (&'a [Sum<A>], &'a [Sum<A>]);
 
 /// `a + b` entry by entry for each `(a, b)` pair of equally long columns,
 /// all in one reduction: one round of an addition chain.
-pub(crate) fn add_columns<F, const N: usize>(terms: [Columns<'_, F>; N]) -> [Vec<Sum<F>>; N]
+pub(crate) fn add_columns<A, const N: usize>(terms: [Columns<'_, A>; N]) -> [Vec<Sum<A>>; N]
 where
-    F: VartimeField,
+    A: CurveAffine<Base: VartimeField>,
 {
     let len = terms.first().map_or(0, |(a, _)| a.len());
     let sums = sum_each(
@@ -94,9 +94,9 @@ where
 }
 
 /// `a + b + c` entry by entry, in one reduction.
-pub(crate) fn add3_columns<F>(a: &[Sum<F>], b: &[Sum<F>], c: &[Sum<F>]) -> Vec<Sum<F>>
+pub(crate) fn add3_columns<A>(a: &[Sum<A>], b: &[Sum<A>], c: &[Sum<A>]) -> Vec<Sum<A>>
 where
-    F: VartimeField,
+    A: CurveAffine<Base: VartimeField>,
 {
     sum_each(
         a.iter()
@@ -107,8 +107,8 @@ where
 }
 
 /// $\varphi(P) = (\zeta x, y)$, for a sum of the bucket reducer.
-pub(crate) fn phi<C: GlvParams>(p: Sum<AffineBase<C>>) -> Sum<AffineBase<C>> {
-    p.map(|p| AffinePoint {
+pub(crate) fn phi<C: GlvParams>(p: Sum<C::AffineExt>) -> Sum<C::AffineExt> {
+    p.map(|p| Coordinates {
         x: phi_x::<C>(p.x),
         y: p.y,
     })
@@ -211,13 +211,13 @@ where
         evaluate_block::<C, R>(&lane_points, &terms, &starts, len)
     };
     #[cfg(feature = "multicore")]
-    let products: Vec<Vec<Sum<AffineBase<C>>>> = if threads > 1 {
+    let products: Vec<Vec<Sum<C::AffineExt>>> = if threads > 1 {
         lanes.par_chunks(block).map(evaluate).collect()
     } else {
         lanes.chunks(block).map(evaluate).collect()
     };
     #[cfg(not(feature = "multicore"))]
-    let products: Vec<Vec<Sum<AffineBase<C>>>> = lanes.chunks(block).map(evaluate).collect();
+    let products: Vec<Vec<Sum<C::AffineExt>>> = lanes.chunks(block).map(evaluate).collect();
 
     // Each block wrote only its own lanes' products, so the result does not
     // depend on the number of threads.
@@ -255,7 +255,7 @@ fn evaluate_block<C, R>(
     terms: &[Vec<(usize, usize, usize, bool)>],
     starts: &[Vec<usize>],
     len: usize,
-) -> Vec<Sum<AffineBase<C>>>
+) -> Vec<Sum<C::AffineExt>>
 where
     C: GlvParams,
     R: OrbitRecoding<C>,
@@ -264,11 +264,11 @@ where
     // doublings sharing one inversion per column, as the ladders do. `chain`
     // holds column col of lane l at `col * points.len() + l`.
     let nl = points.len();
-    let mut cur: Vec<AffinePoint<AffineBase<C>>> = normalize_vartime(points)
+    let mut cur: Vec<Coordinates<C::AffineExt>> = normalize_vartime(points)
         .iter()
         .map(|a| {
             let (x, y) = affine_xy::<C>(a);
-            AffinePoint { x, y }
+            Coordinates { x, y }
         })
         .collect();
     let mut chain = Vec::with_capacity(nl * len);
@@ -302,7 +302,7 @@ where
     for l in 0..nl {
         for (t, start) in terms.iter().zip(starts) {
             for &(_, col, rotation, negative) in t {
-                let AffinePoint { x, y } = chain[col * nl + l];
+                let Coordinates { x, y } = chain[col * nl + l];
                 let x = match rotation {
                     0 => x,
                     1 => phi_x::<C>(x),
@@ -310,7 +310,7 @@ where
                     _ => -(x + phi_x::<C>(x)),
                 };
                 let y = if negative { -y } else { y };
-                bucket_points.push(AffinePoint { x, y });
+                bucket_points.push(Coordinates { x, y });
             }
             let base = offsets[offsets.len() - 1];
             offsets.extend(start[1..].iter().map(|&end| base + end));

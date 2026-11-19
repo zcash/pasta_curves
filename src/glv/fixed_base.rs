@@ -33,10 +33,10 @@ use super::{
     GlvParams, HALF_BITS, Recoding, affine_from_xy_unchecked, affine_xy,
     booth::{SignedMagnitude, booth_digit, window_count},
     decompose,
-    msm::{AffinePoint, reduce_affine_buckets},
+    msm::reduce_affine_buckets,
     phi_x,
 };
-use crate::arithmetic::PreparedFixedBaseSum;
+use crate::arithmetic::{Coordinates, PreparedFixedBaseSum};
 
 /// The signed-digit window width.
 ///
@@ -259,7 +259,7 @@ where
     /// [`REDUCE_SUMS`].
     fn reduce_sums(&self, scalars: &[&[C::ScalarExt]], output: &mut [C]) {
         // One bucket per sum, laid out contiguously for the reducer.
-        let mut points =
+        let mut points: Vec<Coordinates<C::AffineExt>> =
             Vec::with_capacity(scalars.iter().map(|s| s.len()).sum::<usize>() * 2 * WINDOWS);
         let mut offsets = Vec::with_capacity(scalars.len() + 1);
         offsets.push(0);
@@ -270,7 +270,7 @@ where
                 // as (0, 0). The reducer requires non-identity points, and
                 // they contribute nothing.
                 if !(x.is_zero_vartime() && y.is_zero_vartime()) {
-                    points.push(AffinePoint {
+                    points.push(Coordinates {
                         x,
                         y: if negate { -y } else { y },
                     });
