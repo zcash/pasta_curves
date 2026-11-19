@@ -33,6 +33,9 @@ mod maps;
 // Keep this in sync with if_homogeneous_mul!; ARM tests still exercise the formulas.
 #[cfg(any(not(target_arch = "arm"), test))]
 pub(crate) mod projective;
+// Keep this in sync with if_homogeneous_mul!; ARM tests still exercise the ladder.
+#[cfg(any(not(target_arch = "arm"), test))]
+mod scalar_mul;
 
 #[cfg(feature = "alloc")]
 use crate::arithmetic::{Coordinates, CurveAffine, CurveExt, CurveExtUnchecked, VartimeField};
@@ -72,7 +75,8 @@ macro_rules! mul_curve_specific {
         let point = crate::curves::projective::Projective::<$base>::from_jacobian(
             $point.x, $point.y, $point.z,
         );
-        let (x, y, z) = crate::scalar_mul::multiply(&point, &$scalar.to_repr()).to_jacobian();
+        let (x, y, z) =
+            crate::curves::scalar_mul::multiply(&point, &$scalar.to_repr()).to_jacobian();
         $name { x, y, z }
     }};
     ($name:ident, $base:ident, special_a0_b5, affine, $point:expr, $scalar:expr) => {{
@@ -81,7 +85,8 @@ macro_rules! mul_curve_specific {
             $point.y,
             $point.is_identity(),
         );
-        let (x, y, z) = crate::scalar_mul::multiply(&point, &$scalar.to_repr()).to_jacobian();
+        let (x, y, z) =
+            crate::curves::scalar_mul::multiply(&point, &$scalar.to_repr()).to_jacobian();
         $name { x, y, z }
     }};
     ($name:ident, $base:ident, general, $coord:ident, $point:expr, $scalar:expr) => {{
