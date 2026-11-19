@@ -30,11 +30,8 @@ mod jacobian;
 #[macro_use]
 mod maps;
 
-// Keep this in sync with if_homogeneous_mul!; ARM tests still exercise the formulas.
-#[cfg(any(not(target_arch = "arm"), test))]
 pub(crate) mod projective;
-// Keep this in sync with if_homogeneous_mul!; ARM tests still exercise the ladder.
-#[cfg(any(not(target_arch = "arm"), test))]
+#[macro_use]
 mod scalar_mul;
 
 #[cfg(feature = "alloc")]
@@ -68,53 +65,6 @@ impl EqAffine {
     pub(crate) fn raw_xy_for_tests(&self) -> (Fq, Fq) {
         (self.x, self.y)
     }
-}
-
-macro_rules! mul_curve_specific {
-    ($name:ident, $base:ident, special_a0_b5, jacobian, $point:expr, $scalar:expr) => {{
-        let point = crate::curves::projective::Projective::<$base>::from_jacobian(
-            $point.x, $point.y, $point.z,
-        );
-        let (x, y, z) =
-            crate::curves::scalar_mul::multiply(&point, &$scalar.to_repr()).to_jacobian();
-        $name { x, y, z }
-    }};
-    ($name:ident, $base:ident, special_a0_b5, affine, $point:expr, $scalar:expr) => {{
-        let point = crate::curves::projective::Projective::<$base>::from_affine(
-            $point.x,
-            $point.y,
-            $point.is_identity(),
-        );
-        let (x, y, z) =
-            crate::curves::scalar_mul::multiply(&point, &$scalar.to_repr()).to_jacobian();
-        $name { x, y, z }
-    }};
-    ($name:ident, $base:ident, general, $coord:ident, $point:expr, $scalar:expr) => {{
-        let mut acc = $name::identity();
-
-        // This is a simple double-and-add implementation of point
-        // multiplication, moving from most significant to least
-        // significant bit of the scalar.
-        //
-        // We don't use `PrimeFieldBits::to_le_bits` here, because that would
-        // force users of this crate to depend on `bitvec` where they otherwise
-        // might not need to.
-        //
-        // NOTE: We skip the leading bit because it's always unset (we are turning
-        // the 32-byte repr into 256 bits, and $scalar::NUM_BITS = 255).
-        for bit in $scalar
-            .to_repr()
-            .iter()
-            .rev()
-            .flat_map(|byte| (0..8).rev().map(move |i| Choice::from((byte >> i) & 1u8)))
-            .skip(1)
-        {
-            acc = acc.double();
-            acc = $name::conditional_select(&acc, &(acc + $point), bit);
-        }
-
-        acc
-    }};
 }
 
 new_curve_impl!(

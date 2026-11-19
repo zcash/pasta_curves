@@ -162,8 +162,9 @@ macro_rules! new_maps_impl {
     };
 }
 
-// Keep this in sync with if_homogeneous_mul!, as for the projective module.
-#[cfg(any(not(target_arch = "arm"), test))]
+// On 32-bit ARM the scalar multiplication keeps the Jacobian ladder, so only the
+// tests use these conversions there.
+#[cfg_attr(target_arch = "arm", allow(dead_code))]
 mod projective {
     use ff::Field;
     use subtle::{Choice, ConditionallySelectable};

@@ -2,6 +2,14 @@
 //!
 //! The point is moved to [`Projective`] coordinates, whose complete formulas
 //! let every scalar run the same sequence of operations.
+//!
+//! The module also holds the dispatch of the curves' `Mul` impls
+//! (`mul_curve_specific!`), which uses this ladder on Pallas and Vesta except on
+//! 32-bit ARM (`if_homogeneous_mul!`), and a binary ladder otherwise.
+
+// On 32-bit ARM the dispatch keeps the binary ladder, so only the tests use the
+// radix-27 one there.
+#![cfg_attr(target_arch = "arm", allow(dead_code))]
 
 use ff::Field;
 use subtle::{ConditionallySelectable, ConstantTimeEq};
@@ -97,6 +105,69 @@ pub(crate) fn to_radix_3(by: &[u8; 32]) -> [u8; PADDED_TRITS] {
         *digit = remainder as u8;
     }
     digits
+}
+
+/// Selects homogeneous scalar multiplication except on 32-bit ARM.
+/// Keystone measurements favor the existing Jacobian path; retain it on other
+/// 32-bit ARM targets until measurements support enabling homogeneous multiplication.
+macro_rules! if_homogeneous_mul {
+    ($homogeneous:expr, $jacobian:expr $(,)?) => {{
+        #[cfg(not(target_arch = "arm"))]
+        {
+            $homogeneous
+        }
+        #[cfg(target_arch = "arm")]
+        {
+            $jacobian
+        }
+    }};
+}
+
+macro_rules! mul_curve_specific {
+    ($name:ident, $base:ident, special_a0_b5, jacobian, $point:expr, $scalar:expr) => {{
+        let point = crate::curves::projective::Projective::<$base>::from_jacobian(
+            $point.x, $point.y, $point.z,
+        );
+        let (x, y, z) =
+            crate::curves::scalar_mul::multiply(&point, &$scalar.to_repr()).to_jacobian();
+        $name { x, y, z }
+    }};
+    ($name:ident, $base:ident, special_a0_b5, affine, $point:expr, $scalar:expr) => {{
+        let point = crate::curves::projective::Projective::<$base>::from_affine(
+            $point.x,
+            $point.y,
+            $point.is_identity(),
+        );
+        let (x, y, z) =
+            crate::curves::scalar_mul::multiply(&point, &$scalar.to_repr()).to_jacobian();
+        $name { x, y, z }
+    }};
+    ($name:ident, $base:ident, general, $coord:ident, $point:expr, $scalar:expr) => {{
+        let mut acc = $name::identity();
+
+        // This is a simple double-and-add implementation of point
+        // multiplication, moving from most significant to least
+        // significant bit of the scalar.
+        //
+        // We don't use `PrimeFieldBits::to_le_bits` here, because that would
+        // force users of this crate to depend on `bitvec` where they otherwise
+        // might not need to.
+        //
+        // NOTE: We skip the leading bit because it's always unset (we are turning
+        // the 32-byte repr into 256 bits, and $scalar::NUM_BITS = 255).
+        for bit in $scalar
+            .to_repr()
+            .iter()
+            .rev()
+            .flat_map(|byte| (0..8).rev().map(move |i| Choice::from((byte >> i) & 1u8)))
+            .skip(1)
+        {
+            acc = acc.double();
+            acc = $name::conditional_select(&acc, &(acc + $point), bit);
+        }
+
+        acc
+    }};
 }
 
 #[cfg(test)]

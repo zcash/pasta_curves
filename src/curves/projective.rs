@@ -21,6 +21,10 @@
 //! The formulas use $b = 5$, the constant of both Pallas and Vesta; they do not
 //! apply to the isogenous curves used for hashing to the curve.
 
+// On 32-bit ARM the scalar multiplication keeps the Jacobian ladder, so only the
+// tests use this model there.
+#![cfg_attr(target_arch = "arm", allow(dead_code))]
+
 use ff::Field;
 use subtle::{Choice, ConditionallySelectable};
 
