@@ -1642,6 +1642,31 @@ impl Eq {
     ]);
 }
 
+/// The size of each point type: two base field elements of 32 bytes for the
+/// affine types, three for the Jacobian ones, with no padding, so that tables of
+/// points cost what their coordinates do.
+#[cfg(test)]
+mod size_tests {
+    use super::{Ep, EpAffine, Eq, EqAffine, IsoEp, IsoEpAffine, IsoEq, IsoEqAffine};
+    use core::mem::size_of;
+
+    #[test]
+    fn affine_points_are_64_bytes() {
+        assert_eq!(size_of::<EpAffine>(), 64);
+        assert_eq!(size_of::<EqAffine>(), 64);
+        assert_eq!(size_of::<IsoEpAffine>(), 64);
+        assert_eq!(size_of::<IsoEqAffine>(), 64);
+    }
+
+    #[test]
+    fn jacobian_points_are_96_bytes() {
+        assert_eq!(size_of::<Ep>(), 96);
+        assert_eq!(size_of::<Eq>(), 96);
+        assert_eq!(size_of::<IsoEp>(), 96);
+        assert_eq!(size_of::<IsoEq>(), 96);
+    }
+}
+
 #[cfg(all(test, feature = "zeroize"))]
 mod zeroize_tests {
     use group::{CurveAffine, Group};

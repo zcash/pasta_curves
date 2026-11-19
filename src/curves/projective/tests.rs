@@ -81,6 +81,14 @@ pub(crate) fn assert_same<F: Field>(p: Projective<F>, q: Projective<F>) {
     }
 }
 
+/// Three base field elements of 32 bytes, with no padding, as the Jacobian
+/// point type, so the radix-27 table costs what its coordinates do.
+#[test]
+fn projective_points_are_96_bytes() {
+    assert_eq!(core::mem::size_of::<Projective<crate::Fp>>(), 96);
+    assert_eq!(core::mem::size_of::<Projective<crate::Fq>>(), 96);
+}
+
 macro_rules! curve_tests {
     ($name:ident, $point:ty, $affine:ty, $field:ty, $scalar:ty) => {
         pub(crate) mod $name {
