@@ -161,29 +161,12 @@ where
         return out;
     }
 
-    // Each scalar's terms, by representative: (column, rotation, negative),
-    // and where each representative's terms start. They depend on the scalar
-    // alone, so every lane reuses them.
-    let mut terms = Vec::with_capacity(m);
-    let mut starts = Vec::with_capacity(m);
-    for k in digits {
-        let mut t = Vec::new();
-        for col in 0..len {
-            R::terms(k, col, |rep, rotation, negative| {
-                t.push((rep, col, rotation, negative))
-            });
-        }
-        t.sort_by_key(|&(rep, ..)| rep);
-        let mut start = vec![0; R::REPS + 1];
-        for &(rep, ..) in &t {
-            start[rep + 1] += 1;
-        }
-        for j in 0..R::REPS {
-            start[j + 1] += start[j];
-        }
-        terms.push(t);
-        starts.push(start);
-    }
+    // Each scalar's terms depend on the scalar alone, so every lane reuses
+    // them.
+    let scalars: Vec<ScalarTerms> = digits
+        .iter()
+        .map(|k| ScalarTerms::new::<C, R>(k, len))
+        .collect();
 
     // One block of lanes per thread: every block spends its own inversions,
     // so a single thread evaluates the grid as one block.
@@ -191,7 +174,7 @@ where
     let block = block_lanes(lanes.len(), m, threads);
     let evaluate = |block: &[usize]| {
         let lane_points: Vec<C> = block.iter().map(|&i| points[i]).collect();
-        evaluate_block::<C, R>(&lane_points, &terms, &starts, len)
+        evaluate_block::<C, R>(&lane_points, &scalars, len)
     };
     #[cfg(feature = "multicore")]
     let products: Vec<Vec<Sum<C::AffineExt>>> = if threads > 1 {
@@ -246,16 +229,63 @@ fn block_lanes(lanes: usize, _m: usize, _threads: usize) -> usize {
     lanes
 }
 
+/// A term of a bucket: $(-1)^{\text{negative}} \varphi^{\text{rotation}}(2^{\text{col}} P)$.
+#[derive(Clone, Copy, Default)]
+struct Term {
+    col: usize,
+    rotation: usize,
+    negative: bool,
+}
+
+/// A scalar's terms, grouped by representative: those of representative `j`
+/// are `terms[starts[j]..starts[j + 1]]`, by increasing column.
+struct ScalarTerms {
+    terms: Vec<Term>,
+    starts: Vec<usize>,
+}
+
+impl ScalarTerms {
+    /// The terms of the recoded scalar `k` over its first `len` columns, placed
+    /// by a counting sort on their representatives.
+    fn new<C, R>(k: &R::Digits, len: usize) -> Self
+    where
+        C: GlvParams,
+        R: OrbitRecoding<C>,
+    {
+        let mut tagged = Vec::new();
+        for col in 0..len {
+            R::terms(k, col, |rep, rotation, negative| {
+                tagged.push((
+                    rep,
+                    Term {
+                        col,
+                        rotation,
+                        negative,
+                    },
+                ))
+            });
+        }
+        let mut starts = vec![0; R::REPS + 1];
+        for &(rep, _) in &tagged {
+            starts[rep + 1] += 1;
+        }
+        for j in 0..R::REPS {
+            starts[j + 1] += starts[j];
+        }
+        let mut next = starts.clone();
+        let mut terms = vec![Term::default(); tagged.len()];
+        for (rep, term) in tagged {
+            terms[next[rep]] = term;
+            next[rep] += 1;
+        }
+        Self { terms, starts }
+    }
+}
+
 /// The products of `points`, none the identity, by every scalar, given each
-/// scalar's terms and where each representative's terms start: the product
-/// of `points[l]` and scalar `s` at `l * m + s`, for `m` scalars.
-#[allow(clippy::type_complexity)]
-fn evaluate_block<C, R>(
-    points: &[C],
-    terms: &[Vec<(usize, usize, usize, bool)>],
-    starts: &[Vec<usize>],
-    len: usize,
-) -> Vec<Sum<C::AffineExt>>
+/// scalar's terms: the product of `points[l]` and scalar `s` at `l * m + s`,
+/// for `m` scalars.
+fn evaluate_block<C, R>(points: &[C], scalars: &[ScalarTerms], len: usize) -> Vec<Sum<C::AffineExt>>
 where
     C: GlvParams,
     R: OrbitRecoding<C>,
@@ -297,11 +327,16 @@ where
     // The terms of the bucket of lane l, scalar s and representative j, one
     // bucket after another in that order.
     let mut bucket_points = Vec::new();
-    let mut offsets = Vec::with_capacity(nl * terms.len() * R::REPS + 1);
+    let mut offsets = Vec::with_capacity(nl * scalars.len() * R::REPS + 1);
     offsets.push(0);
     for l in 0..nl {
-        for (t, start) in terms.iter().zip(starts) {
-            for &(_, col, rotation, negative) in t {
+        for s in scalars {
+            for &Term {
+                col,
+                rotation,
+                negative,
+            } in &s.terms
+            {
                 let Coordinates { x, y } = chain[col * nl + l];
                 let x = match rotation {
                     0 => x,
@@ -313,7 +348,7 @@ where
                 bucket_points.push(Coordinates { x, y });
             }
             let base = offsets[offsets.len() - 1];
-            offsets.extend(start[1..].iter().map(|&end| base + end));
+            offsets.extend(s.starts[1..].iter().map(|&end| base + end));
         }
     }
     let buckets = reduce_affine_buckets(bucket_points, offsets).expect("complete affine formulas");
