@@ -11,6 +11,8 @@
 // radix-27 one there.
 #![cfg_attr(target_arch = "arm", allow(dead_code))]
 
+use core::mem::size_of;
+
 use ff::Field;
 use subtle::{Choice, ConditionallyNegatable, ConditionallySelectable, ConstantTimeEq};
 
@@ -44,7 +46,8 @@ const DIGITS: usize = PADDED_TRITS / TRITS_PER_DIGIT;
 const HALF_RADIX: u8 = (RADIX / 2) as u8;
 
 /// The table holds $1P, \dots, 13P$, one entry per nonzero digit magnitude; a
-/// negative digit selects its magnitude and negates it.
+/// negative digit selects its magnitude and negates it. It lives on the stack:
+/// 13 points of three 32-byte coordinates, 1248 bytes, checked below.
 const TABLE_LEN: usize = HALF_RADIX as usize;
 
 /// The scalar is recoded from its encoding read as `u32` limbs.
@@ -54,6 +57,9 @@ const LIMBS: usize = 8;
 const TOP_LIMB_MASK: u32 = (1 << (SCALAR_BITS - 224)) - 1;
 
 const _: () = assert!(RADIX == (TERNARY as usize).pow(TRITS_PER_DIGIT as u32));
+// The table's size on the stack, for either field.
+const _: () = assert!(TABLE_LEN * size_of::<Projective<crate::Fp, PASTA_B>>() == 1248);
+const _: () = assert!(TABLE_LEN * size_of::<Projective<crate::Fq, PASTA_B>>() == 1248);
 // The table is filled by pairs after its first entry.
 const _: () = assert!(TABLE_LEN % 2 == 1);
 // A balanced expansion with `DIGITS` digits covers every integer of magnitude at
