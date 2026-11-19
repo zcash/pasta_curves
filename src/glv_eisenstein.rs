@@ -1544,7 +1544,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ff::{Field, PrimeField, WithSmallOrderMulGroup};
+    use crate::glv::conformance::scalars;
+    use ff::{Field, WithSmallOrderMulGroup};
 
     /// Multiplies an Eisenstein integer by a unit $\pm\omega^{\mathrm{rot}}$,
     /// in plain integer arithmetic, the test-side mirror of [`rotate`].
@@ -1756,18 +1757,6 @@ mod tests {
         ] {
             assert!(bound < headroom - 5, "GLV half can overflow i128");
         }
-    }
-
-    /// Deterministic full-width scalars (matching `glv`'s own test suite).
-    fn scalars<F>(n: u64) -> impl Iterator<Item = F>
-    where
-        F: PrimeField,
-    {
-        (0..n).map(|i| {
-            (F::from(0x9E37_79B9_7F4A_7C15u64 + i).square() + F::from(0x0123_4567_89AB_CDEFu64))
-                .square()
-                + F::from(i)
-        })
     }
 
     /// The recoding is an exact representation: evaluating the digit string

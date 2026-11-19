@@ -349,6 +349,19 @@ pub(crate) mod conformance {
         })
     }
 
+    /// Deterministic full-width scalars, for the known-answer tests of both
+    /// modules.
+    pub(crate) fn scalars<F>(n: u64) -> impl Iterator<Item = F>
+    where
+        F: PrimeField,
+    {
+        (0..n).map(|i| {
+            (F::from(0x9E37_79B9_7F4A_7C15u64 + i).square() + F::from(0x0123_4567_89AB_CDEFu64))
+                .square()
+                + F::from(i)
+        })
+    }
+
     /// The defining law: the ladder computes `k * P`.
     pub(crate) fn agrees_with_mul<C, R>(p: &C, k: &C::ScalarExt)
     where
@@ -1146,6 +1159,7 @@ where
 pub(crate) mod tests {
     use super::*;
     use crate::arithmetic::adc;
+    use crate::glv::conformance::scalars;
     use ff::Field;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
@@ -1214,18 +1228,6 @@ pub(crate) mod tests {
             round_mul_shift(&vesta::Point::G2, &vesta_scalar_max),
             0x49e69d1640a899538cb1279300000001
         );
-    }
-
-    /// Deterministic full-width scalars for the known-answer tests.
-    fn scalars<F>(n: u64) -> impl Iterator<Item = F>
-    where
-        F: PrimeField,
-    {
-        (0..n).map(|i| {
-            (F::from(0x9E37_79B9_7F4A_7C15u64 + i).square() + F::from(0x0123_4567_89AB_CDEFu64))
-                .square()
-                + F::from(i)
-        })
     }
 
     /// Checks `g == round(2^384 * v / n)` for the curve's scalar modulus `n`,
