@@ -27,6 +27,8 @@ use super::{Fp, Fq};
 mod affine;
 #[macro_use]
 mod jacobian;
+#[macro_use]
+mod maps;
 
 // Keep this in sync with if_homogeneous_mul!; ARM tests still exercise the formulas.
 #[cfg(any(not(target_arch = "arm"), test))]
@@ -47,6 +49,7 @@ macro_rules! new_curve_impl {
             ($($privacy)*), $name, $name_affine, $base, $scalar, $curve_type,
             $unchecked_ctor
         );
+        new_maps_impl!($name, $name_affine, $base);
     };
 }
 

@@ -312,18 +312,6 @@ macro_rules! new_affine_impl {
         #[cfg_attr(docsrs, doc(cfg(feature = "zeroize")))]
         impl zeroize::DefaultIsZeroes for $name_affine {}
 
-        impl<'a> From<&'a $name> for $name_affine {
-            fn from(p: &'a $name) -> $name_affine {
-                p.to_affine()
-            }
-        }
-
-        impl From<$name> for $name_affine {
-            fn from(p: $name) -> $name_affine {
-                p.to_affine()
-            }
-        }
-
         impl ConstantTimeEq for $name_affine {
             fn ct_eq(&self, other: &Self) -> Choice {
                 self.x.ct_eq(&other.x) & self.y.ct_eq(&other.y)
