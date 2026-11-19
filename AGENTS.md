@@ -204,13 +204,18 @@ describes the tools in more detail.
   or proof scripts are not a substitute for this synchronization check.
 - **Architecture modules have consistent roles.** `Semantics` defines instruction behavior;
   `Transcription` contains generated block models; the composition proof model models Rust around
-  those blocks; `Vectors` checks the backend's routines against the shared generated vectors by kernel
-  evaluation; `Spec` proves block and composition correctness; `Backend` builds the backend's
-  record of Montgomery blocks, with `Glue.blocksOf`, that the Aeneas-translated glue runs over;
-  `Entry` contains correctness **theorems** specializing those results to `PastaField` and the
-  actual asserted operand contracts, not redundant value wrappers. Split per-block proof files
-  belong under `<Architecture>/Spec/`, imported by its `Spec.lean`. Shared arithmetic, constants,
-  and architecture-independent lemmas stay outside ISA modules.
+  those blocks; `Vectors` checks the backend's routines against the shared generated vectors, and
+  its inversion blocks against the shared known answers, by kernel evaluation through
+  `VectorCheck.lean` and `Inversion/VectorCheck.lean`; `Spec` proves block and composition
+  correctness; `Backend` builds the backend's record of Montgomery blocks, with `Glue.blocksOf`,
+  that the Aeneas-translated glue runs over; `Entry` proves the records' contracts at a
+  `PastaField` and, where the backend meets all of them, instantiates the shared `EntrySpecs`
+  (`PastaCurves/Entry.lean`), which states the entry points' correctness under the actual asserted
+  operand contracts; a backend that meets only some states those entry theorems itself. Checks
+  and statements that are the same for every backend are written once over the backend's records,
+  not copied per architecture. Split per-block proof files belong under `<Architecture>/Spec/`,
+  imported by its `Spec.lean`. Shared arithmetic, constants, and architecture-independent lemmas
+  stay outside ISA modules.
 - **Extend the shared generator pipeline.** `gen.py` owns CLI orchestration, binding storage,
   liveness, formatting, vector emission, SSA naming, and proof skeleton generation/checking.
   `asm_source.py` owns the self-contained Rust source parser and operand/output validation.
@@ -318,6 +323,15 @@ cargo build --target wasm32-wasi           --no-default-features
 # Benchmarks (Criterion). Some require specific features:
 cargo bench --all-features                 # all benches
 cargo bench --features glv --bench glv     # glv bench requires the glv feature
+
+# The inversion bench measures a backend's inversion blocks against the portable
+# ones. Which blocks the inversion runs is fixed at compile time, so this is two
+# runs of the same bench, the second with the assembly compiled out; it reports
+# the change against the first. Both must run from the same directory, so that
+# they share target/criterion.
+cargo bench --features asm --bench inversion -- --save-baseline asm
+RUSTFLAGS="--cfg pasta_curves_noasm" \
+    cargo bench --features asm --bench inversion -- --baseline asm
 
 # CI builds the benches to prevent bitrot:
 cargo build --benches --all-features

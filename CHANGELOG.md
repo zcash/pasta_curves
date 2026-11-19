@@ -6,6 +6,10 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- With the `asm` feature, `Fp::invert` and `Fq::invert` are faster on x86-64,
+  while remaining constant-time: the inversion runs its blocks in assembly
+  there, as it does on AArch64.
 
 ### Added
 - `CurveExt::try_multiexp_vartime`, an optional variable-time multiscalar

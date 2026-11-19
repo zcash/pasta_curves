@@ -1,5 +1,6 @@
-//! The inversion's six blocks in portable Rust. The ARMv7E-M backend uses these for
-//! `sign_mag`, `fg_row`, and `de_row` alongside its assembly blocks.
+//! The inversion's six blocks in portable Rust, for the targets without assembly inversion
+//! blocks. The ARMv7E-M backend also uses these for `sign_mag`, `fg_row`, and `de_row` alongside
+//! its assembly blocks.
 //!
 //! Each function computes what its block contract in [`InvertBlocks`] states, in the shape that the
 //! Lean word-level model gives it (`lean/PastaCurves/Inversion/`) rather than instruction for

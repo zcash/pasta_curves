@@ -416,11 +416,11 @@ theorem batchRound_spec (st : BatchState) (hst : packedStep.Bounded st) (state :
 -- BEGIN packedStep_widthSpec statement
 /-- The generated ARMv7E-M round satisfies the shared signed-width iteration contract. -/
 theorem packedStep_widthSpec : packedStep.WidthSpec 31 where
-  round st hst s hf hd hD hG hG' ed ef eg hz := by
-    exact batchRound_spec st hst s hf hd hD hG hG' ed ef eg hz _ rfl
-  last st hst s hf hd hD hG hG' ed ef eg hz := by
+  round st hst s hf hd hD hG hG' hc := by
+    exact batchRound_spec st hst s hf hd hD hG hG' hc.1 hc.2.1 hc.2.2.1 hc.2.2.2 _ rfl
+  last st hst s hf hd hD hG hG' hc := by
     obtain ⟨hb, hd', hf', hg', -⟩ := batchRound_spec st hst s hf hd hD hG hG'
-      ed ef eg hz _ rfl
+      hc.1 hc.2.1 hc.2.2.1 hc.2.2.2 _ rfl
     exact ⟨hb, hd', hf', hg'⟩
 -- END packedStep_widthSpec statement
 

@@ -9,7 +9,7 @@ architecture-specific backends, with the following field operations:
 | Montgomery multiplication / squaring | Assembly | Assembly | Assembly |
 | Repeated squaring | Assembly | Assembly | Assembly |
 | Conversion out of Montgomery form | Assembly | Assembly | Assembly |
-| Inversion | Assembly | Portable | Mixed |
+| Inversion | Assembly | Assembly | Mixed |
 
 The mixed inversion uses assembly for `divstep59`, `amontred`, and `cond_sub`, and portable Rust for
 the other three blocks. The ARM backend implements addition and subtraction entry points, but the
@@ -34,7 +34,9 @@ imported from zakura-pasta-curves. The ARMv7E-M routines are original 32-bit cod
 
 The inversion, `invert`, follows s2n-bignum's `bignum_montinv_p256` at commit
 [`ec62054cc1864839d44b1acc6e6a3f9eff5b6e68`](https://github.com/awslabs/s2n-bignum/blob/ec62054cc1864839d44b1acc6e6a3f9eff5b6e68/arm/p256/bignum_montinv_p256.S)
-(Apache-2.0 OR ISC OR MIT-0), the serial variant of the algorithm of Bernstein, Chen, Harrison,
+(Apache-2.0 OR ISC OR MIT-0), and on x86-64 the same routine's
+[x86-64 version](https://github.com/awslabs/s2n-bignum/blob/ec62054cc1864839d44b1acc6e6a3f9eff5b6e68/x86/p256/bignum_montinv_p256.S)
+at the same commit: the serial variant of the algorithm of Bernstein, Chen, Harrison,
 Huang, Maxwell, Wang, Wuille, and Yang, "Accelerating and verifying constant-time modular inversion"
 (EUROCRYPT 2026): its `divstep59` macro on named registers with the Pasta constants, its updates of
 `f`, `g`, `d`, and `e` as blocks of one matrix row each, and its almost-Montgomery reduction for the
@@ -110,11 +112,11 @@ their correctness. The model is at the instruction level. Individual blocks of a
 The generic compositions that run them as the six Montgomery entry points (`entry.rs`) are
 translated to Lean by Aeneas, and proved over any backend whose blocks meet their contracts. So each
 entry point is proved at either Pasta field, under the condition that it asserts. The inversion's
-algorithm is proved on words (`montInv_spec`), each of its six AArch64 blocks is proved to compute
-its word-level function, and `invert` over those blocks is proved at either field from their
-composition (`invert_entry_spec`). The ARMv7E-M instruction blocks and their Rust compositions are
-also proved. Of the portable blocks, only `cond_sub` is proved, from its Aeneas translation; all
-six are checked against the same known answers as the assembly blocks. The transcription is
-generated from the module's own inline blocks, CI regenerates and diffs it, and the independent
-`nanoda` implementation of the Lean kernel re-checks the build. See
-[`lean/README.md`](../../lean/README.md).
+algorithm is proved on words (`montInv_spec`), each of its six blocks is proved, on AArch64 and on
+x86-64, to compute its word-level function, and `invert` over either backend's blocks is proved at
+either field from their composition (`invert_entry_spec`). The ARMv7E-M instruction blocks and
+their Rust compositions are also proved. The portable blocks and `invert` over them are proved the
+same way, from their Aeneas translation (`Portable.invert_entry_spec`). All six blocks of each kind
+are also checked against the same known answers. The transcription is generated from the module's
+own inline blocks, CI regenerates and diffs it, and the independent `nanoda` implementation of the
+Lean kernel re-checks the build. See [`lean/README.md`](../../lean/README.md).
