@@ -41,33 +41,6 @@ impl<F: Field> Projective<F> {
         }
     }
 
-    pub(crate) fn from_jacobian(x: F, y: F, z: F) -> Self {
-        let z2 = z.square();
-        let p = Self {
-            x: x * z,
-            y,
-            z: z2 * z,
-        };
-        Self::conditional_select(&p, &Self::identity(), z.is_zero())
-    }
-
-    pub(crate) fn from_affine(x: F, y: F, infinity: Choice) -> Self {
-        let p = Self { x, y, z: F::ONE };
-        Self::conditional_select(&p, &Self::identity(), infinity)
-    }
-
-    pub(crate) fn to_jacobian(self) -> (F, F, F) {
-        let z2 = self.z.square();
-        let x = self.x * self.z;
-        let y = self.y * z2;
-        let zero = F::ZERO;
-        (
-            F::conditional_select(&x, &zero, self.z.is_zero()),
-            F::conditional_select(&y, &zero, self.z.is_zero()),
-            self.z,
-        )
-    }
-
     // The native curve has b = 5, hence 3b = 15. No field-specific constants.
     fn mul_by_3b(x: F) -> F {
         let x2 = x + x;

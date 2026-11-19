@@ -158,3 +158,41 @@ macro_rules! new_maps_impl {
         }
     };
 }
+
+// Keep this in sync with if_homogeneous_mul!, as for the projective module.
+#[cfg(any(not(target_arch = "arm"), test))]
+mod projective {
+    use ff::Field;
+    use subtle::{Choice, ConditionallySelectable};
+
+    use super::super::projective::Projective;
+
+    impl<F: Field> Projective<F> {
+        pub(crate) fn from_jacobian(x: F, y: F, z: F) -> Self {
+            let z2 = z.square();
+            let p = Self {
+                x: x * z,
+                y,
+                z: z2 * z,
+            };
+            Self::conditional_select(&p, &Self::identity(), z.is_zero())
+        }
+
+        pub(crate) fn from_affine(x: F, y: F, infinity: Choice) -> Self {
+            let p = Self { x, y, z: F::ONE };
+            Self::conditional_select(&p, &Self::identity(), infinity)
+        }
+
+        pub(crate) fn to_jacobian(self) -> (F, F, F) {
+            let z2 = self.z.square();
+            let x = self.x * self.z;
+            let y = self.y * z2;
+            let zero = F::ZERO;
+            (
+                F::conditional_select(&x, &zero, self.z.is_zero()),
+                F::conditional_select(&y, &zero, self.z.is_zero()),
+                self.z,
+            )
+        }
+    }
+}
