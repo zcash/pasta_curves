@@ -33,6 +33,45 @@ fn six_product_add<F: Field>(p: &Projective<F>, q: &Projective<F>) -> Projective
     }
 }
 
+// The tripling as first written, with both isogenies inlined, kept as a reference
+// that the factored form computes the same coordinates.
+fn inlined_triple<F: Field>(p: &Projective<F>) -> Projective<F> {
+    // Two complete degree-three isogenies and the isomorphism returning
+    // to the original curve. Here bz² means 5z².
+    let y2 = p.y.square();
+    let z2 = p.z.square();
+    let bz2 = z2 + z2 + z2 + z2 + z2;
+    let v = y2 - bz2;
+    let b4z2 = (bz2 + bz2) + (bz2 + bz2);
+    let x = p.x * (v + b4z2);
+    let y = p.y * (v - (b4z2 + b4z2));
+    let z = p.z * v;
+
+    let y2 = y.square();
+    let z2 = z.square();
+    let bz2 = z2 + z2 + z2 + z2 + z2;
+    let b3z2 = bz2 + bz2 + bz2;
+    let b9z2 = b3z2 + b3z2 + b3z2;
+    let b27z2 = b9z2 + b9z2 + b9z2;
+    let w = y2 + b27z2;
+    let b108z2 = (b27z2 + b27z2) + (b27z2 + b27z2);
+    let x = x * (w - b108z2);
+    let y = y * (w + b108z2 + b108z2);
+    let z = z * w;
+    let z = z + z + z;
+    let z = z + z + z;
+    Projective {
+        x: x + x + x,
+        y,
+        z: z + z + z,
+    }
+}
+
+/// Whether `p` lies on $Y^2 Z = X^3 + b Z^3$.
+fn on_curve<F: Field>(p: &Projective<F>, b: F) -> bool {
+    p.y.square() * p.z == p.x.square() * p.x + b * p.z.square() * p.z
+}
+
 /// Whether `p` and `q` are the same projective point.
 pub(crate) fn assert_same<F: Field>(p: Projective<F>, q: Projective<F>) {
     assert_eq!(bool::from(p.z.is_zero()), bool::from(q.z.is_zero()));
@@ -97,6 +136,23 @@ macro_rules! curve_tests {
                 assert_same(scaled.add(&q), p.add(&q));
                 let affine_identity = <$affine>::identity();
                 assert_same(h(affine_identity), identity);
+            }
+            #[test]
+            fn tripling_factors_through_the_3_isogeny() {
+                let five = <$field>::from(5);
+                let image = -(five * <$field>::from(27));
+                let twisted = five * <$field>::from(729);
+                let g = <$point>::generator();
+                for point in [<$point>::identity(), g, -g, g.double(), g.double() + g] {
+                    let p = h(point.to_affine());
+                    let once = p.isogeny_3(|x| x * five);
+                    assert!(on_curve(&once, image));
+                    let twice = once.isogeny_3(|x| x * image);
+                    assert!(on_curve(&twice, twisted));
+                    assert!(on_curve(&twice.iota(), five));
+                    let (t, r) = (p.triple(), inlined_triple(&p));
+                    assert_eq!((t.x, t.y, t.z), (r.x, r.y, r.z));
+                }
             }
         }
     };

@@ -131,36 +131,58 @@ impl<F: Field> Projective<F> {
         Self::conditional_select(&result, &Self::identity(), self.z.is_zero())
     }
 
-    pub(crate) fn triple(&self) -> Self {
-        // Two complete degree-three isogenies and the isomorphism returning
-        // to the original curve. Here bz² means 5z².
+    /// The 3-isogeny $\psi_b : E_b \to E_{-27b}$ whose kernel is the subgroup
+    /// $\{O, (0 : \pm\sqrt{b} : 1)\}$, where $E_c$ is $Y^2 Z = X^3 + c Z^3$:
+    ///
+    /// $$\psi_b(X : Y : Z) = (X (Y^2 + 3 b Z^2) : Y (Y^2 - 9 b Z^2) : Z (Y^2 - b Z^2)).$$
+    ///
+    /// `times_b` multiplies by $b$. The tuple never vanishes on $E_b$, so the formula
+    /// needs no case for $O$ or the kernel. The result lies on $E_{-27b}$, not on the
+    /// curve of `self`. On Pallas and Vesta the kernel's nonzero points are not
+    /// rational, since 5 is not a square: the curves have prime order, so no rational
+    /// point of order 3.
+    ///
+    /// Aranha and Barreto, <https://eprint.iacr.org/2026/2667>, section 3. Costs
+    /// $3M + 2S$ and the additions in `times_b`.
+    fn isogeny_3(&self, times_b: impl Fn(F) -> F) -> Self {
         let y2 = self.y.square();
-        let z2 = self.z.square();
-        let bz2 = z2 + z2 + z2 + z2 + z2;
+        let bz2 = times_b(self.z.square());
         let v = y2 - bz2;
         let b4z2 = (bz2 + bz2) + (bz2 + bz2);
-        let x = self.x * (v + b4z2);
-        let y = self.y * (v - (b4z2 + b4z2));
-        let z = self.z * v;
+        Self {
+            x: self.x * (v + b4z2),
+            y: self.y * (v - (b4z2 + b4z2)),
+            z: self.z * v,
+        }
+    }
 
-        let y2 = y.square();
-        let z2 = z.square();
-        let bz2 = z2 + z2 + z2 + z2 + z2;
-        let b3z2 = bz2 + bz2 + bz2;
-        let b9z2 = b3z2 + b3z2 + b3z2;
-        let b27z2 = b9z2 + b9z2 + b9z2;
-        let w = y2 + b27z2;
-        let b108z2 = (b27z2 + b27z2) + (b27z2 + b27z2);
-        let x = x * (w - b108z2);
-        let y = y * (w + b108z2 + b108z2);
-        let z = z * w;
-        let z = z + z + z;
+    /// The isomorphism $E_{729 \cdot 5} \to E_5$, $(X : Y : Z) \mapsto (3X : Y : 27Z)$,
+    /// that is $(x, y) \mapsto (x / 9, y / 27)$, since $729 = 3^6$.
+    fn iota(&self) -> Self {
+        let x = self.x + self.x + self.x;
+        let z = self.z + self.z + self.z;
         let z = z + z + z;
         Self {
-            x: x + x + x,
-            y,
+            x,
+            y: self.y,
             z: z + z + z,
         }
+    }
+
+    /// Returns $3P$ as $\iota \circ \psi_{-27b} \circ \psi_b$: a 3-isogeny, the
+    /// same formula on its image curve, which is the dual up to isomorphism, and
+    /// [`Self::iota`] back to the curve. Costs $6M + 4S$; complete because
+    /// each step is.
+    pub(crate) fn triple(&self) -> Self {
+        // b = 5 for Pallas and Vesta, so the image curve has -27b = -135.
+        let times_5 = |x: F| (x + x) + (x + x) + x;
+        let times_minus_135 = |x: F| {
+            let x5 = times_5(x);
+            let x15 = x5 + x5 + x5;
+            let x45 = x15 + x15 + x15;
+            -(x45 + x45 + x45)
+        };
+        self.isogeny_3(times_5).isogeny_3(times_minus_135).iota()
     }
 }
 
