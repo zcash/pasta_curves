@@ -25,7 +25,7 @@ use group::CurveAffine as _;
 
 use super::msm::{AffinePoint, reduce_affine_buckets};
 use super::private::AffineBase;
-use super::{GlvParams, Recoding, affine_from_xy_unchecked, affine_xy, phi_x};
+use super::{GlvParams, Recoding, affine_from_xy_unchecked, affine_xy, normalize_vartime, phi_x};
 use crate::arithmetic::{VartimeBatchInvert, VartimeField};
 
 /// A sum of points, or `None` for the identity, as the bucket reducer returns
@@ -138,9 +138,7 @@ where
             .iter()
             .flat_map(|t| digits.iter().map(move |k| R::mul(t, k)))
             .collect();
-        let mut affine = vec![C::AffineExt::identity(); proj.len()];
-        C::batch_normalize_vartime(&proj, &mut affine);
-        return affine;
+        return normalize_vartime(&proj);
     }
     shared_doublings::<C, R>(points, digits)
 }
@@ -170,9 +168,7 @@ where
     // holds column col of lane l at `col * lanes.len() + l`.
     let nl = lanes.len();
     let lane_points: Vec<C> = lanes.iter().map(|&i| points[i]).collect();
-    let mut base = vec![C::AffineExt::identity(); nl];
-    C::batch_normalize_vartime(&lane_points, &mut base);
-    let mut cur: Vec<AffinePoint<AffineBase<C>>> = base
+    let mut cur: Vec<AffinePoint<AffineBase<C>>> = normalize_vartime(&lane_points)
         .iter()
         .map(|a| {
             let (x, y) = affine_xy::<C>(a);

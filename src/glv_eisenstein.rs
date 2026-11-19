@@ -165,6 +165,7 @@ use crate::{
         GlvParams, Recoding, affine_from_xy_unchecked, decompose,
         grid::{self, OrbitRecoding, Sum},
         msm::AffinePoint,
+        normalize_vartime,
     },
 };
 
@@ -1150,7 +1151,7 @@ where
     }
     let table = Table::new(p);
     let proj: Vec<C> = ks.iter().map(|k| table.mul(k)).collect();
-    normalize(&proj)
+    normalize_vartime(&proj)
 }
 
 /// `k * p` for every `(p, k)` pair.
@@ -1173,7 +1174,7 @@ where
         .zip(pairs)
         .map(|(t, (_, k))| t.mul(k))
         .collect();
-    normalize(&proj)
+    normalize_vartime(&proj)
 }
 
 /// Number of (point, scalar) products from which [`batch_mul_scalars`] shares
@@ -1291,16 +1292,6 @@ where
 /// $-P$, for a sum of the bucket reducer.
 fn neg<F: Field>(p: Sum<F>) -> Sum<F> {
     p.map(|p| AffinePoint { x: p.x, y: -p.y })
-}
-
-/// One shared inversion back to affine.
-fn normalize<C>(proj: &[C]) -> Vec<C::AffineExt>
-where
-    C: GlvParams,
-{
-    let mut affine = alloc::vec![C::AffineExt::identity(); proj.len()];
-    C::batch_normalize_vartime(proj, &mut affine);
-    affine
 }
 
 #[cfg(test)]

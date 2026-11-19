@@ -1442,6 +1442,17 @@ where
     grid::mul_grid::<C, Wnaf4>(points, &decomposed, SHARED_DOUBLING_THRESHOLD)
 }
 
+/// One shared inversion back to affine, in variable time: for public
+/// points, as everything in `glv_eisenstein` and `glv::grid` is.
+pub(crate) fn normalize_vartime<C>(proj: &[C]) -> Vec<C::AffineExt>
+where
+    C: GlvParams,
+{
+    let mut affine = alloc::vec![C::AffineExt::identity(); proj.len()];
+    C::batch_normalize_vartime(proj, &mut affine);
+    affine
+}
+
 /// One shared inversion back to affine.
 fn normalize<C>(proj: &[C]) -> Vec<C::AffineExt>
 where
