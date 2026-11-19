@@ -1404,11 +1404,6 @@ where
     normalize(&proj)
 }
 
-/// Number of (point, scalar) products from which [`batch_mul_scalars`] shares
-/// the doublings of each point among the scalars; below it, one table per
-/// point and a ladder per product are cheaper.
-const SHARED_DOUBLING_THRESHOLD: usize = 16;
-
 /// `k * p` for every point `p` and every scalar `k`: the product of
 /// `points[i]` and `scalars[j]` is at index `i * scalars.len() + j` of the
 /// result, which is affine.
@@ -1420,7 +1415,8 @@ const SHARED_DOUBLING_THRESHOLD: usize = 16;
 /// MSM's affine bucket reducer sums all the buckets of the grid at once, with
 /// one shared inversion per level of its pairwise trees. So it overtakes one
 /// [`batch_mul`] per scalar from two scalars on. A single scalar is handed to
-/// [`batch_mul`], and a grid of fewer than 16 products is evaluated with one
+/// [`batch_mul`], and a grid of fewer than 16 products (by default; the
+/// threshold depends on the machine) is evaluated with one
 /// [`Table`] per point and a ladder per product.
 ///
 /// Identity points and zero scalars are handled. Like the rest of this
@@ -1437,7 +1433,7 @@ where
         return batch_mul(points, k);
     }
     let decomposed: Vec<Decomposed<C>> = scalars.iter().map(Decomposed::new).collect();
-    grid::mul_grid::<C, Wnaf4>(points, &decomposed, SHARED_DOUBLING_THRESHOLD)
+    grid::mul_grid::<C, Wnaf4>(points, &decomposed, grid::CALIBRATION.glv_min_products)
 }
 
 /// One shared inversion back to affine, in variable time: for public

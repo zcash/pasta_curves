@@ -1138,17 +1138,6 @@ where
     normalize_vartime(&proj)
 }
 
-/// Number of (point, scalar) products from which [`batch_mul_scalars`] shares
-/// the doublings of each point among the scalars.
-///
-/// Below it, one window per point and a projective ladder per product are
-/// cheaper. The shared-doubling evaluation spends one field inversion per
-/// column and a few more to combine its buckets, about 135 in all whatever the
-/// batch, against roughly 400 multiplications saved per product with two
-/// scalars and more with more. With [`VartimeField::invert_vartime`] at about
-/// 63 multiplications, that pays from about 16 products.
-const SHARED_DOUBLING_THRESHOLD: usize = 16;
-
 /// `k * p` for every point `p` and every scalar `k`: the product of
 /// `points[i]` and `scalars[j]` is at index `i * scalars.len() + j` of the
 /// result, which is affine.
@@ -1169,7 +1158,8 @@ const SHARED_DOUBLING_THRESHOLD: usize = 16;
 /// scalars. So it overtakes one [`batch_mul`] per scalar from two scalars on,
 /// and its lead grows with their number. A single scalar is handed to
 /// [`batch_mul`], and a grid too small to pay for the shared inversions (see
-/// `SHARED_DOUBLING_THRESHOLD`) is evaluated with one [`Table`] per point,
+/// the `batch_mul_scalars`
+/// calibration's `eisenstein_min_products`, 16 by default) is evaluated with one [`Table`] per point,
 /// built together, and one projective ladder per product.
 ///
 /// Identity points and zero scalars are handled, and may be mixed in freely.
@@ -1189,7 +1179,7 @@ where
         return batch_mul(points, k);
     }
     let recoded: Vec<Recoded<C>> = scalars.iter().map(Recoded::new).collect();
-    grid::mul_grid::<C, EisensteinNaf3>(points, &recoded, SHARED_DOUBLING_THRESHOLD)
+    grid::mul_grid::<C, EisensteinNaf3>(points, &recoded, grid::CALIBRATION.eisenstein_min_products)
 }
 
 /// The bucket view of the Eisenstein recoding: a packed digit names its

@@ -18,10 +18,14 @@
 //! and complete formulas for equal and opposite operands. The combination's
 //! rounds go through the same reducer.
 
+mod calibration;
+
 use alloc::{vec, vec::Vec};
 
 use ff::Field;
 use group::CurveAffine as _;
+
+pub(crate) use calibration::CALIBRATION;
 
 use super::msm::{current_num_threads, reduce_affine_buckets};
 use super::private::AffineBase;
@@ -192,20 +196,7 @@ where
     // One block of lanes per thread: every block spends its own inversions,
     // so a single thread evaluates the grid as one block.
     let threads = current_num_threads();
-    let block = if threads > 1 {
-        // A second block per thread when both stay large enough.
-        let blocks = if lanes.len() >= 2 * threads * MIN_BALANCED_BLOCK_LANES {
-            2 * threads
-        } else {
-            threads
-        };
-        lanes
-            .len()
-            .div_ceil(blocks)
-            .max(MIN_BLOCK_PRODUCTS.div_ceil(m))
-    } else {
-        lanes.len()
-    };
+    let block = block_lanes(lanes.len(), m, threads);
     let evaluate = |block: &[usize]| {
         let lane_points: Vec<C> = block.iter().map(|&i| points[i]).collect();
         evaluate_block::<C, R>(&lane_points, &terms, &starts, len)
@@ -233,18 +224,35 @@ where
     out
 }
 
-/// The fewest points in a block for the grid to be split into two blocks per
-/// thread rather than one: Rayon's work stealing then balances threads that
-/// run at different speeds, such as performance and efficiency cores, but
-/// each extra block pays its own inversions, which only a block of many
-/// points makes up for.
-const MIN_BALANCED_BLOCK_LANES: usize = 16;
+/// The number of lanes in each block of a grid of `lanes` points by `m`
+/// scalars, on a pool of `threads` threads: one block per thread, or
+/// `balanced_blocks_per_thread` once each holds `min_balanced_block_lanes`
+/// points, each block holding at least `min_block_products` products, over at
+/// most `max_threads` threads (see [`CALIBRATION`]).
+#[cfg(feature = "multicore")]
+fn block_lanes(lanes: usize, m: usize, threads: usize) -> usize {
+    let c = &CALIBRATION;
+    let threads = match c.max_threads {
+        0 => threads,
+        max => threads.min(max),
+    };
+    if threads <= 1 {
+        return lanes;
+    }
+    let balanced = c.balanced_blocks_per_thread * threads;
+    let blocks = if lanes >= balanced * c.min_balanced_block_lanes {
+        balanced
+    } else {
+        threads
+    };
+    lanes.div_ceil(blocks).max(c.min_block_products.div_ceil(m))
+}
 
-/// The fewest products in a block when the grid is split between threads:
-/// below it a block's own inversions, the same whatever its size, outweigh
-/// what its thread saves. A block holds at least `MIN_BLOCK_PRODUCTS / m`
-/// points for `m` scalars, so the more scalars, the fewer points it needs.
-const MIN_BLOCK_PRODUCTS: usize = 8;
+/// Without `multicore`, a grid is one block.
+#[cfg(not(feature = "multicore"))]
+fn block_lanes(lanes: usize, _m: usize, _threads: usize) -> usize {
+    lanes
+}
 
 /// The products of `points`, none the identity, by every scalar, given each
 /// scalar's terms and where each representative's terms start: the product
