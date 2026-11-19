@@ -4,7 +4,8 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use ff::Field;
 
-use pasta_curves::arithmetic::CurveExt;
+use group::GroupEncoding;
+use pasta_curves::arithmetic::{CurveAffine, CurveExt};
 use pasta_curves::{pallas, vesta};
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
@@ -45,6 +46,24 @@ fn point_bench<C: CurveExt>(c: &mut Criterion, name: &str) {
     group.bench_function("point from_bytes", |bencher| {
         bencher.iter(|| C::from_bytes(&repr))
     });
+
+    // Decoding a batch of public encodings, against decoding them one by one.
+    for n in [1, 8, 64, 512] {
+        let encodings: Vec<_> = (0..n)
+            .map(|_| C::random(&mut rng).to_affine().to_bytes())
+            .collect();
+        group.bench_function(format!("affine batch_decode_vartime/{n}"), |bencher| {
+            bencher.iter(|| C::AffineExt::batch_decode_vartime(black_box(&encodings)));
+        });
+        group.bench_function(format!("affine from_bytes each/{n}"), |bencher| {
+            bencher.iter(|| {
+                black_box(&encodings)
+                    .iter()
+                    .map(|bytes| Option::<C::AffineExt>::from(C::AffineExt::from_bytes(bytes)))
+                    .collect::<Vec<_>>()
+            });
+        });
+    }
 
     group.bench_function("point to_affine", |bencher| bencher.iter(|| a.to_affine()));
     group.bench_function("point to_affine_vartime", |bencher| {
