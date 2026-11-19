@@ -427,6 +427,22 @@ specifics:
   `arithmetic/` submodules generate the repetitive per-field and per-curve
   implementations; changes to arithmetic usually belong in the macro/shared code so both
   curves stay in sync.
+- **Curve code is split by model.** `src/curves.rs` documents the curves and their models
+  and invokes `new_curve_impl!` for Pallas, Vesta and the isogenous curves used for
+  hashing; the code of each model lives in its own file under `src/curves/`:
+  - `affine.rs`: the affine chart, the public affine point type (`new_affine_impl!`);
+  - `jacobian.rs`: Jacobian coordinates, weights (2, 3, 1), the public point type
+    (`new_jacobian_impl!`);
+  - `projective.rs`: the projective plane, weights (1, 1, 1), a crate-private model with
+    complete formulas, indexed by the curve's constant b;
+  - `maps.rs`: the maps between the models (`new_maps_impl!`, the projective
+    conversions) and the isogenies from the curves used for hashing;
+  - `scalar_mul.rs`: the constant-time scalar multiplication on the projective model and
+    the dispatch of the curves' `Mul` impls.
+
+  A new model gets its own file, its equation and weights in its documentation, and its
+  maps to the existing models in `maps.rs`. The public `arithmetic` module holds the
+  traits; `curves` implements them.
 - **Sage-derived constants.** Magic constants have companion derivations under `./sage`
   (see the Code Conventions section).
 
