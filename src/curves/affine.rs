@@ -404,3 +404,6 @@ macro_rules! impl_affine_curve_specific {
         }
     };
 }
+
+#[cfg(test)]
+mod tests;

@@ -404,3 +404,6 @@ impl Eq {
         ]),
     ];
 }
+
+#[cfg(all(test, feature = "alloc"))]
+mod tests;

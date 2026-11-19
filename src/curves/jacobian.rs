@@ -696,3 +696,6 @@ macro_rules! impl_jacobian_curve_ext {
         }
     };
 }
+
+#[cfg(test)]
+mod tests;
