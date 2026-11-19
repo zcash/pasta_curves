@@ -8,7 +8,7 @@ pub type Base = Fp;
 /// The scalar field of the Pallas and iso-Pallas curves.
 pub type Scalar = Fq;
 
-/// A Pallas point in the projective coordinate space.
+/// A Pallas point in Jacobian coordinates.
 pub type Point = Ep;
 
 /// A Pallas point in the affine coordinate space (or the point at infinity).

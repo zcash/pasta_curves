@@ -75,7 +75,17 @@ macro_rules! new_curve_impl {
     (($($privacy:tt)*), $name:ident, $name_affine:ident, $iso:ident, $base:ident, $scalar:ident,
      $curve_id:literal, $a_raw:expr, $b_raw:expr, $curve_type:ident,
      $unchecked_ctor:ident, $same_scalar_mul:ident) => {
-        /// Represents a point in the projective coordinate space.
+        /// A point in Jacobian coordinates.
+        ///
+        /// The coordinates are a class $(X : Y : Z)$ of the weighted projective plane with
+        /// weights $(2, 3, 1)$: $(X : Y : Z)$ and $(\lambda^2 X : \lambda^3 Y : \lambda Z)$
+        /// are the same point for every nonzero $\lambda$. The point lies on
+        ///
+        /// $$Y^2 = X^3 + a X Z^4 + b Z^6,$$
+        ///
+        /// and is the affine point $(X / Z^2, Y / Z^3)$ when $Z \neq 0$. Every triple with
+        /// $Z = 0$ represents the identity, which [`group::Group::identity`] returns as
+        /// $(0, 0, 0)$.
         #[derive(Copy, Clone, Debug)]
         #[cfg_attr(feature = "repr-c", repr(C))]
         $($privacy)* struct $name {
