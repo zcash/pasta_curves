@@ -1,6 +1,14 @@
 use super::{B, Projective, U, times_3b, times_b, times_minus_27b, times_u, times_u3};
 use ff::Field;
 use group::{Curve, CurveAffine, Group};
+use proptest::prelude::*;
+use rand::SeedableRng;
+use rand_xorshift::XorShiftRng;
+
+/// A random point, from a seed that proptest draws and shrinks.
+fn point<G: Group>(seed: [u8; 16]) -> G {
+    G::random(&mut XorShiftRng::from_seed(seed))
+}
 
 // The original six-product cross-product tail of RCB Algorithm 7 is retained
 // here as an independent reference for the five-product formula.
@@ -111,6 +119,50 @@ macro_rules! curve_tests {
             pub(crate) fn h(p: $affine) -> Projective<$field> {
                 let (x, y) = p.raw_xy();
                 Projective::from_affine(x, y, p.is_identity())
+            }
+
+            /// The point in the projective model, through the map from Jacobian
+            /// coordinates.
+            fn from_point(p: $point) -> Projective<$field> {
+                Projective::from_jacobian(p.x, p.y, p.z)
+            }
+
+            proptest! {
+                /// The maps between the three models commute: affine to projective
+                /// agrees with affine to Jacobian to projective, and projective to
+                /// Jacobian is a section of Jacobian to projective, landing on the
+                /// same point.
+                #[test]
+                fn maps_commute(seed in any::<[u8; 16]>()) {
+                    let p = point::<$point>(seed);
+                    let q = from_point(p);
+                    assert_same(h(p.to_affine()), q);
+                    assert_same(h(p.to_affine().to_curve().to_affine()), q);
+                    let (x, y, z) = q.to_jacobian();
+                    assert_same(Projective::from_jacobian(x, y, z), q);
+                    type Point = $point;
+                    prop_assert_eq!(Point { x, y, z }, p);
+                }
+
+                /// Each operation of the projective model is a homomorphism through
+                /// the map from Jacobian coordinates, including its edge cases:
+                /// doubling by addition, opposite points, and the identity.
+                #[test]
+                fn operations_are_homomorphisms(
+                    a in any::<[u8; 16]>(),
+                    b in any::<[u8; 16]>(),
+                ) {
+                    let (p, q) = (point::<$point>(a), point::<$point>(b));
+                    let (hp, hq) = (from_point(p), from_point(q));
+                    let identity = Projective::<$field>::identity();
+                    assert_same(hp.add(&hq), from_point(p + q));
+                    assert_same(hp.double(), from_point(p.double()));
+                    assert_same(hp.triple(), from_point(p.double() + p));
+                    assert_same(hp.add(&hp), from_point(p.double()));
+                    assert_same(hp.add(&from_point(-p)), identity);
+                    assert_same(hp.add(&identity), hp);
+                    assert_same(identity.add(&hp), hp);
+                }
             }
 
             #[test]
