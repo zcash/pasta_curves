@@ -117,7 +117,7 @@ macro_rules! new_affine_impl {
             type Output = $name;
 
             fn mul(self, other: &'b $scalar) -> Self::Output {
-                if_homogeneous_mul!(
+                if_projective_mul!(
                     mul_curve_specific!($name, $base, $curve_type, affine, self, other),
                     mul_curve_specific!($name, $base, general, affine, self, other),
                 )

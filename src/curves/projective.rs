@@ -102,7 +102,7 @@ impl<F: Field> Projective<F> {
     }
 
     pub(crate) fn add(&self, rhs: &Self) -> Self {
-        // Complete addition for a = 0 in homogeneous coordinates; the last
+        // Complete addition for a = 0 in projective coordinates; the last
         // five products evaluate the cross product instead of its six terms.
         let t0 = self.x * rhs.x;
         let t1 = self.y * rhs.y;
@@ -131,7 +131,7 @@ impl<F: Field> Projective<F> {
     }
 
     pub(crate) fn double(&self) -> Self {
-        // Complete homogeneous doubling for a = 0 (RCB Algorithm 9).
+        // Complete projective doubling for a = 0 (RCB Algorithm 9).
         let t0 = self.y.square();
         let z3 = t0 + t0;
         let z3 = z3 + z3;

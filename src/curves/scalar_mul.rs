@@ -5,7 +5,7 @@
 //!
 //! The module also holds the dispatch of the curves' `Mul` impls
 //! (`mul_curve_specific!`), which uses this ladder on Pallas and Vesta except on
-//! 32-bit ARM (`if_homogeneous_mul!`), and a binary ladder otherwise.
+//! 32-bit ARM (`if_projective_mul!`), and a binary ladder otherwise.
 
 // On 32-bit ARM the dispatch keeps the binary ladder, so only the tests use the
 // radix-27 one there.
@@ -107,14 +107,15 @@ pub(crate) fn to_radix_3(by: &[u8; 32]) -> [u8; PADDED_TRITS] {
     digits
 }
 
-/// Selects homogeneous scalar multiplication except on 32-bit ARM.
+/// Selects the radix-27 scalar multiplication in projective coordinates, except on
+/// 32-bit ARM.
 /// Keystone measurements favor the existing Jacobian path; retain it on other
-/// 32-bit ARM targets until measurements support enabling homogeneous multiplication.
-macro_rules! if_homogeneous_mul {
-    ($homogeneous:expr, $jacobian:expr $(,)?) => {{
+/// 32-bit ARM targets until measurements support enabling it.
+macro_rules! if_projective_mul {
+    ($projective:expr, $jacobian:expr $(,)?) => {{
         #[cfg(not(target_arch = "arm"))]
         {
-            $homogeneous
+            $projective
         }
         #[cfg(target_arch = "arm")]
         {
