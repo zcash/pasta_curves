@@ -109,7 +109,7 @@ macro_rules! curve_tests {
             use super::*;
 
             pub(crate) fn h(p: $affine) -> Projective<$field> {
-                let (x, y) = p.raw_xy_for_tests();
+                let (x, y) = p.raw_xy();
                 Projective::from_affine(x, y, p.is_identity())
             }
 

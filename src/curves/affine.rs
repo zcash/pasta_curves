@@ -372,8 +372,9 @@ macro_rules! impl_affine_unchecked_ctor {
             }
 
             /// The stored coordinates, the identity read as `(0, 0)`: the
-            /// inverse of `from_xy_unchecked`.
-            #[cfg(feature = "glv")]
+            /// inverse of `from_xy_unchecked`. The GLV code and the tests read
+            /// coordinates through it.
+            #[cfg(any(feature = "glv", test))]
             pub(crate) const fn raw_xy(&self) -> ($base, $base) {
                 (self.x, self.y)
             }

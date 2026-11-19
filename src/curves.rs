@@ -53,20 +53,6 @@ macro_rules! new_curve_impl {
     };
 }
 
-#[cfg(test)]
-impl EpAffine {
-    pub(crate) fn raw_xy_for_tests(&self) -> (Fp, Fp) {
-        (self.x, self.y)
-    }
-}
-
-#[cfg(test)]
-impl EqAffine {
-    pub(crate) fn raw_xy_for_tests(&self) -> (Fq, Fq) {
-        (self.x, self.y)
-    }
-}
-
 new_curve_impl!(
     (pub),
     Ep,
