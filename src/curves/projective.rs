@@ -258,5 +258,7 @@ impl<F: Field, const B: i64> ConditionallySelectable for Projective<F, B> {
     }
 }
 
+pub(crate) mod mul;
+
 #[cfg(test)]
 pub(crate) mod tests;

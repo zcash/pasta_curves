@@ -436,13 +436,13 @@ specifics:
   - `jacobian.rs`: Jacobian coordinates, weights (2, 3, 1), the public point type
     (`new_jacobian_impl!`);
   - `projective.rs`: the projective plane, weights (1, 1, 1), a crate-private model with
-    complete formulas, indexed by the curve's constant b;
+    complete formulas, indexed by the curve's constant b, and its constant-time scalar
+    multiplication in `projective/mul.rs`;
   - `maps.rs`: the maps between the models (`new_maps_impl!`, and the typed maps
     between the public point types and the projective model);
   - `iso.rs`: the constants of the maps of hashing to the curves, the simplified SWU
     map to the isogenous curves and the 3-isogenies from them;
-  - `scalar_mul.rs`: the constant-time scalar multiplication on the projective model and
-    the dispatch of the curves' `Mul` impls.
+  - `scalar_mul.rs`: the dispatch of the curves' `Mul` impls.
 
   A new model gets its own file, its equation and weights in its documentation, and its
   maps to the existing models in `maps.rs`. The public `arithmetic` module holds the

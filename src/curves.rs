@@ -28,7 +28,7 @@
 //!
 //! The public point types are the affine and Jacobian ones. The projective model is
 //! crate-private, with $b = 5$ only: it has complete formulas on Pallas and Vesta,
-//! which the constant-time scalar multiplication in [`scalar_mul`] uses.
+//! which the constant-time scalar multiplication in [`projective::mul`] uses.
 //!
 //! # Why the weights are $(2, 3, 1)$
 //!
