@@ -128,9 +128,11 @@
 //! affine ladder that fuses each column's doubling and addition and shares
 //! one inversion across every point.
 //!
-//! This module has a fifth, [`batch_mul_scalars`], for the full grid of many
-//! points against several scalars. There the doublings of each point are
-//! shared by every scalar, which none of the four shapes above can do.
+//! For the full grid of many points against several scalars,
+//! [`batch_mul_scalars`] shares the doublings of each point among every
+//! scalar, which none of the other shapes can do. `glv` has the same entry
+//! point over its own recoding; this one needs fewer additions, its digits
+//! being sparser.
 //!
 //! # References
 //!
@@ -162,6 +164,7 @@ use crate::{
     glv::{
         GlvParams, Recoding, affine_from_xy_unchecked, decompose,
         grid::{self, OrbitRecoding, Sum},
+        msm::AffinePoint,
     },
 };
 
@@ -1271,7 +1274,7 @@ where
                 .map(|product| product[j])
                 .collect()
         });
-        let minus_b4: Vec<_> = b[4].iter().map(|&p| grid::neg(p)).collect();
+        let minus_b4: Vec<_> = b[4].iter().map(|&p| neg(p)).collect();
         // T_7 = B_7 and T_4 = B_4 are leaves.
         let [t6, t5] = grid::add_columns([(&b[6], &b[7]), (&b[5], &b[4])]);
         let [t3, t2] = grid::add_columns([(&b[3], &t6), (&b[2], &t5)]);
@@ -1279,10 +1282,15 @@ where
         let [t1, x257, y364] = grid::add_columns([(&b[1], &t32), (&x25, &b[7]), (&y36, &minus_b4)]);
         let [t0, y] = grid::add_columns([(&b[0], &t1), (&y364, &t1)]);
         let [x] = grid::add_columns([(&t0, &x257)]);
-        let minus_phi_y: Vec<_> = y.iter().map(|&p| grid::neg(grid::phi(p))).collect();
+        let minus_phi_y: Vec<_> = y.iter().map(|&p| neg(grid::phi::<C>(p))).collect();
         let [sum] = grid::add_columns([(&x, &minus_phi_y)]);
         sum
     }
+}
+
+/// $-P$, for a sum of the bucket reducer.
+fn neg<F: Field>(p: Sum<F>) -> Sum<F> {
+    p.map(|p| AffinePoint { x: p.x, y: -p.y })
 }
 
 /// One shared inversion back to affine.
@@ -1299,7 +1307,6 @@ where
 mod tests {
     use super::*;
     use crate::glv::conformance::scalars;
-    use crate::glv::msm::AffinePoint;
     use ff::{Field, WithSmallOrderMulGroup};
 
     /// Multiplies an Eisenstein integer by a unit $\pm\omega^{\mathrm{rot}}$,
@@ -1918,175 +1925,10 @@ mod tests {
         batch_invert(&mut [] as &mut [AffineBase<C>], &mut scratch);
     }
 
-    /// [`batch_mul_scalars`] agrees with the group operator on every product
-    /// of the grid, in each of its three arms, across grid sizes on both
-    /// sides of every threshold, scalar shapes, and points that make its
-    /// additions meet equal, opposite and identity operands.
-    fn batch_mul_scalars_matches_operator<C>()
-    where
-        C: GlvParams,
-    {
-        let g = C::generator();
-        let check = |points: &[C], ks: &[C::ScalarExt]| {
-            let recoded: Vec<Recoded<C>> = ks.iter().map(Recoded::new).collect();
-            // The entry point, which picks an arm by the size of the grid,
-            // and the shared-doubling arm whatever the size.
-            for got in [
-                batch_mul_scalars(points, ks),
-                grid::shared_doublings::<C, EisensteinNaf3>(points, &recoded),
-            ] {
-                assert_eq!(got.len(), points.len() * ks.len());
-                for (i, p) in points.iter().enumerate() {
-                    for (j, k) in ks.iter().enumerate() {
-                        assert_eq!(
-                            C::from(got[i * ks.len() + j]),
-                            *p * k,
-                            "product of point {i} and scalar {j}"
-                        );
-                    }
-                }
-            }
-        };
-
-        // Empty grids.
-        assert!(batch_mul_scalars::<C>(&[], &[C::ScalarExt::ONE]).is_empty());
-        assert!(batch_mul_scalars::<C>(&[g], &[]).is_empty());
-        assert!(grid::shared_doublings::<C, EisensteinNaf3>(&[], &[]).is_empty());
-
-        let points: Vec<C> = scalars::<C::ScalarExt>(130)
-            .map(|k| g * (k + C::ScalarExt::ONE))
-            .collect();
-        let random: Vec<C::ScalarExt> = scalars::<C::ScalarExt>(8)
-            .map(|k| k.square() + C::ScalarExt::from(7))
-            .collect();
-
-        // Grid sizes around the shared-doubling threshold and the thresholds
-        // of the single-scalar arm, with one to eight scalars.
-        for n in [1usize, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 37, 95, 96, 97, 130] {
-            for m in [1usize, 2, 3, 4, 8] {
-                check(&points[..n], &random[..m]);
-            }
-        }
-
-        // Scalar shapes that stress the recoding's ends and leave buckets
-        // empty: zero, a one-column recoding, tiny values, negatives, lambda
-        // and its neighbours, the representatives' own values, a repeated
-        // scalar, and full-width scalars.
-        let one = C::ScalarExt::ONE;
-        let zeta = C::ScalarExt::ZETA;
-        let mut ks: Vec<C::ScalarExt> = alloc::vec![
-            C::ScalarExt::ZERO,
-            one,
-            -one,
-            C::ScalarExt::from(2),
-            C::ScalarExt::from(3),
-            C::ScalarExt::from(7),
-            C::ScalarExt::from(8),
-            C::ScalarExt::from(9),
-            C::ScalarExt::from(u64::MAX),
-            zeta,
-            -zeta,
-            zeta + one,
-            zeta - one,
-            zeta * C::ScalarExt::from(7) + C::ScalarExt::from(7),
-            zeta * C::ScalarExt::from(5) - C::ScalarExt::from(5),
-            C::ScalarExt::from(3),
-        ];
-        ks.extend(
-            REPS.iter()
-                .map(|&(a, b)| to_scalar::<C::ScalarExt>(a.into(), b.into())),
-        );
-        ks.extend(random.iter().copied());
-
-        // Points related by negation and by the endomorphism, repeated
-        // points, small multiples, and identities at the start, in the
-        // middle and at the end.
-        let r = points[0];
-        let mut special: Vec<C> = alloc::vec![
-            C::identity(),
-            g,
-            -g,
-            g.endo(),
-            -g.endo(),
-            g.endo().endo(),
-            g.double(),
-            g.double() + g,
-            C::identity(),
-            r,
-            r,
-            -r,
-            r.endo(),
-        ];
-        special.extend(points[1..8].iter().copied());
-        special.push(C::identity());
-        check(&special, &ks);
-        // Each scalar beside one other, and a pair of points beside all.
-        for pair in ks.windows(2) {
-            check(&special, pair);
-        }
-        check(&special[..2], &ks);
-
-        // All-identity and all-zero grids.
-        check(&alloc::vec![C::identity(); 9], &random[..3]);
-        check(&points[..9], &[C::ScalarExt::ZERO, C::ScalarExt::ZERO]);
-    }
-
-    /// The addition chain of `combine_buckets` computes $\sum_j r_j B_j$ for
-    /// the representatives of [`REPS`], whichever buckets are empty.
-    fn bucket_combination_matches_representatives<C>()
-    where
-        C: GlvParams,
-    {
-        let g = C::generator();
-        let points: Vec<C> = scalars::<C::ScalarExt>(REP_COUNT as u64)
-            .map(|k| g * (k + C::ScalarExt::ONE))
-            .collect();
-        let mut affine = alloc::vec![C::AffineExt::identity(); REP_COUNT];
-        C::batch_normalize_vartime(&points, &mut affine);
-
-        // One product per subset of nonempty buckets, and three more whose
-        // buckets repeat or cancel one another.
-        let mut buckets: Vec<Sum<AffineBase<C>>> = Vec::new();
-        let mut expected: Vec<C> = Vec::new();
-        let mut product = |held: [Option<C::AffineExt>; REP_COUNT]| {
-            let mut sum = C::identity();
-            for (j, b) in held.iter().enumerate() {
-                let (a, w) = REPS[j];
-                match b.and_then(|b| Option::<Coordinates<C::AffineExt>>::from(b.coordinates())) {
-                    Some(c) => {
-                        buckets.push(Some(AffinePoint {
-                            x: *c.x(),
-                            y: *c.y(),
-                        }));
-                        let b = C::from(b.expect("has coordinates"));
-                        sum += b * to_scalar::<C::ScalarExt>(a.into(), w.into());
-                    }
-                    None => buckets.push(None),
-                }
-            }
-            expected.push(sum);
-        };
-        for subset in 0..1usize << REP_COUNT {
-            product(core::array::from_fn(|j| {
-                ((subset >> j) & 1 == 1).then_some(affine[j])
-            }));
-        }
-        product([Some(affine[0]); REP_COUNT]);
-        product(core::array::from_fn(|j| {
-            Some(if j % 2 == 0 { affine[0] } else { -affine[0] })
-        }));
-        product(core::array::from_fn(|j| {
-            Some(if j < 4 { affine[1] } else { -affine[1] })
-        }));
-
-        let got = <EisensteinNaf3 as OrbitRecoding<C>>::combine_buckets(&buckets);
-        assert_eq!(got.len(), expected.len());
-        for (i, (p, e)) in got.iter().zip(expected.iter()).enumerate() {
-            let p = p.map_or(C::identity(), |p| {
-                C::from(affine_from_xy_unchecked::<C>(p.x, p.y))
-            });
-            assert_eq!(p, *e, "product {i}");
-        }
+    /// The representatives' weights: $r_j B$.
+    fn representative_weight<C: GlvParams>(j: usize, b: C) -> C {
+        let (a, w) = REPS[j];
+        b * to_scalar::<C::ScalarExt>(a.into(), w.into())
     }
 
     macro_rules! eisenstein_tests {
@@ -2156,11 +1998,28 @@ mod tests {
                 }
                 #[test]
                 fn batch_scalars() {
-                    batch_mul_scalars_matches_operator::<$curve>();
+                    // The representatives' own values leave every other bucket
+                    // empty.
+                    let reps: Vec<_> = REPS
+                        .iter()
+                        .map(|&(a, b)| {
+                            to_scalar::<<$curve as crate::arithmetic::CurveExt>::ScalarExt>(
+                                a.into(),
+                                b.into(),
+                            )
+                        })
+                        .collect();
+                    crate::glv::conformance::grid_agrees_with_operator::<$curve, EisensteinNaf3>(
+                        batch_mul_scalars,
+                        &reps,
+                    );
                 }
                 #[test]
                 fn bucket_combination() {
-                    bucket_combination_matches_representatives::<$curve>();
+                    crate::glv::conformance::combination_agrees_with_weights::<
+                        $curve,
+                        EisensteinNaf3,
+                    >(representative_weight);
                 }
             }
         };
@@ -2179,6 +2038,7 @@ mod tests {
             batch_mul: super::batch_mul,
             mul_scalars: super::mul_scalars,
             mul_pairs: super::mul_pairs,
+            batch_mul_scalars: super::batch_mul_scalars,
         }
     }
 

@@ -20,12 +20,12 @@
 
 use alloc::{vec, vec::Vec};
 
-use ff::{Field, WithSmallOrderMulGroup};
+use ff::Field;
 use group::CurveAffine as _;
 
 use super::msm::{AffinePoint, reduce_affine_buckets};
 use super::private::AffineBase;
-use super::{GlvParams, Recoding, affine_from_xy_unchecked, affine_xy};
+use super::{GlvParams, Recoding, affine_from_xy_unchecked, affine_xy, phi_x};
 use crate::arithmetic::{VartimeBatchInvert, VartimeField};
 
 /// A sum of points, or `None` for the identity, as the bucket reducer returns
@@ -91,15 +91,23 @@ where
     core::array::from_fn(|i| sums[i * len..(i + 1) * len].to_vec())
 }
 
-/// $-P$.
-pub(crate) fn neg<F: Field>(p: Sum<F>) -> Sum<F> {
-    p.map(|p| AffinePoint { x: p.x, y: -p.y })
+/// `a + b + c` entry by entry, in one reduction.
+pub(crate) fn add3_columns<F>(a: &[Sum<F>], b: &[Sum<F>], c: &[Sum<F>]) -> Vec<Sum<F>>
+where
+    F: VartimeField,
+{
+    sum_each(
+        a.iter()
+            .zip(b.iter())
+            .zip(c.iter())
+            .map(|((a, b), c)| [*a, *b, *c]),
+    )
 }
 
-/// $\varphi(P) = (\zeta x, y)$.
-pub(crate) fn phi<F: WithSmallOrderMulGroup<3>>(p: Sum<F>) -> Sum<F> {
+/// $\varphi(P) = (\zeta x, y)$, for a sum of the bucket reducer.
+pub(crate) fn phi<C: GlvParams>(p: Sum<AffineBase<C>>) -> Sum<AffineBase<C>> {
     p.map(|p| AffinePoint {
-        x: p.x * F::ZETA,
+        x: phi_x::<C>(p.x),
         y: p.y,
     })
 }
@@ -219,7 +227,6 @@ where
 
     // The terms of the bucket of lane l, scalar s and representative j, one
     // bucket after another in that order.
-    let zeta = AffineBase::<C>::ZETA;
     let mut bucket_points = Vec::new();
     let mut offsets = Vec::with_capacity(lanes.len() * m * R::REPS + 1);
     offsets.push(0);
@@ -229,9 +236,9 @@ where
                 let AffinePoint { x, y } = chain[col * nl + l];
                 let x = match rotation {
                     0 => x,
-                    1 => x * zeta,
+                    1 => phi_x::<C>(x),
                     // zeta^2 x = -(1 + zeta) x, one multiplication too.
-                    _ => -(x + x * zeta),
+                    _ => -(x + phi_x::<C>(x)),
                 };
                 let y = if negative { -y } else { y };
                 bucket_points.push(AffinePoint { x, y });
