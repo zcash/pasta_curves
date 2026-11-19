@@ -31,10 +31,15 @@ targets = []
 # `--cfg pasta_curves_calibration` takes the MSM's calibration from the
 # `PASTA_CURVES_CALIBRATION` environment variable at compile time; see
 # `src/glv/msm/calibration.rs`.
+# `--cfg pasta_curves_batch_mul_scalars_calibration` does the same for the
+# evaluation of `batch_mul_scalars`, from
+# `PASTA_CURVES_BATCH_MUL_SCALARS_CALIBRATION`; see
+# `src/glv/grid/calibration.rs`.
 unexpected_cfgs = { level = "warn", check-cfg = [
     'cfg(pasta_curves_noasm)',
     'cfg(pasta_curves_armv7em_test)',
     'cfg(pasta_curves_calibration)',
+    'cfg(pasta_curves_batch_mul_scalars_calibration)',
 ] }
 
 [dev-dependencies]

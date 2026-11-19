@@ -128,9 +128,11 @@
 //! affine ladder that fuses each column's doubling and addition and shares
 //! one inversion across every point.
 //!
-//! This module has a fifth, [`batch_mul_scalars`], for the full grid of many
-//! points against several scalars. There the doublings of each point are
-//! shared by every scalar, which none of the four shapes above can do.
+//! For the full grid of many points against several scalars,
+//! [`batch_mul_scalars`] shares the doublings of each point among every
+//! scalar, which none of the other shapes can do. `glv` has the same entry
+//! point over its own recoding; this one needs fewer additions, its digits
+//! being sparser.
 //!
 //! # References
 //!
@@ -158,8 +160,12 @@ use group::CurveAffine as _;
 use ff::{Field, WithSmallOrderMulGroup};
 
 use crate::{
-    arithmetic::{Coordinates, CurveAffine, VartimeField},
-    glv::{GlvParams, Recoding, affine_from_xy_unchecked, decompose},
+    arithmetic::{Coordinates, CurveAffine, VartimeField, batch_invert_vartime_slice},
+    glv::{
+        GlvParams, Recoding, affine_from_xy_unchecked, decompose,
+        grid::{self, OrbitRecoding, Sum},
+        normalize_vartime, phi_x,
+    },
 };
 
 /// The field of `C`'s affine coordinates, in which every table entry and
@@ -836,7 +842,7 @@ where
                 for i in 0..n {
                     den[i] = if live[i] { ys[i].double() } else { zero };
                 }
-                batch_invert(&mut den, &mut scratch);
+                batch_invert_vartime_slice(&mut den, &mut scratch);
                 for i in 0..n {
                     if !live[i] || bool::from(den[i].is_zero()) {
                         live[i] = false;
@@ -857,7 +863,7 @@ where
                     y2s[i] = y2;
                     den[i] = if live[i] { x2 - xs[i] } else { zero };
                 }
-                batch_invert(&mut den, &mut scratch);
+                batch_invert_vartime_slice(&mut den, &mut scratch);
                 for i in 0..n {
                     if !live[i] || bool::from(den[i].is_zero()) {
                         live[i] = false;
@@ -871,7 +877,7 @@ where
                 for i in 0..n {
                     den[i] = if live[i] { x3s[i] - xs[i] } else { zero };
                 }
-                batch_invert(&mut den, &mut scratch);
+                batch_invert_vartime_slice(&mut den, &mut scratch);
                 for i in 0..n {
                     if !live[i] || bool::from(den[i].is_zero()) {
                         live[i] = false;
@@ -1047,7 +1053,7 @@ where
         for (i, d) in self.den.iter_mut().enumerate() {
             *d = if self.live[i] { qx[i] - px[i] } else { F::ZERO };
         }
-        batch_invert(&mut self.den, &mut self.scratch);
+        batch_invert_vartime_slice(&mut self.den, &mut self.scratch);
         for i in 0..px.len() {
             if !self.live[i] || bool::from(self.den[i].is_zero()) {
                 self.live[i] = false;
@@ -1058,44 +1064,6 @@ where
             let x = l.square() - px[i] - qx[i];
             oy[i] = l * (px[i] - x) - py[i];
             ox[i] = x;
-        }
-    }
-}
-
-/// Inverts every nonzero element of `v` in place with a single field
-/// inversion (Montgomery's trick), leaving zeros as zero.
-///
-/// Skipping zeros rather than letting one poison the running product is what
-/// lets the batch ladder detect an exceptional lane: after the call, a zero is
-/// exactly a denominator that was zero going in.
-///
-/// The one inversion is [`VartimeField::invert_vartime`], the safegcd path,
-/// which is about six times faster than the constant-time Fermat
-/// exponentiation and is what makes the batch-affine ladder pay off at
-/// ordinary batch sizes. It leaks nothing this module does not already leak:
-/// the recoding's digit pattern is what drives the branch structure, and it
-/// is a function of the same scalar.
-fn batch_invert<F>(v: &mut [F], scratch: &mut [F])
-where
-    F: Field + VartimeField,
-{
-    debug_assert!(scratch.len() >= v.len());
-    let mut acc = F::ONE;
-    for (e, s) in v.iter().zip(scratch.iter_mut()) {
-        *s = acc;
-        if !bool::from(e.is_zero()) {
-            acc *= e;
-        }
-    }
-    // A product of nonzero field elements (or the empty product), so nonzero.
-    acc = acc
-        .invert_vartime()
-        .expect("product of nonzero field elements");
-    for (e, s) in v.iter_mut().zip(scratch.iter()).rev() {
-        if !bool::from(e.is_zero()) {
-            let inv = acc * s;
-            acc *= *e;
-            *e = inv;
         }
     }
 }
@@ -1144,7 +1112,7 @@ where
     }
     let table = Table::new(p);
     let proj: Vec<C> = ks.iter().map(|k| table.mul(k)).collect();
-    normalize(&proj)
+    normalize_vartime(&proj)
 }
 
 /// `k * p` for every `(p, k)` pair.
@@ -1167,19 +1135,8 @@ where
         .zip(pairs)
         .map(|(t, (_, k))| t.mul(k))
         .collect();
-    normalize(&proj)
+    normalize_vartime(&proj)
 }
-
-/// Number of (point, scalar) products from which [`batch_mul_scalars`] shares
-/// the doublings of each point among the scalars.
-///
-/// Below it, one window per point and a projective ladder per product are
-/// cheaper. The shared-doubling evaluation spends one field inversion per
-/// column and a few more to combine its buckets, about 135 in all whatever the
-/// batch, against roughly 400 multiplications saved per product with two
-/// scalars and more with more. With [`VartimeField::invert_vartime`] at about
-/// 63 multiplications, that pays from about 16 products.
-const SHARED_DOUBLING_THRESHOLD: usize = 16;
 
 /// `k * p` for every point `p` and every scalar `k`: the product of
 /// `points[i]` and `scalars[j]` is at index `i * scalars.len() + j` of the
@@ -1187,364 +1144,120 @@ const SHARED_DOUBLING_THRESHOLD: usize = 16;
 ///
 /// The doublings of each point are shared by all the scalars. Where
 /// [`batch_mul`] walks each scalar's columns from the top and doubles one
-/// accumulator per point *and scalar*, this walks them from the bottom: the
-/// running multiple $2^i P$ of a point is doubled once per column whatever the
-/// number of scalars, and each scalar with a nonzero digit $u\,r_j$ in that
-/// column adds $u\,2^i P$ to its bucket for the orbit representative $r_j$
-/// (the unit $u$ is free: a rotation is one multiplication and a negation
-/// none). At the end $\sum_j r_j B_j$ combines each product's eight buckets.
-/// Every addition and doubling is affine, and all those of one column, across
-/// the whole grid, share one field inversion.
+/// accumulator per point *and scalar*, this computes each point's multiples
+/// $2^i P$ once, with affine doublings that share one inversion per column,
+/// and each scalar with a nonzero digit $u\,r_j$ in column $i$ adds
+/// $u\,2^i P$ to its bucket for the orbit representative $r_j$ (the unit $u$
+/// is free: a rotation is one multiplication and a negation none). The MSM's
+/// affine bucket reducer sums all the buckets of the grid at once, with one
+/// shared inversion per level of its pairwise trees, and at the end
+/// $\sum_j r_j B_j$ combines each product's eight buckets.
 ///
-/// Per product that is about 38 additions for the columns and 14 to combine
-/// the buckets, plus the point's 125 or so doublings divided by the number of
+/// Per product that is about 38 additions for the buckets and 14 to combine
+/// them, plus the point's 125 or so doublings divided by the number of
 /// scalars. So it overtakes one [`batch_mul`] per scalar from two scalars on,
 /// and its lead grows with their number. A single scalar is handed to
 /// [`batch_mul`], and a grid too small to pay for the shared inversions (see
-/// `SHARED_DOUBLING_THRESHOLD`) is evaluated with one [`Table`] per point,
-/// built together, and one projective ladder per product.
+/// the `batch_mul_scalars` calibration's `eisenstein_min_products`, 13
+/// products by default) is evaluated with one [`Table`] per point, built
+/// together, and one projective ladder per product.
 ///
 /// Identity points and zero scalars are handled, and may be mixed in freely.
 /// Like the rest of this module, this is variable-time in the scalars and the
 /// points: both must be public.
 ///
-/// The affine additions are exact: an addition whose operands share an `x`
-/// is carried out as the doubling or the cancellation that it is, so no input
-/// needs a fallback.
+/// The reducer's complete formulas handle additions whose operands are equal
+/// or opposite, so no input needs a fallback.
 pub fn batch_mul_scalars<C>(points: &[C], scalars: &[C::ScalarExt]) -> Vec<C::AffineExt>
 where
     C: GlvParams,
 {
-    let (n, m) = (points.len(), scalars.len());
-    if n == 0 || m == 0 {
+    if points.is_empty() || scalars.is_empty() {
         return Vec::new();
     }
-    if m == 1 {
-        return batch_mul(points, &scalars[0]);
+    if let [k] = scalars {
+        return batch_mul(points, k);
     }
     let recoded: Vec<Recoded<C>> = scalars.iter().map(Recoded::new).collect();
-    if n * m < SHARED_DOUBLING_THRESHOLD {
-        let proj: Vec<C> = Table::batch(points)
-            .iter()
-            .flat_map(|t| recoded.iter().map(move |k| t.mul_recoded(k)))
-            .collect();
-        return normalize(&proj);
-    }
-    batch_mul_shared_doublings(points, &recoded)
+    grid::mul_grid::<C, EisensteinNaf3>(points, &recoded, grid::CALIBRATION.eisenstein_min_products)
 }
 
-/// The shared-doubling evaluation of [`batch_mul_scalars`], whatever the size
-/// of the grid.
-fn batch_mul_shared_doublings<C>(points: &[C], recoded: &[Recoded<C>]) -> Vec<C::AffineExt>
+/// The bucket view of the Eisenstein recoding: a packed digit names its
+/// representative, its rotation and its sign.
+impl<C> OrbitRecoding<C> for EisensteinNaf3
 where
     C: GlvParams,
 {
-    let (n, m) = (points.len(), recoded.len());
-    let mut out = alloc::vec![C::AffineExt::identity(); n * m];
+    const REPS: usize = REP_COUNT;
 
-    // One inversion brings the points affine. An identity point has no lane:
-    // its products are the identities `out` already holds.
-    let mut base = alloc::vec![C::AffineExt::identity(); n];
-    C::batch_normalize_vartime(points, &mut base);
-    let mut lanes = Vec::with_capacity(n);
-    // cur[l] is 2^col times the point of lane l.
-    let mut cur = Vec::with_capacity(n);
-    for (i, a) in base.iter().enumerate() {
-        if let Some(c) = Option::<Coordinates<C::AffineExt>>::from(a.coordinates()) {
-            lanes.push(i);
-            cur.push(Pt {
-                x: *c.x(),
-                y: *c.y(),
-                inf: false,
-            });
+    fn terms(digits: &Self::Digits, i: usize, mut f: impl FnMut(usize, usize, bool)) {
+        let d = digits.digits.get(i).copied().unwrap_or(ZERO_DIGIT);
+        if d != ZERO_DIGIT {
+            f((d & 7) as usize, ((d >> 3) & 3) as usize, d & NEG_BIT != 0);
         }
     }
-    let nl = lanes.len();
-    let len = recoded.iter().map(|k| k.len).max().unwrap_or(0);
-    if nl == 0 || len == 0 {
-        return out;
-    }
 
-    // The bucket of lane l, scalar s and representative j is at
-    // (l * m + s) * REP_COUNT + j.
-    let mut buckets = alloc::vec![Pt::identity(); nl * m * REP_COUNT];
-    let mut adder = ExactAdder::new();
-    // The bucket additions of one column, and the bucket each sum goes to.
-    let mut ops = Vec::with_capacity(nl * m);
-    let mut dst = Vec::with_capacity(nl * m);
-    let mut sums = Vec::new();
-    let zeta = AffineBase::<C>::ZETA;
-    for col in 0..len {
-        // Columns past a recoding's length hold `ZERO_DIGIT`.
-        let rotates = recoded.iter().any(|k| {
-            let d = k.digits[col];
-            d != ZERO_DIGIT && (d >> 3) & 3 != 0
+    /// $\sum_j r_j B_j$ for every product, `buckets` holding the eight $B_j$ of
+    /// one product after those of another, in the order of [`REPS`].
+    ///
+    /// The representatives form a tree rooted at zero in which every edge is a
+    /// unit, the difference of a representative and its parent:
+    ///
+    /// ```text
+    /// 0 -(1)- r0 -(-w)- r1 -(-w)- r3 -(-w)- r6 -(1)- r7
+    ///                    \
+    ///                     (1)- r2 -(1)- r5 -(w)- r4
+    /// ```
+    ///
+    /// A representative is the sum of the edges on its path from the root, so
+    /// $\sum_j r_j B_j = \sum_j e_j T_j$, where $e_j$ is the edge into $r_j$ and
+    /// $T_j$ the sum of the buckets in the subtree of $r_j$. The subtree sums take
+    /// 7 additions, and since multiplying by a unit is free the rest takes 7 more:
+    ///
+    /// $$(T_0 + T_2 + T_5 + T_7) - \varphi(T_1 + T_3 + T_6 - T_4).$$
+    ///
+    /// The 14 additions run in 7 rounds that share an inversion each. The
+    /// `bucket_combination_matches_representatives` test checks the result
+    /// against [`REPS`].
+    fn combine_buckets(buckets: &[Sum<C::AffineExt>]) -> Vec<Sum<C::AffineExt>> {
+        let b: [Vec<Sum<C::AffineExt>>; REP_COUNT] = core::array::from_fn(|j| {
+            buckets
+                .chunks_exact(REP_COUNT)
+                .map(|product| product[j])
+                .collect()
         });
-        for (l, c) in cur.iter().enumerate() {
-            // The x-coordinates of the three rotations of 2^col P; they share
-            // its y. The third is free because 1 + zeta + zeta^2 = 0.
-            let xs = if rotates {
-                let zx = c.x * zeta;
-                [c.x, zx, -(c.x + zx)]
-            } else {
-                [c.x; ROTATIONS]
-            };
-            for (s, k) in recoded.iter().enumerate() {
-                let d = k.digits[col];
-                if d == ZERO_DIGIT {
-                    continue;
-                }
-                let q = Pt {
-                    x: xs[((d >> 3) & 3) as usize],
-                    y: if d & NEG_BIT != 0 { -c.y } else { c.y },
-                    inf: false,
-                };
-                let b = (l * m + s) * REP_COUNT + (d & 7) as usize;
-                if buckets[b].inf {
-                    buckets[b] = q;
-                } else {
-                    ops.push((buckets[b], q));
-                    dst.push(b);
-                }
-            }
-        }
-        // The last column's multiples are not needed doubled.
-        let doubled: &mut [Pt<AffineBase<C>>] = if col + 1 < len { &mut cur } else { &mut [] };
-        adder.add_and_double(&ops, &mut sums, doubled);
-        for (&b, sum) in dst.iter().zip(sums.iter()) {
-            buckets[b] = *sum;
-        }
-        ops.clear();
-        dst.clear();
-    }
-
-    let products = combine_buckets(&mut adder, &buckets);
-    for (l, &i) in lanes.iter().enumerate() {
-        for s in 0..m {
-            let p = products[l * m + s];
-            if !p.inf {
-                out[i * m + s] = affine_from_xy_unchecked::<C>(p.x, p.y);
-            }
-        }
-    }
-    out
-}
-
-/// $\sum_j r_j B_j$ for every product, `buckets` holding the eight $B_j$ of
-/// one product after those of another, in the order of [`REPS`].
-///
-/// The representatives form a tree rooted at zero in which every edge is a
-/// unit, the difference of a representative and its parent:
-///
-/// ```text
-/// 0 -(1)- r0 -(-w)- r1 -(-w)- r3 -(-w)- r6 -(1)- r7
-///                    \
-///                     (1)- r2 -(1)- r5 -(w)- r4
-/// ```
-///
-/// A representative is the sum of the edges on its path from the root, so
-/// $\sum_j r_j B_j = \sum_j e_j T_j$, where $e_j$ is the edge into $r_j$ and
-/// $T_j$ the sum of the buckets in the subtree of $r_j$. The subtree sums take
-/// 7 additions, and since multiplying by a unit is free the rest takes 7 more:
-///
-/// $$(T_0 + T_2 + T_5 + T_7) - \varphi(T_1 + T_3 + T_6 - T_4).$$
-///
-/// The 14 additions run in 7 rounds that share an inversion each. The
-/// `bucket_combination_matches_representatives` test checks the result
-/// against [`REPS`].
-fn combine_buckets<F>(adder: &mut ExactAdder<F>, buckets: &[Pt<F>]) -> Vec<Pt<F>>
-where
-    F: VartimeField + WithSmallOrderMulGroup<3>,
-{
-    let b: [Vec<Pt<F>>; REP_COUNT] = core::array::from_fn(|j| {
-        buckets
-            .chunks_exact(REP_COUNT)
-            .map(|product| product[j])
-            .collect()
-    });
-    let minus_b4: Vec<Pt<F>> = b[4].iter().map(|p| p.neg()).collect();
-    // T_7 = B_7 and T_4 = B_4 are leaves.
-    let [t6, t5] = adder.add_columns([(&b[6], &b[7]), (&b[5], &b[4])]);
-    let [t3, t2] = adder.add_columns([(&b[3], &t6), (&b[2], &t5)]);
-    let [t32, x25, y36] = adder.add_columns([(&t3, &t2), (&t2, &t5), (&t3, &t6)]);
-    let [t1, x257, y364] = adder.add_columns([(&b[1], &t32), (&x25, &b[7]), (&y36, &minus_b4)]);
-    let [t0, y] = adder.add_columns([(&b[0], &t1), (&y364, &t1)]);
-    let [x] = adder.add_columns([(&t0, &x257)]);
-    let minus_phi_y: Vec<Pt<F>> = y
-        .iter()
-        .map(|p| Pt {
-            x: p.x * F::ZETA,
-            y: -p.y,
-            inf: p.inf,
-        })
-        .collect();
-    let [sum] = adder.add_columns([(&x, &minus_phi_y)]);
-    sum
-}
-
-/// An affine point or the identity, as [`batch_mul_scalars`] holds its
-/// buckets: unlike a fused ladder's accumulator, a bucket starts out empty.
-#[derive(Clone, Copy, Debug)]
-struct Pt<F> {
-    x: F,
-    y: F,
-    /// Set for the identity, whose coordinates are then meaningless.
-    inf: bool,
-}
-
-impl<F: Field> Pt<F> {
-    fn identity() -> Self {
-        Pt {
-            x: F::ZERO,
-            y: F::ZERO,
-            inf: true,
-        }
-    }
-
-    fn neg(&self) -> Self {
-        Pt {
-            x: self.x,
-            y: -self.y,
-            inf: self.inf,
-        }
-    }
-
-    /// The third point of the line of slope `l` through `self` and a point
-    /// whose x-coordinate is `x2`, negated: the sum of the two, or the double
-    /// of `self` when the line is its tangent.
-    fn chord(&self, l: F, x2: F) -> Self {
-        let x = l.square() - self.x - x2;
-        Pt {
-            x,
-            y: l * (self.x - x) - self.y,
-            inf: false,
-        }
+        let minus_b4: Vec<_> = b[4].iter().map(|&p| neg(p)).collect();
+        // T_7 = B_7 and T_4 = B_4 are leaves.
+        let [t6, t5] = grid::add_columns([(&b[6], &b[7]), (&b[5], &b[4])]);
+        let [t3, t2] = grid::add_columns([(&b[3], &t6), (&b[2], &t5)]);
+        let [t32, x25, y36] = grid::add_columns([(&t3, &t2), (&t2, &t5), (&t3, &t6)]);
+        let [t1, x257, y364] = grid::add_columns([(&b[1], &t32), (&x25, &b[7]), (&y36, &minus_b4)]);
+        let [t0, y] = grid::add_columns([(&b[0], &t1), (&y364, &t1)]);
+        let [x] = grid::add_columns([(&t0, &x257)]);
+        let minus_phi_y: Vec<_> = y.iter().map(|&p| neg(phi::<C>(p))).collect();
+        let [sum] = grid::add_columns([(&x, &minus_phi_y)]);
+        sum
     }
 }
 
-/// Two equally long columns of points, to be added entry by entry.
-type ColumnPair<'a, F> = (&'a [Pt<F>], &'a [Pt<F>]);
-
-/// Affine point additions that share one field inversion per batch and have
-/// no exceptional case: identity operands, equal operands and opposite
-/// operands all give the right sum.
-struct ExactAdder<F> {
-    den: Vec<F>,
-    scratch: Vec<F>,
+/// $-P$, for a sum of the bucket reducer.
+fn neg<A: CurveAffine>(p: Sum<A>) -> Sum<A> {
+    p.map(|p| Coordinates { x: p.x, y: -p.y })
 }
 
-impl<F> ExactAdder<F>
-where
-    F: VartimeField,
-{
-    fn new() -> Self {
-        ExactAdder {
-            den: Vec::new(),
-            scratch: Vec::new(),
-        }
-    }
-
-    /// Replaces the contents of `sums` with `a + b` for every `(a, b)` of
-    /// `ops`, in order, and doubles every point of `doubled` in place, all
-    /// with one inversion.
-    fn add_and_double(
-        &mut self,
-        ops: &[(Pt<F>, Pt<F>)],
-        sums: &mut Vec<Pt<F>>,
-        doubled: &mut [Pt<F>],
-    ) {
-        // The slopes' denominators: x_b - x_a for an addition, 2y for a
-        // doubling. An identity operand has no slope and gets a zero, which
-        // `batch_invert` leaves alone. So does an addition whose operands
-        // share an x, which is settled on its own below.
-        self.den.clear();
-        self.den.extend(
-            ops.iter()
-                .map(|(a, b)| if a.inf || b.inf { F::ZERO } else { b.x - a.x }),
-        );
-        self.den.extend(
-            doubled
-                .iter()
-                .map(|p| if p.inf { F::ZERO } else { p.y.double() }),
-        );
-        self.scratch.resize(self.den.len(), F::ZERO);
-        batch_invert(&mut self.den, &mut self.scratch);
-        let (add_inv, double_inv) = self.den.split_at(ops.len());
-
-        sums.clear();
-        sums.extend(ops.iter().zip(add_inv.iter()).map(|((a, b), inv)| {
-            if a.inf {
-                *b
-            } else if b.inf {
-                *a
-            } else if inv.is_zero_vartime() {
-                Self::add_sharing_x(a, b)
-            } else {
-                a.chord((b.y - a.y) * inv, b.x)
-            }
-        }));
-        for (p, inv) in doubled.iter_mut().zip(double_inv.iter()) {
-            if !p.inf {
-                *p = p.chord(Self::tangent_numerator(p) * inv, p.x);
-            }
-        }
-    }
-
-    /// Replaces the contents of `sums` with `a + b` for every `(a, b)` of
-    /// `ops`, in order.
-    fn add(&mut self, ops: &[(Pt<F>, Pt<F>)], sums: &mut Vec<Pt<F>>) {
-        self.add_and_double(ops, sums, &mut []);
-    }
-
-    /// `3x^2`, the numerator of the tangent's slope at `p`.
-    fn tangent_numerator(p: &Pt<F>) -> F {
-        let xx = p.x.square();
-        xx.double() + xx
-    }
-
-    /// `a + b` for two points with the same x-coordinate: they are equal or
-    /// opposite. A doubling here pays its own inversion; its denominator `2y`
-    /// is not zero because the group has odd order.
-    fn add_sharing_x(a: &Pt<F>, b: &Pt<F>) -> Pt<F> {
-        if a.y == b.y {
-            let inv =
-                a.y.double()
-                    .invert_vartime()
-                    .expect("no point of order two");
-            a.chord(Self::tangent_numerator(a) * inv, a.x)
-        } else {
-            Pt::identity()
-        }
-    }
-
-    /// `a + b` entry by entry for each `(a, b)` pair of equally long columns,
-    /// all of them sharing one inversion.
-    fn add_columns<const N: usize>(&mut self, terms: [ColumnPair<'_, F>; N]) -> [Vec<Pt<F>>; N] {
-        let len = terms.first().map_or(0, |(a, _)| a.len());
-        let ops: Vec<(Pt<F>, Pt<F>)> = terms
-            .iter()
-            .flat_map(|(a, b)| a.iter().copied().zip(b.iter().copied()))
-            .collect();
-        let mut sums = Vec::with_capacity(ops.len());
-        self.add(&ops, &mut sums);
-        core::array::from_fn(|i| sums[i * len..(i + 1) * len].to_vec())
-    }
-}
-
-/// One shared inversion back to affine.
-fn normalize<C>(proj: &[C]) -> Vec<C::AffineExt>
-where
-    C: GlvParams,
-{
-    let mut affine = alloc::vec![C::AffineExt::identity(); proj.len()];
-    C::batch_normalize_vartime(proj, &mut affine);
-    affine
+/// $\varphi(P) = (\zeta x, y)$, for a sum of the bucket reducer.
+fn phi<C: GlvParams>(p: Sum<C::AffineExt>) -> Sum<C::AffineExt> {
+    p.map(|p| Coordinates {
+        x: phi_x::<C>(p.x),
+        y: p.y,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ff::{Field, PrimeField, WithSmallOrderMulGroup};
+    use crate::glv::conformance::scalars;
+    use ff::{Field, WithSmallOrderMulGroup};
 
     /// Multiplies an Eisenstein integer by a unit $\pm\omega^{\mathrm{rot}}$,
     /// in plain integer arithmetic, the test-side mirror of [`rotate`].
@@ -1756,18 +1469,6 @@ mod tests {
         ] {
             assert!(bound < headroom - 5, "GLV half can overflow i128");
         }
-    }
-
-    /// Deterministic full-width scalars (matching `glv`'s own test suite).
-    fn scalars<F>(n: u64) -> impl Iterator<Item = F>
-    where
-        F: PrimeField,
-    {
-        (0..n).map(|i| {
-            (F::from(0x9E37_79B9_7F4A_7C15u64 + i).square() + F::from(0x0123_4567_89AB_CDEFu64))
-                .square()
-                + F::from(i)
-        })
     }
 
     /// The recoding is an exact representation: evaluating the digit string
@@ -2149,203 +1850,10 @@ mod tests {
         }
     }
 
-    /// `batch_invert` inverts the nonzero entries and leaves zeros alone,
-    /// which is what lets the ladder spot an exceptional lane.
-    fn batch_invert_skips_zeros<C>()
-    where
-        C: GlvParams,
-    {
-        let mut v: Vec<AffineBase<C>> = (0..16u64).map(AffineBase::<C>::from).collect();
-        v.push(AffineBase::<C>::ZERO);
-        let original = v.clone();
-        let mut scratch = alloc::vec![AffineBase::<C>::ZERO; v.len()];
-        batch_invert(&mut v, &mut scratch);
-        for (o, i) in original.iter().zip(v.iter()) {
-            if bool::from(o.is_zero()) {
-                assert!(bool::from(i.is_zero()), "zero must stay zero");
-            } else {
-                assert_eq!(*o * *i, AffineBase::<C>::ONE, "must be the inverse");
-            }
-        }
-        // All-zero and empty inputs must not panic.
-        let mut z = alloc::vec![AffineBase::<C>::ZERO; 4];
-        batch_invert(&mut z, &mut scratch);
-        assert!(z.iter().all(|e| bool::from(e.is_zero())));
-        batch_invert(&mut [] as &mut [AffineBase<C>], &mut scratch);
-    }
-
-    /// [`batch_mul_scalars`] agrees with the group operator on every product
-    /// of the grid, in each of its three arms, across grid sizes on both
-    /// sides of every threshold, scalar shapes, and points that make its
-    /// additions meet equal, opposite and identity operands.
-    fn batch_mul_scalars_matches_operator<C>()
-    where
-        C: GlvParams,
-    {
-        let g = C::generator();
-        let check = |points: &[C], ks: &[C::ScalarExt]| {
-            let recoded: Vec<Recoded<C>> = ks.iter().map(Recoded::new).collect();
-            // The entry point, which picks an arm by the size of the grid,
-            // and the shared-doubling arm whatever the size.
-            for got in [
-                batch_mul_scalars(points, ks),
-                batch_mul_shared_doublings(points, &recoded),
-            ] {
-                assert_eq!(got.len(), points.len() * ks.len());
-                for (i, p) in points.iter().enumerate() {
-                    for (j, k) in ks.iter().enumerate() {
-                        assert_eq!(
-                            C::from(got[i * ks.len() + j]),
-                            *p * k,
-                            "product of point {i} and scalar {j}"
-                        );
-                    }
-                }
-            }
-        };
-
-        // Empty grids.
-        assert!(batch_mul_scalars::<C>(&[], &[C::ScalarExt::ONE]).is_empty());
-        assert!(batch_mul_scalars::<C>(&[g], &[]).is_empty());
-        assert!(batch_mul_shared_doublings::<C>(&[], &[]).is_empty());
-
-        let points: Vec<C> = scalars::<C::ScalarExt>(130)
-            .map(|k| g * (k + C::ScalarExt::ONE))
-            .collect();
-        let random: Vec<C::ScalarExt> = scalars::<C::ScalarExt>(8)
-            .map(|k| k.square() + C::ScalarExt::from(7))
-            .collect();
-
-        // Grid sizes around the shared-doubling threshold and the thresholds
-        // of the single-scalar arm, with one to eight scalars.
-        for n in [1usize, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 37, 95, 96, 97, 130] {
-            for m in [1usize, 2, 3, 4, 8] {
-                check(&points[..n], &random[..m]);
-            }
-        }
-
-        // Scalar shapes that stress the recoding's ends and leave buckets
-        // empty: zero, a one-column recoding, tiny values, negatives, lambda
-        // and its neighbours, the representatives' own values, a repeated
-        // scalar, and full-width scalars.
-        let one = C::ScalarExt::ONE;
-        let zeta = C::ScalarExt::ZETA;
-        let mut ks: Vec<C::ScalarExt> = alloc::vec![
-            C::ScalarExt::ZERO,
-            one,
-            -one,
-            C::ScalarExt::from(2),
-            C::ScalarExt::from(3),
-            C::ScalarExt::from(7),
-            C::ScalarExt::from(8),
-            C::ScalarExt::from(9),
-            C::ScalarExt::from(u64::MAX),
-            zeta,
-            -zeta,
-            zeta + one,
-            zeta - one,
-            zeta * C::ScalarExt::from(7) + C::ScalarExt::from(7),
-            zeta * C::ScalarExt::from(5) - C::ScalarExt::from(5),
-            C::ScalarExt::from(3),
-        ];
-        ks.extend(
-            REPS.iter()
-                .map(|&(a, b)| to_scalar::<C::ScalarExt>(a.into(), b.into())),
-        );
-        ks.extend(random.iter().copied());
-
-        // Points related by negation and by the endomorphism, repeated
-        // points, small multiples, and identities at the start, in the
-        // middle and at the end.
-        let r = points[0];
-        let mut special: Vec<C> = alloc::vec![
-            C::identity(),
-            g,
-            -g,
-            g.endo(),
-            -g.endo(),
-            g.endo().endo(),
-            g.double(),
-            g.double() + g,
-            C::identity(),
-            r,
-            r,
-            -r,
-            r.endo(),
-        ];
-        special.extend(points[1..8].iter().copied());
-        special.push(C::identity());
-        check(&special, &ks);
-        // Each scalar beside one other, and a pair of points beside all.
-        for pair in ks.windows(2) {
-            check(&special, pair);
-        }
-        check(&special[..2], &ks);
-
-        // All-identity and all-zero grids.
-        check(&alloc::vec![C::identity(); 9], &random[..3]);
-        check(&points[..9], &[C::ScalarExt::ZERO, C::ScalarExt::ZERO]);
-    }
-
-    /// The addition chain of `combine_buckets` computes $\sum_j r_j B_j$ for
-    /// the representatives of [`REPS`], whichever buckets are empty.
-    fn bucket_combination_matches_representatives<C>()
-    where
-        C: GlvParams,
-    {
-        let g = C::generator();
-        let points: Vec<C> = scalars::<C::ScalarExt>(REP_COUNT as u64)
-            .map(|k| g * (k + C::ScalarExt::ONE))
-            .collect();
-        let mut affine = alloc::vec![C::AffineExt::identity(); REP_COUNT];
-        C::batch_normalize_vartime(&points, &mut affine);
-
-        // One product per subset of nonempty buckets, and three more whose
-        // buckets repeat or cancel one another.
-        let mut buckets: Vec<Pt<AffineBase<C>>> = Vec::new();
-        let mut expected: Vec<C> = Vec::new();
-        let mut product = |held: [Option<C::AffineExt>; REP_COUNT]| {
-            let mut sum = C::identity();
-            for (j, b) in held.iter().enumerate() {
-                let (a, w) = REPS[j];
-                match b.and_then(|b| Option::<Coordinates<C::AffineExt>>::from(b.coordinates())) {
-                    Some(c) => {
-                        buckets.push(Pt {
-                            x: *c.x(),
-                            y: *c.y(),
-                            inf: false,
-                        });
-                        let b = C::from(b.expect("has coordinates"));
-                        sum += b * to_scalar::<C::ScalarExt>(a.into(), w.into());
-                    }
-                    None => buckets.push(Pt::identity()),
-                }
-            }
-            expected.push(sum);
-        };
-        for subset in 0..1usize << REP_COUNT {
-            product(core::array::from_fn(|j| {
-                ((subset >> j) & 1 == 1).then_some(affine[j])
-            }));
-        }
-        product([Some(affine[0]); REP_COUNT]);
-        product(core::array::from_fn(|j| {
-            Some(if j % 2 == 0 { affine[0] } else { -affine[0] })
-        }));
-        product(core::array::from_fn(|j| {
-            Some(if j < 4 { affine[1] } else { -affine[1] })
-        }));
-
-        let got = combine_buckets(&mut ExactAdder::new(), &buckets);
-        assert_eq!(got.len(), expected.len());
-        for (i, (p, e)) in got.iter().zip(expected.iter()).enumerate() {
-            let p = if p.inf {
-                C::identity()
-            } else {
-                C::from(affine_from_xy_unchecked::<C>(p.x, p.y))
-            };
-            assert_eq!(p, *e, "product {i}");
-        }
+    /// The representatives' weights: $r_j B$.
+    fn representative_weight<C: GlvParams>(j: usize, b: C) -> C {
+        let (a, w) = REPS[j];
+        b * to_scalar::<C::ScalarExt>(a.into(), w.into())
     }
 
     macro_rules! eisenstein_tests {
@@ -2410,16 +1918,29 @@ mod tests {
                     batch_mul_dispatch_arms_agree::<$curve>();
                 }
                 #[test]
-                fn batch_inversion() {
-                    batch_invert_skips_zeros::<$curve>();
-                }
-                #[test]
                 fn batch_scalars() {
-                    batch_mul_scalars_matches_operator::<$curve>();
+                    // The representatives' own values leave every other bucket
+                    // empty.
+                    let reps: Vec<_> = REPS
+                        .iter()
+                        .map(|&(a, b)| {
+                            to_scalar::<<$curve as crate::arithmetic::CurveExt>::ScalarExt>(
+                                a.into(),
+                                b.into(),
+                            )
+                        })
+                        .collect();
+                    crate::glv::conformance::grid_agrees_with_operator::<$curve, EisensteinNaf3>(
+                        batch_mul_scalars,
+                        &reps,
+                    );
                 }
                 #[test]
                 fn bucket_combination() {
-                    bucket_combination_matches_representatives::<$curve>();
+                    crate::glv::conformance::combination_agrees_with_weights::<
+                        $curve,
+                        EisensteinNaf3,
+                    >(representative_weight);
                 }
             }
         };
@@ -2438,6 +1959,7 @@ mod tests {
             batch_mul: super::batch_mul,
             mul_scalars: super::mul_scalars,
             mul_pairs: super::mul_pairs,
+            batch_mul_scalars: super::batch_mul_scalars,
         }
     }
 

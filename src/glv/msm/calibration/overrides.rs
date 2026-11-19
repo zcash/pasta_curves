@@ -12,6 +12,7 @@
 //! malformed or out-of-range value fails the build instead of being ignored.
 
 use super::{Calibration, DEFAULT};
+use crate::config::{eq, number, split_once};
 use crate::glv::msm::plan::PlannerWeights;
 
 /// Widest window a calibration may give the bucket method directly. Each window
@@ -152,58 +153,6 @@ const fn weights(value: &[u8]) -> PlannerWeights {
         bucket_addition: number(bucket_addition),
         doubling: number(doubling),
     }
-}
-
-/// Parses a decimal `usize`.
-const fn number(digits: &[u8]) -> usize {
-    if digits.is_empty() {
-        panic!("PASTA_CURVES_CALIBRATION: expected a number");
-    }
-    let mut n: usize = 0;
-    let mut i = 0;
-    while i < digits.len() {
-        let d = digits[i];
-        if !d.is_ascii_digit() {
-            panic!("PASTA_CURVES_CALIBRATION: expected a number");
-        }
-        n = match n.checked_mul(10) {
-            Some(n) => match n.checked_add((d - b'0') as usize) {
-                Some(n) => n,
-                None => panic!("PASTA_CURVES_CALIBRATION: number too large"),
-            },
-            None => panic!("PASTA_CURVES_CALIBRATION: number too large"),
-        };
-        i += 1;
-    }
-    n
-}
-
-/// Splits at the first `sep`, dropping it; the tail is empty if there is none.
-const fn split_once(bytes: &[u8], sep: u8) -> (&[u8], &[u8]) {
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == sep {
-            let (head, tail) = bytes.split_at(i);
-            return (head, tail.split_at(1).1);
-        }
-        i += 1;
-    }
-    (bytes, &[])
-}
-
-/// Byte-slice equality, usable in a constant.
-const fn eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut i = 0;
-    while i < a.len() {
-        if a[i] != b[i] {
-            return false;
-        }
-        i += 1;
-    }
-    true
 }
 
 #[cfg(test)]

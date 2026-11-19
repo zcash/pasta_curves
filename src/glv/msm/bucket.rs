@@ -60,14 +60,14 @@ use group::CurveAffine as _;
 use maybe_rayon::prelude::*;
 
 use super::calibration::CALIBRATION;
-use crate::arithmetic::VartimeField;
+use crate::arithmetic::{Coordinates, CurveAffine, VartimeField};
 use crate::glv::booth::{SignedMagnitude, booth_digit, window_count};
 use crate::glv::{
     GlvParams, HALVES, affine_from_xy_unchecked, affine_xy, phi_x, private::AffineBase,
 };
-pub(in crate::glv) use affine::{AffinePoint, reduce_affine_buckets};
+pub(crate) use affine::reduce_affine_buckets;
 use affine::{ReduceScratch, reduce_affine_buckets_reusing};
-pub(crate) use cache::CachedField;
+pub(crate) use cache::CachedAffine;
 use cache::Checkout;
 
 #[cfg(test)]
@@ -155,7 +155,7 @@ fn window_assignments<F>(
 /// Returns $\sum_j (j + 1) B_j$, where $B_j$ is bucket `j` (the identity for
 /// `None`): the window sum, since bucket `j` holds the digits of magnitude
 /// `j + 1`. Computed with a running sum from the highest bucket down.
-fn sum_buckets<C>(buckets: &[Option<AffinePoint<AffineBase<C>>>]) -> C
+fn sum_buckets<C>(buckets: &[Option<Coordinates<C::AffineExt>>]) -> C
 where
     C: GlvParams,
 {
@@ -172,7 +172,7 @@ where
 
 /// The curve point a reduced bucket holds, the identity for an empty bucket.
 #[cfg(test)]
-fn bucket_point<C>(bucket: Option<AffinePoint<AffineBase<C>>>) -> C
+fn bucket_point<C>(bucket: Option<Coordinates<C::AffineExt>>) -> C
 where
     C: GlvParams,
 {
@@ -186,7 +186,7 @@ where
 /// algorithm that uses them. One reducer serves the windows a task evaluates
 /// in turn (see [`ReduceScratch`]) and, with `multicore`, the calls on the same
 /// thread (see [`cache`]).
-pub(crate) struct WindowReducer<F> {
+pub(crate) struct WindowReducer<A: CurveAffine> {
     /// The nonzero digits of the current block.
     assignments: Vec<WindowAssignment>,
     /// The number of points in each bucket of the current block.
@@ -196,12 +196,12 @@ pub(crate) struct WindowReducer<F> {
     /// Each bucket's next free slot in `points` while the block is filled.
     positions: Vec<usize>,
     /// Every bucket's points, contiguous.
-    points: Vec<AffinePoint<F>>,
+    points: Vec<Coordinates<A>>,
     /// The reduction's buffers, including the output buckets.
-    reduce: ReduceScratch<F>,
+    reduce: ReduceScratch<A>,
 }
 
-impl<F> Default for WindowReducer<F> {
+impl<A: CurveAffine> Default for WindowReducer<A> {
     fn default() -> Self {
         Self {
             assignments: Vec::new(),
@@ -215,7 +215,7 @@ impl<F> Default for WindowReducer<F> {
 }
 
 #[cfg(feature = "multicore")]
-impl<F> WindowReducer<F> {
+impl<A: CurveAffine> WindowReducer<A> {
     /// The heap memory these buffers keep between windows. The exhaustive
     /// destructuring makes a new buffer fail to compile until it is counted.
     fn capacity_bytes(&self) -> usize {
@@ -246,9 +246,9 @@ impl<F> WindowReducer<F> {
     }
 }
 
-impl<F> WindowReducer<F>
+impl<A> WindowReducer<A>
 where
-    F: VartimeField,
+    A: CurveAffine<Base: VartimeField>,
 {
     /// Fills and reduces one window's buckets.
     ///
@@ -265,10 +265,10 @@ where
     fn fill_window(
         &mut self,
         components: &[(SignedMagnitude, SignedMagnitude)],
-        bases: &[MultiexpBase<F>],
+        bases: &[MultiexpBase<A::Base>],
         window_bits: usize,
         window: usize,
-    ) -> Option<&[Option<AffinePoint<F>>]> {
+    ) -> Option<&[Option<Coordinates<A>>]> {
         let bucket_count = bucket_count(window_bits);
         let block_terms = CALIBRATION
             .min_window_block_terms
@@ -283,11 +283,11 @@ where
     fn fill_window_in_blocks(
         &mut self,
         components: &[(SignedMagnitude, SignedMagnitude)],
-        bases: &[MultiexpBase<F>],
+        bases: &[MultiexpBase<A::Base>],
         window_bits: usize,
         window: usize,
         block_terms: usize,
-    ) -> Option<&[Option<AffinePoint<F>>]> {
+    ) -> Option<&[Option<Coordinates<A>>]> {
         debug_assert!(block_terms > 0);
         // Empty buckets are both the result of an empty window and the carry into
         // the first block, which therefore needs no special case.
@@ -308,7 +308,7 @@ where
     fn fill_block(
         &mut self,
         components: &[(SignedMagnitude, SignedMagnitude)],
-        bases: &[MultiexpBase<F>],
+        bases: &[MultiexpBase<A::Base>],
         window_bits: usize,
         window: usize,
     ) -> Option<()> {
@@ -339,9 +339,9 @@ where
         points.clear();
         points.resize(
             *offsets.last().unwrap(),
-            AffinePoint {
-                x: F::ZERO,
-                y: F::ZERO,
+            Coordinates {
+                x: <A::Base as ff::Field>::ZERO,
+                y: <A::Base as ff::Field>::ZERO,
             },
         );
         for (bucket, point) in reduce.buckets.iter().enumerate() {
@@ -357,7 +357,7 @@ where
             let x = if half == 0 { base.x } else { base.endo_x };
             let bucket = assignment.bucket();
             let position = positions[bucket];
-            points[position] = AffinePoint {
+            points[position] = Coordinates {
                 x,
                 y: if assignment.negative() {
                     -base.y
@@ -376,7 +376,7 @@ where
                 .all(|(position, end)| position == end)
         );
 
-        reduce_affine_buckets_reusing::<F, false>(points, offsets, reduce)
+        reduce_affine_buckets_reusing::<A, false>(points, offsets, reduce)
     }
 }
 
@@ -412,10 +412,10 @@ fn multiexp_serial<C>(
 ) -> Option<C>
 where
     C: GlvParams,
-    AffineBase<C>: CachedField,
+    C::AffineExt: CachedAffine,
 {
     let window_count = window_count(window_bits);
-    let mut reducer = Checkout::<AffineBase<C>>::take();
+    let mut reducer = Checkout::<C::AffineExt>::take();
     horner::<C>(
         window_bits,
         (0..window_count).rev().map(|window| {
@@ -439,13 +439,13 @@ fn multiexp_parallel<C>(
 ) -> Option<C>
 where
     C: GlvParams,
-    AffineBase<C>: CachedField,
+    C::AffineExt: CachedAffine,
 {
     let window_count = window_count(window_bits);
     let window_sums: Option<Vec<C>> = (0..window_count)
         .into_par_iter()
         .map(|window| {
-            let mut reducer = Checkout::<AffineBase<C>>::take();
+            let mut reducer = Checkout::<C::AffineExt>::take();
             let buckets = reducer.fill_window(components, bases, window_bits, window)?;
             Some(sum_buckets::<C>(buckets))
         })
@@ -466,7 +466,7 @@ pub(super) fn multiexp<C>(
 ) -> Option<C>
 where
     C: GlvParams,
-    AffineBase<C>: CachedField,
+    C::AffineExt: CachedAffine,
 {
     debug_assert_eq!(components.len(), bases.len());
 

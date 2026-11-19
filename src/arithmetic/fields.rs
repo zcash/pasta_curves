@@ -54,29 +54,54 @@ where
     I: IntoIterator<Item = &'a mut F>,
 {
     fn batch_invert_vartime(self) -> F {
-        let mut acc = F::ONE;
-        let iter = self.into_iter();
-        let mut tmp = alloc::vec::Vec::with_capacity(iter.size_hint().0);
-        for p in iter {
-            let q = *p;
-            tmp.push((acc, p));
-            if !q.is_zero_vartime() {
-                acc *= q;
-            }
-        }
-        acc = acc.invert_vartime().unwrap();
-        let allinv = acc;
-
-        for (tmp, p) in tmp.into_iter().rev() {
-            let tmp = tmp * acc;
-            if !p.is_zero_vartime() {
-                acc *= *p;
-                *p = tmp;
-            }
-        }
-
-        allinv
+        let mut elements: alloc::vec::Vec<&mut F> = self.into_iter().collect();
+        let mut scratch = alloc::vec![F::ZERO; elements.len()];
+        batch_invert_vartime_slice(&mut elements, &mut scratch)
     }
+}
+
+/// Inverts each nonzero element of `v` in place with one variable-time
+/// inversion (Montgomery's trick), leaving zeros as zero, and returns the
+/// inverse of the product of the nonzero elements.
+///
+/// The elements are the `F`s themselves or references to them (any
+/// `BorrowMut<F>`), and `scratch` holds the prefix products, so a caller that
+/// keeps its buffers allocates nothing: this is what
+/// [`VartimeBatchInvert::batch_invert_vartime`] runs, after collecting its
+/// iterator.
+///
+/// # Panics
+///
+/// If `scratch` is shorter than `v`.
+#[cfg(feature = "alloc")]
+pub(crate) fn batch_invert_vartime_slice<F, T>(v: &mut [T], scratch: &mut [F]) -> F
+where
+    F: VartimeField,
+    T: core::borrow::BorrowMut<F>,
+{
+    let scratch = &mut scratch[..v.len()];
+    let mut acc = F::ONE;
+    for (e, s) in v.iter().zip(scratch.iter_mut()) {
+        *s = acc;
+        let e = *e.borrow();
+        if !e.is_zero_vartime() {
+            acc *= e;
+        }
+    }
+    // A product of nonzero field elements (or the empty product), so nonzero.
+    acc = acc
+        .invert_vartime()
+        .expect("product of nonzero field elements");
+    let product_inverse = acc;
+    for (e, s) in v.iter_mut().zip(scratch.iter()).rev() {
+        let e = e.borrow_mut();
+        if !e.is_zero_vartime() {
+            let inverse = acc * s;
+            acc *= *e;
+            *e = inverse;
+        }
+    }
+    product_inverse
 }
 
 #[cfg(feature = "sqrt-table")]

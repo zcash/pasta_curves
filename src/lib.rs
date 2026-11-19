@@ -45,6 +45,17 @@ pub mod deferred;
 pub mod pallas;
 pub mod vesta;
 
+// Parsing configuration given at build time. Only the builds that read some,
+// and the tests, contain it.
+#[cfg(any(
+    test,
+    all(
+        feature = "glv",
+        any(pasta_curves_calibration, pasta_curves_batch_mul_scalars_calibration)
+    )
+))]
+mod config;
+
 #[cfg(feature = "glv")]
 #[cfg_attr(docsrs, doc(cfg(feature = "glv")))]
 pub mod glv;

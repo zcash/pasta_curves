@@ -18,12 +18,13 @@ and this project adheres to Rust's notion of
   reusable fixed-base sums for public bases and scalars. The `glv` feature enables
   doubling-free Pallas and Vesta evaluation and batched affine reduction;
   callers must retain a generic fallback when preparation returns `None`.
-- `pasta_curves::glv_eisenstein::batch_mul_scalars`, behind the
-  `glv-eisenstein` feature flag: every point of a batch multiplied by each of
+- `pasta_curves::glv::batch_mul_scalars` and
+  `pasta_curves::glv_eisenstein::batch_mul_scalars`, behind the `glv` and
+  `glv-eisenstein` feature flags: every point of a batch multiplied by each of
   several scalars, sharing the doublings of each point among the scalars. From
-  two scalars on it is faster than one `batch_mul` per scalar. Like the rest
-  of the module, it is variable-time and only for scalars and points that are
-  not secret.
+  two scalars on they are faster than one `batch_mul` per scalar. Like the
+  rest of their modules, they are variable-time and only for scalars and
+  points that are not secret.
 
 ### Changed
 - GLV MSMs reuse window and affine-reduction scratch. With `multicore`, each

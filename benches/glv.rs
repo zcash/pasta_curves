@@ -177,6 +177,74 @@ fn entry_points<C: GlvParams>(c: &mut Criterion, name: &str) {
     }
 
     group.finish();
+
+    // The full grid of N points against a few scalars, with one affine
+    // product per (point, scalar) out. `batch_mul_scalars` shares each
+    // point's doublings among the scalars; the arm beside it is what the
+    // grid costs without that, one `batch_mul` per scalar.
+    let mut group = c.benchmark_group(format!("{name} batch several scalars"));
+    for scalars in [1usize, 2, 4] {
+        let ks: Vec<C::ScalarExt> = (1..=scalars as u64)
+            .map(|i| (k + C::ScalarExt::from(i)).square())
+            .collect();
+        for size in [2usize, 4, 8, 10, 50, 100] {
+            let points: Vec<C> = (1..=size as u64)
+                .map(|i| C::generator() * (k + C::ScalarExt::from(i)))
+                .collect();
+            let id = format!("{size} points, {scalars} scalars");
+            group.bench_with_input(BenchmarkId::new("batch_mul_scalars", &id), &size, |b, _| {
+                b.iter(|| glv::batch_mul_scalars(&points, &ks))
+            });
+            group.bench_with_input(
+                BenchmarkId::new("batch_mul per scalar", &id),
+                &size,
+                |b, _| {
+                    b.iter(|| {
+                        ks.iter()
+                            .map(|k| glv::batch_mul(&points, k))
+                            .collect::<Vec<_>>()
+                    })
+                },
+            );
+        }
+    }
+    group.finish();
+
+    // Grids large enough for `multicore` to split between threads, each
+    // block of points paying its own inversions, as batched trial decryption
+    // makes them: run with and without `RAYON_NUM_THREADS=1` to compare, and
+    // against one `batch_mul` per scalar. The points are the ephemeral keys
+    // of a batch of shielded outputs, and the scalars a wallet's incoming
+    // viewing keys: two per account when the wallet scans both its external
+    // and internal scopes, so 2 for one account up to 32 for sixteen.
+    let mut group = c.benchmark_group(format!("{name} batch several scalars, large"));
+    group.sample_size(10);
+    for scalars in [2usize, 4, 8, 16, 32] {
+        let ks: Vec<C::ScalarExt> = (1..=scalars as u64)
+            .map(|i| (k + C::ScalarExt::from(i)).square())
+            .collect();
+        for size in [500usize, 2000] {
+            let points: Vec<C> = (1..=size as u64)
+                .map(|i| C::generator() * (k + C::ScalarExt::from(i)))
+                .collect();
+            let id = format!("{size} points, {scalars} scalars");
+            group.bench_with_input(BenchmarkId::new("batch_mul_scalars", &id), &size, |b, _| {
+                b.iter(|| glv::batch_mul_scalars(&points, &ks))
+            });
+            group.bench_with_input(
+                BenchmarkId::new("batch_mul per scalar", &id),
+                &size,
+                |b, _| {
+                    b.iter(|| {
+                        ks.iter()
+                            .map(|k| glv::batch_mul(&points, k))
+                            .collect::<Vec<_>>()
+                    })
+                },
+            );
+        }
+    }
+    group.finish();
 }
 
 criterion_group!(benches, criterion_benchmark);

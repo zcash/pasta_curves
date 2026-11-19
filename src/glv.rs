@@ -28,14 +28,18 @@
 //!
 //! # Using it
 //!
-//! Both modules expose the same four entry points, one per call shape. Each
+//! Both modules expose the same five entry points, one per call shape. Each
 //! shares whatever the shape lets it share, so none of them asks the caller
 //! to assemble the precomputation:
 //!
-//! |                 | one scalar    | many scalars    |
-//! |-----------------|---------------|-----------------|
-//! | **one point**   | [`mul`]       | [`mul_scalars`] |
-//! | **many points** | [`batch_mul`] | [`mul_pairs`]   |
+//! |                 | one scalar    | many scalars                                               |
+//! |-----------------|---------------|------------------------------------------------------------|
+//! | **one point**   | [`mul`]       | [`mul_scalars`]                                            |
+//! | **many points** | [`batch_mul`] | [`mul_pairs`], pairwise; [`batch_mul_scalars`], every pair |
+//!
+//! [`batch_mul_scalars`] shares the doublings of each point among all the
+//! scalars, which none of the other shapes can do; both modules run the same
+//! evaluation over their own recoding.
 //!
 //! [`batch_mul`], one scalar against many points, is the shape
 //! `glv_eisenstein` optimises hardest: a shared scalar means one recoding and
@@ -91,6 +95,9 @@ use crate::{pallas, vesta};
 mod booth;
 
 pub(crate) mod fixed_base;
+
+// The shared-doubling evaluation of `batch_mul_scalars`, for both recodings.
+pub(crate) mod grid;
 
 pub(crate) mod msm;
 
@@ -349,6 +356,19 @@ pub(crate) mod conformance {
         })
     }
 
+    /// Deterministic full-width scalars, for the known-answer tests of both
+    /// modules.
+    pub(crate) fn scalars<F>(n: u64) -> impl Iterator<Item = F>
+    where
+        F: PrimeField,
+    {
+        (0..n).map(|i| {
+            (F::from(0x9E37_79B9_7F4A_7C15u64 + i).square() + F::from(0x0123_4567_89AB_CDEFu64))
+                .square()
+                + F::from(i)
+        })
+    }
+
     /// The defining law: the ladder computes `k * P`.
     pub(crate) fn agrees_with_mul<C, R>(p: &C, k: &C::ScalarExt)
     where
@@ -408,7 +428,11 @@ pub(crate) mod conformance {
     pub(crate) type MulPairs<C> =
         fn(&[(C, <C as crate::arithmetic::CurveExt>::ScalarExt)]) -> Affines<C>;
 
-    /// A module's four free entry points, one per call shape.
+    /// Many points against many scalars, every point by every scalar.
+    pub(crate) type MulGrid<C> =
+        fn(&[C], &[<C as crate::arithmetic::CurveExt>::ScalarExt]) -> Affines<C>;
+
+    /// A module's free entry points, one per call shape.
     ///
     /// Gathered into a struct because they are free functions, one set per
     /// module, rather than methods of [`Recoding`]: this is what lets a law
@@ -418,6 +442,187 @@ pub(crate) mod conformance {
         pub(crate) batch_mul: fn(&[C], &C::ScalarExt) -> Affines<C>,
         pub(crate) mul_scalars: MulScalars<C>,
         pub(crate) mul_pairs: MulPairs<C>,
+        pub(crate) batch_mul_scalars: MulGrid<C>,
+    }
+
+    /// A module's `batch_mul_scalars`, `f`, and the shared-doubling
+    /// evaluation of its recoding `R` whatever the size of the grid, agree
+    /// with the group operator on every product: across grid sizes on both
+    /// sides of every threshold, scalar shapes, and points that make the
+    /// additions meet equal, opposite and identity operands. `extra` adds
+    /// scalars that matter to `R` alone.
+    pub(crate) fn grid_agrees_with_operator<C, R>(f: MulGrid<C>, extra: &[C::ScalarExt])
+    where
+        C: GlvParams,
+        R: super::grid::OrbitRecoding<C>,
+    {
+        use alloc::vec::Vec;
+        use ff::{Field as _, WithSmallOrderMulGroup as _};
+
+        let g = C::generator();
+        let check = |points: &[C], ks: &[C::ScalarExt]| {
+            let digits: Vec<R::Digits> = ks.iter().map(R::recode).collect();
+            // The entry point, which picks an arm by the size of the grid,
+            // and the shared-doubling arm whatever the size.
+            for got in [
+                f(points, ks),
+                super::grid::shared_doublings::<C, R>(points, &digits),
+            ] {
+                assert_eq!(got.len(), points.len() * ks.len());
+                for (i, p) in points.iter().enumerate() {
+                    for (j, k) in ks.iter().enumerate() {
+                        assert_eq!(
+                            C::from(got[i * ks.len() + j]),
+                            *p * k,
+                            "product of point {i} and scalar {j}"
+                        );
+                    }
+                }
+            }
+        };
+
+        // Empty grids.
+        assert!(f(&[], &[C::ScalarExt::ONE]).is_empty());
+        assert!(f(&[g], &[]).is_empty());
+        assert!(super::grid::shared_doublings::<C, R>(&[], &[]).is_empty());
+
+        let points: Vec<C> = scalars::<C::ScalarExt>(130)
+            .map(|k| g * (k + C::ScalarExt::ONE))
+            .collect();
+        let random: Vec<C::ScalarExt> = scalars::<C::ScalarExt>(8)
+            .map(|k| k.square() + C::ScalarExt::from(7))
+            .collect();
+
+        // Grid sizes around the shared-doubling threshold and the thresholds
+        // of the single-scalar arm, with one to eight scalars.
+        for n in [1usize, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 37, 95, 96, 97, 130] {
+            for m in [1usize, 2, 3, 4, 8] {
+                check(&points[..n], &random[..m]);
+            }
+        }
+
+        // Scalar shapes that stress the recoding's ends and leave buckets
+        // empty: zero, a one-column recoding, tiny values, negatives, lambda
+        // and its neighbours, the representatives' own values, a repeated
+        // scalar, and full-width scalars.
+        let one = C::ScalarExt::ONE;
+        let zeta = C::ScalarExt::ZETA;
+        let mut ks: Vec<C::ScalarExt> = alloc::vec![
+            C::ScalarExt::ZERO,
+            one,
+            -one,
+            C::ScalarExt::from(2),
+            C::ScalarExt::from(3),
+            C::ScalarExt::from(7),
+            C::ScalarExt::from(8),
+            C::ScalarExt::from(9),
+            C::ScalarExt::from(u64::MAX),
+            zeta,
+            -zeta,
+            zeta + one,
+            zeta - one,
+            zeta * C::ScalarExt::from(7) + C::ScalarExt::from(7),
+            zeta * C::ScalarExt::from(5) - C::ScalarExt::from(5),
+            C::ScalarExt::from(3),
+        ];
+        ks.extend_from_slice(extra);
+        ks.extend(random.iter().copied());
+
+        // Points related by negation and by the endomorphism, repeated
+        // points, small multiples, and identities at the start, in the
+        // middle and at the end.
+        let r = points[0];
+        let mut special: Vec<C> = alloc::vec![
+            C::identity(),
+            g,
+            -g,
+            g.endo(),
+            -g.endo(),
+            g.endo().endo(),
+            g.double(),
+            g.double() + g,
+            C::identity(),
+            r,
+            r,
+            -r,
+            r.endo(),
+        ];
+        special.extend(points[1..8].iter().copied());
+        special.push(C::identity());
+        check(&special, &ks);
+        // Each scalar beside one other, and a pair of points beside all.
+        for pair in ks.windows(2) {
+            check(&special, pair);
+        }
+        check(&special[..2], &ks);
+
+        // All-identity and all-zero grids.
+        check(&alloc::vec![C::identity(); 9], &random[..3]);
+        check(&points[..9], &[C::ScalarExt::ZERO, C::ScalarExt::ZERO]);
+    }
+
+    /// The recoding's `combine_buckets` computes $\sum_j r_j B_j$, where
+    /// `weigh(j, B)` is $r_j B$: on every subset of nonempty buckets, and on
+    /// buckets that repeat or cancel one another.
+    pub(crate) fn combination_agrees_with_weights<C, R>(weigh: impl Fn(usize, C) -> C)
+    where
+        C: GlvParams,
+        R: super::grid::OrbitRecoding<C>,
+    {
+        use crate::arithmetic::Coordinates;
+        use alloc::vec::Vec;
+        use ff::Field as _;
+        use group::CurveAffine as _;
+
+        let reps = R::REPS;
+        let g = C::generator();
+        let points: Vec<C> = scalars::<C::ScalarExt>(reps as u64)
+            .map(|k| g * (k + C::ScalarExt::ONE))
+            .collect();
+        let mut affine = alloc::vec![C::AffineExt::identity(); reps];
+        C::batch_normalize(&points, &mut affine);
+
+        let mut buckets = Vec::new();
+        let mut expected = Vec::new();
+        let mut product = |held: &[Option<C::AffineExt>]| {
+            let mut sum = C::identity();
+            for (j, b) in held.iter().enumerate() {
+                match b {
+                    Some(b) => {
+                        let (x, y) = super::affine_xy::<C>(b);
+                        buckets.push(Some(Coordinates { x, y }));
+                        sum += weigh(j, C::from(*b));
+                    }
+                    None => buckets.push(None),
+                }
+            }
+            expected.push(sum);
+        };
+        for subset in 0..1usize << reps {
+            let held: Vec<_> = (0..reps)
+                .map(|j| ((subset >> j) & 1 == 1).then_some(affine[j]))
+                .collect();
+            product(&held);
+        }
+        let half = reps / 2;
+        product(&alloc::vec![Some(affine[0]); reps]);
+        let alternating: Vec<_> = (0..reps)
+            .map(|j| Some(if j % 2 == 0 { affine[0] } else { -affine[0] }))
+            .collect();
+        product(&alternating);
+        let halves: Vec<_> = (0..reps)
+            .map(|j| Some(if j < half { affine[1] } else { -affine[1] }))
+            .collect();
+        product(&halves);
+
+        let got = R::combine_buckets(&buckets);
+        assert_eq!(got.len(), expected.len());
+        for (i, (p, e)) in got.iter().zip(expected.iter()).enumerate() {
+            let p = p.map_or(C::identity(), |p| {
+                C::from(super::affine_from_xy_unchecked::<C>(p.x, p.y))
+            });
+            assert_eq!(p, *e, "product {i}");
+        }
     }
 
     /// The inputs a windowed ladder is most likely to get wrong, against
@@ -483,6 +688,16 @@ pub(crate) mod conformance {
                     "mul_scalars"
                 );
                 assert_eq!((f.mul_pairs)(&[(p, k)]), alloc::vec![affine], "mul_pairs");
+                assert_eq!(
+                    (f.batch_mul_scalars)(&[p], &[k]),
+                    alloc::vec![affine],
+                    "batch_mul_scalars"
+                );
+                assert_eq!(
+                    (f.batch_mul_scalars)(&[p], &[k, -k]),
+                    alloc::vec![affine, (-want).to_affine()],
+                    "batch_mul_scalars by k and -k"
+                );
             }
         }
 
@@ -502,6 +717,8 @@ pub(crate) mod conformance {
             (f.batch_mul)(&[g, -g, o], &zero),
             (f.mul_scalars)(&o, &[one, -one, zero, lambda]),
             (f.mul_pairs)(&[(o, one), (o, -one), (g, zero)]),
+            (f.batch_mul_scalars)(&[o, o], &[one, lambda]),
+            (f.batch_mul_scalars)(&[g, -g, o], &[zero, zero]),
         ] {
             assert!(
                 got.iter().all(|q| *q == o_affine),
@@ -665,6 +882,50 @@ where
                 f(multiples[(d.unsigned_abs() / 2) as usize], d < 0);
             }
         }
+    }
+}
+
+/// The bucket view of the wNAF recoding: a digit $d$ is a sign times one of
+/// the odd multiples 1, 3, 5 and 7, picked by $|d| / 2$.
+///
+/// The two halves of the split share the four buckets: a second-half term is
+/// rotated by $\varphi$ as it enters its bucket, one multiplication, so the
+/// result is $\sum_{j < 4} (2j + 1) B_j$, with no rotation left for the
+/// combination. A column's two terms, $2^i P$ and $\varphi(2^i P)$, may meet in
+/// one bucket; the reducer's complete formulas add them like any other pair.
+impl<C> grid::OrbitRecoding<C> for Wnaf4
+where
+    C: GlvParams,
+{
+    const REPS: usize = 4;
+
+    fn terms(digits: &Self::Digits, i: usize, mut f: impl FnMut(usize, usize, bool)) {
+        for (rotation, d) in [digits.digits1.get(i), digits.digits2.get(i)]
+            .into_iter()
+            .enumerate()
+        {
+            let d = d.copied().unwrap_or(0);
+            if d != 0 {
+                f((d.unsigned_abs() / 2) as usize, rotation, d < 0);
+            }
+        }
+    }
+
+    /// With the subtree sums $T_j = \sum_{i \ge j} B_i$,
+    ///
+    /// $$\sum_{j < 4} (2j + 1) B_j = T_0 + 2 (T_1 + T_2 + T_3),$$
+    ///
+    /// with $U = T_2 + T_3$ and $V = T_1 + U$: seven additions in four rounds,
+    /// the last summing $T_0 + V + V$. The `wnaf_bucket_combination` test checks
+    /// the result against the odd multiples.
+    fn combine_buckets(buckets: &[grid::Sum<C::AffineExt>]) -> Vec<grid::Sum<C::AffineExt>> {
+        let b: [Vec<grid::Sum<C::AffineExt>>; 4] =
+            core::array::from_fn(|j| buckets.chunks_exact(4).map(|product| product[j]).collect());
+        // T_3 = B_3 is a leaf.
+        let [t2] = grid::add_columns([(&b[2], &b[3])]);
+        let [t1, u] = grid::add_columns([(&b[1], &t2), (&t2, &b[3])]);
+        let [t0, v] = grid::add_columns([(&b[0], &t1), (&u, &t1)]);
+        grid::add3_columns(&t0, &v, &v)
     }
 }
 
@@ -1132,6 +1393,49 @@ where
     normalize(&proj)
 }
 
+/// `k * p` for every point `p` and every scalar `k`: the product of
+/// `points[i]` and `scalars[j]` is at index `i * scalars.len() + j` of the
+/// result, which is affine.
+///
+/// The doublings of each point are shared by all the scalars: each point's
+/// multiples $2^i P$ are computed once, with affine doublings that share one
+/// inversion per column, and each scalar's digit adds one of them, signed, to
+/// one of eight buckets, which an addition chain combines at the end. The
+/// MSM's affine bucket reducer sums all the buckets of the grid at once, with
+/// one shared inversion per level of its pairwise trees. So it overtakes one
+/// [`batch_mul`] per scalar from two scalars on. A single scalar is handed to
+/// [`batch_mul`], and a grid of fewer than 13 products (by default; the
+/// threshold depends on the machine) is evaluated with one [`Table`] per
+/// point and a ladder per product.
+///
+/// Identity points and zero scalars are handled. Like the rest of this
+/// module, this is variable-time in the scalars and the points: both must be
+/// public.
+pub fn batch_mul_scalars<C>(points: &[C], scalars: &[C::ScalarExt]) -> Vec<C::AffineExt>
+where
+    C: GlvParams,
+{
+    if points.is_empty() || scalars.is_empty() {
+        return Vec::new();
+    }
+    if let [k] = scalars {
+        return batch_mul(points, k);
+    }
+    let decomposed: Vec<Decomposed<C>> = scalars.iter().map(Decomposed::new).collect();
+    grid::mul_grid::<C, Wnaf4>(points, &decomposed, grid::CALIBRATION.glv_min_products)
+}
+
+/// One shared inversion back to affine, in variable time: for public
+/// points, as everything in `glv_eisenstein` and `glv::grid` is.
+pub(crate) fn normalize_vartime<C>(proj: &[C]) -> Vec<C::AffineExt>
+where
+    C: GlvParams,
+{
+    let mut affine = alloc::vec![C::AffineExt::identity(); proj.len()];
+    C::batch_normalize_vartime(proj, &mut affine);
+    affine
+}
+
 /// One shared inversion back to affine.
 fn normalize<C>(proj: &[C]) -> Vec<C::AffineExt>
 where
@@ -1146,6 +1450,7 @@ where
 pub(crate) mod tests {
     use super::*;
     use crate::arithmetic::adc;
+    use crate::glv::conformance::scalars;
     use ff::Field;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
@@ -1214,18 +1519,6 @@ pub(crate) mod tests {
             round_mul_shift(&vesta::Point::G2, &vesta_scalar_max),
             0x49e69d1640a899538cb1279300000001
         );
-    }
-
-    /// Deterministic full-width scalars for the known-answer tests.
-    fn scalars<F>(n: u64) -> impl Iterator<Item = F>
-    where
-        F: PrimeField,
-    {
-        (0..n).map(|i| {
-            (F::from(0x9E37_79B9_7F4A_7C15u64 + i).square() + F::from(0x0123_4567_89AB_CDEFu64))
-                .square()
-                + F::from(i)
-        })
     }
 
     /// Checks `g == round(2^384 * v / n)` for the curve's scalar modulus `n`,
@@ -1929,6 +2222,7 @@ pub(crate) mod tests {
             batch_mul: super::batch_mul,
             mul_scalars: super::mul_scalars,
             mul_pairs: super::mul_pairs,
+            batch_mul_scalars: super::batch_mul_scalars,
         }
     }
 
@@ -1940,6 +2234,49 @@ pub(crate) mod tests {
     #[test]
     fn corner_cases_vesta() {
         conformance::corner_cases(&entry_points::<vesta::Point>());
+    }
+
+    /// The wNAF digits whose buckets fill alone: the odd multiples, signed,
+    /// and the half-width boundary of the split.
+    fn wnaf_grid_scalars<C: GlvParams>() -> Vec<C::ScalarExt> {
+        let mut ks: Vec<C::ScalarExt> = [1u64, 3, 5, 7]
+            .iter()
+            .flat_map(|&d| [C::ScalarExt::from(d), -C::ScalarExt::from(d)])
+            .collect();
+        ks.push(C::ScalarExt::from_u128(1u128 << 127));
+        ks.push(C::ScalarExt::from_u128((1u128 << 127) - 1));
+        ks
+    }
+
+    #[test]
+    fn batch_mul_scalars_pallas() {
+        conformance::grid_agrees_with_operator::<pallas::Point, Wnaf4>(
+            batch_mul_scalars,
+            &wnaf_grid_scalars::<pallas::Point>(),
+        );
+    }
+
+    #[test]
+    fn batch_mul_scalars_vesta() {
+        conformance::grid_agrees_with_operator::<vesta::Point, Wnaf4>(
+            batch_mul_scalars,
+            &wnaf_grid_scalars::<vesta::Point>(),
+        );
+    }
+
+    /// `Wnaf4`'s weights: the odd multiples.
+    fn wnaf_weight<C: GlvParams>(j: usize, b: C) -> C {
+        b * C::ScalarExt::from(2 * j as u64 + 1)
+    }
+
+    #[test]
+    fn wnaf_bucket_combination_pallas() {
+        conformance::combination_agrees_with_weights::<pallas::Point, Wnaf4>(wnaf_weight);
+    }
+
+    #[test]
+    fn wnaf_bucket_combination_vesta() {
+        conformance::combination_agrees_with_weights::<vesta::Point, Wnaf4>(wnaf_weight);
     }
 
     /// Loads a Pasta scalar from its four little-endian limbs.

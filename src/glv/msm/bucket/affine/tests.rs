@@ -2,28 +2,29 @@ use ff::Field;
 
 use super::super::{affine_xy, bucket_point};
 use super::*;
-use crate::glv::{GlvParams, private::AffineBase};
+use crate::glv::GlvParams;
 use crate::{pallas, vesta};
 
-fn batch_invert_and_add_two_lanes_matches_individual<F>()
+fn batch_invert_and_add_two_lanes_matches_individual<A>()
 where
-    F: VartimeField + From<u64>,
+    A: CurveAffine<Base: VartimeField>,
 {
+    let f = |n: usize| <A::Base as From<u64>>::from(u64::try_from(n).unwrap());
     const LENGTHS: [usize; 13] = [0, 1, 2, 3, 31, 32, 33, 63, 64, 65, 255, 256, 257];
 
     for length in LENGTHS {
         let mut additions = (0..length)
             .map(|index| PendingAffineAddition {
                 output: index,
-                x_sum: F::from(u64::try_from(index + 3).unwrap()),
-                numerator: F::from(u64::try_from(index + 2).unwrap()),
-                denominator: F::from(u64::try_from(index + 1).unwrap()),
+                x_sum: f(index + 3),
+                numerator: f(index + 2),
+                denominator: f(index + 1),
             })
             .collect::<Vec<_>>();
         let mut points = (0..length)
-            .map(|index| AffinePoint {
-                x: F::from(u64::try_from(index + 5).unwrap()),
-                y: F::from(u64::try_from(index + 7).unwrap()),
+            .map(|index| Coordinates::<A> {
+                x: f(index + 5),
+                y: f(index + 7),
             })
             .collect::<Vec<_>>();
         let expected = additions
@@ -33,7 +34,7 @@ where
                 let slope = addition.numerator * addition.denominator.invert().unwrap();
                 let x = slope.square() - addition.x_sum;
                 let y = slope * (left.x - x) - left.y;
-                AffinePoint { x, y }
+                Coordinates::<A> { x, y }
             })
             .collect::<Vec<_>>();
 
@@ -54,13 +55,13 @@ where
 
 #[test]
 fn batch_invert_and_add_two_lanes() {
-    batch_invert_and_add_two_lanes_matches_individual::<crate::Fp>();
-    batch_invert_and_add_two_lanes_matches_individual::<crate::Fq>();
+    batch_invert_and_add_two_lanes_matches_individual::<pallas::Affine>();
+    batch_invert_and_add_two_lanes_matches_individual::<vesta::Affine>();
 }
 
 fn assert_affine_bucket_results_match_native<C>(
     case: &str,
-    reduced: Vec<Option<AffinePoint<AffineBase<C>>>>,
+    reduced: Vec<Option<Coordinates<C::AffineExt>>>,
     source: &[Vec<C>],
 ) where
     C: GlvParams,
@@ -76,7 +77,7 @@ fn assert_affine_bucket_results_match_native<C>(
 fn assert_batch_affine_buckets_match_native<C>(
     case: &str,
     source: &[Vec<C>],
-    scratch: &mut ReduceScratch<AffineBase<C>>,
+    scratch: &mut ReduceScratch<C::AffineExt>,
 ) where
     C: GlvParams,
 {
@@ -87,7 +88,7 @@ fn assert_batch_affine_buckets_match_native<C>(
         for point in bucket {
             let affine = C::AffineExt::from(*point);
             let (x, y) = affine_xy::<C>(&affine);
-            points.push(AffinePoint { x, y });
+            points.push(Coordinates { x, y });
         }
         offsets.push(points.len());
     }
@@ -178,7 +179,7 @@ where
         for point in bucket {
             let affine = C::AffineExt::from(*point);
             let (x, y) = affine_xy::<C>(&affine);
-            clean_points.push(AffinePoint { x, y });
+            clean_points.push(Coordinates { x, y });
         }
         clean_offsets.push(clean_points.len());
     }
@@ -201,7 +202,7 @@ fn affine_buckets() {
 fn failed_inversion_does_not_change_points() {
     for zero_at in [0, 1, 2, 4, 8] {
         let mut points = (0..9)
-            .map(|i| AffinePoint {
+            .map(|i| Coordinates::<pallas::Affine> {
                 x: crate::Fp::from(i),
                 y: crate::Fp::from(i + 1),
             })
