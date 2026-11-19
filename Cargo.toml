@@ -54,11 +54,7 @@ harness = false
 required-features = ["alloc"]
 
 [[bench]]
-name = "fp"
-harness = false
-
-[[bench]]
-name = "fq"
+name = "field"
 harness = false
 
 [[bench]]
