@@ -1,16 +1,10 @@
-use super::Projective;
+use super::{B, Projective, U, times_3b, times_b, times_minus_27b, times_u, times_u3};
 use ff::Field;
 use group::{Curve, CurveAffine, Group};
 
 // The original six-product cross-product tail of RCB Algorithm 7 is retained
 // here as an independent reference for the five-product formula.
 fn six_product_add<F: Field>(p: &Projective<F>, q: &Projective<F>) -> Projective<F> {
-    let by_15 = |x: F| {
-        let x2 = x + x;
-        let x3 = x2 + x;
-        let x6 = x3 + x3;
-        x6 + x6 + x3
-    };
     let t0 = p.x * q.x;
     let t1 = p.y * q.y;
     let t2 = p.z * q.z;
@@ -18,10 +12,10 @@ fn six_product_add<F: Field>(p: &Projective<F>, q: &Projective<F>) -> Projective
     let t4 = (p.y + p.z) * (q.y + q.z) - t1 - t2;
     let y3 = (p.x + p.z) * (q.x + q.z) - t0 - t2;
     let t0 = t0 + t0 + t0;
-    let t2 = by_15(t2);
+    let t2 = times_3b(t2);
     let z3 = t1 + t2;
     let t1 = t1 - t2;
-    let y3 = by_15(y3);
+    let y3 = times_3b(y3);
     let x3 = t4 * y3;
     let x3 = t3 * t1 - x3;
     let y3 = t1 * z3 + y3 * t0;
@@ -89,6 +83,26 @@ fn projective_points_are_96_bytes() {
     assert_eq!(core::mem::size_of::<Projective<crate::Fq>>(), 96);
 }
 
+/// Each addition chain multiplies by the constant its name and documentation
+/// give.
+fn check_small_multiples<F: Field + From<u64>>() {
+    let mut x = F::from(0x1234_5678);
+    for _ in 0..8 {
+        assert_eq!(times_b(x), x * F::from(B));
+        assert_eq!(times_3b(x), x * F::from(3 * B));
+        assert_eq!(times_minus_27b(x), -(x * F::from(27 * B)));
+        assert_eq!(times_u(x), x * F::from(U));
+        assert_eq!(times_u3(x), x * F::from(U.pow(3)));
+        x = x.square() + F::ONE;
+    }
+}
+
+#[test]
+fn small_multiples_match_the_constants() {
+    check_small_multiples::<crate::Fp>();
+    check_small_multiples::<crate::Fq>();
+}
+
 macro_rules! curve_tests {
     ($name:ident, $point:ty, $affine:ty, $field:ty, $scalar:ty) => {
         pub(crate) mod $name {
@@ -147,9 +161,9 @@ macro_rules! curve_tests {
             }
             #[test]
             fn tripling_factors_through_the_3_isogeny() {
-                let five = <$field>::from(5);
+                let five = <$field>::from(B);
                 let image = -(five * <$field>::from(27));
-                let twisted = five * <$field>::from(729);
+                let twisted = five * <$field>::from(U.pow(6));
                 let g = <$point>::generator();
                 for point in [<$point>::identity(), g, -g, g.double(), g.double() + g] {
                     let p = h(point.to_affine());

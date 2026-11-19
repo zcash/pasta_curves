@@ -24,6 +24,62 @@
 use ff::Field;
 use subtle::{Choice, ConditionallySelectable};
 
+/// The constant $b$ of Pallas and Vesta, $y^2 = x^3 + b$. The formulas multiply by
+/// small multiples of it with additions, through the functions below, rather than
+/// with a field multiplication.
+// Read by the checks below and by the tests, which compare each addition chain
+// with a multiplication by the multiple it names; nothing else reads it.
+#[cfg_attr(not(test), allow(dead_code))]
+const B: u64 = 5;
+
+/// The scaling of the isomorphism [`Projective::iota`] from $E_{729b}$ back to
+/// $E_b$: $(x, y) \mapsto (x / U^2, y / U^3)$ with $U^6 = 729$, which in
+/// projective coordinates is $(X : Y : Z) \mapsto (U X : Y : U^3 Z)$.
+// Read by the checks below and by the tests, which compare each addition chain
+// with a multiplication by the multiple it names; nothing else reads it.
+#[cfg_attr(not(test), allow(dead_code))]
+const U: u64 = 3;
+
+// The addition chains below hard-code these multiples.
+const _: () = assert!(B == 5 && 3 * B == 15 && 27 * B == 135);
+const _: () = assert!(U == 3 && U.pow(3) == 27 && U.pow(6) == 729);
+
+/// $b x$, with additions: $5 x = 2 (2 x) + x$.
+fn times_b<F: Field>(x: F) -> F {
+    (x + x) + (x + x) + x
+}
+
+/// $3 b x$, with additions: $15 x = 2 (2 (3 x)) + 3 x$. The complete addition
+/// and doubling formulas use $3b$.
+fn times_3b<F: Field>(x: F) -> F {
+    let x2 = x + x;
+    let x3 = x2 + x;
+    let x6 = x3 + x3;
+    let x12 = x6 + x6;
+    x12 + x3
+}
+
+/// $-27 b x$, with additions: $-135 x = -(3 (3 (3 (5 x))))$, the constant of
+/// the curve $E_{-27b}$ onto which [`Projective::isogeny_3`] maps.
+fn times_minus_27b<F: Field>(x: F) -> F {
+    let x5 = times_b(x);
+    let x15 = x5 + x5 + x5;
+    let x45 = x15 + x15 + x15;
+    -(x45 + x45 + x45)
+}
+
+/// $U x$, with additions.
+fn times_u<F: Field>(x: F) -> F {
+    x + x + x
+}
+
+/// $U^3 x$, with additions: $27 x = 3 (3 (3 x))$.
+fn times_u3<F: Field>(x: F) -> F {
+    let x3 = times_u(x);
+    let x9 = x3 + x3 + x3;
+    x9 + x9 + x9
+}
+
 /// A point $(X : Y : Z)$ on $Y^2 Z = X^3 + 5 Z^3$; see the module documentation.
 #[derive(Clone, Copy)]
 pub(crate) struct Projective<F: Field> {
@@ -41,15 +97,6 @@ impl<F: Field> Projective<F> {
         }
     }
 
-    // The native curve has b = 5, hence 3b = 15. No field-specific constants.
-    fn mul_by_3b(x: F) -> F {
-        let x2 = x + x;
-        let x3 = x2 + x;
-        let x6 = x3 + x3;
-        let x12 = x6 + x6;
-        x12 + x3
-    }
-
     pub(crate) fn add(&self, rhs: &Self) -> Self {
         // Complete addition for a = 0 in homogeneous coordinates; the last
         // five products evaluate the cross product instead of its six terms.
@@ -60,10 +107,10 @@ impl<F: Field> Projective<F> {
         let t4 = (self.y + self.z) * (rhs.y + rhs.z) - (t1 + t2);
         let y3 = (self.x + self.z) * (rhs.x + rhs.z) - (t0 + t2);
         let t0 = t0 + t0 + t0;
-        let t2 = Self::mul_by_3b(t2);
+        let t2 = times_3b(t2);
         let z3 = t1 + t2;
         let t1 = t1 - t2;
-        let y3 = Self::mul_by_3b(y3);
+        let y3 = times_3b(y3);
 
         let s = z3 + y3;
         let r = t1 - t4;
@@ -86,7 +133,7 @@ impl<F: Field> Projective<F> {
         let z3 = z3 + z3;
         let z3 = z3 + z3;
         let t1 = self.y * self.z;
-        let t2 = Self::mul_by_3b(self.z.square());
+        let t2 = times_3b(self.z.square());
         let x3 = t2 * z3;
         let y3 = t0 + t2;
         let z3 = t1 * z3;
@@ -132,13 +179,10 @@ impl<F: Field> Projective<F> {
     /// The isomorphism $E_{729 \cdot 5} \to E_5$, $(X : Y : Z) \mapsto (3X : Y : 27Z)$,
     /// that is $(x, y) \mapsto (x / 9, y / 27)$, since $729 = 3^6$.
     fn iota(&self) -> Self {
-        let x = self.x + self.x + self.x;
-        let z = self.z + self.z + self.z;
-        let z = z + z + z;
         Self {
-            x,
+            x: times_u(self.x),
             y: self.y,
-            z: z + z + z,
+            z: times_u3(self.z),
         }
     }
 
@@ -147,15 +191,7 @@ impl<F: Field> Projective<F> {
     /// [`Self::iota`] back to the curve. Costs $6M + 4S$; complete because
     /// each step is.
     pub(crate) fn triple(&self) -> Self {
-        // b = 5 for Pallas and Vesta, so the image curve has -27b = -135.
-        let times_5 = |x: F| (x + x) + (x + x) + x;
-        let times_minus_135 = |x: F| {
-            let x5 = times_5(x);
-            let x15 = x5 + x5 + x5;
-            let x45 = x15 + x15 + x15;
-            -(x45 + x45 + x45)
-        };
-        self.isogeny_3(times_5).isogeny_3(times_minus_135).iota()
+        self.isogeny_3(times_b).isogeny_3(times_minus_27b).iota()
     }
 }
 
