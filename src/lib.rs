@@ -37,6 +37,7 @@ mod test_fields;
 mod macros;
 mod curves;
 mod fields;
+mod scalar_mul;
 
 pub mod arithmetic;
 #[cfg(feature = "deferred")]
