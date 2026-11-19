@@ -26,7 +26,7 @@ use group::CurveAffine as _;
 use super::msm::{AffinePoint, current_num_threads, reduce_affine_buckets};
 use super::private::AffineBase;
 use super::{GlvParams, Recoding, affine_from_xy_unchecked, affine_xy, normalize_vartime, phi_x};
-use crate::arithmetic::{VartimeBatchInvert, VartimeField};
+use crate::arithmetic::{VartimeField, batch_invert_vartime_slice};
 #[cfg(feature = "multicore")]
 use maybe_rayon::prelude::*;
 
@@ -273,6 +273,7 @@ where
         .collect();
     let mut chain = Vec::with_capacity(nl * len);
     let mut inverses = Vec::with_capacity(nl);
+    let mut scratch = vec![AffineBase::<C>::ZERO; nl];
     for col in 0..len {
         chain.extend_from_slice(&cur);
         if col + 1 < len {
@@ -281,7 +282,7 @@ where
                 // point has order two, the group's order being prime.
                 inverses.clear();
                 inverses.extend(cur.iter().map(|p| p.y.double()));
-                inverses.iter_mut().batch_invert_vartime();
+                batch_invert_vartime_slice(&mut inverses, &mut scratch);
                 for (p, inverse) in cur.iter_mut().zip(&inverses) {
                     let xx = p.x.square();
                     let slope = (xx.double() + xx) * inverse;

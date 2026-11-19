@@ -160,7 +160,7 @@ use group::CurveAffine as _;
 use ff::{Field, WithSmallOrderMulGroup};
 
 use crate::{
-    arithmetic::{Coordinates, CurveAffine, VartimeField},
+    arithmetic::{Coordinates, CurveAffine, VartimeField, batch_invert_vartime_slice},
     glv::{
         GlvParams, Recoding, affine_from_xy_unchecked, decompose,
         grid::{self, OrbitRecoding, Sum},
@@ -843,7 +843,7 @@ where
                 for i in 0..n {
                     den[i] = if live[i] { ys[i].double() } else { zero };
                 }
-                batch_invert(&mut den, &mut scratch);
+                batch_invert_vartime_slice(&mut den, &mut scratch);
                 for i in 0..n {
                     if !live[i] || bool::from(den[i].is_zero()) {
                         live[i] = false;
@@ -864,7 +864,7 @@ where
                     y2s[i] = y2;
                     den[i] = if live[i] { x2 - xs[i] } else { zero };
                 }
-                batch_invert(&mut den, &mut scratch);
+                batch_invert_vartime_slice(&mut den, &mut scratch);
                 for i in 0..n {
                     if !live[i] || bool::from(den[i].is_zero()) {
                         live[i] = false;
@@ -878,7 +878,7 @@ where
                 for i in 0..n {
                     den[i] = if live[i] { x3s[i] - xs[i] } else { zero };
                 }
-                batch_invert(&mut den, &mut scratch);
+                batch_invert_vartime_slice(&mut den, &mut scratch);
                 for i in 0..n {
                     if !live[i] || bool::from(den[i].is_zero()) {
                         live[i] = false;
@@ -1054,7 +1054,7 @@ where
         for (i, d) in self.den.iter_mut().enumerate() {
             *d = if self.live[i] { qx[i] - px[i] } else { F::ZERO };
         }
-        batch_invert(&mut self.den, &mut self.scratch);
+        batch_invert_vartime_slice(&mut self.den, &mut self.scratch);
         for i in 0..px.len() {
             if !self.live[i] || bool::from(self.den[i].is_zero()) {
                 self.live[i] = false;
@@ -1065,44 +1065,6 @@ where
             let x = l.square() - px[i] - qx[i];
             oy[i] = l * (px[i] - x) - py[i];
             ox[i] = x;
-        }
-    }
-}
-
-/// Inverts every nonzero element of `v` in place with a single field
-/// inversion (Montgomery's trick), leaving zeros as zero.
-///
-/// Skipping zeros rather than letting one poison the running product is what
-/// lets the batch ladder detect an exceptional lane: after the call, a zero is
-/// exactly a denominator that was zero going in.
-///
-/// The one inversion is [`VartimeField::invert_vartime`], the safegcd path,
-/// which is about six times faster than the constant-time Fermat
-/// exponentiation and is what makes the batch-affine ladder pay off at
-/// ordinary batch sizes. It leaks nothing this module does not already leak:
-/// the recoding's digit pattern is what drives the branch structure, and it
-/// is a function of the same scalar.
-fn batch_invert<F>(v: &mut [F], scratch: &mut [F])
-where
-    F: Field + VartimeField,
-{
-    debug_assert!(scratch.len() >= v.len());
-    let mut acc = F::ONE;
-    for (e, s) in v.iter().zip(scratch.iter_mut()) {
-        *s = acc;
-        if !bool::from(e.is_zero()) {
-            acc *= e;
-        }
-    }
-    // A product of nonzero field elements (or the empty product), so nonzero.
-    acc = acc
-        .invert_vartime()
-        .expect("product of nonzero field elements");
-    for (e, s) in v.iter_mut().zip(scratch.iter()).rev() {
-        if !bool::from(e.is_zero()) {
-            let inv = acc * s;
-            acc *= *e;
-            *e = inv;
         }
     }
 }
@@ -1891,31 +1853,6 @@ mod tests {
         }
     }
 
-    /// `batch_invert` inverts the nonzero entries and leaves zeros alone,
-    /// which is what lets the ladder spot an exceptional lane.
-    fn batch_invert_skips_zeros<C>()
-    where
-        C: GlvParams,
-    {
-        let mut v: Vec<AffineBase<C>> = (0..16u64).map(AffineBase::<C>::from).collect();
-        v.push(AffineBase::<C>::ZERO);
-        let original = v.clone();
-        let mut scratch = alloc::vec![AffineBase::<C>::ZERO; v.len()];
-        batch_invert(&mut v, &mut scratch);
-        for (o, i) in original.iter().zip(v.iter()) {
-            if bool::from(o.is_zero()) {
-                assert!(bool::from(i.is_zero()), "zero must stay zero");
-            } else {
-                assert_eq!(*o * *i, AffineBase::<C>::ONE, "must be the inverse");
-            }
-        }
-        // All-zero and empty inputs must not panic.
-        let mut z = alloc::vec![AffineBase::<C>::ZERO; 4];
-        batch_invert(&mut z, &mut scratch);
-        assert!(z.iter().all(|e| bool::from(e.is_zero())));
-        batch_invert(&mut [] as &mut [AffineBase<C>], &mut scratch);
-    }
-
     /// The representatives' weights: $r_j B$.
     fn representative_weight<C: GlvParams>(j: usize, b: C) -> C {
         let (a, w) = REPS[j];
@@ -1982,10 +1919,6 @@ mod tests {
                 #[test]
                 fn batch_dispatch() {
                     batch_mul_dispatch_arms_agree::<$curve>();
-                }
-                #[test]
-                fn batch_inversion() {
-                    batch_invert_skips_zeros::<$curve>();
                 }
                 #[test]
                 fn batch_scalars() {
