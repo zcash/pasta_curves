@@ -5,7 +5,7 @@
 /// point type is `$name`, and the impls whose receiver is the affine type.
 macro_rules! new_affine_impl {
     (($($privacy:tt)*), $name:ident, $name_affine:ident, $base:ident, $scalar:ident,
-     $curve_type:ident, $unchecked_ctor:ident) => {
+     $params:ty, $curve_type:ident, $unchecked_ctor:ident) => {
         /// Represents a point in the affine coordinate space (or the point at
         /// infinity).
         #[derive(Copy, Clone)]
@@ -196,7 +196,7 @@ macro_rules! new_affine_impl {
                     xs[k] = x.unwrap_or($base::ZERO);
                 }
                 let rhs: [$base; K] = core::array::from_fn(|k| {
-                    xs[k].sqr_n_mul_runtime(1, &xs[k]) + $name::curve_constant_b()
+                    xs[k].sqr_n_mul_runtime(1, &xs[k]) + <$params>::B
                 });
                 let roots = $base::sqrt_alt_lanes(&rhs);
                 for k in 0..chunk.len() {
@@ -227,7 +227,7 @@ macro_rules! new_affine_impl {
                 $base::from_repr(tmp).and_then(|x| {
                     CtOption::new(Self::identity(), x.is_zero() & (!ysign)).or_else(|| {
                         let x3 = x.sqr_n_mul_runtime(1, &x);
-                        (x3 + $name::curve_constant_b()).sqrt().and_then(|y| {
+                        (x3 + <$params>::B).sqrt().and_then(|y| {
                             let sign = y.is_odd();
 
                             let y = $base::conditional_select(&y, &-y, ysign ^ sign);
@@ -277,7 +277,7 @@ macro_rules! new_affine_impl {
 
             fn is_on_curve(&self) -> Choice {
                 // y^2 - x^3 - ax ?= b
-                (Field::square(&self.y) - (Field::square(&self.x) + &$name::curve_constant_a()) * self.x).ct_eq(&$name::curve_constant_b())
+                (Field::square(&self.y) - (Field::square(&self.x) + &<$params>::A) * self.x).ct_eq(&<$params>::B)
                     | self.is_identity()
             }
 
@@ -293,11 +293,11 @@ macro_rules! new_affine_impl {
             }
 
             fn a() -> Self::Base {
-                $name::curve_constant_a()
+                <$params>::A
             }
 
             fn b() -> Self::Base {
-                $name::curve_constant_b()
+                <$params>::B
             }
         }
 

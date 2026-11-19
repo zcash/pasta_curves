@@ -50,7 +50,7 @@ macro_rules! impl_batch_mul_same_scalar_vartime {
 /// type is `$name_affine`, and the impls whose receiver is the Jacobian type.
 macro_rules! new_jacobian_impl {
     (($($privacy:tt)*), $name:ident, $name_affine:ident, $iso:ident, $base:ident,
-     $scalar:ident, $curve_id:literal, $a_raw:expr, $b_raw:expr, $curve_type:ident,
+     $scalar:ident, $params:ty, $curve_type:ident,
      $same_scalar_mul:ident) => {
         /// A point in Jacobian coordinates.
         ///
@@ -72,16 +72,6 @@ macro_rules! new_jacobian_impl {
         }
 
         impl $name {
-            // Without `alloc`, only the curves without a generator use it, in `double`.
-            #[cfg_attr(not(feature = "alloc"), allow(dead_code))]
-            const fn curve_constant_a() -> $base {
-                $base::from_raw($a_raw)
-            }
-
-            const fn curve_constant_b() -> $base {
-                $base::from_raw($b_raw)
-            }
-
             #[cfg(feature = "alloc")]
             fn is_identity_vartime(&self) -> bool {
                 self.z.is_zero_vartime()
@@ -97,7 +87,7 @@ macro_rules! new_jacobian_impl {
                     let ysign = (rng.try_next_u32()? % 2) as u8;
 
                     let x3 = x.sqr_n_mul_runtime(1, &x);
-                    let y = (x3 + $name::curve_constant_b()).sqrt();
+                    let y = (x3 + <$params>::B).sqrt();
                     if let Some(y) = Option::<$base>::from(y) {
                         let sign = y.is_odd().unwrap_u8();
                         let y = if ysign ^ sign == 0 { y } else { -y };
@@ -111,7 +101,7 @@ macro_rules! new_jacobian_impl {
                 }
             }
 
-            impl_jacobian_curve_specific!($name, $base, $curve_type);
+            impl_jacobian_curve_specific!($name, $base, $params, $curve_type);
 
             fn identity() -> Self {
                 Self {
@@ -154,16 +144,16 @@ macro_rules! new_jacobian_impl {
             type Base = $base;
             type AffineExt = $name_affine;
 
-            const CURVE_ID: &'static str = $curve_id;
+            const CURVE_ID: &'static str = <$params>::ID;
 
             impl_jacobian_curve_ext!($name, $iso, $base, $curve_type);
 
             fn a() -> Self::Base {
-                $name::curve_constant_a()
+                <$params>::A
             }
 
             fn b() -> Self::Base {
-                $name::curve_constant_b()
+                <$params>::B
             }
 
             fn new_jacobian(x: Self::Base, y: Self::Base, z: Self::Base) -> CtOption<Self> {
@@ -182,8 +172,8 @@ macro_rules! new_jacobian_impl {
                 let z2 = Field::square(&self.z);
                 let z4 = Field::square(&z2);
                 let z6 = z4 * z2;
-                (Field::square(&self.y) - (Field::square(&self.x) + $name::curve_constant_a() * z4) * self.x)
-                    .ct_eq(&(z6 * $name::curve_constant_b()))
+                (Field::square(&self.y) - (Field::square(&self.x) + <$params>::A * z4) * self.x)
+                    .ct_eq(&(z6 * <$params>::B))
                     | self.z.is_zero()
             }
 
@@ -579,7 +569,7 @@ macro_rules! new_jacobian_impl {
 }
 
 macro_rules! impl_jacobian_curve_specific {
-    ($name:ident, $base:ident, special_a0_b5) => {
+    ($name:ident, $base:ident, $params:ty, special_a0_b5) => {
         fn generator() -> Self {
             // NOTE: This is specific to b = 5
 
@@ -624,7 +614,7 @@ macro_rules! impl_jacobian_curve_specific {
             $name::conditional_select(&tmp, &$name::identity(), self.is_identity())
         }
     };
-    ($name:ident, $base:ident, general) => {
+    ($name:ident, $base:ident, $params:ty, general) => {
         /// Unimplemented: there is no standard generator for this curve.
         fn generator() -> Self {
             unimplemented!()
@@ -640,7 +630,7 @@ macro_rules! impl_jacobian_curve_specific {
             let a = Field::square(&yy);
             let zz = Field::square(&self.z);
             let s = Field::double(&(Field::square(&(self.x + yy)) - xx - a));
-            let m = Field::double(&xx) + xx + $name::curve_constant_a() * Field::square(&zz);
+            let m = Field::double(&xx) + xx + <$params>::A * Field::square(&zz);
             let x3 = Field::square(&m) - Field::double(&s);
             let a = Field::double(&a);
             let a = Field::double(&a);

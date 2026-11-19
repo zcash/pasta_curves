@@ -84,12 +84,15 @@ use ff::WithSmallOrderMulGroup;
 
 use super::{Fp, Fq};
 
+use params::CurveParams;
+
 #[macro_use]
 mod affine;
 #[macro_use]
 mod jacobian;
 #[macro_use]
 mod maps;
+pub(crate) mod params;
 
 pub(crate) mod projective;
 #[macro_use]
@@ -100,14 +103,14 @@ use crate::arithmetic::{Coordinates, CurveAffine, CurveExt, CurveExtUnchecked, V
 
 macro_rules! new_curve_impl {
     (($($privacy:tt)*), $name:ident, $name_affine:ident, $iso:ident, $base:ident, $scalar:ident,
-     $curve_id:literal, $a_raw:expr, $b_raw:expr, $curve_type:ident,
+     $params:ty, $curve_type:ident,
      $unchecked_ctor:ident, $same_scalar_mul:ident) => {
         new_jacobian_impl!(
-            ($($privacy)*), $name, $name_affine, $iso, $base, $scalar, $curve_id, $a_raw, $b_raw,
+            ($($privacy)*), $name, $name_affine, $iso, $base, $scalar, $params,
             $curve_type, $same_scalar_mul
         );
         new_affine_impl!(
-            ($($privacy)*), $name, $name_affine, $base, $scalar, $curve_type,
+            ($($privacy)*), $name, $name_affine, $base, $scalar, $params, $curve_type,
             $unchecked_ctor
         );
         new_maps_impl!($name, $name_affine, $base);
@@ -121,9 +124,7 @@ new_curve_impl!(
     IsoEp,
     Fp,
     Fq,
-    "pallas",
-    [0, 0, 0, 0],
-    [5, 0, 0, 0],
+    params::Pallas,
     special_a0_b5,
     with_unchecked_ctor,
     glv
@@ -135,9 +136,7 @@ new_curve_impl!(
     IsoEq,
     Fq,
     Fp,
-    "vesta",
-    [0, 0, 0, 0],
-    [5, 0, 0, 0],
+    params::Vesta,
     special_a0_b5,
     with_unchecked_ctor,
     glv
@@ -149,14 +148,7 @@ new_curve_impl!(
     Ep,
     Fp,
     Fq,
-    "iso-pallas",
-    [
-        0x92bb4b0b657a014b,
-        0xb74134581a27a59f,
-        0x49be2d7258370742,
-        0x18354a2eb0ea8c9c,
-    ],
-    [1265, 0, 0, 0],
+    params::IsoPallas,
     general,
     without_unchecked_ctor,
     native
@@ -168,14 +160,7 @@ new_curve_impl!(
     Eq,
     Fq,
     Fp,
-    "iso-vesta",
-    [
-        0xc515ad7242eaa6b1,
-        0x9673928c7d01b212,
-        0x81639c4d96f78773,
-        0x267f9b2ee592271a,
-    ],
-    [1265, 0, 0, 0],
+    params::IsoVesta,
     general,
     without_unchecked_ctor,
     native

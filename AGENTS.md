@@ -430,6 +430,8 @@ specifics:
 - **Curve code is split by model.** `src/curves.rs` documents the curves and their models
   and invokes `new_curve_impl!` for Pallas, Vesta and the isogenous curves used for
   hashing; the code of each model lives in its own file under `src/curves/`:
+  - `params.rs`: each curve's parameters (a, b, curve ID) as a type implementing
+    `CurveParams`, which every model reads;
   - `affine.rs`: the affine chart, the public affine point type (`new_affine_impl!`);
   - `jacobian.rs`: Jacobian coordinates, weights (2, 3, 1), the public point type
     (`new_jacobian_impl!`);

@@ -33,10 +33,10 @@ use core::ops::Neg;
 use ff::Field;
 use subtle::{Choice, ConditionallySelectable};
 
-/// The constant $b$ of Pallas and Vesta, $y^2 = x^3 + b$. The formulas multiply by
-/// small multiples of it with additions, through the functions below, rather than
-/// with a field multiplication.
-pub(crate) const PASTA_B: i64 = 5;
+// The constant $b$ of Pallas and Vesta, defined with the curves' parameters. The
+// formulas multiply by small multiples of it with additions, through the
+// functions below, rather than with a field multiplication.
+pub(crate) use super::params::PASTA_B;
 
 /// The constant of $E_{-27b}$, onto which [`Projective::isogeny_3`] maps $E_b$.
 const IMAGE_B: i64 = -27 * PASTA_B;

@@ -9,8 +9,8 @@
 # - the maps between Jacobian and projective coordinates send each model of
 #   the curve onto the other, and are inverse up to the scaling of each model.
 #
-# It prints the constants of `src/curves/projective.rs` in the shape of the
-# Rust source. Run from this directory:
+# It prints the constants of `src/curves/params.rs` and
+# `src/curves/projective.rs` in the shape of the Rust source. Run from this directory:
 #
 #     uv run sage radix27_tripling.sage
 #
@@ -131,7 +131,7 @@ for F, order in [(GF(p), q), (GF(q), p)]:
     o = tuple(R.change_ring(F)(c)(X=0, Y=1, Z=0, b=5) for c in three)
     assert o[0] == 0 and o[2] == 0 and o[1] != 0
 
-# --- The constants of `src/curves/projective.rs` -----------------------------
+# --- The constants of `src/curves/params.rs` and `src/curves/projective.rs` --
 
 PASTA_B = 5
 IMAGE_B = -27 * PASTA_B
