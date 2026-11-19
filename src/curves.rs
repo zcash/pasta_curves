@@ -155,7 +155,7 @@ macro_rules! new_curve_impl {
                 }
             }
 
-            impl_projective_curve_specific!($name, $base, $curve_type);
+            impl_jacobian_curve_specific!($name, $base, $curve_type);
 
             fn identity() -> Self {
                 Self {
@@ -200,7 +200,7 @@ macro_rules! new_curve_impl {
 
             const CURVE_ID: &'static str = $curve_id;
 
-            impl_projective_curve_ext!($name, $iso, $base, $curve_type);
+            impl_jacobian_curve_ext!($name, $iso, $base, $curve_type);
 
             fn a() -> Self::Base {
                 $name::curve_constant_a()
@@ -754,8 +754,8 @@ macro_rules! new_curve_impl {
 
             fn mul(self, other: &'b $scalar) -> Self::Output {
                 if_homogeneous_mul!(
-                    mul_curve_specific!($name, $base, $curve_type, projective, self, other),
-                    mul_curve_specific!($name, $base, general, projective, self, other),
+                    mul_curve_specific!($name, $base, $curve_type, jacobian, self, other),
+                    mul_curve_specific!($name, $base, general, jacobian, self, other),
                 )
             }
         }
@@ -1107,7 +1107,7 @@ impl EqAffine {
 }
 
 macro_rules! mul_curve_specific {
-    ($name:ident, $base:ident, special_a0_b5, projective, $point:expr, $scalar:expr) => {{
+    ($name:ident, $base:ident, special_a0_b5, jacobian, $point:expr, $scalar:expr) => {{
         let point =
             crate::scalar_mul::Homogeneous::<$base>::from_jacobian($point.x, $point.y, $point.z);
         let (x, y, z) = point.multiply(&$scalar.to_repr()).to_jacobian();
@@ -1150,7 +1150,7 @@ macro_rules! mul_curve_specific {
     }};
 }
 
-macro_rules! impl_projective_curve_specific {
+macro_rules! impl_jacobian_curve_specific {
     ($name:ident, $base:ident, special_a0_b5) => {
         fn generator() -> Self {
             // NOTE: This is specific to b = 5
@@ -1232,7 +1232,7 @@ macro_rules! impl_projective_curve_specific {
 }
 
 #[cfg(feature = "alloc")]
-macro_rules! impl_projective_curve_ext {
+macro_rules! impl_jacobian_curve_ext {
     ($name:ident, $iso:ident, $base:ident, special_a0_b5) => {
         fn hash_to_curve<'a>(domain_prefix: &'a str) -> Box<dyn Fn(&[u8]) -> Self + 'a> {
             use super::hashtocurve;
@@ -1421,13 +1421,13 @@ fn native_scalar_multiplication_matches_jacobian_fallback() {
                     generator.double() + generator,
                 ] {
                     let affine = point.to_affine();
-                    let projective_product =
-                        mul_curve_specific!($name, $base, general, projective, point, scalar);
+                    let jacobian_product =
+                        mul_curve_specific!($name, $base, general, jacobian, point, scalar);
                     let affine_product =
                         mul_curve_specific!($name, $base, general, affine, affine, scalar);
-                    assert_eq!(point * scalar, projective_product);
+                    assert_eq!(point * scalar, jacobian_product);
                     assert_eq!(affine * scalar, affine_product);
-                    assert_eq!(projective_product, affine_product);
+                    assert_eq!(jacobian_product, affine_product);
                 }
                 scalar = scalar.square() + $scalar::ONE;
             }
@@ -1645,7 +1645,7 @@ mod zeroize_tests {
     use super::{Ep, EpAffine, Eq, EqAffine};
 
     #[test]
-    fn projective_points_zeroize_to_identity() {
+    fn jacobian_points_zeroize_to_identity() {
         let mut p = Ep::generator();
         p.zeroize();
         assert!(bool::from(p.is_identity()));
