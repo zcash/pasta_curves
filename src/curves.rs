@@ -743,7 +743,10 @@ macro_rules! new_curve_impl {
             type Output = $name;
 
             fn mul(self, other: &'b $scalar) -> Self::Output {
-                mul_curve_specific!($name, $base, $curve_type, projective, self, other)
+                if_homogeneous_mul!(
+                    mul_curve_specific!($name, $base, $curve_type, projective, self, other),
+                    mul_curve_specific!($name, $base, general, projective, self, other),
+                )
             }
         }
 
@@ -833,7 +836,10 @@ macro_rules! new_curve_impl {
             type Output = $name;
 
             fn mul(self, other: &'b $scalar) -> Self::Output {
-                mul_curve_specific!($name, $base, $curve_type, affine, self, other)
+                if_homogeneous_mul!(
+                    mul_curve_specific!($name, $base, $curve_type, affine, self, other),
+                    mul_curve_specific!($name, $base, general, affine, self, other),
+                )
             }
         }
 
@@ -1389,6 +1395,37 @@ new_curve_impl!(
     without_unchecked_ctor,
     native
 );
+
+#[cfg(test)]
+#[test]
+fn native_scalar_multiplication_matches_jacobian_fallback() {
+    macro_rules! check {
+        ($name:ident, $base:ident, $scalar:ident) => {{
+            let generator = $name::generator();
+            let mut scalar = -$scalar::ONE;
+            for _ in 0..16 {
+                for point in [
+                    $name::identity(),
+                    generator,
+                    -generator,
+                    generator.double() + generator,
+                ] {
+                    let affine = point.to_affine();
+                    let projective_product =
+                        mul_curve_specific!($name, $base, general, projective, point, scalar);
+                    let affine_product =
+                        mul_curve_specific!($name, $base, general, affine, affine, scalar);
+                    assert_eq!(point * scalar, projective_product);
+                    assert_eq!(affine * scalar, affine_product);
+                    assert_eq!(projective_product, affine_product);
+                }
+                scalar = scalar.square() + $scalar::ONE;
+            }
+        }};
+    }
+    check!(Ep, Fp, Fq);
+    check!(Eq, Fq, Fp);
+}
 
 impl Ep {
     /// Constants used for computing the isogeny from IsoEp to Ep.
