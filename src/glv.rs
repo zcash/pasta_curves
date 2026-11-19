@@ -46,8 +46,9 @@
 //!
 //! # Security
 //!
-//! Everything in this module runs in variable time with respect to both the
-//! scalar and the point. The decomposition, the recoding, and which additions
+//! The public scalar multiplication methods in this module run in variable time
+//! with respect to both the scalar and the point. The sign/magnitude conversion,
+//! inside decomposition, the recoding, and which additions
 //! the ladder performs all depend on the scalar; the point additions branch
 //! on the points they add, for the identity and for equal coordinates.
 //! **The scalar and the point must both be public**, as in signature or proof

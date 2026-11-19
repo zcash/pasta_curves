@@ -1,4 +1,4 @@
-//! Scalar decomposition arithmetic shared by the GLV recodings.
+//! Scalar decomposition arithmetic shared by the GLV recodings and native multiplication.
 
 use ff::PrimeField;
 use group::Group;
@@ -8,7 +8,7 @@ use crate::arithmetic::{mac, sbb};
 
 /// The magnitude of a decomposition half is below `2^HALF_BITS`: the bound
 /// [`decompose`] guarantees, on which the recodings of the halves rely.
-#[cfg(feature = "glv")]
+#[cfg(any(feature = "glv", test))]
 pub(crate) const HALF_BITS: usize = 127;
 
 /// The halves [`decompose`] splits a scalar into: `k1` for $P$ and `k2` for
@@ -27,8 +27,33 @@ pub(crate) const HALVES: usize = 2;
 /// below `2^127` ([`HALF_BITS`]), the bound [`signed_halves`], [`super::wnaf_digits`]
 /// and the MSM's Booth digits rely on; `crate::glv_eisenstein` relies on the
 /// tighter one.
-#[cfg(feature = "glv")]
+#[cfg(any(feature = "glv", test))]
 pub(crate) fn decompose<C>(k: &C::Scalar) -> ((bool, u128), (bool, u128))
+where
+    C: Group + GlvConstants,
+{
+    let (k1, k2) = split_limbs::<C>(k);
+    (signed_halves(k1), signed_halves(k2))
+}
+
+/// Constant-time GLV split into signed coefficients for native multiplication.
+/// Both coefficients fit strictly within `(-2^127, 2^127)` for every canonical
+/// scalar. The signed conversion has no scalar-dependent branching or checks.
+#[allow(dead_code)] // Used by native scalar multiplication once its GLV ladder is enabled.
+#[inline]
+pub(crate) fn decompose_signed<C>(k: &C::Scalar) -> (i128, i128)
+where
+    C: Group + GlvConstants,
+{
+    let (k1, k2) = split_limbs::<C>(k);
+    // The proven bound makes the lower half of each two's-complement value
+    // precisely its i128 representation; no conditional magnitude conversion.
+    (low_u128(k1) as i128, low_u128(k2) as i128)
+}
+
+/// Split into two 256-bit two's-complement halves using the per-curve basis.
+#[inline]
+fn split_limbs<C>(k: &C::Scalar) -> ([u64; 4], [u64; 4])
 where
     C: Group + GlvConstants,
 {
@@ -42,7 +67,7 @@ where
     );
     // k2 = c1*BASIS_1_B_ABS - c2*BASIS_2_B   (v1.b < 0, v2.b > 0)
     let k2 = sub256(mul_u128(c1, C::BASIS_1_B_ABS), mul_u128(c2, C::BASIS_2_B));
-    (signed_halves(k1), signed_halves(k2))
+    (k1, k2)
 }
 
 /// The four little-endian limbs of a Pasta scalar. (Pasta scalars have a
@@ -115,7 +140,7 @@ pub(super) fn sub256(a: [u64; 4], b: [u64; 4]) -> [u64; 4] {
 /// (asserted in debug builds, here and in [`super::wnaf_digits`], and checked by the
 /// `decompose` tests), so the high limbs of the magnitude are always zero and
 /// no information is lost.
-#[cfg(feature = "glv")]
+#[cfg(any(feature = "glv", test))]
 fn signed_halves(x: [u64; 4]) -> (bool, u128) {
     // Guard the truncation itself: the discarded limbs must be the sign
     // extension of bit 127. Values of 2^128 or more would otherwise be
@@ -126,12 +151,110 @@ fn signed_halves(x: [u64; 4]) -> (bool, u128) {
         x[2] == ext && x[3] == ext,
         "GLV half does not fit in 128 bits"
     );
-    let low = u128::from(x[0]) | (u128::from(x[1]) << 64);
+    let low = low_u128(x);
     if x[3] >> 63 == 0 {
         (false, low)
     } else {
         // Two's-complement negation commutes with truncation to the low 128
         // bits, and the magnitude lives entirely there.
         (true, (!low).wrapping_add(1))
+    }
+}
+
+#[inline]
+fn low_u128(x: [u64; 4]) -> u128 {
+    u128::from(x[0]) | (u128::from(x[1]) << 64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Fp, Fq, pallas, vesta};
+    use ff::{Field, PrimeField, WithSmallOrderMulGroup};
+    use proptest::prelude::*;
+
+    fn signed<F: PrimeField>(x: i128) -> F {
+        let bits = x as u128;
+        let mask = (bits >> 127).wrapping_neg();
+        let magnitude = (bits ^ mask).wrapping_sub(mask);
+        let positive = F::from_u128(magnitude);
+        if x < 0 { -positive } else { positive }
+    }
+
+    fn check<C>(scalar: C::Scalar)
+    where
+        C: Group + GlvConstants,
+        C::Scalar: PrimeField + WithSmallOrderMulGroup<3> + core::fmt::Debug,
+    {
+        let (k1, k2) = decompose_signed::<C>(&scalar);
+        assert!(k1.unsigned_abs() < (1u128 << HALF_BITS));
+        assert!(k2.unsigned_abs() < (1u128 << HALF_BITS));
+        assert_eq!(
+            signed::<C::Scalar>(k1) + signed::<C::Scalar>(k2) * C::Scalar::ZETA,
+            scalar
+        );
+
+        let ((negative1, magnitude1), (negative2, magnitude2)) = decompose::<C>(&scalar);
+        let reference1 = if negative1 {
+            -(magnitude1 as i128)
+        } else {
+            magnitude1 as i128
+        };
+        let reference2 = if negative2 {
+            -(magnitude2 as i128)
+        } else {
+            magnitude2 as i128
+        };
+        assert_eq!((k1, k2), (reference1, reference2));
+    }
+
+    fn edges<C>()
+    where
+        C: Group + GlvConstants,
+        C::Scalar: PrimeField + WithSmallOrderMulGroup<3> + core::fmt::Debug,
+    {
+        check::<C>(C::Scalar::ZERO);
+        check::<C>(C::Scalar::ONE);
+        check::<C>(-C::Scalar::ONE);
+        check::<C>(C::Scalar::ZETA);
+        check::<C>(-C::Scalar::ZETA);
+        check::<C>(-C::Scalar::from(2u64));
+        for i in 0..256u64 {
+            let k = C::Scalar::from(i).square().square() + C::Scalar::ZETA;
+            check::<C>(k);
+        }
+    }
+
+    #[test]
+    fn canonical_edges() {
+        edges::<vesta::Point>();
+        edges::<pallas::Point>();
+    }
+
+    proptest! {
+        #[test]
+        fn full_width_fp(limbs in any::<[u64; 4]>()) {
+            // Field arithmetic maps all random inputs to canonical scalars.
+            let k = Fp::from(limbs[0]) + Fp::from(limbs[1]).square()
+                + Fp::from(limbs[2]).square().square() + Fp::from(limbs[3]);
+            check::<vesta::Point>(k);
+        }
+
+        #[test]
+        fn full_width_fq(limbs in any::<[u64; 4]>()) {
+            let k = Fq::from(limbs[0]) + Fq::from(limbs[1]).square()
+                + Fq::from(limbs[2]).square().square() + Fq::from(limbs[3]);
+            check::<pallas::Point>(k);
+        }
+    }
+
+    #[test]
+    fn signed_matches_sign_magnitude() {
+        for i in 0..1024u64 {
+            let p = (Fp::from(0x9e37_79b9_7f4a_7c15 + i).square() + Fp::from(i)).square();
+            let q = (Fq::from(0x9e37_79b9_7f4a_7c15 + i).square() + Fq::from(i)).square();
+            check::<vesta::Point>(p);
+            check::<pallas::Point>(q);
+        }
     }
 }
