@@ -26,6 +26,11 @@ and this project adheres to Rust's notion of
 - The public-input GLV MSM planner weights affine and projective bucket costs
   separately and considers up to two wider windows when selecting a backend.
 
+### Changed
+- Public point batch decoding uses four-lane AVX2 square-root arithmetic on
+  x86-64 with `asm` and `sqrt-table` when runtime CPU and OS state checks permit
+  it. Unsupported environments retain the scalar backend.
+
 ## [0.6.3] - 2026-11-16
 ### Added
 - An ARMv7E-M assembly backend for the `asm` feature flag on the
