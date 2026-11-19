@@ -12,7 +12,7 @@
 #![cfg_attr(target_arch = "arm", allow(dead_code))]
 
 use ff::Field;
-use subtle::{ConditionallySelectable, ConstantTimeEq};
+use subtle::{Choice, ConditionallyNegatable, ConditionallySelectable, ConstantTimeEq};
 
 use crate::curves::projective::{PASTA_B, Projective};
 
@@ -36,8 +36,16 @@ const TRITS: usize = 161;
 /// `TRITS` rounded up to a multiple of `TRITS_PER_DIGIT`, with zero padding on top.
 const PADDED_TRITS: usize = TRITS.div_ceil(TRITS_PER_DIGIT) * TRITS_PER_DIGIT;
 
-/// The table holds $1P, \dots, 26P$, one entry per nonzero digit.
-const TABLE_LEN: usize = RADIX - 1;
+/// The digits of the ladder, after padding.
+const DIGITS: usize = PADDED_TRITS / TRITS_PER_DIGIT;
+
+/// The largest magnitude of a signed digit. Digits are balanced, in
+/// $[-13, 13]$, which is again a complete set of residues modulo 27.
+const HALF_RADIX: u8 = (RADIX / 2) as u8;
+
+/// The table holds $1P, \dots, 13P$, one entry per nonzero digit magnitude; a
+/// negative digit selects its magnitude and negates it.
+const TABLE_LEN: usize = HALF_RADIX as usize;
 
 /// The scalar is recoded from its encoding read as `u32` limbs.
 const LIMBS: usize = 8;
@@ -46,8 +54,12 @@ const LIMBS: usize = 8;
 const TOP_LIMB_MASK: u32 = (1 << (SCALAR_BITS - 224)) - 1;
 
 const _: () = assert!(RADIX == (TERNARY as usize).pow(TRITS_PER_DIGIT as u32));
-// The table is filled by pairs, then its last entry by one doubling.
-const _: () = assert!(TABLE_LEN % 2 == 0);
+// The table is filled by pairs after its first entry.
+const _: () = assert!(TABLE_LEN % 2 == 1);
+// A balanced expansion with `DIGITS` digits covers every integer of magnitude at
+// most (27^54 - 1) / 2, about 2^255.8, so it needs no extra digit for a scalar
+// below 2^255: 27^54 = 3^162 > 2 * 3^161 > 2^256.
+const _: () = assert!(DIGITS == 54 && PADDED_TRITS == 2 * 81);
 const _: () = assert!(LIMBS * 32 == 256);
 
 /// Returns `by` times `p`, for the low 255 bits of the little-endian `by`,
@@ -58,30 +70,28 @@ pub(crate) fn multiply<F: Field>(
 ) -> Projective<F, PASTA_B> {
     // `mut` only to clear the digits afterwards, with `zeroize`.
     #[cfg_attr(not(feature = "zeroize"), allow(unused_mut))]
-    let mut digits = to_radix_3(by);
-    // Multiples 1P through 26P. Each pair doubles an earlier entry and
-    // adds P, using complete formulas even when P is the identity.
-    // The table occupies `TABLE_LEN` points of 96 bytes, 2496 bytes, on the
-    // stack.
+    let mut digits = to_signed_radix_27(by);
+    // Multiples 1P through 13P. Each pair doubles an earlier entry and adds P,
+    // using complete formulas even when P is the identity.
     let mut table = [*p; TABLE_LEN];
-    for i in (1..TABLE_LEN - 1).step_by(2) {
+    for i in (1..TABLE_LEN).step_by(2) {
         table[i] = table[i >> 1].double();
         table[i + 1] = table[i].add(p);
     }
-    table[TABLE_LEN - 1] = table[(TABLE_LEN - 1) >> 1].double();
 
     let mut acc = Projective::identity();
-    // A fixed `PADDED_TRITS / TRITS_PER_DIGIT` (54) rounds, each scanning every
-    // table entry and doing three triplings and one addition.
-    for trits in digits.chunks_exact(TRITS_PER_DIGIT).rev() {
-        let digit = trits
-            .iter()
-            .rev()
-            .fold(0, |digit, &trit| digit * TERNARY + trit);
+    // A fixed `DIGITS` (54) rounds, each scanning every table entry for the
+    // digit's magnitude, negating the result for a negative digit, and doing
+    // three triplings and one addition.
+    for &digit in digits.iter().rev() {
+        let negative = (digit as u8) >> 7;
+        let magnitude = ((digit as u8) ^ 0u8.wrapping_sub(negative)).wrapping_add(negative);
         let mut addend = Projective::identity();
         for (i, entry) in table.iter().enumerate() {
-            addend = Projective::conditional_select(&addend, entry, digit.ct_eq(&(i as u8 + 1)));
+            addend =
+                Projective::conditional_select(&addend, entry, magnitude.ct_eq(&(i as u8 + 1)));
         }
+        addend.conditional_negate(Choice::from(negative));
         acc = acc.triple().triple().triple().add(&addend);
         #[cfg(feature = "zeroize")]
         zeroize::Zeroize::zeroize(&mut addend);
@@ -95,6 +105,32 @@ pub(crate) fn multiply<F: Field>(
         zeroize::Zeroize::zeroize(&mut table);
     }
     acc
+}
+
+/// Recodes the low 255 bits of a little-endian scalar into `DIGITS` balanced
+/// digits in radix 27, least significant first, each in $[-13, 13]$.
+///
+/// The unsigned digits come from three trits each; a digit above 13 becomes
+/// itself minus 27 and carries one into the next. Every step is a fixed sequence
+/// of byte operations, without branches on the scalar.
+pub(crate) fn to_signed_radix_27(by: &[u8; 32]) -> [i8; DIGITS] {
+    #[cfg_attr(not(feature = "zeroize"), allow(unused_mut))]
+    let mut trits = to_radix_3(by);
+    let mut digits = [0i8; DIGITS];
+    let mut carry = 0u8;
+    for (digit, trits) in digits.iter_mut().zip(trits.chunks_exact(TRITS_PER_DIGIT)) {
+        let unsigned = trits
+            .iter()
+            .rev()
+            .fold(0, |digit, &trit| digit * TERNARY + trit)
+            + carry;
+        // `unsigned` is at most 27; it is above 13 exactly when 13 - unsigned wraps.
+        carry = HALF_RADIX.wrapping_sub(unsigned) >> 7;
+        *digit = unsigned.wrapping_sub(carry * RADIX as u8) as i8;
+    }
+    #[cfg(feature = "zeroize")]
+    zeroize::Zeroize::zeroize(&mut trits);
+    digits
 }
 
 /// Recodes the low 255 bits of a little-endian scalar into 161 little-endian

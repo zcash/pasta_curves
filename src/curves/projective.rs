@@ -28,6 +28,8 @@
 // tests use this model there.
 #![cfg_attr(target_arch = "arm", allow(dead_code))]
 
+use core::ops::Neg;
+
 use ff::Field;
 use subtle::{Choice, ConditionallySelectable};
 
@@ -231,6 +233,20 @@ impl<F: Field, const B: i64> Default for Projective<F, B> {
 
 #[cfg(feature = "zeroize")]
 impl<F: Field, const B: i64> zeroize::DefaultIsZeroes for Projective<F, B> {}
+
+/// The opposite point, $(X : -Y : Z)$; it fixes the identity $(0 : 1 : 0)$ as a
+/// class, since $(0 : -1 : 0) = (0 : 1 : 0)$.
+impl<F: Field, const B: i64> Neg for &Projective<F, B> {
+    type Output = Projective<F, B>;
+
+    fn neg(self) -> Projective<F, B> {
+        Projective {
+            x: self.x,
+            y: -self.y,
+            z: self.z,
+        }
+    }
+}
 
 impl<F: Field, const B: i64> ConditionallySelectable for Projective<F, B> {
     fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {

@@ -1,4 +1,4 @@
-use super::{PADDED_TRITS, TRITS, multiply, to_radix_3};
+use super::{HALF_RADIX, PADDED_TRITS, RADIX, TRITS, multiply, to_radix_3, to_signed_radix_27};
 use crate::curves::projective::tests::assert_same;
 use crate::curves::projective::{PASTA_B, Projective};
 use ff::{Field, PrimeField};
@@ -7,7 +7,30 @@ use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 use subtle::ConditionallySelectable;
 
+/// The balanced radix-27 digits are in [-13, 13] and give back the low 255 bits
+/// of `by` by Horner's rule; every partial sum is nonnegative, so a byte array
+/// with a signed carry suffices.
+fn check_signed_reconstruction(by: &[u8; 32]) {
+    let digits = to_signed_radix_27(by);
+    let half = i8::try_from(HALF_RADIX).unwrap();
+    let mut reconstructed = [0u8; 32];
+    for &digit in digits.iter().rev() {
+        assert!((-half..=half).contains(&digit));
+        let mut carry = i32::from(digit);
+        for byte in &mut reconstructed {
+            let value = i32::from(*byte) * RADIX as i32 + carry;
+            *byte = value.rem_euclid(256) as u8;
+            carry = value.div_euclid(256);
+        }
+        assert_eq!(carry, 0);
+    }
+    let mut expected = *by;
+    expected[31] &= 0x7f;
+    assert_eq!(reconstructed, expected);
+}
+
 fn check_reconstruction(by: &[u8; 32]) -> [u8; PADDED_TRITS] {
+    check_signed_reconstruction(by);
     let digits = to_radix_3(by);
     let mut reconstructed = [0u8; 32];
     for &digit in digits.iter().rev() {
@@ -137,6 +160,19 @@ macro_rules! curve_tests {
                     scalars.push(power);
                     scalars.push(power + <$scalar>::ONE);
                     power *= <$scalar>::from(3);
+                }
+                // Around the edges of the balanced digits: 13 and 14, and
+                // (27^k - 1) / 2, whose digits are all 13, and the next integer,
+                // which carries through all of them.
+                scalars.push(<$scalar>::from(13));
+                scalars.push(<$scalar>::from(14));
+                let half = <$scalar>::from(2).invert().unwrap();
+                let mut power = <$scalar>::from(27);
+                for _ in 0..53 {
+                    let all_thirteens = (power - <$scalar>::ONE) * half;
+                    scalars.push(all_thirteens);
+                    scalars.push(all_thirteens + <$scalar>::ONE);
+                    power *= <$scalar>::from(27);
                 }
                 let mut rng = XorShiftRng::from_seed([0x53; 16]);
                 for _ in 0..32 {
