@@ -110,14 +110,6 @@ where
     )
 }
 
-/// $\varphi(P) = (\zeta x, y)$, for a sum of the bucket reducer.
-pub(crate) fn phi<C: GlvParams>(p: Sum<C::AffineExt>) -> Sum<C::AffineExt> {
-    p.map(|p| Coordinates {
-        x: phi_x::<C>(p.x),
-        y: p.y,
-    })
-}
-
 /// `k * p` for every point `p` and every recoded scalar `k`: the product of
 /// `points[i]` and `digits[j]` is at index `i * digits.len() + j` of the
 /// result, which is affine.

@@ -164,7 +164,7 @@ use crate::{
     glv::{
         GlvParams, Recoding, affine_from_xy_unchecked, decompose,
         grid::{self, OrbitRecoding, Sum},
-        normalize_vartime,
+        normalize_vartime, phi_x,
     },
 };
 
@@ -1234,7 +1234,7 @@ where
         let [t1, x257, y364] = grid::add_columns([(&b[1], &t32), (&x25, &b[7]), (&y36, &minus_b4)]);
         let [t0, y] = grid::add_columns([(&b[0], &t1), (&y364, &t1)]);
         let [x] = grid::add_columns([(&t0, &x257)]);
-        let minus_phi_y: Vec<_> = y.iter().map(|&p| neg(grid::phi::<C>(p))).collect();
+        let minus_phi_y: Vec<_> = y.iter().map(|&p| neg(phi::<C>(p))).collect();
         let [sum] = grid::add_columns([(&x, &minus_phi_y)]);
         sum
     }
@@ -1243,6 +1243,14 @@ where
 /// $-P$, for a sum of the bucket reducer.
 fn neg<A: CurveAffine>(p: Sum<A>) -> Sum<A> {
     p.map(|p| Coordinates { x: p.x, y: -p.y })
+}
+
+/// $\varphi(P) = (\zeta x, y)$, for a sum of the bucket reducer.
+fn phi<C: GlvParams>(p: Sum<C::AffineExt>) -> Sum<C::AffineExt> {
+    p.map(|p| Coordinates {
+        x: phi_x::<C>(p.x),
+        y: p.y,
+    })
 }
 
 #[cfg(test)]

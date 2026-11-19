@@ -888,55 +888,44 @@ where
 /// The bucket view of the wNAF recoding: a digit $d$ is a sign times one of
 /// the odd multiples 1, 3, 5 and 7, picked by $|d| / 2$.
 ///
-/// Each half of the split gets its own four buckets, so that a column's two
-/// terms never meet in one bucket: the first four buckets collect the first
-/// half's terms, and the last four the second's, unrotated, so the result is
-///
-/// $$\sum_{j < 4} (2j + 1) B_j + \varphi\Big(\sum_{j < 4} (2j + 1) B_{4+j}\Big),$$
-///
-/// one rotation per product rather than one per term.
+/// The two halves of the split share the four buckets: a second-half term is
+/// rotated by $\varphi$ as it enters its bucket, one multiplication, so the
+/// result is $\sum_{j < 4} (2j + 1) B_j$, with no rotation left for the
+/// combination. A column's two terms, $2^i P$ and $\varphi(2^i P)$, may meet in
+/// one bucket; the reducer's complete formulas add them like any other pair.
 impl<C> grid::OrbitRecoding<C> for Wnaf4
 where
     C: GlvParams,
 {
-    const REPS: usize = 8;
+    const REPS: usize = 4;
 
     fn terms(digits: &Self::Digits, i: usize, mut f: impl FnMut(usize, usize, bool)) {
-        for (half, d) in [digits.digits1.get(i), digits.digits2.get(i)]
+        for (rotation, d) in [digits.digits1.get(i), digits.digits2.get(i)]
             .into_iter()
             .enumerate()
         {
             let d = d.copied().unwrap_or(0);
             if d != 0 {
-                f(4 * half + (d.unsigned_abs() / 2) as usize, 0, d < 0);
+                f((d.unsigned_abs() / 2) as usize, rotation, d < 0);
             }
         }
     }
 
-    /// Per half, with the subtree sums $T_j = \sum_{i \ge j} B_i$,
+    /// With the subtree sums $T_j = \sum_{i \ge j} B_i$,
     ///
     /// $$\sum_{j < 4} (2j + 1) B_j = T_0 + 2 (T_1 + T_2 + T_3),$$
     ///
-    /// with $U = T_2 + T_3$ and $V = T_1 + U$, in four rounds that serve both
-    /// halves, the last summing $T_0 + V + V$; then one more adds the rotated
-    /// second half. The `wnaf_bucket_combination` test checks the result
-    /// against the odd multiples.
+    /// with $U = T_2 + T_3$ and $V = T_1 + U$: seven additions in four rounds,
+    /// the last summing $T_0 + V + V$. The `wnaf_bucket_combination` test checks
+    /// the result against the odd multiples.
     fn combine_buckets(buckets: &[grid::Sum<C::AffineExt>]) -> Vec<grid::Sum<C::AffineExt>> {
-        let b: [Vec<grid::Sum<C::AffineExt>>; 8] =
-            core::array::from_fn(|j| buckets.chunks_exact(8).map(|product| product[j]).collect());
-        // T_3 = B_3 is a leaf; the second half's names end in an underscore.
-        let [t2, t2_] = grid::add_columns([(&b[2], &b[3]), (&b[6], &b[7])]);
-        let [t1, u, t1_, u_] =
-            grid::add_columns([(&b[1], &t2), (&t2, &b[3]), (&b[5], &t2_), (&t2_, &b[7])]);
-        let [t0, v, t0_, v_] =
-            grid::add_columns([(&b[0], &t1), (&u, &t1), (&b[4], &t1_), (&u_, &t1_)]);
-        let t0s: Vec<_> = t0.into_iter().chain(t0_).collect();
-        let vs: Vec<_> = v.into_iter().chain(v_).collect();
-        let x = grid::add3_columns(&t0s, &vs, &vs);
-        let (x, x_) = x.split_at(x.len() / 2);
-        let phi_x_: Vec<_> = x_.iter().map(|&p| grid::phi::<C>(p)).collect();
-        let [sum] = grid::add_columns([(x, &phi_x_)]);
-        sum
+        let b: [Vec<grid::Sum<C::AffineExt>>; 4] =
+            core::array::from_fn(|j| buckets.chunks_exact(4).map(|product| product[j]).collect());
+        // T_3 = B_3 is a leaf.
+        let [t2] = grid::add_columns([(&b[2], &b[3])]);
+        let [t1, u] = grid::add_columns([(&b[1], &t2), (&t2, &b[3])]);
+        let [t0, v] = grid::add_columns([(&b[0], &t1), (&u, &t1)]);
+        grid::add3_columns(&t0, &v, &v)
     }
 }
 
@@ -2275,10 +2264,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// `Wnaf4`'s weights: the odd multiples, the second half's rotated.
+    /// `Wnaf4`'s weights: the odd multiples.
     fn wnaf_weight<C: GlvParams>(j: usize, b: C) -> C {
-        let weighted = b * C::ScalarExt::from(2 * (j as u64 % 4) + 1);
-        if j < 4 { weighted } else { weighted.endo() }
+        b * C::ScalarExt::from(2 * j as u64 + 1)
     }
 
     #[test]
