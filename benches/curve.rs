@@ -27,6 +27,13 @@ fn point_bench<C: CurveExt>(c: &mut Criterion, name: &str) {
 
     group.bench_function("point subtraction", |bencher| bencher.iter(|| a - b));
 
+    // Adding an affine point, whose z = 1 saves products: the case of the
+    // multi-scalar multiplications and of fixed-base tables.
+    let b_affine = b.to_affine();
+    group.bench_function("mixed addition", |bencher| {
+        bencher.iter(|| black_box(a) + black_box(b_affine))
+    });
+
     // Use a deterministic full-width scalar and a nontrivial projective
     // representative; prepare both input forms outside the timed region.
     let mut rng = XorShiftRng::from_seed([0x53; 16]);
