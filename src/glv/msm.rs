@@ -76,7 +76,7 @@ use straus::straus_multiexp;
 #[cfg(feature = "multicore")]
 use straus::straus_multiexp_jobs;
 
-pub(super) use bucket::{AffinePoint, reduce_affine_buckets};
+pub(crate) use bucket::{AffinePoint, reduce_affine_buckets};
 
 use super::{GlvParams, decompose, private::AffineBase};
 

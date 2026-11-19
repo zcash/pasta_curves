@@ -31,9 +31,9 @@ mod tests;
 
 /// An affine point on the curve, never the identity: identities are dropped.
 #[derive(Clone, Copy)]
-pub(in crate::glv) struct AffinePoint<F> {
-    pub(in crate::glv) x: F,
-    pub(in crate::glv) y: F,
+pub(crate) struct AffinePoint<F> {
+    pub(crate) x: F,
+    pub(crate) y: F,
 }
 
 /// One addition of a level, waiting for the level's shared inversion.
@@ -177,7 +177,7 @@ where
 /// to its sum (`None` for the identity), with fresh buffers; see
 /// [`reduce_affine_buckets_reusing`] for the requirements. Returns `None`
 /// only if the complete formulas divide by zero, which valid inputs never do.
-pub(in crate::glv) fn reduce_affine_buckets<F: VartimeField>(
+pub(crate) fn reduce_affine_buckets<F: VartimeField>(
     mut points: Vec<AffinePoint<F>>,
     mut offsets: Vec<usize>,
 ) -> Option<Vec<Option<AffinePoint<F>>>> {

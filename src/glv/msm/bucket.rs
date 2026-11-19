@@ -65,7 +65,7 @@ use crate::glv::booth::{SignedMagnitude, booth_digit, window_count};
 use crate::glv::{
     GlvParams, HALVES, affine_from_xy_unchecked, affine_xy, phi_x, private::AffineBase,
 };
-pub(in crate::glv) use affine::{AffinePoint, reduce_affine_buckets};
+pub(crate) use affine::{AffinePoint, reduce_affine_buckets};
 use affine::{ReduceScratch, reduce_affine_buckets_reusing};
 pub(crate) use cache::CachedField;
 use cache::Checkout;
