@@ -147,7 +147,8 @@ pub trait CurveExt:
         None
     }
 
-    /// Attempts to prepare a doubling-free sum over fixed public bases.
+    /// Attempts to prepare a sum over fixed public bases, to be evaluated
+    /// many times.
     ///
     /// Implementations without a suitable backend return `None`; callers must
     /// retain a generic fallback.
