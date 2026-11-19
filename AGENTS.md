@@ -427,6 +427,26 @@ specifics:
   `arithmetic/` submodules generate the repetitive per-field and per-curve
   implementations; changes to arithmetic usually belong in the macro/shared code so both
   curves stay in sync.
+- **Curve code is split by model.** `src/curves.rs` documents the curves and their models,
+  holds the dispatch of the curves' `Mul` impls, and invokes `new_curve_impl!` for Pallas,
+  Vesta and the isogenous curves used for hashing; the code of each model lives in its own
+  file under `src/curves/`:
+  - `params.rs`: each curve's parameters (a, b, curve ID) as a type implementing
+    `CurveParams`, which every model reads;
+  - `affine.rs`: the affine chart, the public affine point type (`new_affine_impl!`);
+  - `jacobian.rs`: Jacobian coordinates, weights (2, 3, 1), the public point type
+    (`new_jacobian_impl!`);
+  - `projective.rs`: the projective plane, weights (1, 1, 1), a crate-private model with
+    complete formulas, indexed by the curve's constant b, and its constant-time scalar
+    multiplication in `projective/mul.rs`;
+  - `maps.rs`: the maps between the models (`new_maps_impl!`, and the typed maps
+    between the public point types and the projective model);
+  - `iso.rs`: the constants of the maps of hashing to the curves, the simplified SWU
+    map to the isogenous curves and the 3-isogenies from them;
+
+  A new model gets its own file, its equation and weights in its documentation, and its
+  maps to the existing models in `maps.rs`. The public `arithmetic` module holds the
+  traits; `curves` implements them.
 - **Sage-derived constants.** Magic constants have companion derivations under `./sage`
   (see the Code Conventions section).
 
@@ -467,7 +487,7 @@ and `sage`. The individual jobs are:
 - **`no-std`** — builds `--no-default-features` for `thumbv6m-none-eabi`,
   `wasm32-unknown-unknown`, and `wasm32-wasi`.
 - **`bitrot`** — builds the benchmarks (`--benches --all-features`).
-- **`sage`**: runs the five scripts in `sage/` under the pinned SageMath
+- **`sage`**: runs the six scripts in `sage/` under the pinned SageMath
   (`uv run --locked`), one step each: `glv_constants.sage` (the GLV short basis
   and Babai rounding constants), `glv_boundary_scalars.sage` (the
   `*_BOUNDARY_SCALAR` witnesses, re-verifying every property the Rust tests
@@ -476,8 +496,11 @@ and `sage`. The individual jobs are:
   `MAX_DIGITS` bound, and the ladder run on both curves),
   `glv_test_vectors.sage` (the known-answer `k * G` vectors that both
   recodings are tested against, `PALLAS_VECTORS`, `VESTA_VECTORS` and their
-  batch counterparts in `src/glv.rs`), and `msm_window_thresholds.sage` (the
-  interval-derived generic-MSM window thresholds). The scripts assert
+  batch counterparts in `src/glv.rs`), `msm_window_thresholds.sage` (the
+  interval-derived generic-MSM window thresholds), and `radix27_tripling.sage`
+  (the 3-isogenies and the isomorphism whose composition is the tripling of the
+  projective model, and the maps between Jacobian and projective coordinates,
+  symbolically for every `y^2 = x^3 + b` and on both curves). The scripts assert
   their own derivations and print the constants in the shape of the Rust
   source; CI does not diff that output against `src/`, which the in-crate
   `constants` test covers instead.

@@ -28,6 +28,15 @@ them in the exact shape of the Rust code so the two can be diffed:
   table in `src/glv/msm.rs`, the floors of `e^k` that encode the generic
   MSM's `ceil(ln(terms))` window schedule. It computes them with interval
   arithmetic and checks each floor is exact.
+- `radix27_tripling.sage`: the projective model of the radix-27 scalar
+  multiplication in `src/curves/projective.rs` and the coordinate maps of
+  `src/curves/maps.rs`, checked symbolically for every curve
+  `y^2 = x^3 + b`: the 3-isogeny `psi_b` maps `E_b` onto `E_{-27b}`, the
+  isomorphism `iota` maps `E_{729b}` onto `E_b`, their composition is the
+  multiplication by 3, and the maps between Jacobian and projective
+  coordinates send each model onto the other and are inverse up to scaling;
+  then on Pallas and Vesta. It prints the constants `PASTA_B`, `IMAGE_B`,
+  `U` and `IMAGE2_B`.
 
 The scripts use exact integer/rational arithmetic, hand-rolled lattice
 reduction and verified interval bounds. Their output is deterministic.
@@ -44,6 +53,7 @@ $ uv run sage glv_constants.sage
 $ uv run sage glv_boundary_scalars.sage
 $ uv run sage glv_eisenstein.sage
 $ uv run sage msm_window_thresholds.sage
+$ uv run sage radix27_tripling.sage
 ```
 
 Any reasonably recent standalone SageMath installation works too:

@@ -22,7 +22,7 @@
 //! the buckets of the MSM's affine bucket reducer (`reduce_affine_buckets`):
 //! pairwise trees reduced level by level, with one shared inversion per level
 //! (Montgomery's trick) and complete formulas for doublings and cancellations.
-//! An affine addition then costs about half a mixed projective one.
+//! An affine addition then costs about half a mixed Jacobian one.
 
 use alloc::{boxed::Box, vec, vec::Vec};
 use core::fmt;
@@ -77,16 +77,16 @@ pub(super) struct BoothTable<C: GlvParams> {
 impl<C: GlvParams> BoothTable<C> {
     /// The tables of many points, sharing one batch normalization.
     fn batch(points: &[C]) -> Vec<Self> {
-        let mut projective = Vec::with_capacity(points.len() * MAGNITUDES);
+        let mut jacobian = Vec::with_capacity(points.len() * MAGNITUDES);
         for point in points {
             let mut multiple = *point;
             for _ in 0..MAGNITUDES {
-                projective.push(multiple);
+                jacobian.push(multiple);
                 multiple += point;
             }
         }
-        let mut affine = vec![C::AffineExt::default(); projective.len()];
-        C::batch_normalize_vartime(&projective, &mut affine);
+        let mut affine = vec![C::AffineExt::default(); jacobian.len()];
+        C::batch_normalize_vartime(&jacobian, &mut affine);
         affine
             .chunks_exact(MAGNITUDES)
             .map(|multiples| BoothTable {

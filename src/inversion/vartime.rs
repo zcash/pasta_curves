@@ -47,6 +47,10 @@
 //! - Thomas Pornin: "Optimized Binary GCD for Modular Inversion"
 //!   <https://eprint.iacr.org/2020/972> (the constant-time alternative)
 
+// The constant-time inversion beside it is not yet reached from the field types,
+// so its module allows dead code; this inversion is in use, so warn again here.
+#![warn(dead_code)]
+
 /// Mask of the low 62 bits of a word.
 const MASK62: u64 = (1u64 << 62) - 1;
 

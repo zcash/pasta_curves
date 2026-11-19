@@ -26,20 +26,14 @@ pub use asm::BACKEND;
 // `unroll!` macro, which its users import by path.
 mod limbs;
 
-// The constant-time inversion, over the AArch64 assembly blocks or the portable ones.
+// The inversions: the constant-time one, over the AArch64 assembly blocks or the portable
+// ones, and the variable-time one (`inversion::vartime`).
 mod inversion;
-
-// The fields' constants and known answers for the tests of the backends and the inversion.
-#[cfg(test)]
-mod test_fields;
 
 #[macro_use]
 mod macros;
 mod curves;
 mod fields;
-// Keep this in sync with if_homogeneous_mul!; ARM tests still exercise the formulas.
-#[cfg(any(not(target_arch = "arm"), test))]
-mod scalar_mul;
 
 pub mod arithmetic;
 #[cfg(feature = "deferred")]

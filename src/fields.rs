@@ -3,7 +3,10 @@
 
 pub(crate) mod fp;
 pub(crate) mod fq;
-mod modinv62;
+
+// The fields' constants and known answers for the tests of the backends and the inversion.
+#[cfg(test)]
+pub(crate) mod test_fields;
 
 pub use fp::*;
 pub use fq::*;

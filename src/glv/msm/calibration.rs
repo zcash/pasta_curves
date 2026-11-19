@@ -93,9 +93,9 @@ pub(super) struct Calibration {
     /// `min_glv_multiexp_terms` the cost model chooses the width instead.
     pub(super) serial_wide_window_min_terms: usize,
     /// The cost of the GLV bucket method's operations: batched affine point
-    /// visits and projective bucket sums.
+    /// visits and Jacobian bucket sums.
     pub(super) glv_weights: PlannerWeights,
-    /// The cost of the generic MSM's operations: projective (mixed) point
+    /// The cost of the generic MSM's operations: Jacobian (mixed) point
     /// visits and bucket sums.
     pub(super) generic_weights: PlannerWeights,
     /// How far past halo2's default width the GLV bucket method may widen. Its

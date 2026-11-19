@@ -944,8 +944,8 @@ where
         affine.chunks_exact(8).map(Self::from_window).collect()
     }
 
-    /// The eight projective window entries for one point:
-    /// `[1P, 3P, 5P, 7P, 1phi(P), 3phi(P), 5phi(P), 7phi(P)]`. Projective
+    /// The eight Jacobian window entries for one point:
+    /// `[1P, 3P, 5P, 7P, 1phi(P), 3phi(P), 5phi(P), 7phi(P)]`. Jacobian
     /// group operations only (cheap additions and endomorphism, no
     /// inversions); the endomorphism multiples are taken via
     /// [`CurveExt::endo`] so they ride along in the caller's normalization.
@@ -969,7 +969,7 @@ where
         }
     }
 
-    /// The base point P (= t1\[0\]) back as a projective point.
+    /// The base point P (= t1\[0\]) back as a Jacobian point.
     #[cfg(test)]
     fn point(&self) -> C {
         C::from(self.t1[0])
@@ -1308,7 +1308,7 @@ pub(crate) mod tests {
     }
 
     /// The endomorphism / lambda pairing on the real curve, on the same
-    /// projective `endo` the table build relies on: `phi(P) == ZETA * P`.
+    /// Jacobian `endo` the table build relies on: `phi(P) == ZETA * P`.
     fn endo_map_is_lambda<C>()
     where
         C: GlvParams,

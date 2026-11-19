@@ -50,7 +50,7 @@
 //! itself a signed-Booth bucket MSM. The gain over it comes from the GLV split,
 //! which halves the number of windows and so the per-window bucket setup, and
 //! from the batched affine additions, which make bucket sums cheaper than
-//! projective additions. The planner takes over only when its estimate says
+//! Jacobian additions. The planner takes over only when its estimate says
 //! these win.
 //!
 //! The work is shared at three levels: one doubling chain across all windows
@@ -60,7 +60,7 @@
 //! inputs too small for buckets to pay off.
 //!
 //! Not covered: bases reused across calls are not precomputed, and the running
-//! sum stays in projective coordinates.
+//! sum stays in Jacobian coordinates.
 
 mod bucket;
 mod calibration;

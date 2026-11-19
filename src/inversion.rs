@@ -11,6 +11,13 @@
 
 use crate::limbs::Limbs;
 
+// The batch inversion of the batch normalizations, constant-time and variable-time.
+pub(crate) mod batch;
+
+// The variable-time inversion of the field types (`invert_vartime`), by 62-bit
+// divsteps, for public inputs.
+pub(crate) mod vartime;
+
 if_asm_supported! {
     // The ARMv7E-M backend also uses whole portable methods for blocks it does not
     // optimize. Beside AArch64, portable blocks are compiled for tests and docs.
@@ -158,11 +165,11 @@ pub(crate) fn invert(x: &Limbs, modulus: &Limbs, inv: u64, e0: &Limbs) -> Limbs 
 #[cfg(test)]
 pub(crate) mod tests {
     use super::{InvertBlocks, invert_with};
-    use crate::limbs::Limbs;
-    use crate::test_fields::{
+    use crate::fields::test_fields::{
         FIELDS, Field, ZERO, check_property, field_and_residue, field_and_two_residues, p_minus_1,
         sub_limbs,
     };
+    use crate::limbs::Limbs;
     use proptest::prelude::*;
 
     /// The four entries of a transition matrix as words, then the expected magnitudes and masks,

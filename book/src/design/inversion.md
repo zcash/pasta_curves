@@ -25,7 +25,7 @@ The names follow the paper's, with these differences:
 
 * The paper writes $F, G, V, R$ for the big integers of the rounds, and $f, g, u, v, q, r$ for
   the low-precision values of $\mathrm{divstep59}$. Here $f$ and $g$ name both, and the round
-  coefficients are $d$ and $e$, as in libsecp256k1 and `src/fields/modinv62.rs`. They are
+  coefficients are $d$ and $e$, as in libsecp256k1 and `src/inversion/vartime.rs`. They are
   scaled differently: by Lemma 11, $d_i \equiv 2^{562 - 5i} V_{59 i}$ and
   $e_i \equiv 2^{562 - 5i} R_{59 i}$ after $i$ rounds.
 * The step matrices $T_i$ of Lemma 1 are twice the paper's, so that they are integral.

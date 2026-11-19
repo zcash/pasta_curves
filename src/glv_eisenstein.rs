@@ -358,14 +358,14 @@ const MAX_DIGITS: usize = 130;
 /// Batch size from which [`Table::batch_mul`] switches to the batch-affine
 /// ladder.
 ///
-/// Below it the projective ladder is cheaper, because a batch-affine ladder
+/// Below it the Jacobian ladder is cheaper, because a batch-affine ladder
 /// spends 164 field inversions however few points share them. See
 /// [`Table::batch_mul`] for the cost model.
 ///
 /// The value tracks the cost of [`VartimeField::invert_vartime`], the safegcd
 /// inversion, at about 63 multiplications on the Pasta fields, and sits above
 /// the measured crossover, which the `glv_eisenstein` benchmarks show by
-/// timing `batch_mul` against the projective ladder at and around it. Against
+/// timing `batch_mul` against the Jacobian ladder at and around it. Against
 /// the constant-time Fermat inversion, at about 417 multiplications, the
 /// crossover would instead be near 420.
 pub(crate) const BATCH_AFFINE_THRESHOLD: usize = 96;
@@ -412,7 +412,7 @@ where
     /// seven-addition chain in *affine* coordinates with one field inversion
     /// shared across the batch per step.
     ///
-    /// A projective chain pays about 16 field multiplications per addition and
+    /// A Jacobian chain pays about 16 field multiplications per addition and
     /// then a normalization of all `8 * n` representatives. Batched affine
     /// pays about 6 per addition, counting the roughly three multiplications
     /// Montgomery's trick costs each lane, and normalizes only the `n` base
@@ -436,7 +436,7 @@ where
     /// non-residue in both base fields, which `no_point_has_zero_x` checks).
     ///
     /// Lanes that do fail, which is to say identity inputs, fall back to the
-    /// projective chain.
+    /// Jacobian chain.
     ///
     /// Verified in `sage/glv_eisenstein.sage` by step `[4c]`
     /// (`check_affine_chain_safety`), which checks the non-residue argument
@@ -447,7 +447,7 @@ where
             return Vec::new();
         }
         if n < AFFINE_CHAIN_THRESHOLD {
-            return Self::batch_projective(points);
+            return Self::batch_jacobian(points);
         }
 
         // One inversion brings the base points affine; the chain then stays
@@ -549,17 +549,17 @@ where
         }
         if !exceptional.is_empty() {
             let fallback: Vec<C> = exceptional.iter().map(|&i| points[i]).collect();
-            for (&i, t) in exceptional.iter().zip(Self::batch_projective(&fallback)) {
+            for (&i, t) in exceptional.iter().zip(Self::batch_jacobian(&fallback)) {
                 tables[i] = t;
             }
         }
         tables
     }
 
-    /// The projective chain, one shared normalization of all `8 * n`
+    /// The Jacobian chain, one shared normalization of all `8 * n`
     /// representatives. Used for batches too small to amortize the affine
     /// chain's seven inversions, and for the exceptional lanes above.
-    fn batch_projective(points: &[C]) -> Vec<Table<C>> {
+    fn batch_jacobian(points: &[C]) -> Vec<Table<C>> {
         let n = points.len();
         if n == 0 {
             return Vec::new();
@@ -600,7 +600,7 @@ where
         Table { xs, ys }
     }
 
-    /// The 24 projective window entries for one point.
+    /// The 24 Jacobian window entries for one point.
     ///
     /// The addition chain reaches all eight orbit representatives in **seven
     /// additions**, using $\varphi$ (one base-field multiplication, and
@@ -655,7 +655,7 @@ where
         ]
     }
 
-    /// The base point P back as a projective point.
+    /// The base point P back as a Jacobian point.
     #[cfg(test)]
     fn point(&self) -> C {
         C::from(affine_from_xy_unchecked::<C>(self.xs[0], self.ys[0]))
@@ -706,7 +706,7 @@ where
     ///
     /// Counting a squaring as a multiplication, the per-point ladder costs are
     ///
-    /// - projective (Jacobian): $125 \times 7 + 38.4 \times 11 \approx 1297$
+    /// - Jacobian: $125 \times 7 + 38.4 \times 11 \approx 1297$
     ///   multiplications;
     /// - batch affine: $87.6 \times 7 + 38.4 \times 11 \approx 1035$, plus
     ///   $164\,I/n$ for a batch of $n$, where $I$ is the cost of one field
@@ -717,7 +717,7 @@ where
     /// [`VartimeField::invert_vartime`], the safegcd one, at $I \approx 63$
     /// multiplications, which puts that near 40; the measured end-to-end
     /// crossover is a little higher, level at 64 and clear by 96, because
-    /// building a table is 7 projective additions either way and the affine
+    /// building a table is 7 Jacobian additions either way and the affine
     /// ladder does nothing for it.
     ///
     /// $I$ is what sets the crossover, and it is the whole reason this path
@@ -777,7 +777,7 @@ where
     /// when $A + D = -A$, that is $D = -2A$.
     ///
     /// A lane that meets any of them leaves the affine path, and is
-    /// recomputed with [`Table::mul_recoded`] on the projective ladder, which
+    /// recomputed with [`Table::mul_recoded`] on the Jacobian ladder, which
     /// has no exceptional cases. The result is therefore correct whichever of
     /// them occurs.
     ///
@@ -812,7 +812,7 @@ where
         let (mut x3s, mut lam) = (alloc::vec![zero; n], alloc::vec![zero; n]);
         let (mut den, mut scratch) = (alloc::vec![zero; n], alloc::vec![zero; n]);
         // A lane leaves the affine path when a denominator vanishes, and is
-        // recomputed on the projective ladder (see "Exceptional cases" above).
+        // recomputed on the Jacobian ladder (see "Exceptional cases" above).
         let mut live = alloc::vec![true; n];
 
         // The top column always carries a nonzero digit, so the accumulator
@@ -890,7 +890,7 @@ where
             }
         }
         if !exceptional.is_empty() {
-            // Rerun those lanes on the projective ladder, which has no
+            // Rerun those lanes on the Jacobian ladder, which has no
             // exceptional cases, and normalize them together.
             let proj: Vec<C> = exceptional
                 .iter()
@@ -1014,10 +1014,10 @@ type Lanes<'a, F> = (&'a [F], &'a [F]);
 type LanesMut<'a, F> = (&'a mut [F], &'a mut [F]);
 
 /// Batch size from which [`Table::batch`] builds its window with the affine
-/// chain rather than the projective one.
+/// chain rather than the Jacobian one.
 ///
 /// The affine chain spends seven field inversions per batch whatever its size,
-/// against the projective chain's one, and saves roughly ten multiplications
+/// against the Jacobian chain's one, and saves roughly ten multiplications
 /// per addition per lane. With the safegcd inversion that pays from a handful
 /// of points; the value is set well clear of the break-even.
 const AFFINE_CHAIN_THRESHOLD: usize = 8;
@@ -1117,8 +1117,8 @@ where
 /// every ladder column and returning affine results.
 ///
 /// The per-point tables are built sharing a single inversion too. The ladder
-/// is chosen by batch size: below the measured crossover the projective one,
-/// above it the affine one, so this is never slower than the projective path.
+/// is chosen by batch size: below the measured crossover the Jacobian one,
+/// above it the affine one, so this is never slower than the Jacobian path.
 /// Identity inputs are handled.
 pub fn batch_mul<C>(points: &[C], k: &C::ScalarExt) -> Vec<C::AffineExt>
 where
@@ -1618,13 +1618,13 @@ mod tests {
         assert_ne!(C::ScalarExt::ZETA, C::ScalarExt::ONE);
     }
 
-    /// The batched affine window chain agrees with the projective one, point
+    /// The batched affine window chain agrees with the Jacobian one, point
     /// for point, including identity lanes that take the fallback.
     ///
     /// This is the invariant the seven fused affine additions have to keep;
     /// the batch must be at least [`AFFINE_CHAIN_THRESHOLD`] for the affine
     /// chain to be the one under test.
-    fn affine_chain_matches_projective<C>()
+    fn affine_chain_matches_jacobian<C>()
     where
         C: GlvParams,
     {
@@ -1640,10 +1640,10 @@ mod tests {
         assert!(points.len() >= AFFINE_CHAIN_THRESHOLD);
 
         let affine = Table::batch(&points);
-        let projective = Table::<C>::batch_projective(&points);
+        let jacobian = Table::<C>::batch_jacobian(&points);
         assert_eq!(affine.len(), points.len());
         let k = C::ScalarExt::from(0x5EED_5EEDu64);
-        for ((p, a), q) in points.iter().zip(affine.iter()).zip(projective.iter()) {
+        for ((p, a), q) in points.iter().zip(affine.iter()).zip(jacobian.iter()) {
             assert_eq!(a.point(), q.point(), "chains disagree on the base point");
             for rep in 0..REP_COUNT {
                 for rot in 0..ROTATIONS {
@@ -1717,7 +1717,7 @@ mod tests {
         }
 
         // The exceptional path: identity inputs, alone and mixed in, must fall
-        // back to the projective ladder and still be right.
+        // back to the Jacobian ladder and still be right.
         let k = scalars::<C::ScalarExt>(1).next().expect("one scalar");
         let mixed = alloc::vec![C::identity(), points[0], C::identity(), points[1]];
         let recoded = Recoded::<C>::new(&k);
@@ -1738,9 +1738,9 @@ mod tests {
         }
     }
 
-    /// [`Table::batch_mul`] agrees with the per-point projective ladder, which
+    /// [`Table::batch_mul`] agrees with the per-point Jacobian ladder, which
     /// is the invariant the fused affine formulas have to preserve.
-    fn batch_mul_matches_projective_ladder<C>()
+    fn batch_mul_matches_jacobian_ladder<C>()
     where
         C: GlvParams,
     {
@@ -1756,7 +1756,7 @@ mod tests {
                 assert_eq!(
                     C::from(*a),
                     t.mul_recoded(&recoded),
-                    "batch affine ladder must match the projective one"
+                    "batch affine ladder must match the Jacobian one"
                 );
             }
         }
@@ -1844,7 +1844,7 @@ mod tests {
                 }
                 #[test]
                 fn affine_chain() {
-                    affine_chain_matches_projective::<$curve>();
+                    affine_chain_matches_jacobian::<$curve>();
                 }
                 #[test]
                 fn identity_table() {
@@ -1863,8 +1863,8 @@ mod tests {
                     batch_mul_matches_operator::<$curve>();
                 }
                 #[test]
-                fn batch_ladder_vs_projective() {
-                    batch_mul_matches_projective_ladder::<$curve>();
+                fn batch_ladder_vs_jacobian() {
+                    batch_mul_matches_jacobian_ladder::<$curve>();
                 }
                 #[test]
                 fn batch_dispatch() {
@@ -1975,7 +1975,7 @@ mod tests {
 
                         /// Every batch path, against the native `Mul`: the
                         /// dispatching `batch_mul`, the affine ladder forced,
-                        /// and the projective one. The size spans the
+                        /// and the Jacobian one. The size spans the
                         /// table-build threshold, and a lane may be the
                         /// identity, which is the case the affine chain has
                         /// to route around.
@@ -2037,7 +2037,7 @@ mod tests {
 
         /// The batch vectors against every path this module can take to
         /// them: the dispatching `batch_mul`, the affine ladder forced, and
-        /// the projective one forced. The expected points come from Sage and
+        /// the Jacobian one forced. The expected points come from Sage and
         /// are re-checked against the native `Mul` inside `check_batch`.
         fn batch_paths<C>(k: &[u64; 4], vs: &[([u64; 4], [u64; 4], [u64; 4])])
         where
@@ -2070,7 +2070,7 @@ mod tests {
                 assert_eq!(
                     t.mul_recoded(&recoded).to_affine(),
                     *w,
-                    "the projective ladder missed a lane"
+                    "the Jacobian ladder missed a lane"
                 );
             }
         }
