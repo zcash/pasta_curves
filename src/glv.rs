@@ -80,20 +80,32 @@
 //!
 //! One-shot use is [`GlvParams::mul_glv`].
 
+#[cfg(feature = "glv")]
 use alloc::vec::Vec;
 
-use ff::{PrimeField, WithSmallOrderMulGroup};
-use group::CurveAffine as _;
+use ff::PrimeField;
 
-use crate::arithmetic::{CurveAffine, CurveExt, VartimeField, mac, sbb};
-use crate::{pallas, vesta};
+#[cfg(feature = "glv")]
+use {ff::WithSmallOrderMulGroup, group::CurveAffine as _};
 
+use crate::arithmetic::{mac, sbb};
+
+#[cfg(feature = "glv")]
+use crate::{
+    arithmetic::{CurveAffine, CurveExt, VartimeField},
+    pallas, vesta,
+};
+
+#[cfg(feature = "glv")]
 mod booth;
 
+#[cfg(feature = "glv")]
 pub(crate) mod fixed_base;
 
+#[cfg(feature = "glv")]
 pub(crate) mod msm;
 
+#[cfg(feature = "glv")]
 mod private {
     use crate::arithmetic::{CurveAffine, CurveExt};
 
@@ -151,6 +163,7 @@ mod private {
 /// The affine point $(x, y)$ of `C`, without checking that it is on the
 /// curve; $(0, 0)$ yields the identity. The caller must pass coordinates that
 /// its own curve arithmetic produced.
+#[cfg(feature = "glv")]
 pub(crate) fn affine_from_xy_unchecked<C: GlvParams>(
     x: private::AffineBase<C>,
     y: private::AffineBase<C>,
@@ -165,6 +178,7 @@ pub(crate) fn affine_from_xy_unchecked<C: GlvParams>(
 
 /// The coordinates $(x, y)$ of `point`, the identity read as $(0, 0)$: the
 /// inverse of [`affine_from_xy_unchecked`].
+#[cfg(feature = "glv")]
 pub(crate) fn affine_xy<C>(point: &C::AffineExt) -> (private::AffineBase<C>, private::AffineBase<C>)
 where
     C: GlvParams,
@@ -174,6 +188,7 @@ where
 
 /// The $x$-coordinate $\zeta x$ of $\phi(P)$, for $P$ with $x$-coordinate `x`
 /// (see the module documentation); its $y$-coordinate is $P$'s.
+#[cfg(feature = "glv")]
 pub(crate) fn phi_x<C>(x: private::AffineBase<C>) -> private::AffineBase<C>
 where
     C: GlvParams,
@@ -220,6 +235,7 @@ where
 ///
 /// Internal: it exists to pin the contract and to let one conformance suite
 /// run against both recodings, not as a surface for callers.
+#[cfg(feature = "glv")]
 pub(crate) trait Recoding<C>
 where
     C: GlvParams,
@@ -326,7 +342,7 @@ where
 /// Stating them once is the point of the trait: the two recodings share no
 /// ladder code, so without a common suite nothing forces them to mean the
 /// same thing by "reuse gives the same answer".
-#[cfg(test)]
+#[cfg(all(test, feature = "glv"))]
 pub(crate) mod conformance {
     use ff::PrimeField;
     use proptest::prelude::*;
@@ -620,9 +636,11 @@ pub(crate) mod conformance {
 
 /// The recoding [`crate::glv`] performs: two independent width-4 wNAF digit
 /// strings, one per GLV half, sharing a column index.
+#[cfg(feature = "glv")]
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Wnaf4;
 
+#[cfg(feature = "glv")]
 impl<C> Recoding<C> for Wnaf4
 where
     C: GlvParams,
@@ -682,6 +700,7 @@ where
 ///
 /// This trait is sealed; it is implemented for [`pallas::Point`] and
 /// [`vesta::Point`].
+#[cfg(feature = "glv")]
 pub trait GlvParams: CurveExt<Base: VartimeField> + private::Sealed {
     /// First short lattice vector `v1 = (V1A, -V1B_NEG)`.
     const V1A: u128;
@@ -723,6 +742,7 @@ pub trait GlvParams: CurveExt<Base: VartimeField> + private::Sealed {
 /// that the decomposition reconstructs `k`. A wrong constant cannot pass them.
 ///
 /// [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
+#[cfg(feature = "glv")]
 impl GlvParams for pallas::Point {
     const V1A: u128 = 0x49e69d1640f049157fcae1c700000001;
     const V1B_NEG: u128 = 0x49e69d1640a899538cb1279300000000;
@@ -750,6 +770,7 @@ impl GlvParams for pallas::Point {
 /// rounding.
 ///
 /// [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
+#[cfg(feature = "glv")]
 impl GlvParams for vesta::Point {
     const V1A: u128 = 0x49e69d1640f049157fcae1c700000000;
     const V1B_NEG: u128 = 0x49e69d1640a899538cb1279300000001;
@@ -825,6 +846,7 @@ fn sub256(a: [u64; 4], b: [u64; 4]) -> [u64; 4] {
 /// (asserted in debug builds, here and in [`wnaf_digits`], and checked by the
 /// `decompose` tests), so the high limbs of the magnitude are always zero and
 /// no information is lost.
+#[cfg(feature = "glv")]
 fn signed_halves(x: [u64; 4]) -> (bool, u128) {
     // Guard the truncation itself: the discarded limbs must be the sign
     // extension of bit 127. Values of 2^128 or more would otherwise be
@@ -863,10 +885,12 @@ where
 
 /// The magnitude of a decomposition half is below `2^HALF_BITS`: the bound
 /// [`decompose`] guarantees, on which the recodings of the halves rely.
+#[cfg(feature = "glv")]
 pub(crate) const HALF_BITS: usize = 127;
 
 /// The halves [`decompose`] splits a scalar into: `k1` for $P$ and `k2` for
 /// $\phi(P)$.
+#[cfg(feature = "glv")]
 pub(crate) const HALVES: usize = 2;
 
 /// GLV split: `k = k1 + k2 * lambda (mod n)`, each half returned as
@@ -879,6 +903,7 @@ pub(crate) const HALVES: usize = 2;
 /// below `2^127` ([`HALF_BITS`]), the bound [`signed_halves`], [`wnaf_digits`]
 /// and the MSM's Booth digits rely on; `crate::glv_eisenstein` relies on the
 /// tighter one.
+#[cfg(feature = "glv")]
 pub(crate) fn decompose<C>(k: &C::ScalarExt) -> ((bool, u128), (bool, u128))
 where
     C: GlvParams,
@@ -898,6 +923,7 @@ where
 ///
 /// Build one with [`Table::new`], or many with one shared normalization via
 /// [`Table::batch`].
+#[cfg(feature = "glv")]
 #[derive(Clone, Copy, Debug)]
 pub struct Table<C>
 where
@@ -909,6 +935,7 @@ where
     t2: [C::AffineExt; 4],
 }
 
+#[cfg(feature = "glv")]
 impl<C> Table<C>
 where
     C: GlvParams,
@@ -997,6 +1024,7 @@ where
 /// Building this once per scalar hoists the decomposition and digit
 /// recoding out of a loop that multiplies the same scalar against many
 /// tables.
+#[cfg(feature = "glv")]
 #[derive(Clone, Debug)]
 pub struct Decomposed<C>
 where
@@ -1010,6 +1038,7 @@ where
     _curve: core::marker::PhantomData<C>,
 }
 
+#[cfg(feature = "glv")]
 impl<C> Decomposed<C>
 where
     C: GlvParams,
@@ -1032,10 +1061,12 @@ where
 /// Upper bound on the number of width-4 wNAF digits of a decomposition half:
 /// an n-bit magnitude yields at most n + 1 digits, and [`decompose`] bounds
 /// the halves below `2^HALF_BITS`.
+#[cfg(feature = "glv")]
 const MAX_WNAF_DIGITS: usize = HALF_BITS + 1;
 
 /// Width-4 wNAF digits of a u128 magnitude, lowest position first, with the
 /// half's overall sign folded into the digits when `negate` is set.
+#[cfg(feature = "glv")]
 fn wnaf_digits(a: u128, negate: bool) -> ([i8; MAX_WNAF_DIGITS], usize) {
     debug_assert!(a >> HALF_BITS == 0, "magnitude must be at most 127 bits");
     let mut digits = [0i8; MAX_WNAF_DIGITS];
@@ -1063,6 +1094,7 @@ fn wnaf_digits(a: u128, negate: bool) -> ([i8; MAX_WNAF_DIGITS], usize) {
 ///
 /// The same call shape as `crate::glv_eisenstein::mul`, so the two
 /// recodings are interchangeable at the call site.
+#[cfg(feature = "glv")]
 pub fn mul<C>(p: &C, k: &C::ScalarExt) -> C
 where
     C: GlvParams,
@@ -1078,6 +1110,7 @@ where
 /// faster on a large batch, because it also shares an inversion across the
 /// ladder itself; this one exists so a caller can pick the recoding without
 /// changing anything else. Identity inputs are handled.
+#[cfg(feature = "glv")]
 pub fn batch_mul<C>(points: &[C], k: &C::ScalarExt) -> Vec<C::AffineExt>
 where
     C: GlvParams,
@@ -1097,6 +1130,7 @@ where
 ///
 /// The table is built once and reused across the scalars, and the results
 /// share a single field inversion on the way back to affine.
+#[cfg(feature = "glv")]
 pub fn mul_scalars<C>(p: &C, ks: &[C::ScalarExt]) -> Vec<C::AffineExt>
 where
     C: GlvParams,
@@ -1116,6 +1150,7 @@ where
 /// the scalar is shared, so each pair still walks its own ladder; use
 /// [`batch_mul`] instead when the scalar is common to every point, which is
 /// the cheaper shape.
+#[cfg(feature = "glv")]
 pub fn mul_pairs<C>(pairs: &[(C, C::ScalarExt)]) -> Vec<C::AffineExt>
 where
     C: GlvParams,
@@ -1133,6 +1168,7 @@ where
 }
 
 /// One shared inversion back to affine.
+#[cfg(feature = "glv")]
 fn normalize<C>(proj: &[C]) -> Vec<C::AffineExt>
 where
     C: GlvParams,
@@ -1142,7 +1178,7 @@ where
     affine
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "glv"))]
 pub(crate) mod tests {
     use super::*;
     use crate::arithmetic::adc;

@@ -48,6 +48,10 @@ pub mod deferred;
 pub mod pallas;
 pub mod vesta;
 
+#[cfg(not(feature = "glv"))]
+#[cfg_attr(not(feature = "glv"), allow(dead_code))]
+mod glv;
+
 #[cfg(feature = "glv")]
 #[cfg_attr(docsrs, doc(cfg(feature = "glv")))]
 pub mod glv;
