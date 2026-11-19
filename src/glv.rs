@@ -86,11 +86,10 @@ use alloc::vec::Vec;
 #[cfg(feature = "glv")]
 use {ff::WithSmallOrderMulGroup, group::CurveAffine as _};
 
+use crate::{pallas, vesta};
+
 #[cfg(feature = "glv")]
-use crate::{
-    arithmetic::{CurveAffine, CurveExt, VartimeField},
-    pallas, vesta,
-};
+use crate::arithmetic::{CurveAffine, CurveExt, VartimeField};
 
 #[cfg(feature = "glv")]
 mod booth;
@@ -106,12 +105,20 @@ pub(crate) mod fixed_base;
 #[cfg(feature = "glv")]
 pub(crate) mod msm;
 
-#[cfg(feature = "glv")]
 mod private {
+    #[cfg(feature = "glv")]
     use crate::arithmetic::{CurveAffine, CurveExt};
 
     /// The field of a curve's affine coordinates.
+    #[cfg(feature = "glv")]
     pub type AffineBase<C> = <<C as CurveExt>::AffineExt as CurveAffine>::Base;
+
+    /// The lattice constants are specific to the two Pasta curves; external
+    /// implementations cannot provide another set of parameters.
+    pub trait SealedConstants {}
+
+    impl SealedConstants for crate::pallas::Point {}
+    impl SealedConstants for crate::vesta::Point {}
 
     /// Seals [`super::GlvParams`]: the lattice constants are curve-specific
     /// and verified in-crate; external implementations are not supported.
@@ -120,6 +127,7 @@ mod private {
     /// need generically. Keeping it on this private trait, rather than on the
     /// public `CurveAffine`, adds nothing to the public API and leaves that
     /// trait's implementors unaffected.
+    #[cfg(feature = "glv")]
     pub trait Sealed: CurveExt {
         /// The affine point $(x, y)$, without checking that it is on the
         /// curve; $(0, 0)$ yields the identity.
@@ -140,6 +148,7 @@ mod private {
         fn affine_xy(point: &Self::AffineExt) -> (AffineBase<Self>, AffineBase<Self>);
     }
 
+    #[cfg(feature = "glv")]
     impl Sealed for crate::pallas::Point {
         fn affine_from_xy_unchecked(x: AffineBase<Self>, y: AffineBase<Self>) -> Self::AffineExt {
             crate::pallas::Affine::from_xy_unchecked(x, y)
@@ -150,6 +159,7 @@ mod private {
         }
     }
 
+    #[cfg(feature = "glv")]
     impl Sealed for crate::vesta::Point {
         fn affine_from_xy_unchecked(x: AffineBase<Self>, y: AffineBase<Self>) -> Self::AffineExt {
             crate::vesta::Affine::from_xy_unchecked(x, y)
@@ -694,6 +704,22 @@ where
 /// from that basis.
 ///
 /// [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
+pub trait GlvConstants: private::SealedConstants {
+    /// First short lattice vector `v1 = (BASIS_1_A, -BASIS_1_B_ABS)`.
+    const BASIS_1_A: u128;
+    /// Magnitude of `v1`'s (negative) second component.
+    const BASIS_1_B_ABS: u128;
+    /// Second short lattice vector `v2 = (BASIS_2_A, BASIS_2_B)`.
+    const BASIS_2_A: u128;
+    /// `v2`'s (positive) second component.
+    const BASIS_2_B: u128;
+    /// Babai coefficient `round(2^384 * BASIS_2_B / n)`, little-endian limbs.
+    const ROUNDING_COEFF_1: [u64; 5];
+    /// Babai coefficient `round(2^384 * BASIS_1_B_ABS / n)`, little-endian limbs.
+    const ROUNDING_COEFF_2: [u64; 5];
+}
+
+/// Per-curve parameters for variable-time GLV scalar multiplication.
 ///
 /// The base field is required to implement [`VartimeField`], so that
 /// `crate::glv_eisenstein`'s batch-affine ladder can reach the safegcd
@@ -702,19 +728,19 @@ where
 /// This trait is sealed; it is implemented for [`pallas::Point`] and
 /// [`vesta::Point`].
 #[cfg(feature = "glv")]
-pub trait GlvParams: CurveExt<Base: VartimeField> + private::Sealed {
+pub trait GlvParams: GlvConstants + CurveExt<Base: VartimeField> + private::Sealed {
     /// First short lattice vector `v1 = (V1A, -V1B_NEG)`.
-    const V1A: u128;
+    const V1A: u128 = <Self as GlvConstants>::BASIS_1_A;
     /// Magnitude of `v1`'s (negative) second component.
-    const V1B_NEG: u128;
+    const V1B_NEG: u128 = <Self as GlvConstants>::BASIS_1_B_ABS;
     /// Second short lattice vector `v2 = (V2A, V2B)`.
-    const V2A: u128;
+    const V2A: u128 = <Self as GlvConstants>::BASIS_2_A;
     /// `v2`'s (positive) second component.
-    const V2B: u128;
+    const V2B: u128 = <Self as GlvConstants>::BASIS_2_B;
     /// Babai coefficient `round(2^384 * V2B / n)`, little-endian limbs.
-    const G1: [u64; 5];
+    const G1: [u64; 5] = <Self as GlvConstants>::ROUNDING_COEFF_1;
     /// Babai coefficient `round(2^384 * V1B_NEG / n)`, little-endian limbs.
-    const G2: [u64; 5];
+    const G2: [u64; 5] = <Self as GlvConstants>::ROUNDING_COEFF_2;
 
     /// One-shot `k * self` via the GLV split — variable-time in `k` and
     /// `self` (see the module docs), identical in value to `self * k`
@@ -738,25 +764,25 @@ pub trait GlvParams: CurveExt<Base: VartimeField> + private::Sealed {
 ///
 /// The `constants` test (see the module's test suite) re-verifies the short
 /// basis against Pallas's own $\lambda$ = [`Scalar::ZETA`] using field
-/// arithmetic alone, and the Babai coefficients `G1`/`G2` against their
-/// defining rounding using limb arithmetic alone; the `decompose` tests prove
-/// that the decomposition reconstructs `k`. A wrong constant cannot pass them.
+/// arithmetic alone, and the Babai coefficients `ROUNDING_COEFF_1`/
+/// `ROUNDING_COEFF_2` against their defining rounding using limb arithmetic
+/// alone; the `decompose` tests prove that the decomposition reconstructs `k`.
+/// A wrong constant cannot pass them.
 ///
 /// [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
-#[cfg(feature = "glv")]
-impl GlvParams for pallas::Point {
-    const V1A: u128 = 0x49e69d1640f049157fcae1c700000001;
-    const V1B_NEG: u128 = 0x49e69d1640a899538cb1279300000000;
-    const V2A: u128 = 0x49e69d1640a899538cb1279300000000;
-    const V2B: u128 = 0x93cd3a2c8198e2690c7c095a00000001;
-    const G1: [u64; 5] = [
+impl GlvConstants for pallas::Point {
+    const BASIS_1_A: u128 = 0x49e69d1640f049157fcae1c700000001;
+    const BASIS_1_B_ABS: u128 = 0x49e69d1640a899538cb1279300000000;
+    const BASIS_2_A: u128 = 0x49e69d1640a899538cb1279300000000;
+    const BASIS_2_B: u128 = 0x93cd3a2c8198e2690c7c095a00000001;
+    const ROUNDING_COEFF_1: [u64; 5] = [
         0x111f686111afc293,
         0xc35fbd4d086862e0,
         0x31f0256800000002,
         0x4f34e8b2066389a4,
         0x2,
     ];
-    const G2: [u64; 5] = [
+    const ROUNDING_COEFF_2: [u64; 5] = [
         0x4a95a2d972171db4,
         0x61afdea68480fa55,
         0x32c49e4bffffffff,
@@ -771,20 +797,19 @@ impl GlvParams for pallas::Point {
 /// rounding.
 ///
 /// [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
-#[cfg(feature = "glv")]
-impl GlvParams for vesta::Point {
-    const V1A: u128 = 0x49e69d1640f049157fcae1c700000000;
-    const V1B_NEG: u128 = 0x49e69d1640a899538cb1279300000001;
-    const V2A: u128 = 0x49e69d1640a899538cb1279300000001;
-    const V2B: u128 = 0x93cd3a2c8198e2690c7c095a00000001;
-    const G1: [u64; 5] = [
+impl GlvConstants for vesta::Point {
+    const BASIS_1_A: u128 = 0x49e69d1640f049157fcae1c700000000;
+    const BASIS_1_B_ABS: u128 = 0x49e69d1640a899538cb1279300000001;
+    const BASIS_2_A: u128 = 0x49e69d1640a899538cb1279300000001;
+    const BASIS_2_B: u128 = 0x93cd3a2c8198e2690c7c095a00000001;
+    const ROUNDING_COEFF_1: [u64; 5] = [
         0x841d8d62296e1563,
         0xc35fbd4d0afe9926,
         0x31f0256800000002,
         0x4f34e8b2066389a4,
         0x2,
     ];
-    const G2: [u64; 5] = [
+    const ROUNDING_COEFF_2: [u64; 5] = [
         0x841414c24bf99a83,
         0x61afdea685cc1578,
         0x32c49e4c00000003,
@@ -792,6 +817,12 @@ impl GlvParams for vesta::Point {
         0x1,
     ];
 }
+
+#[cfg(feature = "glv")]
+impl GlvParams for pallas::Point {}
+
+#[cfg(feature = "glv")]
+impl GlvParams for vesta::Point {}
 
 /// The GLV window for one base point: the odd multiples `{1, 3, 5, 7} * P` and
 /// `{1, 3, 5, 7} * phi(P)` in affine coordinates. 512 bytes per table.

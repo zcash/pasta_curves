@@ -18,6 +18,7 @@ and this project adheres to Rust's notion of
   reusable fixed-base sums for public bases and scalars. The `glv` feature enables
   doubling-free Pallas and Vesta evaluation and batched affine reduction;
   callers must retain a generic fallback when preparation returns `None`.
+- `pasta_curves::glv::GlvConstants` behind the `glv` feature flag.
 
 ### Changed
 - GLV MSMs reuse window and affine-reduction scratch. With `multicore`, each

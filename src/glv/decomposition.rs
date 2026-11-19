@@ -1,11 +1,10 @@
 //! Scalar decomposition arithmetic shared by the GLV recodings.
 
 use ff::PrimeField;
+use group::Group;
 
+use super::GlvConstants;
 use crate::arithmetic::{mac, sbb};
-
-#[cfg(feature = "glv")]
-use super::GlvParams;
 
 /// The magnitude of a decomposition half is below `2^HALF_BITS`: the bound
 /// [`decompose`] guarantees, on which the recodings of the halves rely.
@@ -20,25 +19,29 @@ pub(crate) const HALVES: usize = 2;
 /// GLV split: `k = k1 + k2 * lambda (mod n)`, each half returned as
 /// `(is_negative, magnitude)`.
 ///
-/// Babai rounding bounds the halves by `|k1| <= (V1A + V2A) / 2 + 1` and
-/// `|k2| <= (V1B_NEG + V2B) / 2 + 1`, where the `+ 1` covers `G1` and `G2`
-/// being 384-bit approximations of the exact rounding coefficients. On both
+/// Babai rounding bounds the halves by `|k1| <= (BASIS_1_A + BASIS_2_A) / 2 + 1`
+/// and `|k2| <= (BASIS_1_B_ABS + BASIS_2_B) / 2 + 1`, where the `+ 1` covers
+/// `ROUNDING_COEFF_1` and `ROUNDING_COEFF_2` being 384-bit approximations of the
+/// exact rounding coefficients. On both
 /// curves that is below `2^126.3` for `k1` and `2^126.8` for `k2`, so strictly
 /// below `2^127` ([`HALF_BITS`]), the bound [`signed_halves`], [`super::wnaf_digits`]
 /// and the MSM's Booth digits rely on; `crate::glv_eisenstein` relies on the
 /// tighter one.
 #[cfg(feature = "glv")]
-pub(crate) fn decompose<C>(k: &C::ScalarExt) -> ((bool, u128), (bool, u128))
+pub(crate) fn decompose<C>(k: &C::Scalar) -> ((bool, u128), (bool, u128))
 where
-    C: GlvParams,
+    C: Group + GlvConstants,
 {
     let kl = scalar_limbs(k);
-    let c1 = round_mul_shift(&C::G1, &kl);
-    let c2 = round_mul_shift(&C::G2, &kl);
-    // k1 = k - c1*V1A - c2*V2A   (two's complement over 256 bits)
-    let k1 = sub256(sub256(kl, mul_u128(c1, C::V1A)), mul_u128(c2, C::V2A));
-    // k2 = c1*V1B_NEG - c2*V2B   (v1.b = -V1B_NEG, v2.b = +V2B)
-    let k2 = sub256(mul_u128(c1, C::V1B_NEG), mul_u128(c2, C::V2B));
+    let c1 = round_mul_shift(&C::ROUNDING_COEFF_1, &kl);
+    let c2 = round_mul_shift(&C::ROUNDING_COEFF_2, &kl);
+    // k1 = k - c1*BASIS_1_A - c2*BASIS_2_A   (two's complement over 256 bits)
+    let k1 = sub256(
+        sub256(kl, mul_u128(c1, C::BASIS_1_A)),
+        mul_u128(c2, C::BASIS_2_A),
+    );
+    // k2 = c1*BASIS_1_B_ABS - c2*BASIS_2_B   (v1.b < 0, v2.b > 0)
+    let k2 = sub256(mul_u128(c1, C::BASIS_1_B_ABS), mul_u128(c2, C::BASIS_2_B));
     (signed_halves(k1), signed_halves(k2))
 }
 
