@@ -58,7 +58,7 @@ name = "field"
 harness = false
 
 [[bench]]
-name = "point"
+name = "curve"
 harness = false
 required-features = ["alloc"]
 

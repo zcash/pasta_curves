@@ -1,4 +1,5 @@
-//! Benchmarks for point operations.
+//! Benchmarks for the curves Pallas and Vesta: point arithmetic, encoding and
+//! normalization, one group per curve.
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use ff::Field;
