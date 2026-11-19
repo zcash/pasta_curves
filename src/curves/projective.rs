@@ -221,6 +221,17 @@ impl<F: Field> Projective<F, IMAGE2_B> {
     }
 }
 
+/// The identity, which zeroizing writes over a point, as for the public point types.
+#[cfg(feature = "zeroize")]
+impl<F: Field, const B: i64> Default for Projective<F, B> {
+    fn default() -> Self {
+        Self::identity()
+    }
+}
+
+#[cfg(feature = "zeroize")]
+impl<F: Field, const B: i64> zeroize::DefaultIsZeroes for Projective<F, B> {}
+
 impl<F: Field, const B: i64> ConditionallySelectable for Projective<F, B> {
     fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
         Self {

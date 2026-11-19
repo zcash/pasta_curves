@@ -56,7 +56,9 @@ pub(crate) fn multiply<F: Field>(
     p: &Projective<F, PASTA_B>,
     by: &[u8; 32],
 ) -> Projective<F, PASTA_B> {
-    let digits = to_radix_3(by);
+    // `mut` only to clear the digits afterwards, with `zeroize`.
+    #[cfg_attr(not(feature = "zeroize"), allow(unused_mut))]
+    let mut digits = to_radix_3(by);
     // Multiples 1P through 26P. Each pair doubles an earlier entry and
     // adds P, using complete formulas even when P is the identity.
     // The table occupies `TABLE_LEN` points of 96 bytes, 2496 bytes, on the
@@ -81,6 +83,16 @@ pub(crate) fn multiply<F: Field>(
             addend = Projective::conditional_select(&addend, entry, digit.ct_eq(&(i as u8 + 1)));
         }
         acc = acc.triple().triple().triple().add(&addend);
+        #[cfg(feature = "zeroize")]
+        zeroize::Zeroize::zeroize(&mut addend);
+    }
+    // The digits and the table are derived from the secret scalar. With `zeroize`,
+    // overwrite them before the stack frame is released; copies made by moves or
+    // spills are out of reach.
+    #[cfg(feature = "zeroize")]
+    {
+        zeroize::Zeroize::zeroize(&mut digits);
+        zeroize::Zeroize::zeroize(&mut table);
     }
     acc
 }
@@ -133,8 +145,11 @@ macro_rules! mul_curve_specific {
             $base,
             { crate::curves::projective::PASTA_B },
         >::from_jacobian($point.x, $point.y, $point.z);
-        let (x, y, z) =
-            crate::curves::scalar_mul::multiply(&point, &$scalar.to_repr()).to_jacobian();
+        #[cfg_attr(not(feature = "zeroize"), allow(unused_mut))]
+        let mut repr = $scalar.to_repr();
+        let (x, y, z) = crate::curves::scalar_mul::multiply(&point, &repr).to_jacobian();
+        #[cfg(feature = "zeroize")]
+        zeroize::Zeroize::zeroize(&mut repr);
         $name { x, y, z }
     }};
     ($name:ident, $base:ident, special_a0_b5, affine, $point:expr, $scalar:expr) => {{
@@ -142,8 +157,11 @@ macro_rules! mul_curve_specific {
             $base,
             { crate::curves::projective::PASTA_B },
         >::from_affine($point.x, $point.y, $point.is_identity());
-        let (x, y, z) =
-            crate::curves::scalar_mul::multiply(&point, &$scalar.to_repr()).to_jacobian();
+        #[cfg_attr(not(feature = "zeroize"), allow(unused_mut))]
+        let mut repr = $scalar.to_repr();
+        let (x, y, z) = crate::curves::scalar_mul::multiply(&point, &repr).to_jacobian();
+        #[cfg(feature = "zeroize")]
+        zeroize::Zeroize::zeroize(&mut repr);
         $name { x, y, z }
     }};
     ($name:ident, $base:ident, general, $coord:ident, $point:expr, $scalar:expr) => {{
