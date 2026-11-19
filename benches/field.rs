@@ -82,6 +82,11 @@ where
         |rng| F::random(rng).square(),
         |x| x.sqrt(),
     );
+    // The square root of a quotient, without inverting the denominator: the
+    // core of hashing to the curves.
+    cycle(&mut group, "sqrt_ratio", pair, |(num, div)| {
+        F::sqrt_ratio(num, div)
+    });
     cycle(&mut group, "to_repr", element, |x| x.to_repr());
     cycle(
         &mut group,
