@@ -133,10 +133,10 @@ macro_rules! curve_tests {
                 Projective::from_affine(x, y, p.is_identity())
             }
 
-            /// The point in the projective model, through the map from Jacobian
-            /// coordinates.
+            /// The point in the projective model, through the typed map from
+            /// Jacobian coordinates that the scalar multiplication uses.
             fn from_point(p: $point) -> Projective<$field, PASTA_B> {
-                Projective::from_jacobian(p.x, p.y, p.z)
+                Projective::from(&p)
             }
 
             proptest! {
@@ -154,6 +154,7 @@ macro_rules! curve_tests {
                     assert_same(Projective::from_jacobian(x, y, z), q);
                     type Point = $point;
                     prop_assert_eq!(Point { x, y, z }, p);
+                    prop_assert_eq!(<$point>::from(q), p);
                 }
 
                 /// Each operation of the projective model is a homomorphism through

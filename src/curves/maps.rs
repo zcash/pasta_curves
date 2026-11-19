@@ -169,7 +169,43 @@ mod projective {
     use ff::Field;
     use subtle::{Choice, ConditionallySelectable};
 
+    use group::CurveAffine as _;
+
+    use super::super::params::PASTA_B;
     use super::super::projective::Projective;
+    use super::super::{Ep, EpAffine, Eq, EqAffine};
+    use crate::{Fp, Fq};
+
+    /// The typed maps between the public point types of Pallas or Vesta and the
+    /// projective model, through the coordinate maps below.
+    macro_rules! projective_maps {
+        ($point:ident, $affine:ident, $base:ident) => {
+            /// Jacobian to projective, $(X : Y : Z) \mapsto (X Z : Y : Z^3)$.
+            impl From<&$point> for Projective<$base, PASTA_B> {
+                fn from(p: &$point) -> Self {
+                    Self::from_jacobian(p.x, p.y, p.z)
+                }
+            }
+
+            /// Affine to projective, $(x, y) \mapsto (x : y : 1)$.
+            impl From<&$affine> for Projective<$base, PASTA_B> {
+                fn from(p: &$affine) -> Self {
+                    Self::from_affine(p.x, p.y, p.is_identity())
+                }
+            }
+
+            /// Projective to Jacobian, $(X : Y : Z) \mapsto (X Z : Y Z^2 : Z)$.
+            impl From<Projective<$base, PASTA_B>> for $point {
+                fn from(p: Projective<$base, PASTA_B>) -> Self {
+                    let (x, y, z) = p.to_jacobian();
+                    $point { x, y, z }
+                }
+            }
+        };
+    }
+
+    projective_maps!(Ep, EpAffine, Fp);
+    projective_maps!(Eq, EqAffine, Fq);
 
     impl<F: Field, const B: i64> Projective<F, B> {
         pub(crate) fn from_jacobian(x: F, y: F, z: F) -> Self {

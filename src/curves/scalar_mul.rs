@@ -182,29 +182,19 @@ macro_rules! if_projective_mul {
 }
 
 macro_rules! mul_curve_specific {
-    ($name:ident, $base:ident, special_a0_b5, jacobian, $point:expr, $scalar:expr) => {{
+    // Jacobian or affine input alike: `From` picks the map into the projective
+    // model from the input's type, and back to the Jacobian type.
+    ($name:ident, $base:ident, special_a0_b5, $coord:ident, $point:expr, $scalar:expr) => {{
         let point = crate::curves::projective::Projective::<
             $base,
             { crate::curves::projective::PASTA_B },
-        >::from_jacobian($point.x, $point.y, $point.z);
+        >::from($point);
         #[cfg_attr(not(feature = "zeroize"), allow(unused_mut))]
         let mut repr = $scalar.to_repr();
-        let (x, y, z) = crate::curves::scalar_mul::multiply(&point, &repr).to_jacobian();
+        let product = crate::curves::scalar_mul::multiply(&point, &repr);
         #[cfg(feature = "zeroize")]
         zeroize::Zeroize::zeroize(&mut repr);
-        $name { x, y, z }
-    }};
-    ($name:ident, $base:ident, special_a0_b5, affine, $point:expr, $scalar:expr) => {{
-        let point = crate::curves::projective::Projective::<
-            $base,
-            { crate::curves::projective::PASTA_B },
-        >::from_affine($point.x, $point.y, $point.is_identity());
-        #[cfg_attr(not(feature = "zeroize"), allow(unused_mut))]
-        let mut repr = $scalar.to_repr();
-        let (x, y, z) = crate::curves::scalar_mul::multiply(&point, &repr).to_jacobian();
-        #[cfg(feature = "zeroize")]
-        zeroize::Zeroize::zeroize(&mut repr);
-        $name { x, y, z }
+        $name::from(product)
     }};
     ($name:ident, $base:ident, general, $coord:ident, $point:expr, $scalar:expr) => {{
         let mut acc = $name::identity();
