@@ -165,39 +165,3 @@ new_curve_impl!(
     without_unchecked_ctor,
     native
 );
-
-impl Ep {
-    /// Z = -13
-    pub const Z: Fp = Fp::from_raw([
-        0x992d30ecfffffff4,
-        0x224698fc094cf91b,
-        0x0000000000000000,
-        0x4000000000000000,
-    ]);
-
-    /// `(F::ROOT_OF_UNITY.invert().unwrap() * z).sqrt().unwrap()`
-    pub const THETA: Fp = Fp::from_raw([
-        0xca330bcc09ac318e,
-        0x51f64fc4dc888857,
-        0x4647aef782d5cdc8,
-        0x0f7bdb65814179b4,
-    ]);
-}
-
-impl Eq {
-    /// Z = -13
-    pub const Z: Fq = Fq::from_raw([
-        0x8c46eb20fffffff4,
-        0x224698fc0994a8dd,
-        0x0000000000000000,
-        0x4000000000000000,
-    ]);
-
-    /// `(F::ROOT_OF_UNITY.invert().unwrap() * z).sqrt().unwrap()`
-    pub const THETA: Fq = Fq::from_raw([
-        0x632cae9872df1b5d,
-        0x38578ccadf03ac27,
-        0x53c3808d9e2f2357,
-        0x2b3483a1ee9a382f,
-    ]);
-}
