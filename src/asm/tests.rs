@@ -1,7 +1,7 @@
 //! Tests of the entry points, for both Pasta fields: known answers, the reference
 //! vectors, and a differential test against the portable arithmetic.
 //!
-//! The constants and known answers are those of `crate::test_fields`. Every
+//! The constants and known answers are those of `crate::fields::test_fields`. Every
 //! multiplication, squaring, and conversion case is also among the reference
 //! vectors recorded from the assembly on Apple M-series hardware, and agrees with
 //! it. The vectors have no addition, subtraction, or repeated-squaring cases. The
@@ -14,7 +14,7 @@
 use super::{Limbs, add, from_mont, sub};
 
 use super::{mul, sqr_n_mul, square};
-use crate::test_fields::{FIELDS, FP, FQ, Field, ONE, ZERO, p_minus_1};
+use crate::fields::test_fields::{FIELDS, FP, FQ, Field, ONE, ZERO, p_minus_1};
 
 /// The entry points agree with the portable arithmetic of the field types, on edge operands and on
 /// pseudo-random ones. The portable arithmetic is the field types' inherent `const fn`s, which
