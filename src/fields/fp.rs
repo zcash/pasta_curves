@@ -717,7 +717,7 @@ impl ff::Field for Fp {
 
 impl VartimeField for Fp {
     fn invert_vartime(&self) -> Option<Self> {
-        super::modinv62::invert::<super::modinv62::FpParams>(&self.0).map(Self)
+        crate::inversion::vartime::invert::<crate::inversion::vartime::FpParams>(&self.0).map(Self)
     }
 }
 

@@ -26,7 +26,8 @@ pub use asm::BACKEND;
 // `unroll!` macro, which its users import by path.
 mod limbs;
 
-// The constant-time inversion, over the AArch64 assembly blocks or the portable ones.
+// The inversions: the constant-time one, over the AArch64 assembly blocks or the portable
+// ones, and the variable-time one (`inversion::vartime`).
 mod inversion;
 
 #[macro_use]

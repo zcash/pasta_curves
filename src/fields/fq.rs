@@ -713,7 +713,7 @@ impl ff::Field for Fq {
 
 impl VartimeField for Fq {
     fn invert_vartime(&self) -> Option<Self> {
-        super::modinv62::invert::<super::modinv62::FqParams>(&self.0).map(Self)
+        crate::inversion::vartime::invert::<crate::inversion::vartime::FqParams>(&self.0).map(Self)
     }
 }
 

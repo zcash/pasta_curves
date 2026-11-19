@@ -11,6 +11,10 @@
 
 use crate::limbs::Limbs;
 
+// The variable-time inversion of the field types (`invert_vartime`), by 62-bit
+// divsteps, for public inputs.
+pub(crate) mod vartime;
+
 if_asm_supported! {
     // The ARMv7E-M backend also uses whole portable methods for blocks it does not
     // optimize. Beside AArch64, portable blocks are compiled for tests and docs.
