@@ -451,8 +451,8 @@ tau_field!(Fq);
 fn tau<F: TauField>(p: Homogeneous<F>) -> Homogeneous<F> {
     // The complete isogeny ψ : E_5 → E_-135 followed by the isomorphism
     // (X:Y:Z) ↦ ((1−β)X:Y:(1−β)^3 Z) is 1−ω on the native curve.
-    let y2 = p.y.square();
-    let z2 = p.z.square();
+    let y2 = super::square(p.y);
+    let z2 = super::square(p.z);
     let (m5, m15, m45) = (z2.mul_small(5), z2.mul_small(15), z2.mul_small(45));
     Homogeneous {
         x: p.x * (y2 + m15) * F::ONE_MINUS_ZETA,

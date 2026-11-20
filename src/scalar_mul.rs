@@ -12,6 +12,29 @@ use subtle::ConstantTimeEq;
 
 mod tau;
 
+// Squares a field element in the formulas below. On AArch64, the assembly
+// squaring comes from the body of the repeated-squaring loop and measures
+// slower here than the assembly multiplication, so the formulas multiply the
+// element by itself on that backend. Elsewhere the dedicated squaring stays:
+// it is the faster of the two in the portable arithmetic, and the x86-64
+// backend has not been measured.
+#[inline(always)]
+fn square<F: Field>(x: F) -> F {
+    if_asm!(
+        {
+            #[cfg(target_arch = "aarch64")]
+            {
+                x * x
+            }
+            #[cfg(not(target_arch = "aarch64"))]
+            {
+                x.square()
+            }
+        },
+        x.square(),
+    )
+}
+
 /// The field operations the formulas below use beyond `Field`: the
 /// multiplication by a small public integer, for the multiples of b = 5, and
 /// the unreduced products that let the portable addition reduce a sum of
@@ -202,12 +225,12 @@ impl<F: FormulaField> Homogeneous<F> {
 
     pub(crate) fn double(&self) -> Self {
         // Complete homogeneous doubling for a = 0 (RCB Algorithm 9).
-        let t0 = self.y.square();
+        let t0 = square(self.y);
         let z3 = t0 + t0;
         let z3 = z3 + z3;
         let z3 = z3 + z3;
         let t1 = self.y * self.z;
-        let t2 = Self::mul_by_3b(self.z.square());
+        let t2 = Self::mul_by_3b(square(self.z));
         let x3 = t2 * z3;
         let y3 = t0 + t2;
         let z3 = t1 * z3;
@@ -228,8 +251,8 @@ impl<F: FormulaField> Homogeneous<F> {
     pub(crate) fn triple(&self) -> Self {
         // Two complete degree-three isogenies and the isomorphism returning
         // to the original curve. Here bz² means 5z².
-        let y2 = self.y.square();
-        let z2 = self.z.square();
+        let y2 = square(self.y);
+        let z2 = square(self.z);
         let (m5, m20, m40) = (z2.mul_small(5), z2.mul_small(20), z2.mul_small(40));
         let v = y2 - m5;
         let x = self.x * (v + m20);
@@ -237,8 +260,8 @@ impl<F: FormulaField> Homogeneous<F> {
         let z = self.z * v;
 
         // Here 27bz^2 = 135z^2, and 108bz^2 = 540z^2.
-        let y2 = y.square();
-        let z2 = z.square();
+        let y2 = square(y);
+        let z2 = square(z);
         let (m135, m540, m1080) = (z2.mul_small(135), z2.mul_small(540), z2.mul_small(1080));
         let w = y2 + m135;
         let x = x * (w - m540);
