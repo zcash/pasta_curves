@@ -8,7 +8,7 @@ use ff::{Field, WithSmallOrderMulGroup};
 use group::Group;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
-use super::Homogeneous;
+use super::{FormulaField, Homogeneous};
 use crate::glv::{GlvConstants, decompose_signed};
 use crate::{Fp, Fq};
 
@@ -431,7 +431,7 @@ impl<F: Field + WithSmallOrderMulGroup<3>> Rotated<F> {
 // The base-field constants 1 - beta and (1 - beta)^3 of the tau
 // endomorphism, with beta = ZETA, evaluated at compile time from ZETA with
 // the fields' const arithmetic.
-pub(crate) trait TauField: Field + WithSmallOrderMulGroup<3> {
+pub(crate) trait TauField: FormulaField + WithSmallOrderMulGroup<3> {
     const ONE_MINUS_ZETA: Self;
     const ONE_MINUS_ZETA_CUBED: Self;
 }
@@ -451,19 +451,17 @@ tau_field!(Fq);
 fn tau<F: TauField>(p: Homogeneous<F>) -> Homogeneous<F> {
     // The complete isogeny ψ : E_5 → E_-135 followed by the isomorphism
     // (X:Y:Z) ↦ ((1−β)X:Y:(1−β)^3 Z) is 1−ω on the native curve.
-    let y2 = p.y.square();
-    let z2 = p.z.square();
-    let bz2 = z2 + z2 + z2 + z2 + z2;
-    let b3z2 = bz2 + bz2 + bz2;
-    let b9z2 = b3z2 + b3z2 + b3z2;
+    let y2 = super::square(p.y);
+    let z2 = super::square(p.z);
+    let (m5, m15, m45) = (z2.mul_small(5), z2.mul_small(15), z2.mul_small(45));
     Homogeneous {
-        x: p.x * (y2 + b3z2) * F::ONE_MINUS_ZETA,
-        y: p.y * (y2 - b9z2),
-        z: p.z * (y2 - bz2) * F::ONE_MINUS_ZETA_CUBED,
+        x: p.x * (y2 + m15) * F::ONE_MINUS_ZETA,
+        y: p.y * (y2 - m45),
+        z: p.z * (y2 - m5) * F::ONE_MINUS_ZETA_CUBED,
     }
 }
 
-fn representatives<F: Field>(p: Homogeneous<F>, t: Homogeneous<F>) -> [Homogeneous<F>; 6] {
+fn representatives<F: FormulaField>(p: Homogeneous<F>, t: Homogeneous<F>) -> [Homogeneous<F>; 6] {
     let two_p = p.double();
     let p_plus_t = p.add(&t);
     let two_t = t.double();
@@ -527,7 +525,19 @@ impl<F: TauField> Homogeneous<F> {
         let recoding = recode::<C>(scalar);
         let tau_p = tau(*self);
         let base = representatives(*self, tau_p);
-        let tau_base = representatives(tau_p, tau(tau_p));
+        // tau is a group endomorphism, so the representatives built from
+        // tau(P) and tau^2(P) are the tau-images of those built from P and
+        // tau(P). One tau per entry costs less than the doublings and
+        // additions of a second `representatives`, and the first entry is
+        // tau(P) itself.
+        let tau_base = [
+            tau_p,
+            tau(base[1]),
+            tau(base[2]),
+            tau(base[3]),
+            tau(base[4]),
+            tau(base[5]),
+        ];
         let table = [base.map(Rotated::new), tau_base.map(Rotated::new)];
 
         // τ^(3j) = 3^floor(3j/2) (-ω)^floor(3j/2) τ^(j mod 2).
