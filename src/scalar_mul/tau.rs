@@ -376,19 +376,20 @@ fn recode<C: Group + GlvConstants>(scalar: &C::Scalar) -> Recode {
     }
 }
 
+// A table point with its X coordinate's first two omega rotations, X and
+// zeta*X. The third, zeta^2*X = -X - zeta*X, is formed after the selection,
+// so the scan selects four field elements per entry instead of five.
 #[derive(Clone, Copy)]
 struct Rotated<F: Field> {
-    x: [F; 3],
+    x: [F; 2],
     y: F,
     z: F,
 }
 
 impl<F: Field + WithSmallOrderMulGroup<3>> Rotated<F> {
     fn new(p: Homogeneous<F>) -> Self {
-        let x1 = p.x * F::ZETA;
         Self {
-            // 1 + ζ + ζ² = 0, including for the identity's zero X.
-            x: [p.x, x1, -p.x - x1],
+            x: [p.x, p.x * F::ZETA],
             y: p.y,
             z: p.z,
         }
@@ -462,7 +463,7 @@ fn rotated_select<F: Field>(
     rotation: u8,
     sign: u8,
 ) -> Homogeneous<F> {
-    let mut x = [F::ZERO; 3];
+    let mut x = [F::ZERO; 2];
     let mut y = F::ONE;
     let mut z = F::ZERO;
     for (i, point) in points.iter().enumerate() {
@@ -473,6 +474,8 @@ fn rotated_select<F: Field>(
         y = F::conditional_select(&y, &point.y, choice);
         z = F::conditional_select(&z, &point.z, choice);
     }
+    // 1 + zeta + zeta^2 = 0, including for the identity's zero X.
+    let x = [x[0], x[1], -x[0] - x[1]];
     let mut selected_x = F::ZERO;
     for (i, candidate) in x.iter().enumerate() {
         selected_x = F::conditional_select(&selected_x, candidate, rotation.ct_eq(&(i as u8)));
