@@ -12,6 +12,58 @@ use subtle::ConstantTimeEq;
 
 mod tau;
 
+/// Multiplication of a field element by a small public integer, for the
+/// multiples of b = 5 in the formulas below.
+pub(crate) trait SmallMul: Field {
+    /// Returns `k * self`. `k` is a public constant below 2^32.
+    fn mul_small(&self, k: u64) -> Self;
+}
+
+// Both Pasta moduli are p = 2^254 + c with c < 2^128. The Montgomery form is
+// linear, so k times the representation of x represents k x. That product,
+// below 2^288, is h 2^254 + l with l < 2^254, and 2^254 = -c (mod p) gives
+// k x = l - h c (mod p). As h < 2^35, h c < 2^163 < p, so l - h c lies in
+// (-p, 2^254): one addition of p, masked by the final borrow rather than
+// branched on, makes it canonical.
+#[cfg_attr(not(feature = "uninline-portable"), inline(always))]
+fn mul_small_limbs(a: &[u64; 4], k: u64, modulus: &[u64; 4]) -> [u64; 4] {
+    use crate::arithmetic::{adc, mac, sbb};
+    debug_assert!(k < 1 << 32);
+    let (r0, carry) = mac(0, a[0], k, 0);
+    let (r1, carry) = mac(0, a[1], k, carry);
+    let (r2, carry) = mac(0, a[2], k, carry);
+    let (r3, r4) = mac(0, a[3], k, carry);
+    let h = (r4 << 2) | (r3 >> 62);
+    let r3 = r3 & ((1 << 62) - 1);
+    let (s0, carry) = mac(0, h, modulus[0], 0);
+    let (s1, s2) = mac(0, h, modulus[1], carry);
+    let (d0, borrow) = sbb(r0, s0, 0);
+    let (d1, borrow) = sbb(r1, s1, borrow);
+    let (d2, borrow) = sbb(r2, s2, borrow);
+    let (d3, borrow) = sbb(r3, 0, borrow);
+    let (d0, carry) = adc(d0, modulus[0] & borrow, 0);
+    let (d1, carry) = adc(d1, modulus[1] & borrow, carry);
+    let (d2, carry) = adc(d2, modulus[2] & borrow, carry);
+    let (d3, _) = adc(d3, modulus[3] & borrow, carry);
+    [d0, d1, d2, d3]
+}
+
+macro_rules! small_mul {
+    ($field:ident, $modulus:path) => {
+        // mul_small_limbs needs the modulus shape 2^254 + c with c < 2^128.
+        const _: () = assert!($modulus.0[2] == 0 && $modulus.0[3] == 1 << 62);
+
+        impl SmallMul for crate::$field {
+            #[cfg_attr(not(feature = "uninline-portable"), inline(always))]
+            fn mul_small(&self, k: u64) -> Self {
+                crate::$field(mul_small_limbs(&self.0, k, &$modulus.0))
+            }
+        }
+    };
+}
+small_mul!(Fp, crate::fields::fp::MODULUS);
+small_mul!(Fq, crate::fields::fq::MODULUS);
+
 #[derive(Clone, Copy)]
 pub(crate) struct Homogeneous<F: Field> {
     pub(crate) x: F,
@@ -54,14 +106,12 @@ impl<F: Field> Homogeneous<F> {
             self.z,
         )
     }
+}
 
-    // The native curve has b = 5, hence 3b = 15. No field-specific constants.
+impl<F: SmallMul> Homogeneous<F> {
+    // The native curve has b = 5, hence 3b = 15.
     fn mul_by_3b(x: F) -> F {
-        let x2 = x + x;
-        let x3 = x2 + x;
-        let x6 = x3 + x3;
-        let x12 = x6 + x6;
-        x12 + x3
+        x.mul_small(15)
     }
 
     pub(crate) fn add(&self, rhs: &Self) -> Self {
@@ -123,31 +173,19 @@ impl<F: Field> Homogeneous<F> {
         // to the original curve. Here bz² means 5z².
         let y2 = self.y.square();
         let z2 = self.z.square();
-        let bz2 = z2 + z2 + z2 + z2 + z2;
-        let v = y2 - bz2;
-        let b4z2 = (bz2 + bz2) + (bz2 + bz2);
-        let x = self.x * (v + b4z2);
-        let y = self.y * (v - (b4z2 + b4z2));
+        let v = y2 - z2.mul_small(5);
+        let x = self.x * (v + z2.mul_small(20));
+        let y = self.y * (v - z2.mul_small(40));
         let z = self.z * v;
 
+        // Here 27bz^2 = 135z^2, and 108bz^2 = 540z^2.
         let y2 = y.square();
         let z2 = z.square();
-        let bz2 = z2 + z2 + z2 + z2 + z2;
-        let b3z2 = bz2 + bz2 + bz2;
-        let b9z2 = b3z2 + b3z2 + b3z2;
-        let b27z2 = b9z2 + b9z2 + b9z2;
-        let w = y2 + b27z2;
-        let b108z2 = (b27z2 + b27z2) + (b27z2 + b27z2);
-        let x = x * (w - b108z2);
-        let y = y * (w + b108z2 + b108z2);
-        let z = z * w;
-        let z = z + z + z;
-        let z = z + z + z;
-        Self {
-            x: x + x + x,
-            y,
-            z: z + z + z,
-        }
+        let w = y2 + z2.mul_small(135);
+        let x = x * (w - z2.mul_small(540));
+        let y = y * (w + z2.mul_small(1080));
+        let z = (z * w).mul_small(27);
+        Self { x: x + x + x, y, z }
     }
 
     #[cfg(test)]

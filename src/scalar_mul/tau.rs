@@ -8,7 +8,7 @@ use ff::{Field, WithSmallOrderMulGroup};
 use group::Group;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
-use super::Homogeneous;
+use super::{Homogeneous, SmallMul};
 use crate::glv::{GlvConstants, decompose_signed};
 use crate::{Fp, Fq};
 
@@ -431,7 +431,7 @@ impl<F: Field + WithSmallOrderMulGroup<3>> Rotated<F> {
 // The base-field constants 1 - beta and (1 - beta)^3 of the tau
 // endomorphism, with beta = ZETA, evaluated at compile time from ZETA with
 // the fields' const arithmetic.
-pub(crate) trait TauField: Field + WithSmallOrderMulGroup<3> {
+pub(crate) trait TauField: SmallMul + WithSmallOrderMulGroup<3> {
     const ONE_MINUS_ZETA: Self;
     const ONE_MINUS_ZETA_CUBED: Self;
 }
@@ -453,17 +453,14 @@ fn tau<F: TauField>(p: Homogeneous<F>) -> Homogeneous<F> {
     // (X:Y:Z) ↦ ((1−β)X:Y:(1−β)^3 Z) is 1−ω on the native curve.
     let y2 = p.y.square();
     let z2 = p.z.square();
-    let bz2 = z2 + z2 + z2 + z2 + z2;
-    let b3z2 = bz2 + bz2 + bz2;
-    let b9z2 = b3z2 + b3z2 + b3z2;
     Homogeneous {
-        x: p.x * (y2 + b3z2) * F::ONE_MINUS_ZETA,
-        y: p.y * (y2 - b9z2),
-        z: p.z * (y2 - bz2) * F::ONE_MINUS_ZETA_CUBED,
+        x: p.x * (y2 + z2.mul_small(15)) * F::ONE_MINUS_ZETA,
+        y: p.y * (y2 - z2.mul_small(45)),
+        z: p.z * (y2 - z2.mul_small(5)) * F::ONE_MINUS_ZETA_CUBED,
     }
 }
 
-fn representatives<F: Field>(p: Homogeneous<F>, t: Homogeneous<F>) -> [Homogeneous<F>; 6] {
+fn representatives<F: SmallMul>(p: Homogeneous<F>, t: Homogeneous<F>) -> [Homogeneous<F>; 6] {
     let two_p = p.double();
     let p_plus_t = p.add(&t);
     let two_t = t.double();

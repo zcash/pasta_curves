@@ -273,3 +273,61 @@ curve_tests!(
     crate::Fq,
     crate::Fp
 );
+
+// The elements where mul_small_limbs is most likely to go wrong: zero, one,
+// the largest canonical element p - 1 (the largest h), its neighbours, and
+// elements whose representation has a full top limb or carries across limbs.
+fn small_mul_edge_elements<F: PrimeField>() -> [F; 8] {
+    [
+        F::ZERO,
+        F::ONE,
+        -F::ONE,
+        -F::ONE - F::ONE,
+        F::from(u64::MAX),
+        F::from_u128(u128::MAX),
+        F::TWO_INV,
+        -F::TWO_INV,
+    ]
+}
+
+fn check_small_mul<F: PrimeField + super::SmallMul>(x: F, k: u64) {
+    assert_eq!(x.mul_small(k), x * F::from(k), "k = {k}");
+}
+
+fn small_mul_exhaustive<F: PrimeField + super::SmallMul>() {
+    // Every k up to 2^11, which covers the formulas' constants (at most
+    // 1080), and the largest k the helper accepts.
+    for x in small_mul_edge_elements::<F>() {
+        for k in (0..2048).chain([(1 << 32) - 1, 1 << 31, (1 << 31) - 1]) {
+            check_small_mul(x, k);
+        }
+    }
+}
+
+#[test]
+fn small_mul_matches_multiplication() {
+    small_mul_exhaustive::<crate::Fp>();
+    small_mul_exhaustive::<crate::Fq>();
+}
+
+proptest::proptest! {
+    #[test]
+    fn small_mul_matches_multiplication_fp(
+        words in proptest::prelude::any::<[u64; 8]>(),
+        k in 0u64..(1 << 32),
+    ) {
+        let x = crate::Fp::from_u512(words);
+        check_small_mul(x, k);
+        check_small_mul(x, k & 0x7ff);
+    }
+
+    #[test]
+    fn small_mul_matches_multiplication_fq(
+        words in proptest::prelude::any::<[u64; 8]>(),
+        k in 0u64..(1 << 32),
+    ) {
+        let x = crate::Fq::from_u512(words);
+        check_small_mul(x, k);
+        check_small_mul(x, k & 0x7ff);
+    }
+}
