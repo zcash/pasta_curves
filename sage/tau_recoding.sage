@@ -39,6 +39,21 @@ for x in [0, -1, 1, 2**191 - 1, -2**191, -2**191 + 1] + \
     assert fold_mod9(x) == x % 9
 print('mod 9 by folding: chunk sums < 2^51 and < 2^15; verified')
 
+# Signed192::div_exact multiplies by the divisor's inverse modulo 2^192,
+# which returns the exact quotient whenever the division is exact (the
+# recoding only divides exact multiples). Print the inverses as Rust limbs.
+for divisor in (3, 9):
+    inverse = inverse_mod(divisor, 2**192)
+    assert divisor*inverse % 2**192 == 1
+    limbs = [(inverse >> (64*i)) % 2**64 for i in range(3)]
+    for x in [0, 1, -1, 2**186, -2**186] + \
+             [rng.randrange(-2**186, 2**186) for _ in range(2000)]:
+        assert (divisor*x*inverse - x) % 2**192 == 0
+    print('exact division by %s: inverse mod 2^192 = [%s]' %
+          (divisor, ', '.join('0x%s' % '_'.join(
+              ('%016x' % l)[i:i+4] for i in range(0, 16, 4))
+              for l in limbs)))
+
 p = 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001
 q = 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001
 Fp, Fq = GF(p), GF(q)

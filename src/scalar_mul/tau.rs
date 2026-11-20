@@ -58,6 +58,7 @@ impl Signed192 {
         self.twice().add(self)
     }
 
+    #[cfg(test)]
     fn magnitude(self) -> ([u64; 3], Choice) {
         let negative = Choice::from((self.0[2] >> 63) as u8);
         let mask = 0u64.wrapping_sub(u64::from(negative.unwrap_u8()));
@@ -67,11 +68,13 @@ impl Signed192 {
         ([lo, mid, hi], negative)
     }
 
-    // Long division by the public constants 3 and 9, using 16-bit chunks.
+    // Long division by the public constants 3 and 9, using 16-bit chunks. The
+    // tests use it as the reference for mod9 and div_exact.
     // Every 16-bit dividend is < 9*2^16; the 32-bit reciprocal formula
     // floor((x * 0x38e38e39)/2^33) computes x/9 exactly (and similarly
     // 0xaaaaaaab for /3). Thus no target-dependent integer division helper
     // sees secret values, including on 32-bit targets.
+    #[cfg(test)]
     fn quotient_remainder(self, divisor: u8) -> (Self, u8) {
         let (magnitude, negative) = self.magnitude();
         let reciprocal = if divisor == 9 {
@@ -101,12 +104,41 @@ impl Signed192 {
         (signed_quotient, signed_remainder)
     }
 
+    // The product modulo 2^192, which is the two's-complement product of the
+    // signed values.
+    fn wrapping_mul(self, rhs: [u64; 3]) -> Self {
+        let [x0, x1, x2] = self.0;
+        let [c0, c1, c2] = rhs;
+        let p00 = u128::from(x0) * u128::from(c0);
+        let p01 = u128::from(x0) * u128::from(c1);
+        let p10 = u128::from(x1) * u128::from(c0);
+        let s1 = (p00 >> 64) + u128::from(p01 as u64) + u128::from(p10 as u64);
+        let r2 = ((s1 >> 64) as u64)
+            .wrapping_add((p01 >> 64) as u64)
+            .wrapping_add((p10 >> 64) as u64)
+            .wrapping_add(x0.wrapping_mul(c2))
+            .wrapping_add(x1.wrapping_mul(c1))
+            .wrapping_add(x2.wrapping_mul(c0));
+        Self([p00 as u64, s1 as u64, r2])
+    }
+
+    // Division by 3 or 9 when it is exact, as it is in the recoding by the
+    // verified residue table: multiplying by the divisor's inverse modulo
+    // 2^192 (derived in Sage) then gives the quotient exactly, without a
+    // long division (Granlund and Montgomery, "Division by invariant integers
+    // using multiplication", PLDI 1994).
     fn div_exact(self, divisor: u8) -> Self {
-        let (quotient, remainder) = self.quotient_remainder(divisor);
-        // These divisions are exact by the verified residue table, and their
-        // fixed-limb computations avoid a secret-dependent assertion here.
-        let _ = remainder;
-        quotient
+        const INVERSE_3: [u64; 3] = [
+            0xaaaa_aaaa_aaaa_aaab,
+            0xaaaa_aaaa_aaaa_aaaa,
+            0xaaaa_aaaa_aaaa_aaaa,
+        ];
+        const INVERSE_9: [u64; 3] = [
+            0x8e38_e38e_38e3_8e39,
+            0x38e3_8e38_e38e_38e3,
+            0xe38e_38e3_8e38_e38e,
+        ];
+        self.wrapping_mul(if divisor == 9 { INVERSE_9 } else { INVERSE_3 })
     }
 
     // The Euclidean remainder modulo 9, without a long division. As 2^6 = 1
@@ -736,6 +768,19 @@ mod tests {
     }
 
     proptest! {
+        #[test]
+        fn div_exact_matches_long_division(limbs in any::<[u64; 3]>()) {
+            // Any signed quotient below 2^186 in magnitude, multiplied back
+            // up, is an exact multiple of 3 and of 9 within signed 192 bits.
+            let q = Signed192([limbs[0], limbs[1], ((limbs[2] as i64) >> 5) as u64]);
+            let n3 = q.thrice();
+            let n9 = n3.thrice();
+            prop_assert_eq!(n3.div_exact(3).0, q.0);
+            prop_assert_eq!(n9.div_exact(9).0, q.0);
+            let (long_quotient, remainder) = n9.quotient_remainder(9);
+            prop_assert_eq!((long_quotient.0, remainder), (q.0, 0));
+        }
+
         #[test]
         fn mod9_matches_long_division(limbs in any::<[u64; 3]>()) {
             let w = Signed192(limbs);
