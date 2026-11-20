@@ -175,9 +175,10 @@ impl<F: FormulaField> Homogeneous<F> {
                 let m2 = y3 * (t0 - r);
                 let m3 = (t3 - s) * t1;
                 let m4 = t3 * t0;
+                let m01 = m0 + m1;
                 Self {
-                    x: m0 + m1 + m3,
-                    y: m0 + m1 + m2,
+                    x: m01 + m3,
+                    y: m01 + m2,
                     z: m1 + m4,
                 }
             },
