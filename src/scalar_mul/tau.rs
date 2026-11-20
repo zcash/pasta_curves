@@ -108,8 +108,29 @@ impl Signed192 {
         quotient
     }
 
+    // The Euclidean remainder modulo 9, without a long division. As 2^6 = 1
+    // (mod 9), so are 2^12, 2^48 and 2^192. The limbs, read as an unsigned
+    // U = x + 2^192 s with s the sign bit, give x = U - s = U + 8s (mod 9).
+    // Summing U's four 48-bit chunks and 8s gives s1 < 2^51; summing s1's
+    // five 12-bit chunks gives s2 < 2^15 < 9 * 2^16, in the range where the
+    // reciprocal formula of quotient_remainder is exact (Sage checks these
+    // bounds).
     fn mod9(self) -> u8 {
-        self.quotient_remainder(9).1
+        const MASK48: u64 = (1 << 48) - 1;
+        const MASK12: u64 = (1 << 12) - 1;
+        let [l0, l1, l2] = self.0;
+        let s1 = (l0 & MASK48)
+            + ((l0 >> 48) | ((l1 << 16) & MASK48))
+            + ((l1 >> 32) | ((l2 << 32) & MASK48))
+            + (l2 >> 16)
+            + 8 * (l2 >> 63);
+        let s2 = (s1 & MASK12)
+            + ((s1 >> 12) & MASK12)
+            + ((s1 >> 24) & MASK12)
+            + ((s1 >> 36) & MASK12)
+            + (s1 >> 48);
+        let q = (s2 * 0x38e3_8e39) >> 33;
+        (s2 - 9 * q) as u8
     }
 
     #[cfg(test)]
@@ -635,7 +656,31 @@ mod tests {
         }
     }
 
+    #[test]
+    fn mod9_boundaries() {
+        // The extremes of each 48-bit and 12-bit chunk, and of the sign.
+        for limbs in [
+            [0, 0, 0],
+            [u64::MAX; 3],
+            [u64::MAX, u64::MAX, u64::MAX >> 1],
+            [0, 0, 1 << 63],
+            [1, 0, 1 << 63],
+            [(1 << 48) - 1, 0, 0],
+            [u64::MAX, u64::MAX, 0],
+            [0, 0, u64::MAX >> 16],
+        ] {
+            let w = Signed192(limbs);
+            assert_eq!(w.mod9(), w.quotient_remainder(9).1, "{limbs:x?}");
+        }
+    }
+
     proptest! {
+        #[test]
+        fn mod9_matches_long_division(limbs in any::<[u64; 3]>()) {
+            let w = Signed192(limbs);
+            prop_assert_eq!(w.mod9(), w.quotient_remainder(9).1);
+        }
+
         #[test]
         fn full_width_fp(words in any::<[u64;4]>()) {
             let scalar = Fp::from_raw(words);
