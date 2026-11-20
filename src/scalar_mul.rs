@@ -173,17 +173,19 @@ impl<F: SmallMul> Homogeneous<F> {
         // to the original curve. Here bz² means 5z².
         let y2 = self.y.square();
         let z2 = self.z.square();
-        let v = y2 - z2.mul_small(5);
-        let x = self.x * (v + z2.mul_small(20));
-        let y = self.y * (v - z2.mul_small(40));
+        let (bz2, b4z2, b8z2) = (z2.mul_small(5), z2.mul_small(20), z2.mul_small(40));
+        let v = y2 - bz2;
+        let x = self.x * (v + b4z2);
+        let y = self.y * (v - b8z2);
         let z = self.z * v;
 
         // Here 27bz^2 = 135z^2, and 108bz^2 = 540z^2.
         let y2 = y.square();
         let z2 = z.square();
-        let w = y2 + z2.mul_small(135);
-        let x = x * (w - z2.mul_small(540));
-        let y = y * (w + z2.mul_small(1080));
+        let (b27z2, b108z2, b216z2) = (z2.mul_small(135), z2.mul_small(540), z2.mul_small(1080));
+        let w = y2 + b27z2;
+        let x = x * (w - b108z2);
+        let y = y * (w + b216z2);
         let z = z * w;
         Self {
             x: x.mul_small(3),
