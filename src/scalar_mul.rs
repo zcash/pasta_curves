@@ -12,11 +12,36 @@ use subtle::ConstantTimeEq;
 
 mod tau;
 
-/// Multiplication of a field element by a small public integer, for the
-/// multiples of b = 5 in the formulas below.
-pub(crate) trait SmallMul: Field {
+/// The field operations the formulas below use beyond `Field`: the
+/// multiplication by a small public integer, for the multiples of b = 5, and
+/// the unreduced products that let the portable addition reduce a sum of
+/// products once.
+pub(crate) trait FormulaField: Field {
     /// Returns `k * self`. `k` is a public constant below 2^32.
     fn mul_small(&self, k: u32) -> Self;
+
+    /// Returns the unreduced 512-bit product of the representations.
+    // Unused where an assembly backend multiplies.
+    #[cfg_attr(feature = "asm", allow(dead_code))]
+    fn mul_wide(&self, rhs: &Self) -> [u64; 8];
+
+    /// Montgomery-reduces a sum of at most three `mul_wide` products.
+    #[cfg_attr(feature = "asm", allow(dead_code))]
+    fn reduce_wide(wide: [u64; 8]) -> Self;
+}
+
+// Adds two sums of products. The sum of three products of canonical
+// elements is below 3p^2 < 2^510, so no carry leaves the top limb.
+#[cfg_attr(not(feature = "uninline-portable"), inline(always))]
+#[cfg_attr(feature = "asm", allow(dead_code))]
+fn add_wide(a: &[u64; 8], b: &[u64; 8]) -> [u64; 8] {
+    use crate::arithmetic::adc;
+    let mut out = [0; 8];
+    let mut carry = 0;
+    for i in 0..8 {
+        (out[i], carry) = adc(a[i], b[i], carry);
+    }
+    out
 }
 
 // Both Pasta moduli are p = 2^254 + c with c < 2^128. The Montgomery form is
@@ -53,10 +78,22 @@ macro_rules! small_mul {
         // mul_small_limbs needs the modulus shape 2^254 + c with c < 2^128.
         const _: () = assert!($modulus.0[2] == 0 && $modulus.0[3] == 1 << 62);
 
-        impl SmallMul for crate::$field {
+        impl FormulaField for crate::$field {
             #[inline(always)]
             fn mul_small(&self, k: u32) -> Self {
                 crate::$field(mul_small_limbs(&self.0, k, &$modulus.0))
+            }
+
+            #[inline(always)]
+            fn mul_wide(&self, rhs: &Self) -> [u64; 8] {
+                self.mul_unreduced(rhs)
+            }
+
+            // Montgomery reduction is valid below p 2^256, which bounds
+            // 3p^2 as 3p < 2^256, and its result is then canonical.
+            #[inline(always)]
+            fn reduce_wide(w: [u64; 8]) -> Self {
+                crate::$field::montgomery_reduce(w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7])
             }
         }
     };
@@ -108,7 +145,7 @@ impl<F: Field> Homogeneous<F> {
     }
 }
 
-impl<F: SmallMul> Homogeneous<F> {
+impl<F: FormulaField> Homogeneous<F> {
     // The native curve has b = 5, hence 3b = 15.
     fn mul_by_3b(x: F) -> F {
         x.mul_small(15)
@@ -131,16 +168,35 @@ impl<F: SmallMul> Homogeneous<F> {
 
         let s = z3 + y3;
         let r = t1 - t4;
-        let m0 = s * r;
-        let m1 = z3 * t4;
-        let m2 = y3 * (t0 - r);
-        let m3 = (t3 - s) * t1;
-        let m4 = t3 * t0;
-        Self {
-            x: m0 + m1 + m3,
-            y: m0 + m1 + m2,
-            z: m1 + m4,
-        }
+        if_asm!(
+            {
+                let m0 = s * r;
+                let m1 = z3 * t4;
+                let m2 = y3 * (t0 - r);
+                let m3 = (t3 - s) * t1;
+                let m4 = t3 * t0;
+                Self {
+                    x: m0 + m1 + m3,
+                    y: m0 + m1 + m2,
+                    z: m1 + m4,
+                }
+            },
+            {
+                // Portable: sum the unreduced products and reduce each
+                // coordinate once, three reductions instead of five.
+                let m0 = s.mul_wide(&r);
+                let m1 = z3.mul_wide(&t4);
+                let m2 = y3.mul_wide(&(t0 - r));
+                let m3 = (t3 - s).mul_wide(&t1);
+                let m4 = t3.mul_wide(&t0);
+                let m01 = add_wide(&m0, &m1);
+                Self {
+                    x: F::reduce_wide(add_wide(&m01, &m3)),
+                    y: F::reduce_wide(add_wide(&m01, &m2)),
+                    z: F::reduce_wide(add_wide(&m1, &m4)),
+                }
+            },
+        )
     }
 
     pub(crate) fn double(&self) -> Self {

@@ -359,7 +359,7 @@ impl Fp {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg_attr(not(feature = "uninline-portable"), inline(always))]
-    const fn montgomery_reduce(
+    pub(crate) const fn montgomery_reduce(
         r0: u64,
         r1: u64,
         r2: u64,

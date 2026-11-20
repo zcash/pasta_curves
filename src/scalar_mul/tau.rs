@@ -8,7 +8,7 @@ use ff::{Field, WithSmallOrderMulGroup};
 use group::Group;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
-use super::{Homogeneous, SmallMul};
+use super::{FormulaField, Homogeneous};
 use crate::glv::{GlvConstants, decompose_signed};
 use crate::{Fp, Fq};
 
@@ -431,7 +431,7 @@ impl<F: Field + WithSmallOrderMulGroup<3>> Rotated<F> {
 // The base-field constants 1 - beta and (1 - beta)^3 of the tau
 // endomorphism, with beta = ZETA, evaluated at compile time from ZETA with
 // the fields' const arithmetic.
-pub(crate) trait TauField: SmallMul + WithSmallOrderMulGroup<3> {
+pub(crate) trait TauField: FormulaField + WithSmallOrderMulGroup<3> {
     const ONE_MINUS_ZETA: Self;
     const ONE_MINUS_ZETA_CUBED: Self;
 }
@@ -461,7 +461,7 @@ fn tau<F: TauField>(p: Homogeneous<F>) -> Homogeneous<F> {
     }
 }
 
-fn representatives<F: SmallMul>(p: Homogeneous<F>, t: Homogeneous<F>) -> [Homogeneous<F>; 6] {
+fn representatives<F: FormulaField>(p: Homogeneous<F>, t: Homogeneous<F>) -> [Homogeneous<F>; 6] {
     let two_p = p.double();
     let p_plus_t = p.add(&t);
     let two_t = t.double();
