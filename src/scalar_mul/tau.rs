@@ -10,6 +10,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use super::Homogeneous;
 use crate::glv::{GlvConstants, decompose_signed};
+use crate::{Fp, Fq};
 
 // A signed two's-complement integer in three little-endian limbs. Sage proves
 // |a|, |b| < 2^129, including every recoding state, and the largest numerator
@@ -394,7 +395,27 @@ impl<F: Field + WithSmallOrderMulGroup<3>> Rotated<F> {
     }
 }
 
-fn tau<F: Field + WithSmallOrderMulGroup<3>>(p: Homogeneous<F>) -> Homogeneous<F> {
+// The base-field constants 1 - beta and (1 - beta)^3 of the tau
+// endomorphism, with beta = ZETA, evaluated at compile time from ZETA with
+// the fields' const arithmetic.
+pub(crate) trait TauField: Field + WithSmallOrderMulGroup<3> {
+    const ONE_MINUS_ZETA: Self;
+    const ONE_MINUS_ZETA_CUBED: Self;
+}
+
+macro_rules! tau_field {
+    ($field:ident) => {
+        impl TauField for $field {
+            const ONE_MINUS_ZETA: Self = $field::one().sub(&$field::ZETA);
+            const ONE_MINUS_ZETA_CUBED: Self =
+                Self::ONE_MINUS_ZETA.square().mul(&Self::ONE_MINUS_ZETA);
+        }
+    };
+}
+tau_field!(Fp);
+tau_field!(Fq);
+
+fn tau<F: TauField>(p: Homogeneous<F>) -> Homogeneous<F> {
     // The complete isogeny ψ : E_5 → E_-135 followed by the isomorphism
     // (X:Y:Z) ↦ ((1−β)X:Y:(1−β)^3 Z) is 1−ω on the native curve.
     let y2 = p.y.square();
@@ -402,11 +423,10 @@ fn tau<F: Field + WithSmallOrderMulGroup<3>>(p: Homogeneous<F>) -> Homogeneous<F
     let bz2 = z2 + z2 + z2 + z2 + z2;
     let b3z2 = bz2 + bz2 + bz2;
     let b9z2 = b3z2 + b3z2 + b3z2;
-    let t = F::ONE - F::ZETA;
     Homogeneous {
-        x: p.x * (y2 + b3z2) * t,
+        x: p.x * (y2 + b3z2) * F::ONE_MINUS_ZETA,
         y: p.y * (y2 - b9z2),
-        z: p.z * (y2 - bz2) * t.square() * t,
+        z: p.z * (y2 - bz2) * F::ONE_MINUS_ZETA_CUBED,
     }
 }
 
@@ -456,7 +476,7 @@ fn rotated_select<F: Field>(
     }
 }
 
-impl<F: Field + WithSmallOrderMulGroup<3>> Homogeneous<F> {
+impl<F: TauField> Homogeneous<F> {
     /// Internal regular τ-adic multiplication for either Pasta scalar field.
     /// Caller supplies the curve whose scalar field's ZETA is paired with this curve's β.
     pub(crate) fn multiply_tau<C: Group + GlvConstants>(&self, scalar: &C::Scalar) -> Self {
@@ -630,6 +650,21 @@ mod tests {
                 assert_eq!(matches, usize::from(a9 % 3 != 0));
             }
         }
+    }
+
+    fn check_tau_constants<F: TauField + core::fmt::Debug>() {
+        let t = F::ONE - F::ZETA;
+        assert_eq!(F::ONE_MINUS_ZETA, t);
+        assert_eq!(F::ONE_MINUS_ZETA_CUBED, t.square() * t);
+        // (1 - beta)^3 = -3 - 6 beta, as beta^2 + beta + 1 = 0.
+        let three = F::ONE + F::ONE + F::ONE;
+        assert_eq!(F::ONE_MINUS_ZETA_CUBED, -three - (three + three) * F::ZETA);
+    }
+
+    #[test]
+    fn tau_constants() {
+        check_tau_constants::<Fp>();
+        check_tau_constants::<Fq>();
     }
 
     #[test]
