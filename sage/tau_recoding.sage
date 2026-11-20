@@ -14,7 +14,30 @@ for divisor in (3, 9):
                for x in range(divisor * 2**16))
     print('division by %s: reciprocal = 0x%x, shift = 33; all chunks verified' %
           (divisor, reciprocal))
+
 from random import Random
+
+# Signed192::mod9 folds instead of dividing. 2^6 = 1 (mod 9), hence 2^12,
+# 2^48 and 2^192 are 1 as well, and a two's-complement word U = x + 2^192*s
+# gives x = U + 8*s (mod 9). Check the congruences and the folding bounds:
+# four 48-bit chunks plus 8*s fit below 2^51, and five 12-bit chunks of that
+# sum stay below 2^15 < 9*2^16, where the reciprocal above is exact.
+assert all(pow(2, e, 9) == 1 for e in (6, 12, 48, 192)) and (-1) % 9 == 8
+s1_max = 4*(2**48 - 1) + 8
+assert s1_max < 2**51
+s2_max = 4*(2**12 - 1) + (2**51 - 1 >> 48)
+assert s2_max < 2**15 < 9*2**16
+def fold_mod9(x):
+    u, s = x % 2**192, int(x < 0)
+    s1 = sum((u >> (48*i)) % 2**48 for i in range(4)) + 8*s
+    s2 = sum((s1 >> (12*i)) % 2**12 for i in range(4)) + (s1 >> 48)
+    assert s1 <= s1_max and s2 <= s2_max
+    return s2 - 9*((s2*0x38e38e39) >> 33)
+rng = Random(int(0x3D09))
+for x in [0, -1, 1, 2**191 - 1, -2**191, -2**191 + 1] + \
+         [rng.randrange(-2**191, 2**191) for _ in range(20000)]:
+    assert fold_mod9(x) == x % 9
+print('mod 9 by folding: chunk sums < 2^51 and < 2^15; verified')
 
 p = 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001
 q = 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001
