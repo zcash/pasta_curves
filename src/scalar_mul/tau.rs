@@ -453,10 +453,11 @@ fn tau<F: TauField>(p: Homogeneous<F>) -> Homogeneous<F> {
     // (X:Y:Z) ↦ ((1−β)X:Y:(1−β)^3 Z) is 1−ω on the native curve.
     let y2 = p.y.square();
     let z2 = p.z.square();
+    let (m5, m15, m45) = (z2.mul_small(5), z2.mul_small(15), z2.mul_small(45));
     Homogeneous {
-        x: p.x * (y2 + z2.mul_small(15)) * F::ONE_MINUS_ZETA,
-        y: p.y * (y2 - z2.mul_small(45)),
-        z: p.z * (y2 - z2.mul_small(5)) * F::ONE_MINUS_ZETA_CUBED,
+        x: p.x * (y2 + m15) * F::ONE_MINUS_ZETA,
+        y: p.y * (y2 - m45),
+        z: p.z * (y2 - m5) * F::ONE_MINUS_ZETA_CUBED,
     }
 }
 
