@@ -249,19 +249,56 @@ const fn digits() -> [[Digit; 9]; 6] {
 }
 const DIGITS: [[Digit; 9]; 6] = digits();
 
-fn choose_digit(a9: u8, b9: u8) -> Digit {
-    let mut result = make_digit((0, 0, 0));
-    for (row, entries) in DIGITS.iter().enumerate() {
-        for (column, entry) in entries.iter().enumerate() {
-            let choice = a9.ct_eq(&RESIDUES[row]) & b9.ct_eq(&(column as u8));
-            result.index = u8::conditional_select(&result.index, &entry.index, choice);
-            result.rotation = u8::conditional_select(&result.rotation, &entry.rotation, choice);
-            result.negative = u8::conditional_select(&result.negative, &entry.negative, choice);
-            result.a = i8::conditional_select(&result.a, &entry.a, choice);
-            result.b = i8::conditional_select(&result.b, &entry.b, choice);
-        }
+// A digit packed into one word, so that the constant-time table scan makes
+// one masked selection per entry instead of one per field. Bits 0..8 and
+// 8..16 hold a and b (two's complement), bits 16..19 the representative
+// index, bits 19..21 the rotation and bit 21 the sign.
+const fn pack(digit: Digit) -> u32 {
+    (digit.a as u8 as u32)
+        | ((digit.b as u8 as u32) << 8)
+        | ((digit.index as u32) << 16)
+        | ((digit.rotation as u32) << 19)
+        | ((digit.negative as u32) << 21)
+}
+
+fn unpack(word: u32) -> Digit {
+    Digit {
+        index: ((word >> 16) & 7) as u8,
+        rotation: ((word >> 19) & 3) as u8,
+        negative: ((word >> 21) & 1) as u8,
+        a: word as u8 as i8,
+        b: (word >> 8) as u8 as i8,
     }
-    result
+}
+
+// The selection key of a residue pair (a mod 9, b mod 9).
+const fn key(a9: u8, b9: u8) -> u8 {
+    (a9 << 4) | b9
+}
+
+// The digit table flattened, each entry with its selection key.
+const fn packed_digits() -> [(u8, u32); 54] {
+    let mut out = [(0, 0); 54];
+    let mut row = 0;
+    while row < 6 {
+        let mut column = 0;
+        while column < 9 {
+            out[9 * row + column] = (key(RESIDUES[row], column as u8), pack(DIGITS[row][column]));
+            column += 1;
+        }
+        row += 1;
+    }
+    out
+}
+const PACKED_DIGITS: [(u8, u32); 54] = packed_digits();
+
+fn choose_digit(a9: u8, b9: u8) -> Digit {
+    let key = key(a9, b9);
+    let mut result = pack(make_digit((0, 0, 0)));
+    for (entry_key, entry) in PACKED_DIGITS.iter() {
+        result = u32::conditional_select(&result, entry, key.ct_eq(entry_key));
+    }
+    unpack(result)
 }
 
 struct Recode {
@@ -544,6 +581,32 @@ mod tests {
                         .rem_euclid(3),
                     0
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn packed_digit_table() {
+        for (row, entries) in DIGITS.iter().enumerate() {
+            for (column, d) in entries.iter().enumerate() {
+                let u = unpack(pack(*d));
+                assert_eq!(
+                    (u.index, u.rotation, u.negative, u.a, u.b),
+                    (d.index, d.rotation, d.negative, d.a, d.b)
+                );
+                let (k, word) = PACKED_DIGITS[9 * row + column];
+                assert_eq!((k, word), (key(RESIDUES[row], column as u8), pack(*d)));
+            }
+        }
+        // Keys are distinct over the whole 9x9 residue square, so a scan
+        // selects at most one entry, and exactly one for a valid key.
+        for a9 in 0..9u8 {
+            for b9 in 0..9u8 {
+                let matches = PACKED_DIGITS
+                    .iter()
+                    .filter(|(k, _)| *k == key(a9, b9))
+                    .count();
+                assert_eq!(matches, usize::from(a9 % 3 != 0));
             }
         }
     }
