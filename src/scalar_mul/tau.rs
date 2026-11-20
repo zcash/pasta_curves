@@ -527,7 +527,19 @@ impl<F: TauField> Homogeneous<F> {
         let recoding = recode::<C>(scalar);
         let tau_p = tau(*self);
         let base = representatives(*self, tau_p);
-        let tau_base = representatives(tau_p, tau(tau_p));
+        // tau is a group endomorphism, so the representatives built from
+        // tau(P) and tau^2(P) are the tau-images of those built from P and
+        // tau(P). One tau per entry costs less than the doublings and
+        // additions of a second `representatives`, and the first entry is
+        // tau(P) itself.
+        let tau_base = [
+            tau_p,
+            tau(base[1]),
+            tau(base[2]),
+            tau(base[3]),
+            tau(base[4]),
+            tau(base[5]),
+        ];
         let table = [base.map(Rotated::new), tau_base.map(Rotated::new)];
 
         // τ^(3j) = 3^floor(3j/2) (-ω)^floor(3j/2) τ^(j mod 2).
