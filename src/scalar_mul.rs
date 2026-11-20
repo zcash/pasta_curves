@@ -123,7 +123,7 @@ impl<F: SmallMul> Homogeneous<F> {
         let t3 = (self.x + self.y) * (rhs.x + rhs.y) - (t0 + t1);
         let t4 = (self.y + self.z) * (rhs.y + rhs.z) - (t1 + t2);
         let y3 = (self.x + self.z) * (rhs.x + rhs.z) - (t0 + t2);
-        let t0 = t0 + t0 + t0;
+        let t0 = t0.mul_small(3);
         let t2 = Self::mul_by_3b(t2);
         let z3 = t1 + t2;
         let t1 = t1 - t2;
@@ -186,7 +186,7 @@ impl<F: SmallMul> Homogeneous<F> {
         let y = y * (w + z2.mul_small(1080));
         let z = z * w;
         Self {
-            x: x + x + x,
+            x: x.mul_small(3),
             y,
             z: z.mul_small(27),
         }
