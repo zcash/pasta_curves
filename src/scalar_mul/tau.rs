@@ -447,6 +447,15 @@ fn representatives<F: Field>(p: Homogeneous<F>, t: Homogeneous<F>) -> [Homogeneo
     ]
 }
 
+// (rotation + offset) mod 3 for rotation in 0..3 and offset in 0..2, in
+// bit arithmetic: a remainder operation on the secret rotation can compile
+// to a division instruction (wasm32 emits i32.rem_u for it). The sum is in
+// 0..=3, and it is 3 exactly when both of its low bits are set.
+fn add_rotation(rotation: u8, offset: u8) -> u8 {
+    let sum = rotation + offset;
+    sum - 3 * (sum & (sum >> 1) & 1)
+}
+
 fn rotated_select<F: Field>(
     points: &[Rotated<F>; 6],
     index: u8,
@@ -501,7 +510,9 @@ impl<F: TauField> Homogeneous<F> {
                 acc = acc.triple();
             }
             let digit = recoding.digits[j];
-            let rotation = (digit.rotation + (exponent % 3) as u8) % 3;
+            // exponent mod 3 is j mod 2: floor(3j/2) is 3(j/2) for even j
+            // and 3(j-1)/2 + 1 for odd j.
+            let rotation = add_rotation(digit.rotation, (j & 1) as u8);
             let sign = digit.negative ^ (exponent as u8 & 1);
             let addend = rotated_select(&table[j & 1], digit.index, rotation, sign);
             acc = acc.add(&addend);
@@ -659,6 +670,18 @@ mod tests {
         // (1 - beta)^3 = -3 - 6 beta, as beta^2 + beta + 1 = 0.
         let three = F::ONE + F::ONE + F::ONE;
         assert_eq!(F::ONE_MINUS_ZETA_CUBED, -three - (three + three) * F::ZETA);
+    }
+
+    #[test]
+    fn rotation_offsets() {
+        for j in 0..54usize {
+            assert_eq!((3 * j / 2) % 3, j & 1);
+        }
+        for rotation in 0..3u8 {
+            for offset in 0..2u8 {
+                assert_eq!(add_rotation(rotation, offset), (rotation + offset) % 3);
+            }
+        }
     }
 
     #[test]
