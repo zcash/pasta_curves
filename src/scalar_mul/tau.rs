@@ -10,6 +10,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use super::Homogeneous;
 use crate::glv::{GlvConstants, decompose_signed};
+use crate::{Fp, Fq};
 
 // A signed two's-complement integer in three little-endian limbs. Sage proves
 // |a|, |b| < 2^129, including every recoding state, and the largest numerator
@@ -57,6 +58,7 @@ impl Signed192 {
         self.twice().add(self)
     }
 
+    #[cfg(test)]
     fn magnitude(self) -> ([u64; 3], Choice) {
         let negative = Choice::from((self.0[2] >> 63) as u8);
         let mask = 0u64.wrapping_sub(u64::from(negative.unwrap_u8()));
@@ -66,11 +68,13 @@ impl Signed192 {
         ([lo, mid, hi], negative)
     }
 
-    // Long division by the public constants 3 and 9, using 16-bit chunks.
+    // Long division by the public constants 3 and 9, using 16-bit chunks. The
+    // tests use it as the reference for mod9 and div_exact.
     // Every 16-bit dividend is < 9*2^16; the 32-bit reciprocal formula
     // floor((x * 0x38e38e39)/2^33) computes x/9 exactly (and similarly
     // 0xaaaaaaab for /3). Thus no target-dependent integer division helper
     // sees secret values, including on 32-bit targets.
+    #[cfg(test)]
     fn quotient_remainder(self, divisor: u8) -> (Self, u8) {
         let (magnitude, negative) = self.magnitude();
         let reciprocal = if divisor == 9 {
@@ -100,16 +104,66 @@ impl Signed192 {
         (signed_quotient, signed_remainder)
     }
 
-    fn div_exact(self, divisor: u8) -> Self {
-        let (quotient, remainder) = self.quotient_remainder(divisor);
-        // These divisions are exact by the verified residue table, and their
-        // fixed-limb computations avoid a secret-dependent assertion here.
-        let _ = remainder;
-        quotient
+    // The product modulo 2^192, which is the two's-complement product of the
+    // signed values.
+    fn wrapping_mul(self, rhs: [u64; 3]) -> Self {
+        let [x0, x1, x2] = self.0;
+        let [c0, c1, c2] = rhs;
+        let p00 = u128::from(x0) * u128::from(c0);
+        let p01 = u128::from(x0) * u128::from(c1);
+        let p10 = u128::from(x1) * u128::from(c0);
+        let s1 = (p00 >> 64) + u128::from(p01 as u64) + u128::from(p10 as u64);
+        let r2 = ((s1 >> 64) as u64)
+            .wrapping_add((p01 >> 64) as u64)
+            .wrapping_add((p10 >> 64) as u64)
+            .wrapping_add(x0.wrapping_mul(c2))
+            .wrapping_add(x1.wrapping_mul(c1))
+            .wrapping_add(x2.wrapping_mul(c0));
+        Self([p00 as u64, s1 as u64, r2])
     }
 
+    // Division by 3 or 9 when it is exact, as it is in the recoding by the
+    // verified residue table: multiplying by the divisor's inverse modulo
+    // 2^192 (derived in Sage) then gives the quotient exactly, without a
+    // long division (Granlund and Montgomery, "Division by invariant integers
+    // using multiplication", PLDI 1994).
+    fn div_exact(self, divisor: u8) -> Self {
+        const INVERSE_3: [u64; 3] = [
+            0xaaaa_aaaa_aaaa_aaab,
+            0xaaaa_aaaa_aaaa_aaaa,
+            0xaaaa_aaaa_aaaa_aaaa,
+        ];
+        const INVERSE_9: [u64; 3] = [
+            0x8e38_e38e_38e3_8e39,
+            0x38e3_8e38_e38e_38e3,
+            0xe38e_38e3_8e38_e38e,
+        ];
+        self.wrapping_mul(if divisor == 9 { INVERSE_9 } else { INVERSE_3 })
+    }
+
+    // The Euclidean remainder modulo 9, without a long division. As 2^6 = 1
+    // (mod 9), so are 2^12, 2^48 and 2^192. The limbs, read as an unsigned
+    // U = x + 2^192 s with s the sign bit, give x = U - s = U + 8s (mod 9).
+    // Summing U's four 48-bit chunks and 8s gives s1 < 2^51; summing s1's
+    // five 12-bit chunks gives s2 < 2^15 < 9 * 2^16, in the range where the
+    // reciprocal formula of quotient_remainder is exact (Sage checks these
+    // bounds).
     fn mod9(self) -> u8 {
-        self.quotient_remainder(9).1
+        const MASK48: u64 = (1 << 48) - 1;
+        const MASK12: u64 = (1 << 12) - 1;
+        let [l0, l1, l2] = self.0;
+        let s1 = (l0 & MASK48)
+            + ((l0 >> 48) | ((l1 << 16) & MASK48))
+            + ((l1 >> 32) | ((l2 << 32) & MASK48))
+            + (l2 >> 16)
+            + 8 * (l2 >> 63);
+        let s2 = (s1 & MASK12)
+            + ((s1 >> 12) & MASK12)
+            + ((s1 >> 24) & MASK12)
+            + ((s1 >> 36) & MASK12)
+            + (s1 >> 48);
+        let q = (s2 * 0x38e3_8e39) >> 33;
+        (s2 - 9 * q) as u8
     }
 
     #[cfg(test)]
@@ -249,19 +303,56 @@ const fn digits() -> [[Digit; 9]; 6] {
 }
 const DIGITS: [[Digit; 9]; 6] = digits();
 
-fn choose_digit(a9: u8, b9: u8) -> Digit {
-    let mut result = make_digit((0, 0, 0));
-    for (row, entries) in DIGITS.iter().enumerate() {
-        for (column, entry) in entries.iter().enumerate() {
-            let choice = a9.ct_eq(&RESIDUES[row]) & b9.ct_eq(&(column as u8));
-            result.index = u8::conditional_select(&result.index, &entry.index, choice);
-            result.rotation = u8::conditional_select(&result.rotation, &entry.rotation, choice);
-            result.negative = u8::conditional_select(&result.negative, &entry.negative, choice);
-            result.a = i8::conditional_select(&result.a, &entry.a, choice);
-            result.b = i8::conditional_select(&result.b, &entry.b, choice);
-        }
+// A digit packed into one word, so that the constant-time table scan makes
+// one masked selection per entry instead of one per field. Bits 0..8 and
+// 8..16 hold a and b (two's complement), bits 16..19 the representative
+// index, bits 19..21 the rotation and bit 21 the sign.
+const fn pack(digit: Digit) -> u32 {
+    (digit.a as u8 as u32)
+        | ((digit.b as u8 as u32) << 8)
+        | ((digit.index as u32) << 16)
+        | ((digit.rotation as u32) << 19)
+        | ((digit.negative as u32) << 21)
+}
+
+fn unpack(word: u32) -> Digit {
+    Digit {
+        index: ((word >> 16) & 7) as u8,
+        rotation: ((word >> 19) & 3) as u8,
+        negative: ((word >> 21) & 1) as u8,
+        a: word as u8 as i8,
+        b: (word >> 8) as u8 as i8,
     }
-    result
+}
+
+// The selection key of a residue pair (a mod 9, b mod 9).
+const fn key(a9: u8, b9: u8) -> u8 {
+    (a9 << 4) | b9
+}
+
+// The digit table flattened, each entry with its selection key.
+const fn packed_digits() -> [(u8, u32); 54] {
+    let mut out = [(0, 0); 54];
+    let mut row = 0;
+    while row < 6 {
+        let mut column = 0;
+        while column < 9 {
+            out[9 * row + column] = (key(RESIDUES[row], column as u8), pack(DIGITS[row][column]));
+            column += 1;
+        }
+        row += 1;
+    }
+    out
+}
+const PACKED_DIGITS: [(u8, u32); 54] = packed_digits();
+
+fn choose_digit(a9: u8, b9: u8) -> Digit {
+    let key = key(a9, b9);
+    let mut result = pack(make_digit((0, 0, 0)));
+    for (entry_key, entry) in PACKED_DIGITS.iter() {
+        result = u32::conditional_select(&result, entry, key.ct_eq(entry_key));
+    }
+    unpack(result)
 }
 
 struct Recode {
@@ -317,26 +408,47 @@ fn recode<C: Group + GlvConstants>(scalar: &C::Scalar) -> Recode {
     }
 }
 
+// A table point with its X coordinate's first two omega rotations, X and
+// zeta*X. The third, zeta^2*X = -X - zeta*X, is formed after the selection,
+// so the scan selects four field elements per entry instead of five.
 #[derive(Clone, Copy)]
 struct Rotated<F: Field> {
-    x: [F; 3],
+    x: [F; 2],
     y: F,
     z: F,
 }
 
 impl<F: Field + WithSmallOrderMulGroup<3>> Rotated<F> {
     fn new(p: Homogeneous<F>) -> Self {
-        let x1 = p.x * F::ZETA;
         Self {
-            // 1 + ζ + ζ² = 0, including for the identity's zero X.
-            x: [p.x, x1, -p.x - x1],
+            x: [p.x, p.x * F::ZETA],
             y: p.y,
             z: p.z,
         }
     }
 }
 
-fn tau<F: Field + WithSmallOrderMulGroup<3>>(p: Homogeneous<F>) -> Homogeneous<F> {
+// The base-field constants 1 - beta and (1 - beta)^3 of the tau
+// endomorphism, with beta = ZETA, evaluated at compile time from ZETA with
+// the fields' const arithmetic.
+pub(crate) trait TauField: Field + WithSmallOrderMulGroup<3> {
+    const ONE_MINUS_ZETA: Self;
+    const ONE_MINUS_ZETA_CUBED: Self;
+}
+
+macro_rules! tau_field {
+    ($field:ident) => {
+        impl TauField for $field {
+            const ONE_MINUS_ZETA: Self = $field::one().sub(&$field::ZETA);
+            const ONE_MINUS_ZETA_CUBED: Self =
+                Self::ONE_MINUS_ZETA.square().mul(&Self::ONE_MINUS_ZETA);
+        }
+    };
+}
+tau_field!(Fp);
+tau_field!(Fq);
+
+fn tau<F: TauField>(p: Homogeneous<F>) -> Homogeneous<F> {
     // The complete isogeny ψ : E_5 → E_-135 followed by the isomorphism
     // (X:Y:Z) ↦ ((1−β)X:Y:(1−β)^3 Z) is 1−ω on the native curve.
     let y2 = p.y.square();
@@ -344,11 +456,10 @@ fn tau<F: Field + WithSmallOrderMulGroup<3>>(p: Homogeneous<F>) -> Homogeneous<F
     let bz2 = z2 + z2 + z2 + z2 + z2;
     let b3z2 = bz2 + bz2 + bz2;
     let b9z2 = b3z2 + b3z2 + b3z2;
-    let t = F::ONE - F::ZETA;
     Homogeneous {
-        x: p.x * (y2 + b3z2) * t,
+        x: p.x * (y2 + b3z2) * F::ONE_MINUS_ZETA,
         y: p.y * (y2 - b9z2),
-        z: p.z * (y2 - bz2) * t.square() * t,
+        z: p.z * (y2 - bz2) * F::ONE_MINUS_ZETA_CUBED,
     }
 }
 
@@ -369,13 +480,22 @@ fn representatives<F: Field>(p: Homogeneous<F>, t: Homogeneous<F>) -> [Homogeneo
     ]
 }
 
+// (rotation + offset) mod 3 for rotation in 0..3 and offset in 0..2, in
+// bit arithmetic: a remainder operation on the secret rotation can compile
+// to a division instruction (wasm32 emits i32.rem_u for it). The sum is in
+// 0..=3, and it is 3 exactly when both of its low bits are set.
+fn add_rotation(rotation: u8, offset: u8) -> u8 {
+    let sum = rotation + offset;
+    sum - 3 * (sum & (sum >> 1) & 1)
+}
+
 fn rotated_select<F: Field>(
     points: &[Rotated<F>; 6],
     index: u8,
     rotation: u8,
     sign: u8,
 ) -> Homogeneous<F> {
-    let mut x = [F::ZERO; 3];
+    let mut x = [F::ZERO; 2];
     let mut y = F::ONE;
     let mut z = F::ZERO;
     for (i, point) in points.iter().enumerate() {
@@ -386,6 +506,8 @@ fn rotated_select<F: Field>(
         y = F::conditional_select(&y, &point.y, choice);
         z = F::conditional_select(&z, &point.z, choice);
     }
+    // 1 + zeta + zeta^2 = 0, including for the identity's zero X.
+    let x = [x[0], x[1], -x[0] - x[1]];
     let mut selected_x = F::ZERO;
     for (i, candidate) in x.iter().enumerate() {
         selected_x = F::conditional_select(&selected_x, candidate, rotation.ct_eq(&(i as u8)));
@@ -398,7 +520,7 @@ fn rotated_select<F: Field>(
     }
 }
 
-impl<F: Field + WithSmallOrderMulGroup<3>> Homogeneous<F> {
+impl<F: TauField> Homogeneous<F> {
     /// Internal regular τ-adic multiplication for either Pasta scalar field.
     /// Caller supplies the curve whose scalar field's ZETA is paired with this curve's β.
     pub(crate) fn multiply_tau<C: Group + GlvConstants>(&self, scalar: &C::Scalar) -> Self {
@@ -423,7 +545,9 @@ impl<F: Field + WithSmallOrderMulGroup<3>> Homogeneous<F> {
                 acc = acc.triple();
             }
             let digit = recoding.digits[j];
-            let rotation = (digit.rotation + (exponent % 3) as u8) % 3;
+            // exponent mod 3 is j mod 2: floor(3j/2) is 3(j/2) for even j
+            // and 3(j-1)/2 + 1 for odd j.
+            let rotation = add_rotation(digit.rotation, (j & 1) as u8);
             let sign = digit.negative ^ (exponent as u8 & 1);
             let addend = rotated_select(&table[j & 1], digit.index, rotation, sign);
             acc = acc.add(&addend);
@@ -549,6 +673,59 @@ mod tests {
     }
 
     #[test]
+    fn packed_digit_table() {
+        for (row, entries) in DIGITS.iter().enumerate() {
+            for (column, d) in entries.iter().enumerate() {
+                let u = unpack(pack(*d));
+                assert_eq!(
+                    (u.index, u.rotation, u.negative, u.a, u.b),
+                    (d.index, d.rotation, d.negative, d.a, d.b)
+                );
+                let (k, word) = PACKED_DIGITS[9 * row + column];
+                assert_eq!((k, word), (key(RESIDUES[row], column as u8), pack(*d)));
+            }
+        }
+        // Keys are distinct over the whole 9x9 residue square, so a scan
+        // selects at most one entry, and exactly one for a valid key.
+        for a9 in 0..9u8 {
+            for b9 in 0..9u8 {
+                let matches = PACKED_DIGITS
+                    .iter()
+                    .filter(|(k, _)| *k == key(a9, b9))
+                    .count();
+                assert_eq!(matches, usize::from(a9 % 3 != 0));
+            }
+        }
+    }
+
+    fn check_tau_constants<F: TauField + core::fmt::Debug>() {
+        let t = F::ONE - F::ZETA;
+        assert_eq!(F::ONE_MINUS_ZETA, t);
+        assert_eq!(F::ONE_MINUS_ZETA_CUBED, t.square() * t);
+        // (1 - beta)^3 = -3 - 6 beta, as beta^2 + beta + 1 = 0.
+        let three = F::ONE + F::ONE + F::ONE;
+        assert_eq!(F::ONE_MINUS_ZETA_CUBED, -three - (three + three) * F::ZETA);
+    }
+
+    #[test]
+    fn rotation_offsets() {
+        for j in 0..54usize {
+            assert_eq!((3 * j / 2) % 3, j & 1);
+        }
+        for rotation in 0..3u8 {
+            for offset in 0..2u8 {
+                assert_eq!(add_rotation(rotation, offset), (rotation + offset) % 3);
+            }
+        }
+    }
+
+    #[test]
+    fn tau_constants() {
+        check_tau_constants::<Fp>();
+        check_tau_constants::<Fq>();
+    }
+
+    #[test]
     fn scalar_boundaries() {
         for s in [
             Fp::ZERO,
@@ -572,7 +749,44 @@ mod tests {
         }
     }
 
+    #[test]
+    fn mod9_boundaries() {
+        // The extremes of each 48-bit and 12-bit chunk, and of the sign.
+        for limbs in [
+            [0, 0, 0],
+            [u64::MAX; 3],
+            [u64::MAX, u64::MAX, u64::MAX >> 1],
+            [0, 0, 1 << 63],
+            [1, 0, 1 << 63],
+            [(1 << 48) - 1, 0, 0],
+            [u64::MAX, u64::MAX, 0],
+            [0, 0, u64::MAX >> 16],
+        ] {
+            let w = Signed192(limbs);
+            assert_eq!(w.mod9(), w.quotient_remainder(9).1, "{limbs:x?}");
+        }
+    }
+
     proptest! {
+        #[test]
+        fn div_exact_matches_long_division(limbs in any::<[u64; 3]>()) {
+            // Any signed quotient below 2^186 in magnitude, multiplied back
+            // up, is an exact multiple of 3 and of 9 within signed 192 bits.
+            let q = Signed192([limbs[0], limbs[1], ((limbs[2] as i64) >> 5) as u64]);
+            let n3 = q.thrice();
+            let n9 = n3.thrice();
+            prop_assert_eq!(n3.div_exact(3).0, q.0);
+            prop_assert_eq!(n9.div_exact(9).0, q.0);
+            let (long_quotient, remainder) = n9.quotient_remainder(9);
+            prop_assert_eq!((long_quotient.0, remainder), (q.0, 0));
+        }
+
+        #[test]
+        fn mod9_matches_long_division(limbs in any::<[u64; 3]>()) {
+            let w = Signed192(limbs);
+            prop_assert_eq!(w.mod9(), w.quotient_remainder(9).1);
+        }
+
         #[test]
         fn full_width_fp(words in any::<[u64;4]>()) {
             let scalar = Fp::from_raw(words);
