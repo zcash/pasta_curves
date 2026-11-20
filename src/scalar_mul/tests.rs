@@ -290,11 +290,11 @@ fn small_mul_edge_elements<F: PrimeField>() -> [F; 8] {
     ]
 }
 
-fn check_small_mul<F: PrimeField + super::SmallMul>(x: F, k: u64) {
+fn check_small_mul<F: PrimeField + super::FormulaField>(x: F, k: u64) {
     assert_eq!(x.mul_small(k), x * F::from(k), "k = {k}");
 }
 
-fn small_mul_exhaustive<F: PrimeField + super::SmallMul>() {
+fn small_mul_exhaustive<F: PrimeField + super::FormulaField>() {
     // Every k up to 2^11, which covers the formulas' constants (at most
     // 1080), and the largest k the helper accepts.
     for x in small_mul_edge_elements::<F>() {
@@ -329,5 +329,47 @@ proptest::proptest! {
         let x = crate::Fq::from_u512(words);
         check_small_mul(x, k);
         check_small_mul(x, k & 0x7ff);
+    }
+}
+
+// x3 sums three products and z3 two: the largest sums reduce_wide sees.
+fn check_lazy_sum<F: PrimeField + super::FormulaField>(v: [F; 6]) {
+    let ab = v[0].mul_wide(&v[1]);
+    let cd = v[2].mul_wide(&v[3]);
+    let ef = v[4].mul_wide(&v[5]);
+    let two = super::add_wide(&ab, &cd);
+    assert_eq!(F::reduce_wide(ab), v[0] * v[1]);
+    assert_eq!(F::reduce_wide(two), v[0] * v[1] + v[2] * v[3]);
+    assert_eq!(
+        F::reduce_wide(super::add_wide(&two, &ef)),
+        v[0] * v[1] + v[2] * v[3] + v[4] * v[5]
+    );
+}
+
+fn lazy_sum_edges<F: PrimeField + super::FormulaField>() {
+    // -1 has the largest canonical representation; its products give the
+    // largest sums.
+    let edges = small_mul_edge_elements::<F>();
+    for &a in &edges {
+        for &b in &edges {
+            check_lazy_sum([a, b, a, b, a, b]);
+            check_lazy_sum([a, -F::ONE, -F::ONE, b, -F::ONE, -F::ONE]);
+        }
+    }
+}
+
+#[test]
+fn lazy_sum_matches_field_arithmetic() {
+    lazy_sum_edges::<crate::Fp>();
+    lazy_sum_edges::<crate::Fq>();
+}
+
+proptest::proptest! {
+    #[test]
+    fn lazy_sum_matches_field_arithmetic_random(
+        words in proptest::prelude::any::<[[u64; 8]; 6]>(),
+    ) {
+        check_lazy_sum(words.map(crate::Fp::from_u512));
+        check_lazy_sum(words.map(crate::Fq::from_u512));
     }
 }
