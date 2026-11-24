@@ -127,7 +127,7 @@ impl Signed192 {
     // 2^192 (derived in Sage) then gives the quotient exactly, without a
     // long division (Granlund and Montgomery, "Division by invariant integers
     // using multiplication", PLDI 1994).
-    fn div_exact(self, divisor: u8) -> Self {
+    fn div_exact(self, divisor: Divisor) -> Self {
         const INVERSE_3: [u64; 3] = [
             0xaaaa_aaaa_aaaa_aaab,
             0xaaaa_aaaa_aaaa_aaaa,
@@ -138,7 +138,10 @@ impl Signed192 {
             0x38e3_8e38_e38e_38e3,
             0xe38e_38e3_8e38_e38e,
         ];
-        self.wrapping_mul(if divisor == 9 { INVERSE_9 } else { INVERSE_3 })
+        self.wrapping_mul(match divisor {
+            Divisor::Three => INVERSE_3,
+            Divisor::Nine => INVERSE_9,
+        })
     }
 
     // The Euclidean remainder modulo 9, without a long division. As 2^6 = 1
@@ -179,6 +182,11 @@ impl ConditionallySelectable for Signed192 {
             u64::conditional_select(&a.0[i], &b.0[i], choice)
         }))
     }
+}
+
+enum Divisor {
+    Three,
+    Nine,
 }
 
 // (a, b) represents a+bτ. Every one of the 54 residues with a mod 3 != 0
@@ -379,8 +387,8 @@ fn recode<C: Group + GlvConstants>(scalar: &C::Scalar) -> Recode {
         let x = a.sub(Signed192::from_i8(d.a));
         let y = b.sub(Signed192::from_i8(d.b));
         // (x+yτ)/τ³ = ((x+2y)/3) − ((2x+3y)/9)τ.
-        a = x.add(y.twice()).div_exact(3);
-        b = x.twice().add(y.thrice()).div_exact(9).neg();
+        a = x.add(y.twice()).div_exact(Divisor::Three);
+        b = x.twice().add(y.thrice()).div_exact(Divisor::Nine).neg();
         *digit = d;
     }
     // Sage's norm bound proves that the final nondivisible state is a unit.
@@ -439,7 +447,7 @@ pub(crate) trait TauField: FormulaField + WithSmallOrderMulGroup<3> {
 macro_rules! tau_field {
     ($field:ident) => {
         impl TauField for $field {
-            const ONE_MINUS_ZETA: Self = $field::one().sub(&$field::ZETA);
+            const ONE_MINUS_ZETA: Self = $field::ONE.sub(&$field::ZETA);
             const ONE_MINUS_ZETA_CUBED: Self =
                 Self::ONE_MINUS_ZETA.square().mul(&Self::ONE_MINUS_ZETA);
         }
@@ -785,8 +793,8 @@ mod tests {
             let q = Signed192([limbs[0], limbs[1], ((limbs[2] as i64) >> 5) as u64]);
             let n3 = q.thrice();
             let n9 = n3.thrice();
-            prop_assert_eq!(n3.div_exact(3).0, q.0);
-            prop_assert_eq!(n9.div_exact(9).0, q.0);
+            prop_assert_eq!(n3.div_exact(Divisor::Three).0, q.0);
+            prop_assert_eq!(n9.div_exact(Divisor::Nine).0, q.0);
             let (long_quotient, remainder) = n9.quotient_remainder(9);
             prop_assert_eq!((long_quotient.0, remainder), (q.0, 0));
         }

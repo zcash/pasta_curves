@@ -242,17 +242,21 @@ impl<F: FormulaField> Homogeneous<F> {
         let y3 = x3 + t0 * y3;
         let t1 = self.x * self.y;
         let x3 = t0 * t1;
-        let result = Self {
+        Self {
             x: x3 + x3,
             y: y3,
             z: z3,
-        };
-        Self::conditional_select(&result, &Self::identity(), self.z.is_zero())
+        }
     }
 
     pub(crate) fn triple(&self) -> Self {
-        // Two complete degree-three isogenies and the isomorphism returning
-        // to the original curve. Here bz² means 5z².
+        // https://eprint.iacr.org/2026/2667.pdf section 3: two complete degree-three
+        // isogenies and the isomorphism returning to the original curve. The quotient
+        // isogeny is:
+        //
+        //     ψ_b(X : Y : Z) = (X(Y² + 3bZ²) : Y(Y² - 9bZ²) : Z(Y² - bZ²))
+        //
+        // We first apply ψ_b (i.e. bZ² means 5Z²):
         let y2 = square(self.y);
         let z2 = square(self.z);
         let (bz2, b4z2, b8z2) = (z2.mul_small(5), z2.mul_small(20), z2.mul_small(40));
@@ -261,7 +265,7 @@ impl<F: FormulaField> Homogeneous<F> {
         let y = self.y * (v - b8z2);
         let z = self.z * v;
 
-        // Here 27bz^2 = 135z^2, and 108bz^2 = 540z^2.
+        // Then we apply ψ_(-27b) (27bz^2 = 135z^2, and 108bz^2 = 540z^2):
         let y2 = square(y);
         let z2 = square(z);
         let (b27z2, b108z2, b216z2) = (z2.mul_small(135), z2.mul_small(540), z2.mul_small(1080));
@@ -269,6 +273,8 @@ impl<F: FormulaField> Homogeneous<F> {
         let x = x * (w - b108z2);
         let y = y * (w + b216z2);
         let z = z * w;
+
+        // Finally we map back by (X : Y : Z) -> (3X : Y : 27Z).
         Self {
             x: x.mul_small(3),
             y,
@@ -292,13 +298,18 @@ impl<F: FormulaField> Homogeneous<F> {
         let mut acc = Self::identity();
         // Three trits per radix-27 digit: a fixed 54 rounds, each scanning
         // every table entry and doing three triplings and one addition.
-        for trits in digits.chunks_exact(3).rev() {
+        for (chunk, trits) in digits.chunks_exact(3).rev().enumerate() {
             let digit = trits[0] + 3 * trits[1] + 9 * trits[2];
             let mut addend = Self::identity();
             for (i, entry) in table.iter().enumerate() {
                 addend = Self::conditional_select(&addend, entry, digit.ct_eq(&(i as u8 + 1)));
             }
-            acc = acc.triple().triple().triple().add(&addend);
+            // `digits` is a fixed length, so this does not have input-dependent timing.
+            if chunk == 0 {
+                acc = addend;
+            } else {
+                acc = acc.triple().triple().triple().add(&addend);
+            }
         }
         acc
     }
