@@ -3,18 +3,18 @@
 //! blocks, and `lean/PastaCurves/Inversion/Composition.lean` proves it equal to the algorithm's
 //! model for any blocks that meet the record of their specifications.
 //!
-//! [`invert`] runs the AArch64 or ARMv7E-M assembly blocks where those backends are
-//! compiled, and the same blocks in portable Rust (`portable`) elsewhere.
-
-// The inversion is not yet reached from the field types.
-#![allow(dead_code)]
+//! [`invert`] runs the assembly blocks where the compiled backend provides them, at present all six
+//! on AArch64 and x86-64 and three on ARMv7E-M, and the same blocks in portable Rust (`portable`)
+//! everywhere else.
 
 use crate::limbs::Limbs;
 
 if_asm_supported! {
-    // The ARMv7E-M backend also uses whole portable methods for blocks it does not
-    // optimize. Beside AArch64, portable blocks are compiled for tests and docs.
-    #[cfg(any(not(target_arch = "aarch64"), test, doc))]
+    // The portable blocks serve wherever the assembly blocks do not: on an architecture whose
+    // backend has no inversion blocks, and on ARMv7E-M for the blocks that its backend does not
+    // implement in assembly. Beside the blocks of a backend they are compiled for their tests and
+    // the documentation only.
+    #[cfg(any(not(any(target_arch = "aarch64", target_arch = "x86_64")), test, doc))]
     pub(crate) mod portable;
 }
 if_asm_unsupported! {
@@ -99,22 +99,26 @@ pub(crate) fn invert_with<B: InvertBlocks>(
 }
 
 if_asm_supported! {
-    /// The blocks that [`invert`] runs: AArch64 or ARMv7E-M assembly blocks where
-    /// the corresponding backend is compiled, and portable blocks elsewhere.
+    /// The blocks that [`invert`] runs: the assembly blocks of the backend compiled into this
+    /// build.
     #[cfg(target_arch = "aarch64")]
     type Selected = crate::asm::aarch64::Backend;
-    /// The blocks that [`invert`] runs: AArch64 or ARMv7E-M assembly blocks where
-    /// the corresponding backend is compiled, and portable blocks elsewhere.
+    /// The blocks that [`invert`] runs: the assembly blocks of the backend compiled into this
+    /// build.
+    #[cfg(target_arch = "x86_64")]
+    type Selected = crate::asm::x86_64::Backend;
+    /// The blocks that [`invert`] runs: the assembly blocks of the backend compiled into this
+    /// build.
     #[cfg(target_arch = "arm")]
     type Selected = crate::asm::armv7em::Backend;
-    /// The blocks that [`invert`] runs: AArch64 or ARMv7E-M assembly blocks where
-    /// the corresponding backend is compiled, and portable blocks elsewhere.
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "arm")))]
+    /// The blocks that [`invert`] runs: the portable blocks, since this build's backend has no
+    /// inversion blocks.
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "arm")))]
     type Selected = portable::Backend;
 }
 if_asm_unsupported! {
-    /// The blocks that [`invert`] runs: AArch64 or ARMv7E-M assembly blocks where
-    /// the corresponding backend is compiled, and portable blocks elsewhere.
+    /// The blocks that [`invert`] runs: the portable blocks, since no assembly backend is
+    /// compiled into this build.
     type Selected = portable::Backend;
 }
 
@@ -126,19 +130,21 @@ if_asm_unsupported! {
 /// Bernstein, Chen, Harrison, Huang, Maxwell, Wang, Wuille, and Yang, "Accelerating and verifying
 /// constant-time modular inversion" (EUROCRYPT 2026), as in s2n-bignum's `bignum_montinv_p256`: 590
 /// half-delta divsteps in ten rounds of 59, computed on packed words, with the coefficients reduced
-/// by one Montgomery word per round. It runs a fixed sequence of six blocks, in register-only
-/// assembly on AArch64 and in portable Rust on every other target (and on AArch64 with the assembly
-/// disabled), with no data-dependent branch or memory access in either, so its timing does not
-/// depend on `x`. The design and the correctness argument are in `book/src/design/inversion.md`.
+/// by one Montgomery word per round. It runs a fixed sequence of six blocks, in assembly
+/// where the backend provides them (at present all six on AArch64 and x86-64, and three on
+/// ARMv7E-M) and in portable Rust everywhere else (including wherever the assembly is disabled),
+/// with no data-dependent branch or memory access in either, so its timing does not depend on `x`.
+/// The design and the correctness argument are in `book/src/design/inversion.md`.
 ///
 /// Outputs are canonical.
 ///
 /// # Safety
 ///
 /// `x` must be canonical. This is debug-asserted. Under that precondition the machine-checked
-/// proofs in `lean/` establish the result on AArch64 (`invert_entry_spec`, from `montInv_spec` on
-/// words and the six block proofs). Of the portable blocks, only `cond_sub` is proved, from its
-/// Aeneas translation; all six are tested against the same known answers as the assembly blocks.
+/// proofs in `lean/` establish the result on AArch64 and on x86-64 (`invert_entry_spec`, from
+/// `montInv_spec` on words and each backend's six block proofs), on ARMv7E-M from the translation
+/// of its backend's methods (`ARMv7EM.invert_entry_spec`), and over the portable blocks from their
+/// Aeneas translation (`Portable.invert_entry_spec`); all are also tested on known answers.
 ///
 /// `modulus` must be either the Pallas or Vesta field modulus, `inv` must be correctly derived
 /// from it, and `e0` must be `2^562 mod p`, the starting value of the coefficient `e`, which

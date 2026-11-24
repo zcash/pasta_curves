@@ -10,8 +10,8 @@ import PastaCurves.Inversion.PackedWords
 This module presents the generated `BatchState` and `batchRound` as the word-level state expected
 by `Inversion.PackedStep`. ARMv7E-M keeps each packed 64-bit value in two 32-bit registers, and
 keeps `two_delta` in one 32-bit register. The adapter therefore joins the packed words and
-sign-extends `d`. Unlike the AArch64 step, this implementation has no carried parity flag, so its
-`z` value is read directly from the low bit of `pglo`.
+sign-extends `d`. Unlike the AArch64 step, this implementation has no carried parity flag, so the
+parity of `g` that its state carries is read directly from the low bit of `pglo`.
 
 The structural facts here prepare the signed-width step contract. The checked `batchRound` proof
 in `Round.lean` establishes `packedStep.WidthSpec 31`, which the batch proof iterates.
@@ -31,14 +31,17 @@ structure PackedBounded (st : BatchState) : Prop where
   remaining : st.remaining < wordMod
 
 /-- The ARMv7E-M batch round as a shared packed step. The generated loop has one round body, so the
-ordinary and last steps are the same function. -/
+ordinary and last steps are the same function. Between rounds the state carries the packed state's
+words and, in the low bit of `pglo`, the parity of `g`. -/
 def packedStep : PackedStep where
   Words := BatchState
   Bounded := PackedBounded
   two_delta := fun st => signExtend32 st.d
   f := fun st => join32 st.pflo st.pfhi
   g := fun st => join32 st.pglo st.pghi
-  z := fun st => if st.pglo % 2 = 0 then 1 else 0
+  Carries := fun st s => (signExtend32 st.d : Int) = s.two_delta % 2^64 ∧
+    (join32 st.pflo st.pfhi : Int) = s.f % 2^64 ∧ (join32 st.pglo st.pghi : Int) = s.g % 2^64 ∧
+    (if st.pglo % 2 = 0 then 1 else 0) = if s.g % 2 = 0 then 1 else 0
   round := batchRound
   last := batchRound
 
@@ -348,9 +351,6 @@ theorem negated_parity_mask (a : Nat) :
 @[simp] theorem packedStep_g (st : BatchState) :
     packedStep.g st = join32 st.pglo st.pghi := rfl
 
-@[simp] theorem packedStep_z (st : BatchState) :
-    packedStep.z st = if st.pglo % 2 = 0 then 1 else 0 := rfl
-
 @[simp] theorem packedStep_round (st : BatchState) : packedStep.round st = batchRound st := rfl
 
 @[simp] theorem packedStep_last (st : BatchState) : packedStep.last st = batchRound st := rfl
@@ -380,18 +380,18 @@ theorem packedStep_words_lt (st : BatchState) (hst : packedStep.Bounded st) :
   exact ⟨signExtend32_lt st.d hd, join32_lt st.pflo st.pfhi hfl hfh,
     join32_lt st.pglo st.pghi hgl hgh⟩
 
-/-- The flagless adapter's `z` value is exactly the shared parity predicate on its joined `g`
-word. -/
-theorem packedStep_z_eq_g_parity (st : BatchState) :
-    packedStep.z st = if packedStep.g st % 2 = 0 then 1 else 0 := by
-  rw [packedStep_z, packedStep_g, join32_mod_two]
+/-- The flagless adapter's parity, read from the low bit of `pglo`, is exactly the shared parity
+predicate on its joined `g` word. -/
+theorem pglo_parity_eq_g_parity (st : BatchState) :
+    (if st.pglo % 2 = 0 then 1 else 0) = if packedStep.g st % 2 = 0 then 1 else 0 := by
+  rw [packedStep_g, join32_mod_two]
 
-/-- If the joined `g` word represents an integer modulo `2^64`, the flagless adapter's `z` value is
+/-- If the joined `g` word represents an integer modulo `2^64`, the flagless adapter's parity is
 that integer's parity predicate, as required on entry to a packed step. -/
-theorem packedStep_z_of_g_word (st : BatchState) (G : Int)
+theorem pglo_parity_of_g_word (st : BatchState) (G : Int)
     (hg : (packedStep.g st : Int) = G % 2^64) :
-    packedStep.z st = if G % 2 = 0 then 1 else 0 := by
-  rw [packedStep_z_eq_g_parity]
+    (if st.pglo % 2 = 0 then 1 else 0) = if G % 2 = 0 then 1 else 0 := by
+  rw [pglo_parity_eq_g_parity]
   have hmod : ((packedStep.g st : Int) % 2) = G % 2 := by
     rw [hg, Int.emod_emod_of_dvd _ (by norm_num)]
   have hiff : packedStep.g st % 2 = 0 ↔ ((packedStep.g st : Int) % 2) = 0 := by

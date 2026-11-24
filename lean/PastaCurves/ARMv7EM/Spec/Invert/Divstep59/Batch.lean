@@ -320,8 +320,8 @@ theorem batchBlock_spec (k delta f g : Nat) (hk : k = 19 ∨ k = 20) (TD : Int)
     rw [e_st, packedStep_f, hpfJoin, e_pf, Inversion.pack_f_word, hP, Inversion.packedStart, hs₀]
   have hstG : (packedStep.g st : Int) = P.g % 2^64 := by
     rw [e_st, packedStep_g, hpgJoin, e_pg, Inversion.pack_g_word, hP, Inversion.packedStart, hs₀]
-  have hstZ : packedStep.z st = if P.g % 2 = 0 then 1 else 0 :=
-    packedStep_z_of_g_word st P.g hstG
+  have hstZ : (if st.pglo % 2 = 0 then 1 else 0) = if P.g % 2 = 0 then 1 else 0 :=
+    pglo_parity_of_g_word st P.g hstG
   have hiter : batchRound (batchRound^[n] st) = st_1 := by
     rw [e_st_1, ← hnSucc, Function.iterate_succ_apply']
   have hbudget : |P.two_delta| + 2 * (n + 1) < 2^31 := by
@@ -332,7 +332,7 @@ theorem batchBlock_spec (k delta f g : Nat) (hk : k = 19 ∨ k = 20) (TD : Int)
   have hbatch := packedStep_widthSpec.batch_words n P hPf
     (by rw [hP, hs₀]; exact hd) hbudget hPg
     (fun j _ => Inversion.divsteps_packedStart_g_abs_lt j s₀ hs₀f hs₀fb hs₀gb)
-    st hstBounded hstD hstF hstG hstZ
+    st hstBounded ⟨hstD, hstF, hstG, hstZ⟩
   obtain ⟨hbounded, hdelta, hpf, hpg⟩ := hbatch
   change packedStep.Bounded (batchRound (batchRound^[n] st)) at hbounded
   change (signExtend32 (batchRound (batchRound^[n] st)).d : Int) = _ at hdelta

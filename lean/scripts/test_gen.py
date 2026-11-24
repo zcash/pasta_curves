@@ -104,8 +104,55 @@ class EmitterTests(unittest.TestCase):
 
     def test_unsupported_instruction_is_rejected(self):
         emitter = self.emitter("a")
-        with self.assertRaisesRegex(gen_x86_64.GenerationError, "unsupported instruction or"):
-            emitter.emit_instruction("or {a}, 1")
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "unsupported instruction rol"):
+            emitter.emit_instruction("rol {a}, 1")
+
+    def test_zf_sf_read_without_a_defining_instruction_is_rejected(self):
+        emitter = self.emitter("a", "b")
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "ZF/SF read while invalid"):
+            emitter.emit_instruction("cmove {a}, {b}")
+
+    def test_sign_of_a_rewritten_add_destination_is_rejected(self):
+        emitter = self.emitter("a", "b")
+        emitter.emit_instruction("add {a}, 2")
+        emitter.emit_instruction("mov {a}, {b}")
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "ZF/SF read while invalid"):
+            emitter.emit_instruction("cmovs {b}, {a}")
+
+    def test_zf_sf_after_another_flag_writer_is_rejected(self):
+        emitter = self.emitter("a", "b")
+        emitter.emit_instruction("test {a}, 1")
+        emitter.emit_instruction("xor {b}, {a}")
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "ZF/SF read while invalid"):
+            emitter.emit_instruction("cmove {a}, {b}")
+
+    def test_zf_sf_survive_flag_preserving_instructions(self):
+        emitter = self.emitter("a", "b")
+        emitter.emit_instruction("add {a}, 2")
+        emitter.emit_instruction("lea {b}, [{b} + {a}]")
+        emitter.emit_instruction("cmovs {b}, {a}")
+        self.assertIn("cmovs a b a", [entry["expr"] for entry in emitter.entries])
+
+    def test_cf_after_bt_is_readable(self):
+        emitter = self.emitter("a", "b")
+        emitter.emit_instruction("bt {a}, 63")
+        emitter.emit_instruction("cmovb {a}, {b}")
+        self.assertIn("bt a 63", [entry["expr"] for entry in emitter.entries])
+
+    def test_negative_immediate_is_its_twos_complement(self):
+        emitter = self.emitter("a")
+        emitter.emit_instruction("mov {a}, -2")
+        self.assertIn(str(2**64 - 2), [entry["expr"] for entry in emitter.entries])
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "imm32"):
+            emitter.emit_instruction(f"mov {{a}}, -{2**31 + 1}")
+
+    def test_five_word_pointer_reads_its_last_word_only(self):
+        emitter = gen_x86_64.Emitter({"a": "out", "p": "in"}, {})
+        emitter.bind_pointer("p", "t", 5)
+        emitter.emit_instruction("mov {a}, qword ptr [{p} + 32]")
+        self.assertIn("t.l4", [entry["expr"] for entry in emitter.entries])
+        with self.assertRaisesRegex(gen_x86_64.GenerationError, "unsupported memory offset 40"):
+            emitter.emit_instruction("mov {a}, qword ptr [{p} + 40]")
 
     def test_input_only_register_cannot_be_written(self):
         emitter = gen_x86_64.Emitter({"a": "in", "b": "in"}, {})
@@ -526,8 +573,15 @@ class X86RealSourceTests(unittest.TestCase):
         for config in gen_x86_64.ROUTINES:
             if config.lean_name == "mulMont":
                 continue
+            parsed = gen_x86_64.parse_function(self.source, config)
+            # A routine whose template invokes a factored macro arm transcribes those
+            # invocations as calls of the round, not one comment per instruction.
+            if any(
+                origin is not None and (origin.macro, origin.arm) in gen_x86_64.MACRO_ROUNDS
+                for origin in parsed.origins
+            ):
+                continue
             with self.subTest(routine=config.lean_name):
-                parsed = gen_x86_64.parse_function(self.source, config)
                 generated = gen_x86_64.transcribe(self.source, config)
                 comments = Counter(re.findall(r"-- (.+)$", generated, re.MULTILINE))
                 self.assertEqual(
@@ -770,7 +824,22 @@ class X86RealSourceTests(unittest.TestCase):
         routines = gen_x86_64.all_routines()
         self.assertEqual(
             [routine.name for routine in routines],
-            ["addMod", "subMod", "mulMontRound", "mulMont", "squareLo", "squareHi", "fromMont"],
+            [
+                "addMod",
+                "subMod",
+                "mulMontRound",
+                "mulMont",
+                "squareLo",
+                "squareHi",
+                "fromMont",
+                "divstepRound",
+                "divstep59Block",
+                "signMagBlock",
+                "fgRowBlock",
+                "deRowBlock",
+                "amontredBlock",
+                "condSubBlock",
+            ],
         )
         for routine in routines:
             with self.subTest(routine=routine.name):

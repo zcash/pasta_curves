@@ -78,6 +78,7 @@
 use core::arch::asm;
 
 use super::Limbs;
+use crate::inversion::InvertBlocks;
 
 const PASTA_HIGH_LIMB: u64 = 1 << 62;
 
@@ -803,8 +804,706 @@ pub(super) fn from_mont(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
     [o0, o1, o2, o3]
 }
 
-/// The backend's blocks, for the entry points in `entry.rs`.
-pub(super) struct Backend;
+/// One packed half-delta divstep, the step body of s2n-bignum's x86-64
+/// `divstep59`.
+///
+/// The words `pf` and `pg` carry the low bits of `f` and `g` with a row of the
+/// transition matrix in their upper bits, and `td = 2δ`. A step swaps and
+/// subtracts when `g` is odd and `td` is nonnegative, adds `f` to `g` when `g` is
+/// odd and `td` is negative, and does nothing to `g` when it is even; then it
+/// halves `g` and adds two to `td`. As in s2n-bignum, the step is a mask `k`,
+/// which is `-2` to swap and `0` otherwise: `t` is `f` complemented under `k`
+/// (or `0` when `g` is even), which is `-f` for odd `f` since `k` keeps bit 0,
+/// and `td` is complemented under it likewise, which negates the odd `td`.
+/// Each arm but `first` finishes a step, and each arm but `last` starts the
+/// next one: the sign of the new `td` and the parity of the new `g`, tested on
+/// bit 1 before the halving, set its mask. `first` starts a batch's first step
+/// from the parity of `pg` and the sign of `td`, re-creating the zero register
+/// `z` that the conditional moves take.
+macro_rules! divstep {
+    (start) => {
+        concat!(
+            "mov {t}, {pf}\n",       // t = f.
+            "mov {k}, -2\n",         // k = -2: swap, unless...
+        )
+    };
+    (decide) => {
+        concat!(
+            "cmove {k}, {z}\n",      // ...g is even, when k = 0
+            "cmove {t}, {z}\n",      // and t = 0.
+            "xor {t}, {k}\n",        // t = -f when swapping.
+            "xor {td}, {k}\n",       // td = -td when swapping.
+            "bt {k}, 63\n",          // CF = swap.
+            "cmovb {pf}, {pg}\n",    // f = g when swapping.
+        )
+    };
+    (first) => {
+        concat!(
+            "xor {z:e}, {z:e}\n",
+            divstep!(start),
+            "test {td}, {td}\n",
+            "cmovs {k}, {z}\n",      // ...td is negative, when k = 0, or...
+            "test {pg}, 1\n",
+            divstep!(decide),
+        )
+    };
+    () => {
+        concat!(
+            "mov {k}, -2\n",         // The next step's k = -2: swap, unless...
+            "add {td}, 2\n",         // td = td + 2.
+            "lea {pg}, [{pg} + {t}]\n", // g = g + t, leaving the flags of td.
+            "cmovs {k}, {z}\n",      // ...the new td is negative, when k = 0, or...
+            "mov {t}, {pf}\n",       // t = the next step's f.
+            "test {pg}, 2\n",        // The parity of the halved g.
+            "cmove {k}, {z}\n",      // ...g is even, when k = 0
+            "cmove {t}, {z}\n",      // and t = 0.
+            "sar {pg}, 1\n",         // g = g / 2.
+            "xor {t}, {k}\n",
+            "xor {td}, {k}\n",
+            "bt {k}, 63\n",
+            "cmovb {pf}, {pg}\n",
+        )
+    };
+    (last) => {
+        concat!(
+            "add {td}, 2\n",         // td = td + 2.
+            "lea {pg}, [{pg} + {t}]\n", // g = g + t.
+            "sar {pg}, 1\n",         // g = g / 2.
+        )
+    };
+}
+
+/// Fifty-nine half-delta divsteps on the low words of `f` and `g`, returning
+/// the new `two_delta` and the transition matrix.
+///
+/// `two_delta = 2δ`, as a two's-complement word (`1` at the start), and `f0`
+/// and `g0` are the low 64 bits of `f` and `g`, `f` odd. The result is
+/// `[two_delta', u, v, q, r]`: the new `two_delta`, and the 59-step transition
+/// matrix `M` with `2^59 (f', g') = M (f, g)`, as two's-complement words. The
+/// steps are s2n-bignum's x86-64 `divstep59` macro on named registers, and the
+/// arithmetic around them is the AArch64 block's: three batches of 20, 20, and
+/// 19 steps, each on two words that pack the low 20 bits of `f` and `g` with a
+/// row of the batch's matrix in the upper bits, whose matrices are read back
+/// out of the upper bits, negated, and multiplied together. Between batches the
+/// next low words are the matrix rows applied to the current ones, shifted
+/// right by the batch's step count.
+///
+/// s2n-bignum keeps a batch's matrix on the stack while the next batch runs;
+/// this block is `nostack` and holds it in registers instead, thirteen for
+/// the whole block. The steps'
+/// constants `2` and `-2` are immediates, so a step needs six registers. A
+/// packed word's top bits are set with `movabs` through `pg` before `pg` is
+/// formed, and with two `bts` for `pg`, so that packing needs no register
+/// beyond the two words.
+#[inline(always)]
+pub(super) fn divstep59(mut two_delta: u64, f0: u64, g0: u64) -> [u64; 5] {
+    let (u, v, q, r): (u64, u64, u64, u64);
+    // SAFETY: straight-line register-only arithmetic; no memory access, no
+    // stack use, and outputs depend only on the declared inputs.
+    unsafe {
+        asm!(
+            // Batch 1: pack the low 20 bits with the identity's rows, as -2^41
+            // in pf and -2^62 in pg.
+            "movabs {pg}, 0xfffffe0000000000",
+            "mov {pf}, {x}",
+            "and {pf}, 0xfffff",
+            "or {pf}, {pg}",
+            "mov {pg}, {y}",
+            "and {pg}, 0xfffff",
+            "bts {pg}, 63",
+            "bts {pg}, 62",
+            divstep!(first),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(last),
+            // Read the negated matrix of batch 1 out of the upper bits into
+            // (a0, a1; a2, a3): the row's first entry as the 21-bit field at bit 21
+            // after adding 2^20, the second as the arithmetic shift by 42 after
+            // adding 2^20 + 2^41.
+            "lea {a0}, [{pf} + 0x100000]",
+            "shl {a0}, 22",
+            "sar {a0}, 43",
+            "movabs {h}, 0x20000100000",
+            "lea {a1}, [{pf} + {h}]",
+            "sar {a1}, 42",
+            "lea {a2}, [{pg} + 0x100000]",
+            "shl {a2}, 22",
+            "sar {a2}, 43",
+            "lea {a3}, [{pg} + {h}]",
+            "sar {a3}, 42",
+            // The next low words: the rows applied to the current ones, shifted
+            // right by 20.
+            "mov {pf}, {a0}",
+            "imul {pf}, {x}",
+            "mov {pg}, {a1}",
+            "imul {pg}, {y}",
+            "add {pf}, {pg}",
+            "imul {x}, {a2}",
+            "imul {y}, {a3}",
+            "add {y}, {x}",
+            "sar {pf}, 20",
+            "sar {y}, 20",
+            "mov {x}, {pf}",
+            // Batch 2.
+            "movabs {pg}, 0xfffffe0000000000",
+            "mov {pf}, {x}",
+            "and {pf}, 0xfffff",
+            "or {pf}, {pg}",
+            "mov {pg}, {y}",
+            "and {pg}, 0xfffff",
+            "bts {pg}, 63",
+            "bts {pg}, 62",
+            divstep!(first),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(last),
+            // The negated matrix of batch 2 into (t, k; h, z), the second column
+            // first, while h still holds the constant.
+            "movabs {h}, 0x20000100000",
+            "lea {k}, [{pf} + {h}]",
+            "sar {k}, 42",
+            "lea {z}, [{pg} + {h}]",
+            "sar {z}, 42",
+            "lea {t}, [{pf} + 0x100000]",
+            "shl {t}, 22",
+            "sar {t}, 43",
+            "lea {h}, [{pg} + 0x100000]",
+            "shl {h}, 22",
+            "sar {h}, 43",
+            "mov {pf}, {t}",
+            "imul {pf}, {x}",
+            "mov {pg}, {k}",
+            "imul {pg}, {y}",
+            "add {pf}, {pg}",
+            "mov {pg}, {h}",
+            "imul {pg}, {x}",
+            "imul {y}, {z}",
+            "add {y}, {pg}",
+            "sar {pf}, 20",
+            "sar {y}, 20",
+            "mov {x}, {pf}",
+            // Batch 3, of 19 steps.
+            "movabs {pg}, 0xfffffe0000000000",
+            "mov {pf}, {x}",
+            "and {pf}, 0xfffff",
+            "or {pf}, {pg}",
+            "mov {pg}, {y}",
+            "and {pg}, 0xfffff",
+            "bts {pg}, 63",
+            "bts {pg}, 62",
+            // The product of the negated matrices of batches 2 and 1, which is the
+            // product of the matrices themselves, into (x, a0; y, a3), freeing t,
+            // k, and z for the steps.
+            "mov {x}, {t}",
+            "imul {x}, {a0}",
+            "mov {y}, {k}",
+            "imul {y}, {a2}",
+            "add {x}, {y}",
+            "mov {y}, {h}",
+            "imul {y}, {a0}",
+            "mov {a0}, {z}",
+            "imul {a0}, {a2}",
+            "add {y}, {a0}",
+            "mov {a0}, {t}",
+            "imul {a0}, {a1}",
+            "mov {a2}, {k}",
+            "imul {a2}, {a3}",
+            "add {a0}, {a2}",
+            "mov {a2}, {h}",
+            "imul {a2}, {a1}",
+            "imul {a3}, {z}",
+            "add {a3}, {a2}",
+            divstep!(first),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(),
+            divstep!(last),
+            // The negated matrix of batch 3, whose rows sit one bit higher after
+            // 19 steps, into (t, a1; k, a2).
+            "movabs {h}, 0x20000100000",
+            "lea {a1}, [{pf} + {h}]",
+            "sar {a1}, 43",
+            "lea {a2}, [{pg} + {h}]",
+            "sar {a2}, 43",
+            "lea {t}, [{pf} + 0x100000]",
+            "shl {t}, 21",
+            "sar {t}, 43",
+            "lea {k}, [{pg} + 0x100000]",
+            "shl {k}, 21",
+            "sar {k}, 43",
+            // The 59-step matrix: minus the negated matrix of batch 3 times the
+            // product of batches 2 and 1.
+            "mov {pf}, {t}",
+            "imul {pf}, {x}",
+            "mov {pg}, {a1}",
+            "imul {pg}, {y}",
+            "add {pf}, {pg}",
+            "neg {pf}",
+            "mov {pg}, {t}",
+            "imul {pg}, {a0}",
+            "mov {h}, {a1}",
+            "imul {h}, {a3}",
+            "add {pg}, {h}",
+            "neg {pg}",
+            "mov {z}, {k}",
+            "imul {z}, {x}",
+            "mov {t}, {a2}",
+            "imul {t}, {y}",
+            "add {z}, {t}",
+            "neg {z}",
+            "imul {k}, {a0}",
+            "imul {a2}, {a3}",
+            "add {k}, {a2}",
+            "neg {k}",
+            td = inout(reg) two_delta,
+            x = inout(reg) f0 => _,
+            y = inout(reg) g0 => _,
+            pf = out(reg) u,
+            pg = out(reg) v,
+            t = out(reg) _,
+            k = out(reg) r,
+            z = out(reg) q,
+            a0 = out(reg) _,
+            a1 = out(reg) _,
+            a2 = out(reg) _,
+            a3 = out(reg) _,
+            h = out(reg) _,
+            options(pure, nomem, nostack),
+        );
+    }
+    [two_delta, u, v, q, r]
+}
+
+/// The sign-magnitude form of a transition matrix: each entry's magnitude,
+/// and its sign as a mask (all ones for a negative entry, else zero).
+///
+/// The row blocks multiply by a negative entry `m` as `|m| · ((x ^ mask) + 1)`,
+/// so they take the entries in this form. The result is `[u, v, q, r, su, sv,
+/// sq, sr]`, magnitudes then masks. Each entry is split as s2n-bignum's x86-64
+/// `bignum_montinv_p256` splits it: the mask is the arithmetic shift of the
+/// entry by 63, and the magnitude is the entry xored with the mask minus the
+/// mask.
+#[inline(always)]
+pub(super) fn sign_mag(mut u: u64, mut v: u64, mut q: u64, mut r: u64) -> [u64; 8] {
+    let (su, sv, sq, sr): (u64, u64, u64, u64);
+    // SAFETY: register-only arithmetic with declared inputs and outputs;
+    // no memory or stack access and no data-dependent control flow.
+    unsafe {
+        asm!(
+            "mov {su}, {u}",
+            "sar {su}, 63",
+            "xor {u}, {su}",
+            "sub {u}, {su}",
+            "mov {sv}, {v}",
+            "sar {sv}, 63",
+            "xor {v}, {sv}",
+            "sub {v}, {sv}",
+            "mov {sq}, {q}",
+            "sar {sq}, 63",
+            "xor {q}, {sq}",
+            "sub {q}, {sq}",
+            "mov {sr}, {r}",
+            "sar {sr}, 63",
+            "xor {r}, {sr}",
+            "sub {r}, {sr}",
+            u = inout(reg) u,
+            v = inout(reg) v,
+            q = inout(reg) q,
+            r = inout(reg) r,
+            su = out(reg) su,
+            sv = out(reg) sv,
+            sq = out(reg) sq,
+            sr = out(reg) sr,
+            options(pure, nomem, nostack),
+        );
+    }
+    [u, v, q, r, su, sv, sq, sr]
+}
+
+/// One row of the update of `f` and `g` by a transition matrix:
+/// `(m0 · f + m1 · g) / 2^59`, an exact division, on five-word signed values.
+///
+/// `f` and `g` are five words each, the top word being the sign word. `m0` and
+/// `m1` are the row's magnitudes and `s0` and `s1` its sign masks, from
+/// [`sign_mag`]. A negative entry multiplies the complement of its operand
+/// under the mask, with the magnitude added as the initial carry, so the
+/// initial carry is `(m0 & s0) + (m1 & s1)`. Each column's two products and
+/// the carry stay below `2^128` because `m0 + m1 <= 2^63`, so the high word of
+/// a column is accumulated directly in the next column's word, which starts at
+/// zero, and needs no register of its own. The top column is needed only
+/// modulo `2^64`, so it takes the low products of two-operand IMUL. The
+/// 320-bit sum is then shifted right by 59 in place with SHRD, the top word
+/// arithmetically.
+///
+/// The operand words are read through pointers, and the products use the
+/// one-operand MUL into RAX and RDX, as s2n-bignum's x86-64
+/// `bignum_montinv_p256` forms them. The block uses thirteen registers; with
+/// its ten operand words in registers it would need twenty-one.
+#[inline(always)]
+pub(super) fn fg_row(f: &[u64; 5], g: &[u64; 5], m0: u64, m1: u64, s0: u64, s1: u64) -> [u64; 5] {
+    let (t0, t1, t2, t3, t4): (u64, u64, u64, u64, u64);
+    // SAFETY: straight-line arithmetic reading only the ten words behind the
+    // passed references (`readonly`); no stack use, and outputs depend only on
+    // the declared inputs.
+    unsafe {
+        asm!(
+            // The initial carry, and zero high words.
+            "mov {t0}, {m0}",
+            "and {t0}, {s0}",
+            "mov rax, {m1}",
+            "and rax, {s1}",
+            "add {t0}, rax",
+            "xor {t1:e}, {t1:e}",
+            "xor {t2:e}, {t2:e}",
+            "xor {t3:e}, {t3:e}",
+            "xor {t4:e}, {t4:e}",
+            // Column 0.
+            "mov rax, qword ptr [{x}]",
+            "xor rax, {s0}",
+            "mul {m0}",
+            "add {t0}, rax",
+            "adc {t1}, rdx",
+            "mov rax, qword ptr [{y}]",
+            "xor rax, {s1}",
+            "mul {m1}",
+            "add {t0}, rax",
+            "adc {t1}, rdx",
+            // Column 1.
+            "mov rax, qword ptr [{x} + 8]",
+            "xor rax, {s0}",
+            "mul {m0}",
+            "add {t1}, rax",
+            "adc {t2}, rdx",
+            "mov rax, qword ptr [{y} + 8]",
+            "xor rax, {s1}",
+            "mul {m1}",
+            "add {t1}, rax",
+            "adc {t2}, rdx",
+            // Column 2.
+            "mov rax, qword ptr [{x} + 16]",
+            "xor rax, {s0}",
+            "mul {m0}",
+            "add {t2}, rax",
+            "adc {t3}, rdx",
+            "mov rax, qword ptr [{y} + 16]",
+            "xor rax, {s1}",
+            "mul {m1}",
+            "add {t2}, rax",
+            "adc {t3}, rdx",
+            // Column 3.
+            "mov rax, qword ptr [{x} + 24]",
+            "xor rax, {s0}",
+            "mul {m0}",
+            "add {t3}, rax",
+            "adc {t4}, rdx",
+            "mov rax, qword ptr [{y} + 24]",
+            "xor rax, {s1}",
+            "mul {m1}",
+            "add {t3}, rax",
+            "adc {t4}, rdx",
+            // Column 4, modulo 2^64.
+            "mov rax, qword ptr [{x} + 32]",
+            "xor rax, {s0}",
+            "imul rax, {m0}",
+            "add {t4}, rax",
+            "mov rax, qword ptr [{y} + 32]",
+            "xor rax, {s1}",
+            "imul rax, {m1}",
+            "add {t4}, rax",
+            // The exact division by 2^59.
+            "shrd {t0}, {t1}, 59",
+            "shrd {t1}, {t2}, 59",
+            "shrd {t2}, {t3}, 59",
+            "shrd {t3}, {t4}, 59",
+            "sar {t4}, 59",
+            x = in(reg) f.as_ptr(),
+            y = in(reg) g.as_ptr(),
+            m0 = in(reg) m0,
+            m1 = in(reg) m1,
+            s0 = in(reg) s0,
+            s1 = in(reg) s1,
+            t0 = out(reg) t0,
+            t1 = out(reg) t1,
+            t2 = out(reg) t2,
+            t3 = out(reg) t3,
+            t4 = out(reg) t4,
+            out("rax") _,
+            out("rdx") _,
+            options(pure, readonly, nostack),
+        );
+    }
+    [t0, t1, t2, t3, t4]
+}
+
+/// One row of the combination of `d` and `e` by a transition matrix:
+/// `m0 · d + m1 · e`, as a five-word signed value for [`amontred`].
+///
+/// `d` and `e` are four words, nonnegative, and `m0`, `m1`, `s0`, and `s1` are
+/// as for [`fg_row`]. The block is that of [`fg_row`] without the shift, and
+/// with an implicit top word of zero in `d` and `e`: complemented under a mask,
+/// that word is the mask itself, so the top column multiplies the masks.
+#[inline(always)]
+pub(super) fn de_row(d: &Limbs, e: &Limbs, m0: u64, m1: u64, s0: u64, s1: u64) -> [u64; 5] {
+    let (t0, t1, t2, t3, t4): (u64, u64, u64, u64, u64);
+    // SAFETY: straight-line arithmetic reading only the eight words behind the
+    // passed references (`readonly`); no stack use, and outputs depend only on
+    // the declared inputs.
+    unsafe {
+        asm!(
+            // The initial carry, and zero high words.
+            "mov {t0}, {m0}",
+            "and {t0}, {s0}",
+            "mov rax, {m1}",
+            "and rax, {s1}",
+            "add {t0}, rax",
+            "xor {t1:e}, {t1:e}",
+            "xor {t2:e}, {t2:e}",
+            "xor {t3:e}, {t3:e}",
+            "xor {t4:e}, {t4:e}",
+            // Column 0.
+            "mov rax, qword ptr [{x}]",
+            "xor rax, {s0}",
+            "mul {m0}",
+            "add {t0}, rax",
+            "adc {t1}, rdx",
+            "mov rax, qword ptr [{y}]",
+            "xor rax, {s1}",
+            "mul {m1}",
+            "add {t0}, rax",
+            "adc {t1}, rdx",
+            // Column 1.
+            "mov rax, qword ptr [{x} + 8]",
+            "xor rax, {s0}",
+            "mul {m0}",
+            "add {t1}, rax",
+            "adc {t2}, rdx",
+            "mov rax, qword ptr [{y} + 8]",
+            "xor rax, {s1}",
+            "mul {m1}",
+            "add {t1}, rax",
+            "adc {t2}, rdx",
+            // Column 2.
+            "mov rax, qword ptr [{x} + 16]",
+            "xor rax, {s0}",
+            "mul {m0}",
+            "add {t2}, rax",
+            "adc {t3}, rdx",
+            "mov rax, qword ptr [{y} + 16]",
+            "xor rax, {s1}",
+            "mul {m1}",
+            "add {t2}, rax",
+            "adc {t3}, rdx",
+            // Column 3.
+            "mov rax, qword ptr [{x} + 24]",
+            "xor rax, {s0}",
+            "mul {m0}",
+            "add {t3}, rax",
+            "adc {t4}, rdx",
+            "mov rax, qword ptr [{y} + 24]",
+            "xor rax, {s1}",
+            "mul {m1}",
+            "add {t3}, rax",
+            "adc {t4}, rdx",
+            // Column 4, modulo 2^64: the complemented top words are the masks.
+            "mov rax, {s0}",
+            "imul rax, {m0}",
+            "add {t4}, rax",
+            "mov rax, {s1}",
+            "imul rax, {m1}",
+            "add {t4}, rax",
+            x = in(reg) d.as_ptr(),
+            y = in(reg) e.as_ptr(),
+            m0 = in(reg) m0,
+            m1 = in(reg) m1,
+            s0 = in(reg) s0,
+            s1 = in(reg) s1,
+            t0 = out(reg) t0,
+            t1 = out(reg) t1,
+            t2 = out(reg) t2,
+            t3 = out(reg) t3,
+            t4 = out(reg) t4,
+            out("rax") _,
+            out("rdx") _,
+            options(pure, readonly, nostack),
+        );
+    }
+    [t0, t1, t2, t3, t4]
+}
+
+/// The almost-Montgomery reduction of a five-word signed value by one word:
+/// `(s + w · p) / 2^64` for `s = t + 2^61 · p` and `w = s · inv mod 2^64`, as
+/// four words.
+///
+/// For `|t| < 2^315`, which the row combinations satisfy, the result is below
+/// `2p` and below `2^256` (Lemma 10 of `book/src/design/inversion.md`), so, as
+/// in the AArch64 block and unlike P-256's `amontred` in s2n-bignum, there is
+/// no top carry to capture and no conditional subtraction. Adding `2^61 · p`
+/// for the Pasta shape adds `p0 << 61`, `(p1 : p0) >> 3`, `p1 >> 3`, and
+/// `2^59` at words 0, 1, 2, and 4. All four are formed before the addition,
+/// since the shifts write the flags. `w` is formed in RDX, as in
+/// [`from_mont`], so that MULX, which leaves the flags alone, takes it as its
+/// implicit multiplicand. Adding `w · p` is the cancellation step of `mul`:
+/// the low word cancels, with a carry exactly when `s0` is nonzero, which is
+/// the carry that `neg` sets; the high halves and `w · 2^254` go in one chain
+/// and the low half of `w · p1` in another.
+///
+/// The modulus limbs are read through a pointer, as in [`mul`], which keeps
+/// the block at thirteen registers.
+#[inline(always)]
+pub(super) fn amontred(t: &[u64; 5], modulus: &Limbs, inv: u64) -> Limbs {
+    let (o0, o1, o2, o3): (u64, u64, u64, u64);
+    // SAFETY: straight-line arithmetic reading only the modulus words behind
+    // the passed reference (`readonly`); no stack use, and outputs depend only
+    // on the declared inputs.
+    unsafe {
+        asm!(
+            // s = t + 2^61 p, in five words.
+            "mov {w0}, qword ptr [{p}]",
+            "shl {w0}, 61",
+            "mov {w2}, qword ptr [{p} + 8]",
+            "mov {w1}, qword ptr [{p}]",
+            "shrd {w1}, {w2}, 3",
+            "shr {w2}, 3",
+            "movabs {w3}, 0x800000000000000",
+            "add {t0}, {w0}",
+            "adc {t1}, {w1}",
+            "adc {t2}, {w2}",
+            "adc {t3}, 0",
+            "adc {t4}, {w3}",
+            // w = s0 · inv, and the products of w with the modulus.
+            "mov rdx, {t0}",
+            "imul rdx, {inv}",
+            "mulx {w0}, {w1}, qword ptr [{p}]",
+            "mulx {w2}, {w3}, qword ptr [{p} + 8]",
+            "mov {w1}, rdx",
+            "shl {w1}, 62",
+            "mov {w4}, rdx",
+            "shr {w4}, 2",
+            // s + w p.
+            "neg {t0}",
+            "adc {t1}, {w0}",
+            "adc {t2}, {w2}",
+            "adc {t3}, {w1}",
+            "adc {t4}, {w4}",
+            "add {t1}, {w3}",
+            "adc {t2}, 0",
+            "adc {t3}, 0",
+            "adc {t4}, 0",
+            t0 = inout(reg) t[0] => _,
+            t1 = inout(reg) t[1] => o0,
+            t2 = inout(reg) t[2] => o1,
+            t3 = inout(reg) t[3] => o2,
+            t4 = inout(reg) t[4] => o3,
+            p = in(reg) modulus.as_ptr(),
+            inv = in(reg) inv,
+            w0 = out(reg) _,
+            w1 = out(reg) _,
+            w2 = out(reg) _,
+            w3 = out(reg) _,
+            w4 = out(reg) _,
+            out("rdx") _,
+            options(pure, readonly, nostack),
+        );
+    }
+    [o0, o1, o2, o3]
+}
+
+/// Subtracts the modulus from `value` unless the subtraction borrows.
+///
+/// For `value < 2p` the result is `value mod p`; the inversion applies it to
+/// the final round's `amontred` output, which is below `2p`. Like [`add`], it
+/// hardcodes the Pasta modulus shape (`modulus[2] == 0`). The differences are
+/// formed in temporaries, since MOV leaves the borrow flag alone, and CMOVNC
+/// takes them when the last subtraction did not borrow.
+#[inline(always)]
+pub(super) fn cond_sub(value: &Limbs, modulus: &Limbs) -> Limbs {
+    let [mut r0, mut r1, mut r2, mut r3] = *value;
+    // SAFETY: register-only arithmetic with declared inputs and outputs;
+    // no memory or stack access and no data-dependent control flow.
+    unsafe {
+        asm!(
+            "mov {t0}, {r0}",
+            "sub {t0}, {p0}",
+            "mov {t1}, {r1}",
+            "sbb {t1}, {p1}",
+            "mov {t2}, {r2}",
+            "sbb {t2}, 0",
+            "mov {t3}, {r3}",
+            "sbb {t3}, {p3}",
+            "cmovnc {r0}, {t0}",
+            "cmovnc {r1}, {t1}",
+            "cmovnc {r2}, {t2}",
+            "cmovnc {r3}, {t3}",
+            r0 = inout(reg) r0,
+            r1 = inout(reg) r1,
+            r2 = inout(reg) r2,
+            r3 = inout(reg) r3,
+            p0 = in(reg) modulus[0],
+            p1 = in(reg) modulus[1],
+            p3 = in(reg) modulus[3],
+            t0 = out(reg) _,
+            t1 = out(reg) _,
+            t2 = out(reg) _,
+            t3 = out(reg) _,
+            options(pure, nomem, nostack),
+        );
+    }
+    [r0, r1, r2, r3]
+}
+
+/// The backend's blocks: its Montgomery arithmetic, for the entry points in
+/// `entry.rs`, and its inversion blocks, for the generic driver of
+/// `crate::inversion`.
+pub(crate) struct Backend;
 
 impl super::entry::MontgomeryBlocks for Backend {
     #[inline(always)]
@@ -852,5 +1551,105 @@ impl super::entry::MontgomeryBlocks for Backend {
     #[inline(always)]
     fn from_mont(value: &Limbs, modulus: &Limbs, inv: u64) -> Limbs {
         from_mont(value, modulus, inv)
+    }
+}
+
+/// The inversion's blocks, in this backend's assembly.
+impl InvertBlocks for Backend {
+    #[inline(always)]
+    fn divstep59(two_delta: u64, f0: u64, g0: u64) -> [u64; 5] {
+        divstep59(two_delta, f0, g0)
+    }
+
+    #[inline(always)]
+    fn sign_mag(u: u64, v: u64, q: u64, r: u64) -> [u64; 8] {
+        sign_mag(u, v, q, r)
+    }
+
+    #[inline(always)]
+    fn fg_row(f: &[u64; 5], g: &[u64; 5], m0: u64, m1: u64, s0: u64, s1: u64) -> [u64; 5] {
+        fg_row(f, g, m0, m1, s0, s1)
+    }
+
+    #[inline(always)]
+    fn de_row(d: &Limbs, e: &Limbs, m0: u64, m1: u64, s0: u64, s1: u64) -> [u64; 5] {
+        de_row(d, e, m0, m1, s0, s1)
+    }
+
+    #[inline(always)]
+    fn amontred(t: &[u64; 5], modulus: &Limbs, inv: u64) -> Limbs {
+        amontred(t, modulus, inv)
+    }
+
+    #[inline(always)]
+    fn cond_sub(value: &Limbs, modulus: &Limbs) -> Limbs {
+        cond_sub(value, modulus)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Backend;
+
+    // The inversion's checks, over this backend's blocks.
+
+    #[test]
+    fn sign_mag_known_answers() {
+        crate::inversion::tests::sign_mag_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn divstep59_known_answers() {
+        crate::inversion::tests::divstep59_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn fg_row_known_answers() {
+        crate::inversion::tests::fg_row_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn de_row_known_answers() {
+        crate::inversion::tests::de_row_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn amontred_known_answers() {
+        crate::inversion::tests::amontred_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn cond_sub_known_answers() {
+        crate::inversion::tests::cond_sub_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn invert_known_answers() {
+        crate::inversion::tests::invert_known_answers::<Backend>();
+    }
+
+    #[test]
+    fn invert_small_and_near_modulus() {
+        crate::inversion::tests::invert_small_and_near_modulus::<Backend>();
+    }
+
+    #[test]
+    fn invert_random() {
+        crate::inversion::tests::invert_random::<Backend>();
+    }
+
+    #[test]
+    fn invert_is_the_inverse() {
+        crate::inversion::tests::invert_is_the_inverse::<Backend>();
+    }
+
+    #[test]
+    fn invert_is_multiplicative() {
+        crate::inversion::tests::invert_is_multiplicative::<Backend>();
+    }
+
+    #[test]
+    fn invert_commutes_with_negation() {
+        crate::inversion::tests::invert_commutes_with_negation::<Backend>();
     }
 }
