@@ -46,8 +46,9 @@
 //!
 //! # Security
 //!
-//! Everything in this module runs in variable time with respect to both the
-//! scalar and the point. The decomposition, the recoding, and which additions
+//! The public scalar multiplication methods in this module run in variable time
+//! with respect to both the scalar and the point. The sign/magnitude conversion,
+//! inside decomposition, the recoding, and which additions
 //! the ladder performs all depend on the scalar; the point additions branch
 //! on the points they add, for the identity and for equal coordinates.
 //! **The scalar and the point must both be public**, as in signature or proof
@@ -80,25 +81,47 @@
 //!
 //! One-shot use is [`GlvParams::mul_glv`].
 
+#[cfg(feature = "glv")]
 use alloc::vec::Vec;
 
-use ff::{PrimeField, WithSmallOrderMulGroup};
-use group::CurveAffine as _;
+#[cfg(feature = "glv")]
+use {ff::WithSmallOrderMulGroup, group::CurveAffine as _};
 
-use crate::arithmetic::{CurveAffine, CurveExt, VartimeField, mac, sbb};
 use crate::{pallas, vesta};
 
+#[cfg(feature = "glv")]
+use crate::arithmetic::{CurveAffine, CurveExt, VartimeField};
+
+#[cfg(feature = "glv")]
 mod booth;
 
+mod decomposition;
+
+#[cfg(any(not(target_arch = "arm"), test))]
+pub(crate) use decomposition::decompose_signed;
+#[cfg(feature = "glv")]
+pub(crate) use decomposition::{HALF_BITS, HALVES, decompose};
+
+#[cfg(feature = "glv")]
 pub(crate) mod fixed_base;
 
+#[cfg(feature = "glv")]
 pub(crate) mod msm;
 
 mod private {
+    #[cfg(feature = "glv")]
     use crate::arithmetic::{CurveAffine, CurveExt};
 
     /// The field of a curve's affine coordinates.
+    #[cfg(feature = "glv")]
     pub type AffineBase<C> = <<C as CurveExt>::AffineExt as CurveAffine>::Base;
+
+    /// The lattice constants are specific to the two Pasta curves; external
+    /// implementations cannot provide another set of parameters.
+    pub trait SealedConstants {}
+
+    impl SealedConstants for crate::pallas::Point {}
+    impl SealedConstants for crate::vesta::Point {}
 
     /// Seals [`super::GlvParams`]: the lattice constants are curve-specific
     /// and verified in-crate; external implementations are not supported.
@@ -107,6 +130,7 @@ mod private {
     /// need generically. Keeping it on this private trait, rather than on the
     /// public `CurveAffine`, adds nothing to the public API and leaves that
     /// trait's implementors unaffected.
+    #[cfg(feature = "glv")]
     pub trait Sealed: CurveExt {
         /// The affine point $(x, y)$, without checking that it is on the
         /// curve; $(0, 0)$ yields the identity.
@@ -127,6 +151,7 @@ mod private {
         fn affine_xy(point: &Self::AffineExt) -> (AffineBase<Self>, AffineBase<Self>);
     }
 
+    #[cfg(feature = "glv")]
     impl Sealed for crate::pallas::Point {
         fn affine_from_xy_unchecked(x: AffineBase<Self>, y: AffineBase<Self>) -> Self::AffineExt {
             crate::pallas::Affine::from_xy_unchecked(x, y)
@@ -137,6 +162,7 @@ mod private {
         }
     }
 
+    #[cfg(feature = "glv")]
     impl Sealed for crate::vesta::Point {
         fn affine_from_xy_unchecked(x: AffineBase<Self>, y: AffineBase<Self>) -> Self::AffineExt {
             crate::vesta::Affine::from_xy_unchecked(x, y)
@@ -151,6 +177,7 @@ mod private {
 /// The affine point $(x, y)$ of `C`, without checking that it is on the
 /// curve; $(0, 0)$ yields the identity. The caller must pass coordinates that
 /// its own curve arithmetic produced.
+#[cfg(feature = "glv")]
 pub(crate) fn affine_from_xy_unchecked<C: GlvParams>(
     x: private::AffineBase<C>,
     y: private::AffineBase<C>,
@@ -165,6 +192,7 @@ pub(crate) fn affine_from_xy_unchecked<C: GlvParams>(
 
 /// The coordinates $(x, y)$ of `point`, the identity read as $(0, 0)$: the
 /// inverse of [`affine_from_xy_unchecked`].
+#[cfg(feature = "glv")]
 pub(crate) fn affine_xy<C>(point: &C::AffineExt) -> (private::AffineBase<C>, private::AffineBase<C>)
 where
     C: GlvParams,
@@ -174,6 +202,7 @@ where
 
 /// The $x$-coordinate $\zeta x$ of $\phi(P)$, for $P$ with $x$-coordinate `x`
 /// (see the module documentation); its $y$-coordinate is $P$'s.
+#[cfg(feature = "glv")]
 pub(crate) fn phi_x<C>(x: private::AffineBase<C>) -> private::AffineBase<C>
 where
     C: GlvParams,
@@ -220,6 +249,7 @@ where
 ///
 /// Internal: it exists to pin the contract and to let one conformance suite
 /// run against both recodings, not as a surface for callers.
+#[cfg(feature = "glv")]
 pub(crate) trait Recoding<C>
 where
     C: GlvParams,
@@ -326,7 +356,7 @@ where
 /// Stating them once is the point of the trait: the two recodings share no
 /// ladder code, so without a common suite nothing forces them to mean the
 /// same thing by "reuse gives the same answer".
-#[cfg(test)]
+#[cfg(all(test, feature = "glv"))]
 pub(crate) mod conformance {
     use ff::PrimeField;
     use proptest::prelude::*;
@@ -620,9 +650,11 @@ pub(crate) mod conformance {
 
 /// The recoding [`crate::glv`] performs: two independent width-4 wNAF digit
 /// strings, one per GLV half, sharing a column index.
+#[cfg(feature = "glv")]
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Wnaf4;
 
+#[cfg(feature = "glv")]
 impl<C> Recoding<C> for Wnaf4
 where
     C: GlvParams,
@@ -675,6 +707,22 @@ where
 /// from that basis.
 ///
 /// [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
+pub trait GlvConstants: private::SealedConstants {
+    /// First short lattice vector `v1 = (BASIS_1_A, -BASIS_1_B_ABS)`.
+    const BASIS_1_A: u128;
+    /// Magnitude of `v1`'s (negative) second component.
+    const BASIS_1_B_ABS: u128;
+    /// Second short lattice vector `v2 = (BASIS_2_A, BASIS_2_B)`.
+    const BASIS_2_A: u128;
+    /// `v2`'s (positive) second component.
+    const BASIS_2_B: u128;
+    /// Babai coefficient `round(2^384 * BASIS_2_B / n)`, little-endian limbs.
+    const ROUNDING_COEFF_1: [u64; 5];
+    /// Babai coefficient `round(2^384 * BASIS_1_B_ABS / n)`, little-endian limbs.
+    const ROUNDING_COEFF_2: [u64; 5];
+}
+
+/// Per-curve parameters for variable-time GLV scalar multiplication.
 ///
 /// The base field is required to implement [`VartimeField`], so that
 /// `crate::glv_eisenstein`'s batch-affine ladder can reach the safegcd
@@ -682,19 +730,20 @@ where
 ///
 /// This trait is sealed; it is implemented for [`pallas::Point`] and
 /// [`vesta::Point`].
-pub trait GlvParams: CurveExt<Base: VartimeField> + private::Sealed {
+#[cfg(feature = "glv")]
+pub trait GlvParams: GlvConstants + CurveExt<Base: VartimeField> + private::Sealed {
     /// First short lattice vector `v1 = (V1A, -V1B_NEG)`.
-    const V1A: u128;
+    const V1A: u128 = <Self as GlvConstants>::BASIS_1_A;
     /// Magnitude of `v1`'s (negative) second component.
-    const V1B_NEG: u128;
+    const V1B_NEG: u128 = <Self as GlvConstants>::BASIS_1_B_ABS;
     /// Second short lattice vector `v2 = (V2A, V2B)`.
-    const V2A: u128;
+    const V2A: u128 = <Self as GlvConstants>::BASIS_2_A;
     /// `v2`'s (positive) second component.
-    const V2B: u128;
+    const V2B: u128 = <Self as GlvConstants>::BASIS_2_B;
     /// Babai coefficient `round(2^384 * V2B / n)`, little-endian limbs.
-    const G1: [u64; 5];
+    const G1: [u64; 5] = <Self as GlvConstants>::ROUNDING_COEFF_1;
     /// Babai coefficient `round(2^384 * V1B_NEG / n)`, little-endian limbs.
-    const G2: [u64; 5];
+    const G2: [u64; 5] = <Self as GlvConstants>::ROUNDING_COEFF_2;
 
     /// One-shot `k * self` via the GLV split — variable-time in `k` and
     /// `self` (see the module docs), identical in value to `self * k`
@@ -718,24 +767,25 @@ pub trait GlvParams: CurveExt<Base: VartimeField> + private::Sealed {
 ///
 /// The `constants` test (see the module's test suite) re-verifies the short
 /// basis against Pallas's own $\lambda$ = [`Scalar::ZETA`] using field
-/// arithmetic alone, and the Babai coefficients `G1`/`G2` against their
-/// defining rounding using limb arithmetic alone; the `decompose` tests prove
-/// that the decomposition reconstructs `k`. A wrong constant cannot pass them.
+/// arithmetic alone, and the Babai coefficients `ROUNDING_COEFF_1`/
+/// `ROUNDING_COEFF_2` against their defining rounding using limb arithmetic
+/// alone; the `decompose` tests prove that the decomposition reconstructs `k`.
+/// A wrong constant cannot pass them.
 ///
 /// [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
-impl GlvParams for pallas::Point {
-    const V1A: u128 = 0x49e69d1640f049157fcae1c700000001;
-    const V1B_NEG: u128 = 0x49e69d1640a899538cb1279300000000;
-    const V2A: u128 = 0x49e69d1640a899538cb1279300000000;
-    const V2B: u128 = 0x93cd3a2c8198e2690c7c095a00000001;
-    const G1: [u64; 5] = [
+impl GlvConstants for pallas::Point {
+    const BASIS_1_A: u128 = 0x49e69d1640f049157fcae1c700000001;
+    const BASIS_1_B_ABS: u128 = 0x49e69d1640a899538cb1279300000000;
+    const BASIS_2_A: u128 = 0x49e69d1640a899538cb1279300000000;
+    const BASIS_2_B: u128 = 0x93cd3a2c8198e2690c7c095a00000001;
+    const ROUNDING_COEFF_1: [u64; 5] = [
         0x111f686111afc293,
         0xc35fbd4d086862e0,
         0x31f0256800000002,
         0x4f34e8b2066389a4,
         0x2,
     ];
-    const G2: [u64; 5] = [
+    const ROUNDING_COEFF_2: [u64; 5] = [
         0x4a95a2d972171db4,
         0x61afdea68480fa55,
         0x32c49e4bffffffff,
@@ -750,19 +800,19 @@ impl GlvParams for pallas::Point {
 /// rounding.
 ///
 /// [`Scalar::ZETA`]: ff::WithSmallOrderMulGroup::ZETA
-impl GlvParams for vesta::Point {
-    const V1A: u128 = 0x49e69d1640f049157fcae1c700000000;
-    const V1B_NEG: u128 = 0x49e69d1640a899538cb1279300000001;
-    const V2A: u128 = 0x49e69d1640a899538cb1279300000001;
-    const V2B: u128 = 0x93cd3a2c8198e2690c7c095a00000001;
-    const G1: [u64; 5] = [
+impl GlvConstants for vesta::Point {
+    const BASIS_1_A: u128 = 0x49e69d1640f049157fcae1c700000000;
+    const BASIS_1_B_ABS: u128 = 0x49e69d1640a899538cb1279300000001;
+    const BASIS_2_A: u128 = 0x49e69d1640a899538cb1279300000001;
+    const BASIS_2_B: u128 = 0x93cd3a2c8198e2690c7c095a00000001;
+    const ROUNDING_COEFF_1: [u64; 5] = [
         0x841d8d62296e1563,
         0xc35fbd4d0afe9926,
         0x31f0256800000002,
         0x4f34e8b2066389a4,
         0x2,
     ];
-    const G2: [u64; 5] = [
+    const ROUNDING_COEFF_2: [u64; 5] = [
         0x841414c24bf99a83,
         0x61afdea685cc1578,
         0x32c49e4c00000003,
@@ -771,133 +821,18 @@ impl GlvParams for vesta::Point {
     ];
 }
 
-/// Schoolbook multiply of `a` by `b` into `prod`, which must be zeroed and
-/// hold exactly `a.len() + b.len()` limbs. Constant-time: a fixed loop
-/// structure with explicit carry propagation.
-fn schoolbook_mul(a: &[u64], b: &[u64], prod: &mut [u64]) {
-    debug_assert_eq!(prod.len(), a.len() + b.len());
-    for (i, &ai) in a.iter().enumerate() {
-        let mut carry = 0u64;
-        for (j, &bj) in b.iter().enumerate() {
-            let (limb, c) = mac(prod[i + j], ai, bj, carry);
-            prod[i + j] = limb;
-            carry = c;
-        }
-        // First write to prod[i + b.len()] on each outer iteration.
-        prod[i + b.len()] = carry;
-    }
-}
+#[cfg(feature = "glv")]
+impl GlvParams for pallas::Point {}
 
-/// `round((g * k) / 2^384)` for a 5-limb `g` and 4-limb `k` — the Babai
-/// coefficient. Fits `u128` (at most ~128 bits by construction).
-fn round_mul_shift(g: &[u64; 5], k: &[u64; 4]) -> u128 {
-    let mut prod = [0u64; 9];
-    schoolbook_mul(g, k, &mut prod);
-    // Bits >= 384 live in limbs 6..; round on bit 383 (top bit of limb 5).
-    let round = prod[5] >> 63;
-    (u128::from(prod[6]) | (u128::from(prod[7]) << 64)).wrapping_add(u128::from(round))
-}
-
-/// 256-bit product of two `u128`s, as little-endian limbs.
-fn mul_u128(a: u128, b: u128) -> [u64; 4] {
-    let mut prod = [0u64; 4];
-    schoolbook_mul(
-        &[a as u64, (a >> 64) as u64],
-        &[b as u64, (b >> 64) as u64],
-        &mut prod,
-    );
-    prod
-}
-
-/// 256-bit wrapping subtraction (two's complement).
-fn sub256(a: [u64; 4], b: [u64; 4]) -> [u64; 4] {
-    let (d0, borrow) = sbb(a[0], b[0], 0);
-    let (d1, borrow) = sbb(a[1], b[1], borrow);
-    let (d2, borrow) = sbb(a[2], b[2], borrow);
-    let (d3, _) = sbb(a[3], b[3], borrow);
-    [d0, d1, d2, d3]
-}
-
-/// Interprets a 256-bit two's-complement value as `(is_negative, magnitude)`,
-/// taking the low 128 bits of the magnitude.
-///
-/// GLV decomposition guarantees `|x| < 2^127` for the values reached here
-/// (asserted in debug builds, here and in [`wnaf_digits`], and checked by the
-/// `decompose` tests), so the high limbs of the magnitude are always zero and
-/// no information is lost.
-fn signed_halves(x: [u64; 4]) -> (bool, u128) {
-    // Guard the truncation itself: the discarded limbs must be the sign
-    // extension of bit 127. Values of 2^128 or more would otherwise be
-    // silently truncated before `wnaf_digits`' magnitude assertion could
-    // observe them.
-    let ext = if x[1] >> 63 == 0 { 0 } else { u64::MAX };
-    debug_assert!(
-        x[2] == ext && x[3] == ext,
-        "GLV half does not fit in 128 bits"
-    );
-    let low = u128::from(x[0]) | (u128::from(x[1]) << 64);
-    if x[3] >> 63 == 0 {
-        (false, low)
-    } else {
-        // Two's-complement negation commutes with truncation to the low 128
-        // bits, and the magnitude lives entirely there.
-        (true, (!low).wrapping_add(1))
-    }
-}
-
-/// The four little-endian limbs of a Pasta scalar. (Pasta scalars have a
-/// 32-byte little-endian representation; the four 8-byte reads cover it
-/// exactly.)
-fn scalar_limbs<F>(k: &F) -> [u64; 4]
-where
-    F: PrimeField,
-{
-    let bytes = k.to_repr();
-    let bytes: &[u8] = bytes.as_ref();
-    let mut limbs = [0u64; 4];
-    for (i, limb) in limbs.iter_mut().enumerate() {
-        *limb = u64::from_le_bytes(bytes[i * 8..(i + 1) * 8].try_into().expect("8 bytes"));
-    }
-    limbs
-}
-
-/// The magnitude of a decomposition half is below `2^HALF_BITS`: the bound
-/// [`decompose`] guarantees, on which the recodings of the halves rely.
-pub(crate) const HALF_BITS: usize = 127;
-
-/// The halves [`decompose`] splits a scalar into: `k1` for $P$ and `k2` for
-/// $\phi(P)$.
-pub(crate) const HALVES: usize = 2;
-
-/// GLV split: `k = k1 + k2 * lambda (mod n)`, each half returned as
-/// `(is_negative, magnitude)`.
-///
-/// Babai rounding bounds the halves by `|k1| <= (V1A + V2A) / 2 + 1` and
-/// `|k2| <= (V1B_NEG + V2B) / 2 + 1`, where the `+ 1` covers `G1` and `G2`
-/// being 384-bit approximations of the exact rounding coefficients. On both
-/// curves that is below `2^126.3` for `k1` and `2^126.8` for `k2`, so strictly
-/// below `2^127` ([`HALF_BITS`]), the bound [`signed_halves`], [`wnaf_digits`]
-/// and the MSM's Booth digits rely on; `crate::glv_eisenstein` relies on the
-/// tighter one.
-pub(crate) fn decompose<C>(k: &C::ScalarExt) -> ((bool, u128), (bool, u128))
-where
-    C: GlvParams,
-{
-    let kl = scalar_limbs(k);
-    let c1 = round_mul_shift(&C::G1, &kl);
-    let c2 = round_mul_shift(&C::G2, &kl);
-    // k1 = k - c1*V1A - c2*V2A   (two's complement over 256 bits)
-    let k1 = sub256(sub256(kl, mul_u128(c1, C::V1A)), mul_u128(c2, C::V2A));
-    // k2 = c1*V1B_NEG - c2*V2B   (v1.b = -V1B_NEG, v2.b = +V2B)
-    let k2 = sub256(mul_u128(c1, C::V1B_NEG), mul_u128(c2, C::V2B));
-    (signed_halves(k1), signed_halves(k2))
-}
+#[cfg(feature = "glv")]
+impl GlvParams for vesta::Point {}
 
 /// The GLV window for one base point: the odd multiples `{1, 3, 5, 7} * P` and
 /// `{1, 3, 5, 7} * phi(P)` in affine coordinates. 512 bytes per table.
 ///
 /// Build one with [`Table::new`], or many with one shared normalization via
 /// [`Table::batch`].
+#[cfg(feature = "glv")]
 #[derive(Clone, Copy, Debug)]
 pub struct Table<C>
 where
@@ -909,6 +844,7 @@ where
     t2: [C::AffineExt; 4],
 }
 
+#[cfg(feature = "glv")]
 impl<C> Table<C>
 where
     C: GlvParams,
@@ -997,6 +933,7 @@ where
 /// Building this once per scalar hoists the decomposition and digit
 /// recoding out of a loop that multiplies the same scalar against many
 /// tables.
+#[cfg(feature = "glv")]
 #[derive(Clone, Debug)]
 pub struct Decomposed<C>
 where
@@ -1010,6 +947,7 @@ where
     _curve: core::marker::PhantomData<C>,
 }
 
+#[cfg(feature = "glv")]
 impl<C> Decomposed<C>
 where
     C: GlvParams,
@@ -1032,10 +970,12 @@ where
 /// Upper bound on the number of width-4 wNAF digits of a decomposition half:
 /// an n-bit magnitude yields at most n + 1 digits, and [`decompose`] bounds
 /// the halves below `2^HALF_BITS`.
+#[cfg(feature = "glv")]
 const MAX_WNAF_DIGITS: usize = HALF_BITS + 1;
 
 /// Width-4 wNAF digits of a u128 magnitude, lowest position first, with the
 /// half's overall sign folded into the digits when `negate` is set.
+#[cfg(feature = "glv")]
 fn wnaf_digits(a: u128, negate: bool) -> ([i8; MAX_WNAF_DIGITS], usize) {
     debug_assert!(a >> HALF_BITS == 0, "magnitude must be at most 127 bits");
     let mut digits = [0i8; MAX_WNAF_DIGITS];
@@ -1063,6 +1003,7 @@ fn wnaf_digits(a: u128, negate: bool) -> ([i8; MAX_WNAF_DIGITS], usize) {
 ///
 /// The same call shape as `crate::glv_eisenstein::mul`, so the two
 /// recodings are interchangeable at the call site.
+#[cfg(feature = "glv")]
 pub fn mul<C>(p: &C, k: &C::ScalarExt) -> C
 where
     C: GlvParams,
@@ -1078,6 +1019,7 @@ where
 /// faster on a large batch, because it also shares an inversion across the
 /// ladder itself; this one exists so a caller can pick the recoding without
 /// changing anything else. Identity inputs are handled.
+#[cfg(feature = "glv")]
 pub fn batch_mul<C>(points: &[C], k: &C::ScalarExt) -> Vec<C::AffineExt>
 where
     C: GlvParams,
@@ -1097,6 +1039,7 @@ where
 ///
 /// The table is built once and reused across the scalars, and the results
 /// share a single field inversion on the way back to affine.
+#[cfg(feature = "glv")]
 pub fn mul_scalars<C>(p: &C, ks: &[C::ScalarExt]) -> Vec<C::AffineExt>
 where
     C: GlvParams,
@@ -1116,6 +1059,7 @@ where
 /// the scalar is shared, so each pair still walks its own ladder; use
 /// [`batch_mul`] instead when the scalar is common to every point, which is
 /// the cheaper shape.
+#[cfg(feature = "glv")]
 pub fn mul_pairs<C>(pairs: &[(C, C::ScalarExt)]) -> Vec<C::AffineExt>
 where
     C: GlvParams,
@@ -1133,6 +1077,7 @@ where
 }
 
 /// One shared inversion back to affine.
+#[cfg(feature = "glv")]
 fn normalize<C>(proj: &[C]) -> Vec<C::AffineExt>
 where
     C: GlvParams,
@@ -1142,11 +1087,12 @@ where
     affine
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "glv"))]
 pub(crate) mod tests {
+    use super::decomposition::{mul_u128, round_mul_shift, scalar_limbs, schoolbook_mul, sub256};
     use super::*;
-    use crate::arithmetic::adc;
-    use ff::Field;
+    use crate::arithmetic::{adc, sbb};
+    use ff::{Field, PrimeField};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 

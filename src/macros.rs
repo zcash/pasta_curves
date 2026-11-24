@@ -23,6 +23,22 @@ macro_rules! if_asm_addsub {
     }};
 }
 
+/// Selects homogeneous scalar multiplication except on 32-bit ARM.
+/// Keystone measurements favor the existing Jacobian path; retain it on other
+/// 32-bit ARM targets until measurements support enabling homogeneous multiplication.
+macro_rules! if_homogeneous_mul {
+    ($homogeneous:expr, $jacobian:expr $(,)?) => {{
+        #[cfg(not(target_arch = "arm"))]
+        {
+            $homogeneous
+        }
+        #[cfg(target_arch = "arm")]
+        {
+            $jacobian
+        }
+    }};
+}
+
 macro_rules! impl_add_binop_specify_output {
     ($lhs:ident, $rhs:ident, $output:ident) => {
         impl<'b> ::core::ops::Add<&'b $rhs> for $lhs {

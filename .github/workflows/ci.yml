@@ -142,6 +142,8 @@ jobs:
         run: uv run --locked sage glv_test_vectors.sage
       - name: Verify the MSM window thresholds
         run: uv run --locked sage msm_window_thresholds.sage
+      - name: Verify the regular tau-adic recoding
+        run: uv run --locked sage tau_recoding.sage
 
   book:
     name: Book tests

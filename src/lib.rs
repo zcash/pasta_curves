@@ -37,6 +37,9 @@ mod test_fields;
 mod macros;
 mod curves;
 mod fields;
+// Keep this in sync with if_homogeneous_mul!; ARM tests still exercise the formulas.
+#[cfg(any(not(target_arch = "arm"), test))]
+mod scalar_mul;
 
 pub mod arithmetic;
 #[cfg(feature = "deferred")]
@@ -44,6 +47,9 @@ pub mod arithmetic;
 pub mod deferred;
 pub mod pallas;
 pub mod vesta;
+
+#[cfg(not(feature = "glv"))]
+mod glv;
 
 #[cfg(feature = "glv")]
 #[cfg_attr(docsrs, doc(cfg(feature = "glv")))]

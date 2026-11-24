@@ -743,32 +743,10 @@ macro_rules! new_curve_impl {
             type Output = $name;
 
             fn mul(self, other: &'b $scalar) -> Self::Output {
-                // TODO: make this faster
-
-                let mut acc = $name::identity();
-
-                // This is a simple double-and-add implementation of point
-                // multiplication, moving from most significant to least
-                // significant bit of the scalar.
-                //
-                // We don't use `PrimeFieldBits::.to_le_bits` here, because that would
-                // force users of this crate to depend on `bitvec` where they otherwise
-                // might not need to.
-                //
-                // NOTE: We skip the leading bit because it's always unset (we are turning
-                // the 32-byte repr into 256 bits, and $scalar::NUM_BITS = 255).
-                for bit in other
-                    .to_repr()
-                    .iter()
-                    .rev()
-                    .flat_map(|byte| (0..8).rev().map(move |i| Choice::from((byte >> i) & 1u8)))
-                    .skip(1)
-                {
-                    acc = acc.double();
-                    acc = $name::conditional_select(&acc, &(acc + self), bit);
-                }
-
-                acc
+                if_homogeneous_mul!(
+                    mul_curve_specific!($name, $base, $curve_type, projective, self, other),
+                    mul_curve_specific!($name, $base, general, projective, self, other),
+                )
             }
         }
 
@@ -858,32 +836,10 @@ macro_rules! new_curve_impl {
             type Output = $name;
 
             fn mul(self, other: &'b $scalar) -> Self::Output {
-                // TODO: make this faster
-
-                let mut acc = $name::identity();
-
-                // This is a simple double-and-add implementation of point
-                // multiplication, moving from most significant to least
-                // significant bit of the scalar.
-                //
-                // We don't use `PrimeFieldBits::.to_le_bits` here, because that would
-                // force users of this crate to depend on `bitvec` where they otherwise
-                // might not need to.
-                //
-                // NOTE: We skip the leading bit because it's always unset (we are turning
-                // the 32-byte repr into 256 bits, and $scalar::NUM_BITS = 255).
-                for bit in other
-                    .to_repr()
-                    .iter()
-                    .rev()
-                    .flat_map(|byte| (0..8).rev().map(move |i| Choice::from((byte >> i) & 1u8)))
-                    .skip(1)
-                {
-                    acc = acc.double();
-                    acc = $name::conditional_select(&acc, &(acc + self), bit);
-                }
-
-                acc
+                if_homogeneous_mul!(
+                    mul_curve_specific!($name, $base, $curve_type, affine, self, other),
+                    mul_curve_specific!($name, $base, general, affine, self, other),
+                )
             }
         }
 
@@ -1124,6 +1080,64 @@ macro_rules! new_curve_impl {
             }
         }
     };
+}
+
+#[cfg(test)]
+impl EpAffine {
+    pub(crate) fn raw_xy_for_tests(&self) -> (Fp, Fp) {
+        (self.x, self.y)
+    }
+}
+
+#[cfg(test)]
+impl EqAffine {
+    pub(crate) fn raw_xy_for_tests(&self) -> (Fq, Fq) {
+        (self.x, self.y)
+    }
+}
+
+macro_rules! mul_curve_specific {
+    ($name:ident, $base:ident, special_a0_b5, projective, $point:expr, $scalar:expr) => {{
+        let point =
+            crate::scalar_mul::Homogeneous::<$base>::from_jacobian($point.x, $point.y, $point.z);
+        let (x, y, z) = point.multiply_tau::<$name>($scalar).to_jacobian();
+        $name { x, y, z }
+    }};
+    ($name:ident, $base:ident, special_a0_b5, affine, $point:expr, $scalar:expr) => {{
+        let point = crate::scalar_mul::Homogeneous::<$base>::from_affine(
+            $point.x,
+            $point.y,
+            $point.is_identity(),
+        );
+        let (x, y, z) = point.multiply_tau::<$name>($scalar).to_jacobian();
+        $name { x, y, z }
+    }};
+    ($name:ident, $base:ident, general, $coord:ident, $point:expr, $scalar:expr) => {{
+        let mut acc = $name::identity();
+
+        // This is a simple double-and-add implementation of point
+        // multiplication, moving from most significant to least
+        // significant bit of the scalar.
+        //
+        // We don't use `PrimeFieldBits::to_le_bits` here, because that would
+        // force users of this crate to depend on `bitvec` where they otherwise
+        // might not need to.
+        //
+        // NOTE: We skip the leading bit because it's always unset (we are turning
+        // the 32-byte repr into 256 bits, and $scalar::NUM_BITS = 255).
+        for bit in $scalar
+            .to_repr()
+            .iter()
+            .rev()
+            .flat_map(|byte| (0..8).rev().map(move |i| Choice::from((byte >> i) & 1u8)))
+            .skip(1)
+        {
+            acc = acc.double();
+            acc = $name::conditional_select(&acc, &(acc + $point), bit);
+        }
+
+        acc
+    }};
 }
 
 macro_rules! impl_projective_curve_specific {
@@ -1381,6 +1395,37 @@ new_curve_impl!(
     without_unchecked_ctor,
     native
 );
+
+#[cfg(test)]
+#[test]
+fn native_scalar_multiplication_matches_jacobian_fallback() {
+    macro_rules! check {
+        ($name:ident, $base:ident, $scalar:ident) => {{
+            let generator = $name::generator();
+            let mut scalar = -$scalar::ONE;
+            for _ in 0..16 {
+                for point in [
+                    $name::identity(),
+                    generator,
+                    -generator,
+                    generator.double() + generator,
+                ] {
+                    let affine = point.to_affine();
+                    let projective_product =
+                        mul_curve_specific!($name, $base, general, projective, point, scalar);
+                    let affine_product =
+                        mul_curve_specific!($name, $base, general, affine, affine, scalar);
+                    assert_eq!(point * scalar, projective_product);
+                    assert_eq!(affine * scalar, affine_product);
+                    assert_eq!(projective_product, affine_product);
+                }
+                scalar = scalar.square() + $scalar::ONE;
+            }
+        }};
+    }
+    check!(Ep, Fp, Fq);
+    check!(Eq, Fq, Fp);
+}
 
 impl Ep {
     /// Constants used for computing the isogeny from IsoEp to Ep.
