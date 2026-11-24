@@ -8,7 +8,7 @@ use ff::{Field, WithSmallOrderMulGroup};
 use group::Group;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
-use super::Homogeneous;
+use super::{FormulaField, Homogeneous};
 use crate::glv::{GlvConstants, decompose_signed};
 use crate::{Fp, Fq};
 
@@ -127,7 +127,7 @@ impl Signed192 {
     // 2^192 (derived in Sage) then gives the quotient exactly, without a
     // long division (Granlund and Montgomery, "Division by invariant integers
     // using multiplication", PLDI 1994).
-    fn div_exact(self, divisor: u8) -> Self {
+    fn div_exact(self, divisor: Divisor) -> Self {
         const INVERSE_3: [u64; 3] = [
             0xaaaa_aaaa_aaaa_aaab,
             0xaaaa_aaaa_aaaa_aaaa,
@@ -138,7 +138,10 @@ impl Signed192 {
             0x38e3_8e38_e38e_38e3,
             0xe38e_38e3_8e38_e38e,
         ];
-        self.wrapping_mul(if divisor == 9 { INVERSE_9 } else { INVERSE_3 })
+        self.wrapping_mul(match divisor {
+            Divisor::Three => INVERSE_3,
+            Divisor::Nine => INVERSE_9,
+        })
     }
 
     // The Euclidean remainder modulo 9, without a long division. As 2^6 = 1
@@ -179,6 +182,11 @@ impl ConditionallySelectable for Signed192 {
             u64::conditional_select(&a.0[i], &b.0[i], choice)
         }))
     }
+}
+
+enum Divisor {
+    Three,
+    Nine,
 }
 
 // (a, b) represents a+bτ. Every one of the 54 residues with a mod 3 != 0
@@ -379,8 +387,8 @@ fn recode<C: Group + GlvConstants>(scalar: &C::Scalar) -> Recode {
         let x = a.sub(Signed192::from_i8(d.a));
         let y = b.sub(Signed192::from_i8(d.b));
         // (x+yτ)/τ³ = ((x+2y)/3) − ((2x+3y)/9)τ.
-        a = x.add(y.twice()).div_exact(3);
-        b = x.twice().add(y.thrice()).div_exact(9).neg();
+        a = x.add(y.twice()).div_exact(Divisor::Three);
+        b = x.twice().add(y.thrice()).div_exact(Divisor::Nine).neg();
         *digit = d;
     }
     // Sage's norm bound proves that the final nondivisible state is a unit.
@@ -431,7 +439,7 @@ impl<F: Field + WithSmallOrderMulGroup<3>> Rotated<F> {
 // The base-field constants 1 - beta and (1 - beta)^3 of the tau
 // endomorphism, with beta = ZETA, evaluated at compile time from ZETA with
 // the fields' const arithmetic.
-pub(crate) trait TauField: Field + WithSmallOrderMulGroup<3> {
+pub(crate) trait TauField: FormulaField + WithSmallOrderMulGroup<3> {
     const ONE_MINUS_ZETA: Self;
     const ONE_MINUS_ZETA_CUBED: Self;
 }
@@ -439,7 +447,7 @@ pub(crate) trait TauField: Field + WithSmallOrderMulGroup<3> {
 macro_rules! tau_field {
     ($field:ident) => {
         impl TauField for $field {
-            const ONE_MINUS_ZETA: Self = $field::one().sub(&$field::ZETA);
+            const ONE_MINUS_ZETA: Self = $field::ONE.sub(&$field::ZETA);
             const ONE_MINUS_ZETA_CUBED: Self =
                 Self::ONE_MINUS_ZETA.square().mul(&Self::ONE_MINUS_ZETA);
         }
@@ -451,11 +459,9 @@ tau_field!(Fq);
 fn tau<F: TauField>(p: Homogeneous<F>) -> Homogeneous<F> {
     // The complete isogeny ψ : E_5 → E_-135 followed by the isomorphism
     // (X:Y:Z) ↦ ((1−β)X:Y:(1−β)^3 Z) is 1−ω on the native curve.
-    let y2 = p.y.square();
-    let z2 = p.z.square();
-    let bz2 = z2 + z2 + z2 + z2 + z2;
-    let b3z2 = bz2 + bz2 + bz2;
-    let b9z2 = b3z2 + b3z2 + b3z2;
+    let y2 = super::square(p.y);
+    let z2 = super::square(p.z);
+    let (bz2, b3z2, b9z2) = (z2.mul_small(5), z2.mul_small(15), z2.mul_small(45));
     Homogeneous {
         x: p.x * (y2 + b3z2) * F::ONE_MINUS_ZETA,
         y: p.y * (y2 - b9z2),
@@ -463,7 +469,7 @@ fn tau<F: TauField>(p: Homogeneous<F>) -> Homogeneous<F> {
     }
 }
 
-fn representatives<F: Field>(p: Homogeneous<F>, t: Homogeneous<F>) -> [Homogeneous<F>; 6] {
+fn representatives<F: FormulaField>(p: Homogeneous<F>, t: Homogeneous<F>) -> [Homogeneous<F>; 6] {
     let two_p = p.double();
     let p_plus_t = p.add(&t);
     let two_t = t.double();
@@ -527,7 +533,19 @@ impl<F: TauField> Homogeneous<F> {
         let recoding = recode::<C>(scalar);
         let tau_p = tau(*self);
         let base = representatives(*self, tau_p);
-        let tau_base = representatives(tau_p, tau(tau_p));
+        // tau is a group endomorphism, so the representatives built from
+        // tau(P) and tau^2(P) are the tau-images of those built from P and
+        // tau(P). One tau per entry costs less than the doublings and
+        // additions of a second `representatives`, and the first entry is
+        // tau(P) itself.
+        let tau_base = [
+            tau_p,
+            tau(base[1]),
+            tau(base[2]),
+            tau(base[3]),
+            tau(base[4]),
+            tau(base[5]),
+        ];
         let table = [base.map(Rotated::new), tau_base.map(Rotated::new)];
 
         // τ^(3j) = 3^floor(3j/2) (-ω)^floor(3j/2) τ^(j mod 2).
@@ -775,8 +793,8 @@ mod tests {
             let q = Signed192([limbs[0], limbs[1], ((limbs[2] as i64) >> 5) as u64]);
             let n3 = q.thrice();
             let n9 = n3.thrice();
-            prop_assert_eq!(n3.div_exact(3).0, q.0);
-            prop_assert_eq!(n9.div_exact(9).0, q.0);
+            prop_assert_eq!(n3.div_exact(Divisor::Three).0, q.0);
+            prop_assert_eq!(n9.div_exact(Divisor::Nine).0, q.0);
             let (long_quotient, remainder) = n9.quotient_remainder(9);
             prop_assert_eq!((long_quotient.0, remainder), (q.0, 0));
         }
