@@ -7,25 +7,20 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-11-25
 ### Added
-- `CurveExt::try_multiexp_vartime`, an optional variable-time multiscalar
-  multiplication hook for public inputs. The `glv` feature enables optimized
-  Pallas and Vesta backends; callers must retain a generic fallback when the
-  hook returns `None`.
-- `multicore` feature flag, which enables `glv` and parallel MSM evaluation
-  using Rayon.
-- `CurveExt::try_prepare_fixed_base_sum` and `PreparedFixedBaseSum`, optional
-  reusable fixed-base sums for public bases and scalars. The `glv` feature enables
-  doubling-free Pallas and Vesta evaluation and batched affine reduction;
-  callers must retain a generic fallback when preparation returns `None`.
+- `multicore` feature flag, which enables `rayon`-based parallelism inside
+  compatible APIs.
+- `pasta_curves::arithmetic`:
+  - `CurveExt::try_multiexp_vartime`
+  - `CurveExt::try_prepare_fixed_base_sum`
+  - `PreparedFixedBaseSum`
 - `pasta_curves::glv::GlvConstants` behind the `glv` feature flag.
 
 ### Changed
-- GLV MSMs reuse window and affine-reduction scratch. With `multicore`, each
-  thread retains at most 8 MiB of scratch per field between calls, without
-  sharing checked-out buffers with nested work.
-- The public-input GLV MSM planner weights affine and projective bucket costs
-  separately and considers up to two wider windows when selecting a backend.
+- Improved scalar multiplication performance for
+  `pasta_curves::{pallas, vesta}::{Affine, Point}` (via `Mul<Self::Scalar>`, and
+  `MulAssign<Self::Scalar>` for `Point`).
 
 ## [0.6.3] - 2026-11-16
 ### Added
