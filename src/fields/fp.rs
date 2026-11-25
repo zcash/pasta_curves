@@ -1522,3 +1522,85 @@ impl Fp {
         FP_TABLES.sqrt_alt_lanes(values)
     }
 }
+
+#[cfg(all(
+    feature = "asm",
+    feature = "sqrt-table",
+    target_arch = "x86_64",
+    not(pasta_curves_noasm)
+))]
+impl crate::arithmetic::avx2_sqrt::Avx2Chain for Fp {
+    fn limbs(&self) -> [u64; 4] {
+        self.0
+    }
+
+    fn from_limbs_lazy(limbs: [u64; 4]) -> Self {
+        // The AVX2 output is below 2p, so one eager subtraction normalizes it.
+        // Use the portable operation: assembly requires canonical inputs.
+        Fp(limbs).sub_portable(&MODULUS)
+    }
+
+    // The one call into AVX2 code; `unused_unsafe` when AVX2 is enabled for
+    // the whole build.
+    #[allow(unsafe_code, unused_unsafe)]
+    fn sqrt_chain<const G: usize>(
+        u: &crate::arithmetic::avx2_sqrt::Lanes<G>,
+    ) -> [crate::arithmetic::avx2_sqrt::Lanes<G>; 5] {
+        assert!(
+            crate::arithmetic::avx2_sqrt::available(),
+            "AVX2 requires CPU and OS support"
+        );
+        // The addition chain of `pow_by_t_minus1_over2`, as (squarings, power).
+        const STEPS: &[(u32, u32)] = &[
+            (129, 1),
+            (7, 9),
+            (7, 13),
+            (4, 3),
+            (6, 7),
+            (3, 7),
+            (10, 9),
+            (5, 9),
+            (4, 9),
+            (3, 7),
+            (4, 9),
+            (5, 3),
+            (4, 7),
+            (4, 3),
+            (6, 9),
+            (5, 13),
+            (4, 3),
+            (7, 7),
+            (3, 3),
+        ];
+        // 2^266 mod p: R' = 2^261 squared, divided by R = 2^256.
+        let c_in = (Fp::from_raw(R.0) * Fp::from(1 << 10)).to_repr();
+        let c_in = core::array::from_fn(|i| {
+            u64::from_le_bytes(c_in[8 * i..8 * i + 8].try_into().unwrap())
+        });
+        // SAFETY: the cached runtime check above establishes AVX2 and enabled YMM state.
+        unsafe {
+            crate::arithmetic::avx2_sqrt::sqrt_chain::<
+                { MODULUS.0[0] },
+                { MODULUS.0[1] },
+                { MODULUS.0[2] },
+                { MODULUS.0[3] },
+                G,
+            >(u, &c_in, &R.0, STEPS, 1)
+        }
+    }
+}
+
+#[cfg(all(
+    feature = "asm",
+    feature = "sqrt-table",
+    target_arch = "x86_64",
+    not(pasta_curves_noasm)
+))]
+impl Fp {
+    /// `sqrt_alt` of `N = 4 * G` values, exponentiating in four-way AVX2 lanes.
+    pub(crate) fn sqrt_alt_avx2<const G: usize, const N: usize>(
+        u: &[Self; N],
+    ) -> [(Choice, Self); N] {
+        FP_TABLES.sqrt_alt_avx2::<G, N>(u)
+    }
+}

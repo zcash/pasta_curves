@@ -370,6 +370,31 @@ impl<F: SqrtTableHelpers> SqrtTables<F> {
         })
     }
 
+    /// [`Self::sqrt_alt`] of `N = 4 * G` values, with the exponentiation in
+    /// four-way AVX2 lanes. The table-driven finish stays scalar.
+    #[cfg(all(feature = "asm", target_arch = "x86_64", not(pasta_curves_noasm)))]
+    pub fn sqrt_alt_avx2<const G: usize, const N: usize>(&self, u: &[F; N]) -> [(Choice, F); N]
+    where
+        F: super::avx2_sqrt::Avx2Chain,
+    {
+        assert_eq!(N, 4 * G);
+        let mut lanes = [[[0u64; 4]; 4]; G];
+        for (k, u) in u.iter().enumerate() {
+            lanes[k / 4][k % 4] = u.limbs();
+        }
+        let out = F::sqrt_chain::<G>(&lanes);
+        let [uv, x0, x1, x2, x3] =
+            out.map(|v| core::array::from_fn::<F, N, _>(|k| F::from_limbs_lazy(v[k / 4][k % 4])));
+        core::array::from_fn(|k| {
+            let res = self.sqrt_finish(&uv[k], &x0[k], &x1[k], &x2[k], &x3[k]);
+            let sq = res.square();
+            let is_square = (sq - u[k]).is_zero();
+            let is_nonsquare = (sq - F::ROOT_OF_UNITY * u[k]).is_zero();
+            assert!(bool::from(u[k].is_zero() | (is_square ^ is_nonsquare)));
+            (is_square, res)
+        })
+    }
+
     /// Common part of sqrt_ratio and sqrt_alt: return their result given v = u^((T-1)/2) and uv = u * v.
     fn sqrt_common(&self, uv: &F, v: &F) -> F {
         let sqr = |x: F, i: u32| (0..i).fold(x, |x, _| x.square());
