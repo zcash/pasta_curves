@@ -37,8 +37,12 @@ macro_rules! impl_batch_mul_same_scalar_vartime {
             crate::glv::msm::try_multiexp::<$name>(scalars, bases)
         }
 
-        /// Prepares positioned tables of about 76 KiB per base, from which a
-        /// sum needs no doublings.
+        /// Below 8 bases, prepares positioned tables of 76 KiB per base, from
+        /// which a sum needs no doublings. From 8 bases, prepares a cross-base
+        /// comb, whose sums need three doublings: its groups of at most 11
+        /// bases take 2^m - 1 points per stored row for a group of m, so the
+        /// table varies with how the bases split, from 42 KiB per base (12
+        /// bases, two groups of 6) to 744 KiB per base (11 bases, 8 MiB).
         #[cfg(feature = "glv")]
         fn try_prepare_fixed_base_sum(
             bases: &[Self::AffineExt],

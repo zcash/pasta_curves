@@ -1,4 +1,8 @@
-//! Doubling-free sums over a few fixed bases.
+//! Sums over a few fixed bases, prepared once and evaluated many times.
+//!
+//! Two strategies share this module: below [`COMB_MIN_BASES`] bases, the
+//! positioned tables described here; from it, a cross-base comb (`comb`),
+//! whose table lookups each cover one bit of several bases at once.
 //!
 //! Each scalar is split by GLV into two signed halves of at most
 //! [`HALF_BITS`] bits, $k = k_1 + k_2\lambda$, and each half is
@@ -35,8 +39,11 @@ use super::{
     decompose,
     msm::{AffinePoint, reduce_affine_buckets},
     phi_x,
+    private::AffineBase,
 };
 use crate::arithmetic::PreparedFixedBaseSum;
+
+mod comb;
 
 /// The signed-digit window width.
 ///
@@ -159,8 +166,31 @@ impl<C: GlvParams> Recoding<C> for Booth7 {
 pub(crate) fn prepare_fixed_base_sum<C: GlvParams>(
     bases: &[C::AffineExt],
 ) -> Box<dyn PreparedFixedBaseSum<C>> {
-    Box::new(FixedBaseSum::<C, Booth7>::new(bases))
+    if bases.len() >= COMB_MIN_BASES {
+        // Balanced groups of at most `COMB_MAX_GROUP_BITS` bases.
+        let groups = bases.len().div_ceil(COMB_MAX_GROUP_BITS);
+        let group_bits = bases.len().div_ceil(groups);
+        Box::new(comb::CombSum::<C>::new(bases, group_bits, COMB_STRIDE))
+    } else {
+        Box::new(FixedBaseSum::<C, Booth7>::new(bases))
+    }
 }
+
+/// Bases from which [`prepare_fixed_base_sum`] prepares a comb. With more
+/// bases per table index, one comb lookup covers more bits than a positioned
+/// window does, which outweighs its larger tables and slower preparation;
+/// below it the two measured about even, and the positioned tables are
+/// smaller.
+const COMB_MIN_BASES: usize = 8;
+
+/// Bit positions between the comb's stored rows. A shorter stride stores more
+/// rows, and saves doublings and, in a batch, reductions per sum.
+const COMB_STRIDE: usize = 4;
+
+/// The most bases in one comb group. A group's table holds `2^m - 1` points
+/// per stored row, so 11 bases take about 8 MiB at [`COMB_STRIDE`] (64 rows of
+/// 2,047 points); more bases are split into balanced groups.
+const COMB_MAX_GROUP_BITS: usize = 11;
 
 /// A positioned evaluation of the recoding `R`: per base $P$, one `R` table
 /// per column, column $j$'s over $2^{j \cdot \mathrm{COLUMN\_BITS}} P$, laid
@@ -265,28 +295,12 @@ where
         offsets.push(0);
         for scalars in scalars {
             self.for_each_sum_term(scalars, |point, negate| {
-                let (x, y) = affine_xy::<C>(&point);
-                // Table entries of an identity base are the identity, encoded
-                // as (0, 0). The reducer requires non-identity points, and
-                // they contribute nothing.
-                if !(x.is_zero_vartime() && y.is_zero_vartime()) {
-                    points.push(AffinePoint {
-                        x,
-                        y: if negate { -y } else { y },
-                    });
-                }
+                push_term::<C>(&mut points, point, negate);
             });
             offsets.push(points.len());
         }
-        match reduce_affine_buckets(points, offsets) {
-            Some(sums) => {
-                for (output, sum) in output.iter_mut().zip(sums) {
-                    *output = match sum {
-                        Some(p) => C::from(affine_from_xy_unchecked::<C>(p.x, p.y)),
-                        None => C::identity(),
-                    };
-                }
-            }
+        match bucket_sums::<C>(points, offsets) {
+            Some(sums) => output.copy_from_slice(&sums),
             // The reducer declines only if its complete formulas meet a zero
             // denominator, which valid points rule out and which it asserts
             // against in debug builds; stay correct anyway.
@@ -297,6 +311,41 @@ where
             }
         }
     }
+}
+
+/// Appends `point`, negated when `negate`, to the current bucket of a batched
+/// affine reduction. Table entries of an identity base are the identity,
+/// encoded as (0, 0); the reducer requires non-identity points, and they
+/// contribute nothing, so they are skipped.
+fn push_term<C: GlvParams>(
+    points: &mut Vec<AffinePoint<AffineBase<C>>>,
+    point: C::AffineExt,
+    negate: bool,
+) {
+    let (x, y) = affine_xy::<C>(&point);
+    if !(x.is_zero_vartime() && y.is_zero_vartime()) {
+        points.push(AffinePoint {
+            x,
+            y: if negate { -y } else { y },
+        });
+    }
+}
+
+/// The sums of the buckets `points[offsets[j]..offsets[j + 1]]`, one shared
+/// inversion per tree level, or `None` if the reducer declines.
+fn bucket_sums<C: GlvParams>(
+    points: Vec<AffinePoint<AffineBase<C>>>,
+    offsets: Vec<usize>,
+) -> Option<Vec<C>> {
+    let sums = reduce_affine_buckets(points, offsets)?;
+    Some(
+        sums.into_iter()
+            .map(|sum| match sum {
+                Some(p) => C::from(affine_from_xy_unchecked::<C>(p.x, p.y)),
+                None => C::identity(),
+            })
+            .collect(),
+    )
 }
 
 #[cfg(test)]
