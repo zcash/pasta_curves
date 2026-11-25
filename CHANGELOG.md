@@ -7,6 +7,7 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-11-25
 ### Added
 - `multicore` feature flag, which enables `rayon`-based parallelism inside
   compatible APIs.
