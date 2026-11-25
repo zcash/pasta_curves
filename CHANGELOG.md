@@ -12,8 +12,8 @@ and this project adheres to Rust's notion of
   multiplication hook for public inputs. The `glv` feature enables optimized
   Pallas and Vesta backends; callers must retain a generic fallback when the
   hook returns `None`.
-- `multicore` feature flag, which enables `glv` and parallel MSM evaluation
-  using Rayon.
+- `multicore` feature flag, which enables `rayon`-based parallelism inside
+  compatible APIs.
 - `CurveExt::try_prepare_fixed_base_sum` and `PreparedFixedBaseSum`, optional
   reusable fixed-base sums for public bases and scalars. The `glv` feature enables
   doubling-free Pallas and Vesta evaluation and batched affine reduction;
